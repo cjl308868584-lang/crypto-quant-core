@@ -34,9 +34,9 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.2.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、核心决策链首版、SQLite WAL追加账本与Outbox、最小经济投影、RiskLock与部署档位风控、Target/Intent/Attempt顺序约束、订单UNKNOWN对账状态机、PositionExecutor首版和Fail-Closed Release Evaluator。
+Git中的设计基线已冻结，当前代码版本为 `0.3.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata与提交前安全舍入、核心决策链首版、SQLite WAL追加账本与Outbox、经济及执行投影首版、Golden Replay、RiskLock与部署档位风控、Target/Intent/Attempt顺序约束、订单UNKNOWN对账状态机、PositionExecutor首版和Fail-Closed Release Evaluator。
 
-当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度和未完成项见[实施追踪 v0.2.0](docs/implementation-status-v0.2.0.md)，执行状态机决策见[ADR-0002](docs/adr/0002-execution-state-machines.md)。
+当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度和未完成项见[实施追踪 v0.3.0](docs/implementation-status-v0.3.0.md)，元数据和重放决策见[ADR-0003](docs/adr/0003-instrument-metadata-and-replay.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：

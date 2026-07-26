@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.1.0",
+  "as_of": "2026-01-01T00:00:00.000Z",
+  "status": "NON_AUTHORITATIVE_TEST_FIXTURE",
+  "records": [
+    {
+      "instrument_id": "BINANCE:SPOT:ETHUSDT",
+      "exchange": "BINANCE",
+      "market_type": "SPOT",
+      "symbol": "ETHUSDT",
+      "base_asset": "ETH",
+      "quote_asset": "USDT",
+      "settlement_asset": "USDT",
+      "effective_from": "2026-01-01T00:00:00.000Z",
+      "effective_to_or_null": null,
+      "price_tick": "0.01",
+      "quantity_step": "0.0001",
+      "min_quantity": "0.0001",
+      "max_quantity": "1000",
+      "min_notional": "5",
+      "contract_multiplier": "1",
+      "supported_order_types": [
+        "LIMIT",
+        "MARKET",
+        "STOP_MARKET"
+      ],
+      "supported_time_in_force": [
+        "GTC",
+        "IOC",
+        "FOK"
+      ],
+      "supports_reduce_only": false,
+      "supports_stop_market": true,
+      "maker_fee": "0.001",
+      "taker_fee": "0.001",
+      "metadata_source": "OFFLINE_TEST_FIXTURE_NOT_FOR_TRADING"
+    },
+    {
+      "instrument_id": "BINANCE:USDT_PERP:ETHUSDT",
+      "exchange": "BINANCE",
+      "market_type": "USDT_PERP",
+      "symbol": "ETHUSDT",
+      "base_asset": "ETH",
+      "quote_asset": "USDT",
+      "settlement_asset": "USDT",
+      "effective_from": "2026-01-01T00:00:00.000Z",
+      "effective_to_or_null": null,
+      "price_tick": "0.01",
+      "quantity_step": "0.001",
+      "min_quantity": "0.001",
+      "max_quantity": "10000",
+      "min_notional": "5",
+      "contract_multiplier": "1",
+      "supported_order_types": [
+        "LIMIT",
+        "MARKET",
+        "STOP_MARKET"
+      ],
+      "supported_time_in_force": [
+        "GTC",
+        "IOC",
+        "FOK"
+      ],
+      "supports_reduce_only": true,
+      "supports_stop_market": true,
+      "maker_fee": "0.0002",
+      "taker_fee": "0.0005",
+      "metadata_source": "OFFLINE_TEST_FIXTURE_NOT_FOR_TRADING"
+    }
+  ]
+}
