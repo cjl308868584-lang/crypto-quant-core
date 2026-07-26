@@ -2,9 +2,9 @@
   "$schema": "./estimator-golden-vectors-v1.schema.json",
   "schema_version": "1.0.0",
   "bundle_id": "estimator-golden-vectors-v1",
-  "bundle_version": "1.2.0",
+  "bundle_version": "1.3.0",
   "estimator_registry_id": "estimator-registry-v1",
-  "estimator_registry_hash": "8c408b5d565158dcb89983e8491a849763f200dab82e5571e971e1e1b1fa2d58",
+  "estimator_registry_hash": "f200716395079175205c577976264ec57990465aa50bec7756089cc2a6078bad",
   "fixtures": {
     "economic-snapshot-valid": {
       "$schema": "./economic-ledger-snapshot-v1.schema.json",
@@ -2525,6 +2525,626 @@
       },
       "generated_at": "2026-01-02T00:00:00.000Z",
       "replay_verified": true
+    },
+    "statistical-decision-computed": {
+      "$schema": "./statistical-decision-snapshot-v1.schema.json",
+      "schema_version": "1.0.0",
+      "snapshot_id": "statistical-decision-fixture",
+      "snapshot_hash": "af1e006c90bc23004a25a6d2c5f489365a08d588cf0e2c90916390f1c8e220ec",
+      "hash_algorithm": "SHA-256",
+      "canonicalization": "RFC8785_JCS",
+      "trial_family_id": "trial-family-statistical-decision",
+      "current_candidate_id": "candidate-current",
+      "release_gate_policy_id": "release-gates-v1.1",
+      "release_gate_policy_version": "1.1.5",
+      "metric_catalog_id": "release-metrics-v1.1",
+      "metric_catalog_version": "1.1.5",
+      "statistical_design_policy_id": "statistics-replay",
+      "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+      "experiment_manifest_id": "experiment-replay",
+      "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+      "scope": {
+        "account_id": "account-statistical-decision",
+        "evaluation_ledger": "BASELINE_LEDGER",
+        "release_route": "BASELINE_ONLY",
+        "direction": "LONG",
+        "venue": "BINANCE_SPOT",
+        "deployment_line_id": "line-statistical-decision",
+        "deployment_line_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "evaluation_window_start": "2025-01-01T00:00:00Z",
+        "evaluation_window_end": "2025-01-07T00:00:00Z",
+        "approved_production_capital_usdt": "1000",
+        "endpoint_id": "PRIMARY_NET_GROWTH",
+        "endpoint_unit": "log_growth",
+        "endpoint_direction": "GREATER"
+      },
+      "design": {
+        "minimum_economic_effect": "2",
+        "null_boundary": "0",
+        "confidence_level": "0.95",
+        "confidence_side": "TWO_SIDED",
+        "ci_method": "PERCENTILE_MBB_V1",
+        "raw_p_value_method": "CENTERED_MBB_GREATER_ADD_ONE_V1",
+        "power_method": "SHIFTED_CENTERED_MBB_AT_MERE_V1",
+        "effective_sample_method": "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1",
+        "multiple_testing_method": "HOLM_V1",
+        "family_wise_alpha": "0.05",
+        "block_length": 2,
+        "minimum_block_count": 2,
+        "resample_count": 1000,
+        "seed": 29,
+        "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+        "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+      },
+      "actual_total_trials": 3,
+      "trial_registry": [
+        {
+          "candidate_id": "candidate-aborted",
+          "candidate_status": "ABORTED",
+          "recipe_release_id": "recipe-candidate-aborted",
+          "recipe_release_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "source_series_snapshot": null,
+          "source_series_hash": null
+        },
+        {
+          "candidate_id": "candidate-competitor",
+          "candidate_status": "EVALUATED",
+          "recipe_release_id": "recipe-candidate-competitor",
+          "recipe_release_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_series_snapshot": {
+            "$schema": "./statistical-series-snapshot-v1.schema.json",
+            "schema_version": "1.0.0",
+            "series_id": "series-candidate-competitor",
+            "series_hash": "bed05793dc3d1cdca3ed1f804169e873669ceb98e55af95c44ef7a1dccefcc2a",
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "source_economic_snapshot_hashes": [
+              "027682aee1ba10917fc329a02ee961d561df74577ae222502dc2715a6b18ccbd",
+              "d53ac03876eee4cef69c762e572feafec164d41fa6d0ca92237849ebc8b40719",
+              "6f1aec4d189caee9734be6eb7ae0fe6aa2d9738db487b33c88361b9d02c0e427",
+              "7dde9d10aa9d88ee1d74350c1f19d8b75f20db4c4511e20010a0b8cad3737d61",
+              "6df1b949922649c0a1bc5e2d02e71187a8c95670d2fe57268a4f8ed0158b82e2",
+              "57b22bfdfaa1b767560760f6edfb3948096cd88616e6367047474f9bdebd008b"
+            ],
+            "accounting_policy_id": "accounting-replay",
+            "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+            "cost_allocation_policy_id": "cost-replay",
+            "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+            "split_policy_id": "split-replay",
+            "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+            "statistical_design_policy_id": "statistics-replay",
+            "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+            "experiment_manifest_id": "experiment-replay",
+            "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+            "scope": {
+              "account_id": "account-statistical-decision",
+              "evaluation_ledger": "BASELINE_LEDGER",
+              "release_route": "BASELINE_ONLY",
+              "direction": "LONG",
+              "venue": "BINANCE_SPOT",
+              "deployment_line_id": "line-statistical-decision",
+              "deployment_line_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "evaluation_window_start": "2025-01-01T00:00:00Z",
+              "evaluation_window_end": "2025-01-07T00:00:00Z",
+              "recipe_release_id": "recipe-candidate-competitor",
+              "recipe_release_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "approved_production_capital_usdt": "1000",
+            "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+            "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+            "aggregation": "SUM",
+            "observations": [
+              {
+                "observation_id": "candidate-competitor-observation-0",
+                "period_start": "2025-01-01T00:00:00Z",
+                "period_end": "2025-01-02T00:00:00Z",
+                "value": "1",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "027682aee1ba10917fc329a02ee961d561df74577ae222502dc2715a6b18ccbd",
+                "fold_id": "fold-0"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-1",
+                "period_start": "2025-01-02T00:00:00Z",
+                "period_end": "2025-01-03T00:00:00Z",
+                "value": "1",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "d53ac03876eee4cef69c762e572feafec164d41fa6d0ca92237849ebc8b40719",
+                "fold_id": "fold-1"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-2",
+                "period_start": "2025-01-03T00:00:00Z",
+                "period_end": "2025-01-04T00:00:00Z",
+                "value": "2",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "6f1aec4d189caee9734be6eb7ae0fe6aa2d9738db487b33c88361b9d02c0e427",
+                "fold_id": "fold-2"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-3",
+                "period_start": "2025-01-04T00:00:00Z",
+                "period_end": "2025-01-05T00:00:00Z",
+                "value": "1",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "7dde9d10aa9d88ee1d74350c1f19d8b75f20db4c4511e20010a0b8cad3737d61",
+                "fold_id": "fold-3"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-4",
+                "period_start": "2025-01-05T00:00:00Z",
+                "period_end": "2025-01-06T00:00:00Z",
+                "value": "2",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "6df1b949922649c0a1bc5e2d02e71187a8c95670d2fe57268a4f8ed0158b82e2",
+                "fold_id": "fold-4"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-5",
+                "period_start": "2025-01-06T00:00:00Z",
+                "period_end": "2025-01-07T00:00:00Z",
+                "value": "1",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "57b22bfdfaa1b767560760f6edfb3948096cd88616e6367047474f9bdebd008b",
+                "fold_id": "fold-5"
+              }
+            ],
+            "bootstrap_design": {
+              "block_length": 2,
+              "minimum_block_count": 2,
+              "resample_count": 1000,
+              "seed": 29,
+              "confidence_level": "0.95",
+              "confidence_side": "LOWER_ONE_SIDED",
+              "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+              "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+            },
+            "generated_at": "2025-01-07T00:00:00Z",
+            "replay_verified": true
+          },
+          "source_series_hash": "bed05793dc3d1cdca3ed1f804169e873669ceb98e55af95c44ef7a1dccefcc2a"
+        },
+        {
+          "candidate_id": "candidate-current",
+          "candidate_status": "EVALUATED",
+          "recipe_release_id": "recipe-candidate-current",
+          "recipe_release_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_series_snapshot": {
+            "$schema": "./statistical-series-snapshot-v1.schema.json",
+            "schema_version": "1.0.0",
+            "series_id": "series-candidate-current",
+            "series_hash": "126a94fec3e1e546673b85e9c0a878d97c2ce6263dcde090c41030a4fc33f5bd",
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "source_economic_snapshot_hashes": [
+              "5e991b47ac488482598445f04dfff0efe0b7e1015e4ae4475a3f588c81da7c11",
+              "376b14cf38a4332798d3430517043147906b595ae7eccdb17f263db2db746b2c",
+              "3921e64c756738d298b075f464274b19c7b7b4ad93ed9d2c5b28ac9c63092f33",
+              "49d8e39ff1143f81656244b16d5e7ec598171cdc61138fbf3aa0865ccda480a4",
+              "4aefb5538bf5113d0d7023bcd0312cd8647173577ddca18ad8d6506fd39fcbac",
+              "4b5aa165b3e71a397ca95bcdfbd9a7fa11798a838935ce95fff99629f03ad69b"
+            ],
+            "accounting_policy_id": "accounting-replay",
+            "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+            "cost_allocation_policy_id": "cost-replay",
+            "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+            "split_policy_id": "split-replay",
+            "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+            "statistical_design_policy_id": "statistics-replay",
+            "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+            "experiment_manifest_id": "experiment-replay",
+            "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+            "scope": {
+              "account_id": "account-statistical-decision",
+              "evaluation_ledger": "BASELINE_LEDGER",
+              "release_route": "BASELINE_ONLY",
+              "direction": "LONG",
+              "venue": "BINANCE_SPOT",
+              "deployment_line_id": "line-statistical-decision",
+              "deployment_line_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "evaluation_window_start": "2025-01-01T00:00:00Z",
+              "evaluation_window_end": "2025-01-07T00:00:00Z",
+              "recipe_release_id": "recipe-candidate-current",
+              "recipe_release_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "approved_production_capital_usdt": "1000",
+            "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+            "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+            "aggregation": "SUM",
+            "observations": [
+              {
+                "observation_id": "candidate-current-observation-0",
+                "period_start": "2025-01-01T00:00:00Z",
+                "period_end": "2025-01-02T00:00:00Z",
+                "value": "4",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "5e991b47ac488482598445f04dfff0efe0b7e1015e4ae4475a3f588c81da7c11",
+                "fold_id": "fold-0"
+              },
+              {
+                "observation_id": "candidate-current-observation-1",
+                "period_start": "2025-01-02T00:00:00Z",
+                "period_end": "2025-01-03T00:00:00Z",
+                "value": "5",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "376b14cf38a4332798d3430517043147906b595ae7eccdb17f263db2db746b2c",
+                "fold_id": "fold-1"
+              },
+              {
+                "observation_id": "candidate-current-observation-2",
+                "period_start": "2025-01-03T00:00:00Z",
+                "period_end": "2025-01-04T00:00:00Z",
+                "value": "6",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "3921e64c756738d298b075f464274b19c7b7b4ad93ed9d2c5b28ac9c63092f33",
+                "fold_id": "fold-2"
+              },
+              {
+                "observation_id": "candidate-current-observation-3",
+                "period_start": "2025-01-04T00:00:00Z",
+                "period_end": "2025-01-05T00:00:00Z",
+                "value": "7",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "49d8e39ff1143f81656244b16d5e7ec598171cdc61138fbf3aa0865ccda480a4",
+                "fold_id": "fold-3"
+              },
+              {
+                "observation_id": "candidate-current-observation-4",
+                "period_start": "2025-01-05T00:00:00Z",
+                "period_end": "2025-01-06T00:00:00Z",
+                "value": "8",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "4aefb5538bf5113d0d7023bcd0312cd8647173577ddca18ad8d6506fd39fcbac",
+                "fold_id": "fold-4"
+              },
+              {
+                "observation_id": "candidate-current-observation-5",
+                "period_start": "2025-01-06T00:00:00Z",
+                "period_end": "2025-01-07T00:00:00Z",
+                "value": "9",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "4b5aa165b3e71a397ca95bcdfbd9a7fa11798a838935ce95fff99629f03ad69b",
+                "fold_id": "fold-5"
+              }
+            ],
+            "bootstrap_design": {
+              "block_length": 2,
+              "minimum_block_count": 2,
+              "resample_count": 1000,
+              "seed": 29,
+              "confidence_level": "0.95",
+              "confidence_side": "LOWER_ONE_SIDED",
+              "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+              "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+            },
+            "generated_at": "2025-01-07T00:00:00Z",
+            "replay_verified": true
+          },
+          "source_series_hash": "126a94fec3e1e546673b85e9c0a878d97c2ce6263dcde090c41030a4fc33f5bd"
+        }
+      ],
+      "trial_registry_hash": "3746b95649f5a81e9318e2ca11843e4864bc0c280848c1618e863fe10f0eff27",
+      "analysis_status": "COMPUTED",
+      "analysis_reason_codes": [],
+      "family_results": [
+        {
+          "candidate_id": "candidate-competitor",
+          "candidate_status": "EVALUATED",
+          "raw_p_value": "0.000999000999000999000999000999000999000999000999001",
+          "holm_rank": 1,
+          "holm_threshold": "0.016666666666666666666666666666666666666666666666667",
+          "step_reached": true,
+          "rejected": true
+        },
+        {
+          "candidate_id": "candidate-current",
+          "candidate_status": "EVALUATED",
+          "raw_p_value": "0.000999000999000999000999000999000999000999000999001",
+          "holm_rank": 2,
+          "holm_threshold": "0.025",
+          "step_reached": true,
+          "rejected": true
+        },
+        {
+          "candidate_id": "candidate-aborted",
+          "candidate_status": "ABORTED",
+          "raw_p_value": "1",
+          "holm_rank": 3,
+          "holm_threshold": "0.05",
+          "step_reached": true,
+          "rejected": false
+        }
+      ],
+      "current_candidate_results": {
+        "observed_statistic": "39",
+        "effective_event_count": 2,
+        "ci_lower": "29",
+        "ci_upper": "49",
+        "ci_width": "20",
+        "holm_adjusted_alpha": "0.025",
+        "holm_rejected": true,
+        "minimum_economic_effect": "2",
+        "achieved_power": "0.031"
+      },
+      "generated_at": "2025-01-07T00:00:00Z",
+      "replay_verified": true
+    },
+    "statistical-decision-inconclusive": {
+      "$schema": "./statistical-decision-snapshot-v1.schema.json",
+      "schema_version": "1.0.0",
+      "snapshot_id": "statistical-decision-fixture",
+      "snapshot_hash": "84197632d3a279b8277a585edd6df92bc55f69d328f09e1b95d8e7236fe744f4",
+      "hash_algorithm": "SHA-256",
+      "canonicalization": "RFC8785_JCS",
+      "trial_family_id": "trial-family-statistical-decision",
+      "current_candidate_id": "candidate-current",
+      "release_gate_policy_id": "release-gates-v1.1",
+      "release_gate_policy_version": "1.1.5",
+      "metric_catalog_id": "release-metrics-v1.1",
+      "metric_catalog_version": "1.1.5",
+      "statistical_design_policy_id": "statistics-replay",
+      "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+      "experiment_manifest_id": "experiment-replay",
+      "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+      "scope": {
+        "account_id": "account-statistical-decision",
+        "evaluation_ledger": "BASELINE_LEDGER",
+        "release_route": "BASELINE_ONLY",
+        "direction": "LONG",
+        "venue": "BINANCE_SPOT",
+        "deployment_line_id": "line-statistical-decision",
+        "deployment_line_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "evaluation_window_start": "2025-01-01T00:00:00Z",
+        "evaluation_window_end": "2025-01-07T00:00:00Z",
+        "approved_production_capital_usdt": "1000",
+        "endpoint_id": "PRIMARY_NET_GROWTH",
+        "endpoint_unit": "log_growth",
+        "endpoint_direction": "GREATER"
+      },
+      "design": {
+        "minimum_economic_effect": "2",
+        "null_boundary": "0",
+        "confidence_level": "0.95",
+        "confidence_side": "TWO_SIDED",
+        "ci_method": "PERCENTILE_MBB_V1",
+        "raw_p_value_method": "CENTERED_MBB_GREATER_ADD_ONE_V1",
+        "power_method": "SHIFTED_CENTERED_MBB_AT_MERE_V1",
+        "effective_sample_method": "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1",
+        "multiple_testing_method": "HOLM_V1",
+        "family_wise_alpha": "0.05",
+        "block_length": 2,
+        "minimum_block_count": 2,
+        "resample_count": 1000,
+        "seed": 29,
+        "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+        "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+      },
+      "actual_total_trials": 3,
+      "trial_registry": [
+        {
+          "candidate_id": "candidate-aborted",
+          "candidate_status": "ABORTED",
+          "recipe_release_id": "recipe-candidate-aborted",
+          "recipe_release_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "source_series_snapshot": null,
+          "source_series_hash": null
+        },
+        {
+          "candidate_id": "candidate-competitor",
+          "candidate_status": "EVALUATED",
+          "recipe_release_id": "recipe-candidate-competitor",
+          "recipe_release_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_series_snapshot": {
+            "$schema": "./statistical-series-snapshot-v1.schema.json",
+            "schema_version": "1.0.0",
+            "series_id": "series-candidate-competitor",
+            "series_hash": "bed05793dc3d1cdca3ed1f804169e873669ceb98e55af95c44ef7a1dccefcc2a",
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "source_economic_snapshot_hashes": [
+              "027682aee1ba10917fc329a02ee961d561df74577ae222502dc2715a6b18ccbd",
+              "d53ac03876eee4cef69c762e572feafec164d41fa6d0ca92237849ebc8b40719",
+              "6f1aec4d189caee9734be6eb7ae0fe6aa2d9738db487b33c88361b9d02c0e427",
+              "7dde9d10aa9d88ee1d74350c1f19d8b75f20db4c4511e20010a0b8cad3737d61",
+              "6df1b949922649c0a1bc5e2d02e71187a8c95670d2fe57268a4f8ed0158b82e2",
+              "57b22bfdfaa1b767560760f6edfb3948096cd88616e6367047474f9bdebd008b"
+            ],
+            "accounting_policy_id": "accounting-replay",
+            "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+            "cost_allocation_policy_id": "cost-replay",
+            "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+            "split_policy_id": "split-replay",
+            "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+            "statistical_design_policy_id": "statistics-replay",
+            "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+            "experiment_manifest_id": "experiment-replay",
+            "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+            "scope": {
+              "account_id": "account-statistical-decision",
+              "evaluation_ledger": "BASELINE_LEDGER",
+              "release_route": "BASELINE_ONLY",
+              "direction": "LONG",
+              "venue": "BINANCE_SPOT",
+              "deployment_line_id": "line-statistical-decision",
+              "deployment_line_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "evaluation_window_start": "2025-01-01T00:00:00Z",
+              "evaluation_window_end": "2025-01-07T00:00:00Z",
+              "recipe_release_id": "recipe-candidate-competitor",
+              "recipe_release_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "approved_production_capital_usdt": "1000",
+            "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+            "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+            "aggregation": "SUM",
+            "observations": [
+              {
+                "observation_id": "candidate-competitor-observation-0",
+                "period_start": "2025-01-01T00:00:00Z",
+                "period_end": "2025-01-02T00:00:00Z",
+                "value": "1",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "027682aee1ba10917fc329a02ee961d561df74577ae222502dc2715a6b18ccbd",
+                "fold_id": "fold-0"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-1",
+                "period_start": "2025-01-02T00:00:00Z",
+                "period_end": "2025-01-03T00:00:00Z",
+                "value": "1",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "d53ac03876eee4cef69c762e572feafec164d41fa6d0ca92237849ebc8b40719",
+                "fold_id": "fold-1"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-2",
+                "period_start": "2025-01-03T00:00:00Z",
+                "period_end": "2025-01-04T00:00:00Z",
+                "value": "2",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "6f1aec4d189caee9734be6eb7ae0fe6aa2d9738db487b33c88361b9d02c0e427",
+                "fold_id": "fold-2"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-3",
+                "period_start": "2025-01-04T00:00:00Z",
+                "period_end": "2025-01-05T00:00:00Z",
+                "value": "1",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "7dde9d10aa9d88ee1d74350c1f19d8b75f20db4c4511e20010a0b8cad3737d61",
+                "fold_id": "fold-3"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-4",
+                "period_start": "2025-01-05T00:00:00Z",
+                "period_end": "2025-01-06T00:00:00Z",
+                "value": "2",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "6df1b949922649c0a1bc5e2d02e71187a8c95670d2fe57268a4f8ed0158b82e2",
+                "fold_id": "fold-4"
+              },
+              {
+                "observation_id": "candidate-competitor-observation-5",
+                "period_start": "2025-01-06T00:00:00Z",
+                "period_end": "2025-01-07T00:00:00Z",
+                "value": "1",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "57b22bfdfaa1b767560760f6edfb3948096cd88616e6367047474f9bdebd008b",
+                "fold_id": "fold-5"
+              }
+            ],
+            "bootstrap_design": {
+              "block_length": 2,
+              "minimum_block_count": 2,
+              "resample_count": 1000,
+              "seed": 29,
+              "confidence_level": "0.95",
+              "confidence_side": "LOWER_ONE_SIDED",
+              "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+              "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+            },
+            "generated_at": "2025-01-07T00:00:00Z",
+            "replay_verified": true
+          },
+          "source_series_hash": "bed05793dc3d1cdca3ed1f804169e873669ceb98e55af95c44ef7a1dccefcc2a"
+        },
+        {
+          "candidate_id": "candidate-current",
+          "candidate_status": "EVALUATED",
+          "recipe_release_id": "recipe-candidate-current",
+          "recipe_release_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_series_snapshot": {
+            "$schema": "./statistical-series-snapshot-v1.schema.json",
+            "schema_version": "1.0.0",
+            "series_id": "series-candidate-current",
+            "series_hash": "d4d9bbd1678ac758299af3b858be5bed92c3492da824d2d87bce30972343a614",
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "source_economic_snapshot_hashes": [
+              "5e991b47ac488482598445f04dfff0efe0b7e1015e4ae4475a3f588c81da7c11",
+              "376b14cf38a4332798d3430517043147906b595ae7eccdb17f263db2db746b2c",
+              "3921e64c756738d298b075f464274b19c7b7b4ad93ed9d2c5b28ac9c63092f33"
+            ],
+            "accounting_policy_id": "accounting-replay",
+            "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+            "cost_allocation_policy_id": "cost-replay",
+            "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+            "split_policy_id": "split-replay",
+            "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+            "statistical_design_policy_id": "statistics-replay",
+            "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+            "experiment_manifest_id": "experiment-replay",
+            "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+            "scope": {
+              "account_id": "account-statistical-decision",
+              "evaluation_ledger": "BASELINE_LEDGER",
+              "release_route": "BASELINE_ONLY",
+              "direction": "LONG",
+              "venue": "BINANCE_SPOT",
+              "deployment_line_id": "line-statistical-decision",
+              "deployment_line_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "evaluation_window_start": "2025-01-01T00:00:00Z",
+              "evaluation_window_end": "2025-01-07T00:00:00Z",
+              "recipe_release_id": "recipe-candidate-current",
+              "recipe_release_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "approved_production_capital_usdt": "1000",
+            "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+            "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+            "aggregation": "SUM",
+            "observations": [
+              {
+                "observation_id": "candidate-current-observation-0",
+                "period_start": "2025-01-01T00:00:00Z",
+                "period_end": "2025-01-03T00:00:00Z",
+                "value": "1",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "5e991b47ac488482598445f04dfff0efe0b7e1015e4ae4475a3f588c81da7c11",
+                "fold_id": "fold-0"
+              },
+              {
+                "observation_id": "candidate-current-observation-1",
+                "period_start": "2025-01-03T00:00:00Z",
+                "period_end": "2025-01-05T00:00:00Z",
+                "value": "2",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "376b14cf38a4332798d3430517043147906b595ae7eccdb17f263db2db746b2c",
+                "fold_id": "fold-1"
+              },
+              {
+                "observation_id": "candidate-current-observation-2",
+                "period_start": "2025-01-05T00:00:00Z",
+                "period_end": "2025-01-07T00:00:00Z",
+                "value": "3",
+                "calendar_month_complete": false,
+                "source_economic_snapshot_hash": "3921e64c756738d298b075f464274b19c7b7b4ad93ed9d2c5b28ac9c63092f33",
+                "fold_id": "fold-2"
+              }
+            ],
+            "bootstrap_design": {
+              "block_length": 2,
+              "minimum_block_count": 2,
+              "resample_count": 1000,
+              "seed": 29,
+              "confidence_level": "0.95",
+              "confidence_side": "LOWER_ONE_SIDED",
+              "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+              "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+            },
+            "generated_at": "2025-01-07T00:00:00Z",
+            "replay_verified": true
+          },
+          "source_series_hash": "d4d9bbd1678ac758299af3b858be5bed92c3492da824d2d87bce30972343a614"
+        }
+      ],
+      "trial_registry_hash": "20762a3763decde90622e30b90e61e52e2f89f0b0f780ba52ea349831c920d9e",
+      "analysis_status": "INCONCLUSIVE",
+      "analysis_reason_codes": [
+        "STATISTICAL_DECISION_INSUFFICIENT_BLOCKS:candidate-current"
+      ],
+      "family_results": [],
+      "current_candidate_results": null,
+      "generated_at": "2025-01-07T00:00:00Z",
+      "replay_verified": true
     }
   },
   "vectors": [
@@ -2964,7 +3584,79 @@
       "expected_reason_codes": [
         "TRADE_REPLAY_FUNDING_POSITION_MISMATCH"
       ]
+    },
+    {
+      "vector_id": "statistical-decision-power-computed",
+      "estimator_id": "ACHIEVED_POWER_AT_MERE_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "statistical_decision_snapshot": "statistical-decision-computed"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "0.031",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "statistical-decision-power-inconclusive",
+      "estimator_id": "ACHIEVED_POWER_AT_MERE_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "statistical_decision_snapshot": "statistical-decision-inconclusive"
+      },
+      "expected_status": "INCONCLUSIVE",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "STATISTICAL_DECISION_INSUFFICIENT_BLOCKS:candidate-current"
+      ]
+    },
+    {
+      "vector_id": "statistical-decision-ci-computed",
+      "estimator_id": "PRIMARY_ENDPOINT_CI_WIDTH_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "statistical_decision_snapshot": "statistical-decision-computed"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "20",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "statistical-decision-ci-inconclusive",
+      "estimator_id": "PRIMARY_ENDPOINT_CI_WIDTH_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "statistical_decision_snapshot": "statistical-decision-inconclusive"
+      },
+      "expected_status": "INCONCLUSIVE",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "STATISTICAL_DECISION_INSUFFICIENT_BLOCKS:candidate-current"
+      ]
+    },
+    {
+      "vector_id": "statistical-decision-holm-computed",
+      "estimator_id": "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "statistical_decision_snapshot": "statistical-decision-computed"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": true,
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "statistical-decision-holm-inconclusive",
+      "estimator_id": "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "statistical_decision_snapshot": "statistical-decision-inconclusive"
+      },
+      "expected_status": "INCONCLUSIVE",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "STATISTICAL_DECISION_INSUFFICIENT_BLOCKS:candidate-current"
+      ]
     }
   ],
-  "bundle_hash": "3f5612b9e37ee98c6778403324114188738b6b9dea506186d0e6eeb73235b86f"
+  "bundle_hash": "7f6d6afb492bb964302309e8e3763c577d5dc5352a39c8228382be6931e3924f"
 }

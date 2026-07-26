@@ -34,6 +34,11 @@ from .statistics import (
     one_sided_95_moving_block_bootstrap,
     one_sided_95_paired_moving_block_bootstrap,
 )
+from .statistical_decision import (
+    achieved_power_at_mere,
+    holm_family_adjusted_primary_pass,
+    primary_endpoint_ci_width,
+)
 from .trade_replay import (
     leave_top_5_positive_trades_out_mbb_lcb95,
 )
@@ -209,6 +214,11 @@ _CALLABLES: Mapping[
     "leave_top_5_positive_trades_out_mbb_lcb95": (
         leave_top_5_positive_trades_out_mbb_lcb95
     ),
+    "achieved_power_at_mere": achieved_power_at_mere,
+    "primary_endpoint_ci_width": primary_endpoint_ci_width,
+    "holm_family_adjusted_primary_pass": (
+        holm_family_adjusted_primary_pass
+    ),
 }
 
 
@@ -225,6 +235,7 @@ class EstimatorRegistry:
         statistical_series_schema: Mapping[str, Any],
         endpoint_reevaluation_schema: Mapping[str, Any],
         trade_replay_schema: Mapping[str, Any],
+        statistical_decision_schema: Mapping[str, Any],
     ) -> None:
         self.registry = registry
         self.golden_vectors = golden_vectors
@@ -233,6 +244,7 @@ class EstimatorRegistry:
         self.statistical_series_schema = statistical_series_schema
         self.endpoint_reevaluation_schema = endpoint_reevaluation_schema
         self.trade_replay_schema = trade_replay_schema
+        self.statistical_decision_schema = statistical_decision_schema
         self.registry_hash = registry["registry_hash"]
         self.golden_bundle_hash = golden_vectors["bundle_hash"]
         self._implementations = {
@@ -266,12 +278,16 @@ class EstimatorRegistry:
         trade_replay_schema = _load_json_strict(
             config_dir / "trade-replay-snapshot-v1.schema.json"
         )
+        statistical_decision_schema = _load_json_strict(
+            config_dir / "statistical-decision-snapshot-v1.schema.json"
+        )
         Draft202012Validator.check_schema(registry_schema)
         Draft202012Validator.check_schema(golden_schema)
         Draft202012Validator.check_schema(economic_snapshot_schema)
         Draft202012Validator.check_schema(statistical_series_schema)
         Draft202012Validator.check_schema(endpoint_reevaluation_schema)
         Draft202012Validator.check_schema(trade_replay_schema)
+        Draft202012Validator.check_schema(statistical_decision_schema)
         registry = _load_json_strict(config_dir / "estimator-registry-v1.json")
         golden = _load_json_strict(
             config_dir / "estimator-golden-vectors-v1.json"
@@ -354,6 +370,7 @@ class EstimatorRegistry:
             statistical_series_schema=statistical_series_schema,
             endpoint_reevaluation_schema=endpoint_reevaluation_schema,
             trade_replay_schema=trade_replay_schema,
+            statistical_decision_schema=statistical_decision_schema,
         )
         report = instance.run_golden_vectors()
         if not report.passed:
@@ -485,6 +502,21 @@ class EstimatorRegistry:
                     "FAIL",
                     None,
                     ("TRADE_REPLAY_SCHEMA_INVALID",),
+                )
+        if "statistical_decision_snapshot" in required_fields:
+            decision = inputs["statistical_decision_snapshot"]
+            errors = list(
+                Draft202012Validator(
+                    self.statistical_decision_schema
+                ).iter_errors(decision)
+            )
+            if errors:
+                return self._execution(
+                    estimator_id,
+                    implementation,
+                    "FAIL",
+                    None,
+                    ("STATISTICAL_DECISION_SCHEMA_INVALID",),
                 )
         status, value, reasons = _CALLABLES[implementation["callable_id"]](inputs)
         return self._execution(

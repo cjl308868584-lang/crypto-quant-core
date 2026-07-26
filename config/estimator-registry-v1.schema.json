@@ -127,7 +127,10 @@
             "cash_flow_adjusted_economic_log_growth",
             "leave_max_positive_delta_fold_out_endpoint_reevaluation",
             "leave_max_positive_delta_event_out_endpoint_reevaluation",
-            "leave_top_5_positive_trades_out_mbb_lcb95"
+            "leave_top_5_positive_trades_out_mbb_lcb95",
+            "achieved_power_at_mere",
+            "primary_endpoint_ci_width",
+            "holm_family_adjusted_primary_pass"
           ]
         },
         "input_fields": {

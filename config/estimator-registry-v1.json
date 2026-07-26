@@ -2,7 +2,7 @@
   "$schema": "./estimator-registry-v1.schema.json",
   "schema_version": "1.0.0",
   "registry_id": "estimator-registry-v1",
-  "registry_version": "1.5.0",
+  "registry_version": "1.6.0",
   "metric_catalog_id": "release-metrics-v1.1",
   "metric_catalog_version": "1.1.4",
   "status": "BUILD_CANDIDATE",
@@ -352,7 +352,55 @@
         "trade-replay-top5-inconclusive",
         "trade-replay-top5-funding-mismatch"
       ]
+    },
+    {
+      "estimator_id": "ACHIEVED_POWER_AT_MERE_V1",
+      "implementation_id": "statistical_decision.achieved-power-at-mere",
+      "implementation_version": "1.0.0",
+      "callable_id": "achieved_power_at_mere",
+      "input_fields": [
+        "statistical_decision_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "statistical-decision-power-computed",
+        "statistical-decision-power-inconclusive"
+      ]
+    },
+    {
+      "estimator_id": "PRIMARY_ENDPOINT_CI_WIDTH_V1",
+      "implementation_id": "statistical_decision.primary-endpoint-ci-width",
+      "implementation_version": "1.0.0",
+      "callable_id": "primary_endpoint_ci_width",
+      "input_fields": [
+        "statistical_decision_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "statistical-decision-ci-computed",
+        "statistical-decision-ci-inconclusive"
+      ]
+    },
+    {
+      "estimator_id": "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1",
+      "implementation_id": "statistical_decision.holm-family-adjusted-primary-pass",
+      "implementation_version": "1.0.0",
+      "callable_id": "holm_family_adjusted_primary_pass",
+      "input_fields": [
+        "statistical_decision_snapshot"
+      ],
+      "output_type": "boolean",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "statistical-decision-holm-computed",
+        "statistical-decision-holm-inconclusive"
+      ]
     }
   ],
-  "registry_hash": "8c408b5d565158dcb89983e8491a849763f200dab82e5571e971e1e1b1fa2d58"
+  "registry_hash": "f200716395079175205c577976264ec57990465aa50bec7756089cc2a6078bad"
 }

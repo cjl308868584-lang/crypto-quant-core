@@ -684,6 +684,12 @@
       "formula": "upper_confidence_bound - lower_confidence_bound",
       "endpoint_and_unit_source": "StatisticalDesignPolicy"
     },
+    "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1": {
+      "family_source": "StatisticalDecisionSnapshot cumulative trial registry",
+      "method": "HOLM_STEP_DOWN",
+      "familywise_alpha_source": "ReleaseGatePolicy",
+      "missing_or_incomplete_family": "FAIL"
+    },
     "RELEASE_INPUT_FREEZE_ORDER_VALIDATION_V1": {
       "inputs": "GateEvidence first_result_revealed_at, every frozen_release_inputs freezeProof, and the signed approved_capital_and_break_even_plan payload containing the exact capital-grid specification plus approved_production_capital_usdt, actual_deployable_capital_usdt and break_even_capital_lcb_root_usdt",
       "required_order": "every frozen_at is earlier than or equal to first_result_revealed_at, and an equal timestamp requires the signed append-only event sequence to place the freeze before the reveal",

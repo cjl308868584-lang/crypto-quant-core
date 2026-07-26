@@ -14,7 +14,10 @@ from crypto_quant.trade_replay import (
     trade_replay_snapshot_hash,
 )
 
-from tests.factories import complete_trade_replay_inputs
+from tests.factories import (
+    complete_trade_replay_inputs,
+    make_statistical_decision_snapshot,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,16 +39,16 @@ class EstimatorRegistryTests(unittest.TestCase):
         self.assertEqual(self.catalog["catalog_version"], "1.1.4")
         self.assertEqual(
             self.registry.registry["registry_version"],
-            "1.5.0",
+            "1.6.0",
         )
         self.assertEqual(all_ids, executable | unavailable)
         self.assertFalse(executable & unavailable)
-        self.assertEqual(len(all_ids), 57)
-        self.assertEqual(len(executable), 21)
-        self.assertEqual(len(unavailable), 36)
+        self.assertEqual(len(all_ids), 58)
+        self.assertEqual(len(executable), 24)
+        self.assertEqual(len(unavailable), 34)
 
         unavailable_result = self.registry.execute(
-            "ACHIEVED_POWER_AT_MERE_V1",
+            "DEFLATED_SHARPE_CONFIDENCE_V1",
             {},
         )
         self.assertEqual(unavailable_result.status, "FAIL")
@@ -171,15 +174,45 @@ class EstimatorRegistryTests(unittest.TestCase):
             ("TRADE_REPLAY_SELECTION_MISMATCH",),
         )
 
+    def test_statistical_decision_estimators_are_executable(self):
+        snapshot = make_statistical_decision_snapshot()
+        expected = {
+            "ACHIEVED_POWER_AT_MERE_V1": "0.031",
+            "PRIMARY_ENDPOINT_CI_WIDTH_V1": "20",
+            "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1": True,
+        }
+
+        for estimator_id, expected_value in expected.items():
+            with self.subTest(estimator_id=estimator_id):
+                self.assertTrue(self.registry.is_executable(estimator_id))
+                execution = self.registry.execute(
+                    estimator_id,
+                    {"statistical_decision_snapshot": snapshot},
+                )
+                self.assertEqual(execution.status, "COMPUTED")
+                self.assertEqual(execution.value, expected_value)
+                self.assertEqual(execution.reason_codes, ())
+
+        schema_invalid = deepcopy(snapshot)
+        schema_invalid["uploaded_power_claim"] = "1"
+        rejected = self.registry.execute(
+            "ACHIEVED_POWER_AT_MERE_V1",
+            {"statistical_decision_snapshot": schema_invalid},
+        )
+        self.assertEqual(
+            rejected.reason_codes,
+            ("STATISTICAL_DECISION_SCHEMA_INVALID",),
+        )
+
     def test_golden_vectors_are_deterministic(self):
         reports = [self.registry.run_golden_vectors() for _ in range(100)]
         self.assertTrue(all(report.passed for report in reports))
-        self.assertEqual({report.vector_count for report in reports}, {33})
+        self.assertEqual({report.vector_count for report in reports}, {39})
         self.assertEqual(
             {report.report_hash for report in reports},
             {
-                "9f2ea54d11e968beac2e3870f3bb1488"
-                "cda0829507d2f5d670299db656b2f25b"
+                "567f277c621698ab9a601833c1ca4c4b"
+                "58aaaecbb5a41a5bcb406b219b7994c6"
             },
         )
 

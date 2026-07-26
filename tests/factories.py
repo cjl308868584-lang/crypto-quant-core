@@ -636,3 +636,23 @@ def statistical_decision_inputs(
         "expected_actual_total_trials": len(registry),
         "expected_trial_registry_hash": business_hash(registry_projection),
     }
+
+
+def make_statistical_decision_snapshot(**fixture_overrides):
+    from crypto_quant.statistical_decision import (
+        build_statistical_decision_snapshot,
+    )
+
+    return build_statistical_decision_snapshot(
+        snapshot_id="statistical-decision-fixture",
+        release_gate_policy_id="release-gates-v1.1",
+        release_gate_policy_version="1.1.5",
+        metric_catalog_id="release-metrics-v1.1",
+        metric_catalog_version="1.1.5",
+        statistical_design_policy_id="statistics-replay",
+        statistical_design_policy_hash="6" * 64,
+        experiment_manifest_id="experiment-replay",
+        experiment_manifest_hash="7" * 64,
+        generated_at="2025-01-07T00:00:00Z",
+        **statistical_decision_inputs(**fixture_overrides),
+    )
