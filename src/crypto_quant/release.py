@@ -29,6 +29,7 @@ from .release_artifacts import (
     validate_experiment_manifest,
     validate_supporting_observation_bundle,
 )
+from .paired_risk import paired_risk_evaluation_snapshot_reasons
 from .trade_replay import trade_replay_snapshot_reasons
 from .statistical_decision import (
     statistical_decision_snapshot_reasons,
@@ -70,6 +71,12 @@ _STATISTICAL_DECISION_ESTIMATOR_IDS = frozenset(
         "ACHIEVED_POWER_AT_MERE_V1",
         "PRIMARY_ENDPOINT_CI_WIDTH_V1",
         "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1",
+    }
+)
+_PAIRED_RISK_ESTIMATOR_IDS = frozenset(
+    {
+        "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1",
+        "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1",
     }
 )
 
@@ -261,6 +268,7 @@ class PolicyBundle:
         "endpoint-reevaluation-snapshot-v1.schema.json",
         "trade-replay-snapshot-v1.schema.json",
         "statistical-decision-snapshot-v1.schema.json",
+        "paired-risk-evaluation-snapshot-v1.schema.json",
         "model-bundle-v1.1.schema.json",
         "approved-fallback-registry-v1.1.schema.json",
     )
@@ -1206,6 +1214,9 @@ class PolicyBundle:
         statistical_decision_snapshot: Optional[
             Mapping[str, Any]
         ] = None,
+        paired_risk_evaluation_snapshot: Optional[
+            Mapping[str, Any]
+        ] = None,
     ) -> Mapping[str, Any]:
         if estimator_id == "ACTUAL_DEPLOYABLE_CAPITAL_V1":
             return {
@@ -1264,6 +1275,12 @@ class PolicyBundle:
         if estimator_id in _TRADE_REPLAY_ESTIMATOR_IDS:
             return {
                 "trade_replay_snapshot": trade_replay_snapshot,
+            }
+        if estimator_id in _PAIRED_RISK_ESTIMATOR_IDS:
+            return {
+                "paired_risk_evaluation_snapshot": (
+                    paired_risk_evaluation_snapshot
+                ),
             }
         if estimator_id in _ENDPOINT_REEVALUATION_ESTIMATOR_IDS:
             is_audit = (
@@ -1736,6 +1753,145 @@ class PolicyBundle:
             reasons.append("TRADE_REPLAY_COUNTERFACTUAL_SERIES_MISSING")
         if not required_sources.issubset(artifact_set):
             reasons.append("TRADE_REPLAY_SOURCE_HASH_MISSING")
+        return tuple(sorted(set(reasons)))
+
+    def _paired_risk_reference_reasons(
+        self,
+        evidence: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+    ) -> Tuple[str, ...]:
+        snapshot = trust.artifact_documents.get(
+            "paired_risk_evaluation_snapshot"
+        )
+        if not isinstance(snapshot, Mapping):
+            return ("PAIRED_RISK_DOCUMENT_MISSING",)
+        reasons: List[str] = list(
+            self._artifact_schema_reasons(
+                "paired-risk-evaluation-snapshot-v1.schema.json",
+                snapshot,
+                "PAIRED_RISK",
+            )
+        )
+        reasons.extend(paired_risk_evaluation_snapshot_reasons(snapshot))
+        frozen = evidence.get("frozen_release_inputs")
+        proof = (
+            frozen.get("paired_risk_evaluation_snapshot")
+            if isinstance(frozen, Mapping)
+            else None
+        )
+        if not isinstance(proof, Mapping):
+            reasons.append("PAIRED_RISK_FREEZE_PROOF_MISSING")
+        else:
+            if proof.get("artifact_id") != snapshot.get("snapshot_id"):
+                reasons.append("PAIRED_RISK_FREEZE_ID_MISMATCH")
+            if proof.get("artifact_hash") != snapshot.get("snapshot_hash"):
+                reasons.append("PAIRED_RISK_FREEZE_HASH_MISMATCH")
+        if trust.artifact_hashes.get(
+            "paired_risk_evaluation_snapshot"
+        ) != snapshot.get("snapshot_hash"):
+            reasons.append("PAIRED_RISK_TRUST_HASH_MISMATCH")
+
+        scope = snapshot.get("scope")
+        if not isinstance(scope, Mapping):
+            reasons.append("PAIRED_RISK_SCOPE_MISSING")
+            scope = {}
+        for name in (
+            "evaluation_ledger",
+            "release_route",
+            "direction",
+            "venue",
+            "recipe_release_id",
+            "recipe_release_hash",
+            "deployment_line_id",
+            "deployment_line_hash",
+            "evaluation_window_start",
+            "evaluation_window_end",
+        ):
+            if scope.get(name) != evidence.get(name):
+                reasons.append(f"PAIRED_RISK_SCOPE_MISMATCH:{name}")
+        if snapshot.get("ai_endpoint") != evidence.get("ai_endpoint"):
+            reasons.append("PAIRED_RISK_ENDPOINT_MISMATCH")
+        candidate = snapshot.get("candidate_arm")
+        if not isinstance(candidate, Mapping):
+            reasons.append("PAIRED_RISK_CANDIDATE_MISSING")
+        elif (
+            candidate.get("subject_id") != evidence.get("model_bundle_id")
+            or candidate.get("subject_hash")
+            != evidence.get("model_bundle_hash")
+        ):
+            reasons.append("PAIRED_RISK_CANDIDATE_MODEL_MISMATCH")
+
+        claimed = evidence.get("policy_binding_hashes")
+        if not isinstance(claimed, Mapping):
+            claimed = {}
+        for snapshot_field, binding_name in {
+            "accounting_policy_hash": "accounting_policy_id",
+            "cost_allocation_policy_hash": "cost_allocation_policy_id",
+            "split_policy_hash": "split_policy_id",
+            "statistical_design_policy_hash": (
+                "statistical_design_policy_id"
+            ),
+        }.items():
+            if snapshot.get(snapshot_field) != claimed.get(binding_name):
+                reasons.append(
+                    f"PAIRED_RISK_POLICY_MISMATCH:{binding_name}"
+                )
+        if (
+            snapshot.get("experiment_manifest_id")
+            != evidence.get("experiment_manifest_id")
+            or snapshot.get("experiment_manifest_hash")
+            != evidence.get("experiment_manifest_hash")
+        ):
+            reasons.append("PAIRED_RISK_EXPERIMENT_MISMATCH")
+        if not self._same_business_value(
+            snapshot.get("approved_production_capital_usdt"),
+            evidence.get("approved_production_capital_usdt"),
+        ):
+            reasons.append("PAIRED_RISK_APPROVED_CAPITAL_MISMATCH")
+
+        reference = snapshot.get("reference_arm")
+        comparison = snapshot.get("comparison_role")
+        experiment = trust.artifact_documents.get("experiment_manifest")
+        if comparison == "AI_VS_RECIPE_BASELINE":
+            if not isinstance(reference, Mapping) or not isinstance(
+                experiment,
+                Mapping,
+            ):
+                reasons.append("PAIRED_RISK_BASELINE_REFERENCE_MISSING")
+            elif (
+                reference.get("subject_id")
+                != experiment.get("baseline_recipe_release_id")
+                or reference.get("subject_hash")
+                != experiment.get("baseline_recipe_release_hash")
+            ):
+                reasons.append("PAIRED_RISK_BASELINE_RECIPE_MISMATCH")
+        elif comparison == "MINOR_CANDIDATE_VS_ACTIVE_BUNDLE":
+            if not isinstance(reference, Mapping) or (
+                reference.get("subject_id")
+                != evidence.get("active_model_bundle_id")
+                or reference.get("subject_hash")
+                != evidence.get("active_model_bundle_hash")
+            ):
+                reasons.append("PAIRED_RISK_ACTIVE_BUNDLE_MISMATCH")
+
+        artifact_hashes = evidence.get("artifact_hashes")
+        artifact_set = (
+            set(artifact_hashes) if isinstance(artifact_hashes, list) else set()
+        )
+        required_sources: Set[Any] = {snapshot.get("snapshot_hash")}
+        for arm_name in ("reference_arm", "candidate_arm"):
+            arm = snapshot.get(arm_name)
+            if isinstance(arm, Mapping):
+                arm_series = arm.get("statistical_series_snapshot")
+                if isinstance(arm_series, Mapping):
+                    required_sources.add(arm_series.get("series_hash"))
+        economic_hashes = snapshot.get("source_economic_snapshot_hashes")
+        if isinstance(economic_hashes, list):
+            required_sources.update(economic_hashes)
+        else:
+            reasons.append("PAIRED_RISK_SOURCE_LIST_INVALID")
+        if not required_sources.issubset(artifact_set):
+            reasons.append("PAIRED_RISK_SOURCE_HASH_MISSING")
         return tuple(sorted(set(reasons)))
 
     def _statistical_decision_reference_reasons(
@@ -2358,6 +2514,9 @@ class PolicyBundle:
                 statistical_decision = trust.artifact_documents.get(
                     "statistical_decision_snapshot"
                 )
+                paired_risk = trust.artifact_documents.get(
+                    "paired_risk_evaluation_snapshot"
+                )
                 if definition["estimator_id"] in (
                     _ECONOMIC_SNAPSHOT_ESTIMATOR_IDS
                 ):
@@ -2404,6 +2563,15 @@ class PolicyBundle:
                             trust,
                         )
                     )
+                if definition["estimator_id"] in (
+                    _PAIRED_RISK_ESTIMATOR_IDS
+                ):
+                    reasons.extend(
+                        self._paired_risk_reference_reasons(
+                            evidence,
+                            trust,
+                        )
+                    )
                 estimator_inputs = self._estimator_inputs(
                     definition["estimator_id"],
                     gate["metric_id"],
@@ -2438,6 +2606,11 @@ class PolicyBundle:
                     statistical_decision_snapshot=(
                         statistical_decision
                         if isinstance(statistical_decision, Mapping)
+                        else None
+                    ),
+                    paired_risk_evaluation_snapshot=(
+                        paired_risk
+                        if isinstance(paired_risk, Mapping)
                         else None
                     ),
                 )

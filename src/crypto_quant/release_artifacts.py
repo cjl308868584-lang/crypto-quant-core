@@ -97,6 +97,10 @@ def load_release_artifact_schemas(
             Path(config_dir)
             / "statistical-decision-snapshot-v1.schema.json"
         ),
+        "paired_risk_evaluation_snapshot": _load_json_strict(
+            Path(config_dir)
+            / "paired-risk-evaluation-snapshot-v1.schema.json"
+        ),
     }
     for schema in schemas.values():
         Draft202012Validator.check_schema(schema)
@@ -852,6 +856,125 @@ def validate_supporting_observation_bundle(
             ):
                 reasons.append(
                     f"SUPPORTING_STATISTICAL_SOURCE_INCOMPLETE:{metric_id}"
+                )
+        paired_risk = (
+            inputs.get("paired_risk_evaluation_snapshot")
+            if isinstance(inputs, Mapping)
+            else None
+        )
+        if isinstance(paired_risk, Mapping):
+            risk_scope = paired_risk.get("scope")
+            if not isinstance(risk_scope, Mapping):
+                reasons.append(
+                    f"SUPPORTING_PAIRED_RISK_SCOPE_MISSING:{metric_id}"
+                )
+                risk_scope = {}
+            for name in (
+                "evaluation_ledger",
+                "release_route",
+                "direction",
+                "venue",
+                "recipe_release_id",
+                "recipe_release_hash",
+                "deployment_line_id",
+                "deployment_line_hash",
+                "evaluation_window_start",
+                "evaluation_window_end",
+            ):
+                if (
+                    name in expected_scope
+                    and risk_scope.get(name) != expected_scope.get(name)
+                ):
+                    reasons.append(
+                        "SUPPORTING_PAIRED_RISK_SCOPE_MISMATCH:"
+                        f"{metric_id}:{name}"
+                    )
+            bindings = expected_scope.get("policy_binding_hashes")
+            if isinstance(bindings, Mapping):
+                for snapshot_field, binding_name in {
+                    "accounting_policy_hash": "accounting_policy_id",
+                    "cost_allocation_policy_hash": (
+                        "cost_allocation_policy_id"
+                    ),
+                    "split_policy_hash": "split_policy_id",
+                    "statistical_design_policy_hash": (
+                        "statistical_design_policy_id"
+                    ),
+                }.items():
+                    if paired_risk.get(snapshot_field) != bindings.get(
+                        binding_name
+                    ):
+                        reasons.append(
+                            "SUPPORTING_PAIRED_RISK_POLICY_MISMATCH:"
+                            f"{metric_id}:{binding_name}"
+                        )
+            for name in (
+                "experiment_manifest_id",
+                "experiment_manifest_hash",
+                "approved_production_capital_usdt",
+                "ai_endpoint",
+            ):
+                if (
+                    name in expected_scope
+                    and not _same_value(
+                        paired_risk.get(name),
+                        expected_scope.get(name),
+                    )
+                ):
+                    reasons.append(
+                        "SUPPORTING_PAIRED_RISK_REFERENCE_MISMATCH:"
+                        f"{metric_id}:{name}"
+                    )
+            candidate_arm = paired_risk.get("candidate_arm")
+            if not isinstance(candidate_arm, Mapping):
+                reasons.append(
+                    f"SUPPORTING_PAIRED_RISK_CANDIDATE_MISSING:{metric_id}"
+                )
+            else:
+                if (
+                    "model_bundle_id" in expected_scope
+                    and candidate_arm.get("subject_id")
+                    != expected_scope.get("model_bundle_id")
+                ):
+                    reasons.append(
+                        "SUPPORTING_PAIRED_RISK_REFERENCE_MISMATCH:"
+                        f"{metric_id}:model_bundle_id"
+                    )
+                if (
+                    "model_bundle_hash" in expected_scope
+                    and candidate_arm.get("subject_hash")
+                    != expected_scope.get("model_bundle_hash")
+                ):
+                    reasons.append(
+                        "SUPPORTING_PAIRED_RISK_REFERENCE_MISMATCH:"
+                        f"{metric_id}:model_bundle_hash"
+                    )
+            required_risk_sources: Set[Any] = {
+                paired_risk.get("snapshot_hash"),
+            }
+            for arm_name in ("reference_arm", "candidate_arm"):
+                arm = paired_risk.get(arm_name)
+                if isinstance(arm, Mapping):
+                    arm_series = arm.get("statistical_series_snapshot")
+                    if isinstance(arm_series, Mapping):
+                        required_risk_sources.add(
+                            arm_series.get("series_hash")
+                        )
+            economic_hashes = paired_risk.get(
+                "source_economic_snapshot_hashes"
+            )
+            if isinstance(economic_hashes, list):
+                required_risk_sources.update(economic_hashes)
+            else:
+                reasons.append(
+                    f"SUPPORTING_PAIRED_RISK_SOURCE_LIST_INVALID:{metric_id}"
+                )
+            if (
+                not isinstance(source_hashes, list)
+                or not required_risk_sources.issubset(set(source_hashes))
+            ):
+                reasons.append(
+                    f"SUPPORTING_PAIRED_RISK_SOURCE_INCOMPLETE:{metric_id}"
                 )
         trade_replay = (
             inputs.get("trade_replay_snapshot")

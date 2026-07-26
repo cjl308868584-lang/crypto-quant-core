@@ -14,6 +14,11 @@ from crypto_quant.economics import (
 )
 from crypto_quant.estimators import EstimatorRegistry
 from crypto_quant.release import MetricResolver, load_json_strict
+from crypto_quant.release_artifacts import (
+    supporting_observation_bundle_hash,
+    supporting_observation_hash,
+    validate_supporting_observation_bundle,
+)
 from crypto_quant.statistics import (
     statistical_series_hash,
     statistical_series_reasons,
@@ -687,3 +692,135 @@ class PairedRiskRegistryTests(PairedRiskEstimatorTests):
                 )
                 self.assertEqual(result.status, "COMPUTED")
                 self.assertEqual(result.value, value)
+
+    def test_supporting_observation_requires_complete_risk_source_chain(
+        self,
+    ):
+        metric_id = "ai_max_drawdown_relative_improvement_lcb95"
+        resolver = MetricResolver(self.catalog)
+        definition = resolver.resolve(metric_id)
+        snapshot = self.constant_risk_snapshot()
+        estimator_inputs = {
+            "paired_risk_evaluation_snapshot": snapshot,
+        }
+        execution = self.registry.execute(
+            definition["estimator_id"],
+            estimator_inputs,
+        )
+        series_hashes = [
+            snapshot[f"{arm}_arm"]["statistical_series_snapshot"][
+                "series_hash"
+            ]
+            for arm in ("reference", "candidate")
+        ]
+        source_hashes = [
+            snapshot["snapshot_hash"],
+            *series_hashes,
+            *snapshot["source_economic_snapshot_hashes"],
+        ]
+        observation = {
+            "observation_id": "paired-risk-supporting-observation-1",
+            "observation_hash": "0" * 64,
+            "metric_id": metric_id,
+            "metric_unit": definition["unit"],
+            "estimator_id": definition["estimator_id"],
+            "implementation_id": execution.implementation_id,
+            "implementation_version": execution.implementation_version,
+            "estimator_inputs": estimator_inputs,
+            "status": execution.status,
+            "value": execution.value,
+            "reason_codes": list(execution.reason_codes),
+            "estimator_execution_hash": execution.execution_hash,
+            "source_artifact_hashes": source_hashes,
+        }
+        observation["observation_hash"] = supporting_observation_hash(
+            observation
+        )
+        expected_scope = {
+            **snapshot["scope"],
+            "model_bundle_id": snapshot["candidate_arm"]["subject_id"],
+            "model_bundle_hash": snapshot["candidate_arm"]["subject_hash"],
+            "ai_endpoint": snapshot["ai_endpoint"],
+            "policy_binding_hashes": {
+                "accounting_policy_id": snapshot["accounting_policy_hash"],
+                "cost_allocation_policy_id": snapshot[
+                    "cost_allocation_policy_hash"
+                ],
+                "split_policy_id": snapshot["split_policy_hash"],
+                "statistical_design_policy_id": snapshot[
+                    "statistical_design_policy_hash"
+                ],
+            },
+            "experiment_manifest_id": snapshot["experiment_manifest_id"],
+            "experiment_manifest_hash": snapshot[
+                "experiment_manifest_hash"
+            ],
+            "approved_production_capital_usdt": snapshot[
+                "approved_production_capital_usdt"
+            ],
+        }
+        signature = "R" * 86 + "=="
+        bundle = {
+            "$schema": "./supporting-observation-bundle-v1.schema.json",
+            "schema_version": "1.0.0",
+            "bundle_id": "paired-risk-supporting-bundle-1",
+            "bundle_hash": "0" * 64,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "scope_hash": business_hash(expected_scope),
+            "policy_bundle_hash": HASH_A,
+            "evaluator_build_hash": HASH_B,
+            "computed_at": "2025-01-09T00:00:01Z",
+            "observations": [observation],
+            "bundle_attestation": {
+                "algorithm": "ED25519",
+                "key_id": "statistics-authority",
+                "signed_at": "2025-01-09T00:00:02Z",
+                "signature_base64": signature,
+            },
+        }
+        bundle["bundle_hash"] = supporting_observation_bundle_hash(bundle)
+        schema = load_json_strict(
+            ROOT / "config" / "supporting-observation-bundle-v1.schema.json"
+        )
+        valid = validate_supporting_observation_bundle(
+            bundle,
+            schema=schema,
+            expected_scope=expected_scope,
+            policy_bundle_hash=HASH_A,
+            evaluator_build_hash=HASH_B,
+            resolve_metric=resolver.resolve,
+            estimators=self.registry,
+            allowed_source_hashes=set(source_hashes),
+            verified_attestations={signature: bundle["bundle_hash"]},
+            first_result_revealed_at="2025-01-09T00:00:00Z",
+        )
+        self.assertTrue(valid.valid, valid.reason_codes)
+
+        incomplete = deepcopy(bundle)
+        incomplete["observations"][0]["source_artifact_hashes"].remove(
+            series_hashes[0]
+        )
+        incomplete["observations"][0]["observation_hash"] = (
+            supporting_observation_hash(incomplete["observations"][0])
+        )
+        incomplete["bundle_hash"] = supporting_observation_bundle_hash(
+            incomplete
+        )
+        invalid = validate_supporting_observation_bundle(
+            incomplete,
+            schema=schema,
+            expected_scope=expected_scope,
+            policy_bundle_hash=HASH_A,
+            evaluator_build_hash=HASH_B,
+            resolve_metric=resolver.resolve,
+            estimators=self.registry,
+            allowed_source_hashes=set(source_hashes),
+            verified_attestations={signature: incomplete["bundle_hash"]},
+            first_result_revealed_at="2025-01-09T00:00:00Z",
+        )
+        self.assertFalse(invalid.valid)
+        self.assertIn(
+            f"SUPPORTING_PAIRED_RISK_SOURCE_INCOMPLETE:{metric_id}",
+            invalid.reason_codes,
+        )

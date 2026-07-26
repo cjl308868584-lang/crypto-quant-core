@@ -646,7 +646,7 @@ def make_statistical_decision_snapshot(**fixture_overrides):
         release_gate_policy_id="release-gates-v1.1",
         release_gate_policy_version="1.1.5",
         metric_catalog_id="release-metrics-v1.1",
-        metric_catalog_version="1.1.5",
+        metric_catalog_version="1.1.6",
         statistical_design_policy_id="statistics-replay",
         statistical_design_policy_hash="6" * 64,
         experiment_manifest_id="experiment-replay",

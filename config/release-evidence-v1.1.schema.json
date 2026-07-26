@@ -398,6 +398,9 @@
         },
         "statistical_decision_snapshot": {
           "$ref": "#/$defs/freezeProof"
+        },
+        "paired_risk_evaluation_snapshot": {
+          "$ref": "#/$defs/freezeProof"
         }
       },
       "additionalProperties": false
@@ -718,6 +721,34 @@
             "required": [
               "endpoint_reevaluation_snapshot",
               "statistical_series_snapshot"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "metric_id"
+        ],
+        "properties": {
+          "metric_id": {
+            "enum": [
+              "ai_max_drawdown_relative_improvement_lcb95",
+              "ai_es95_loss_relative_improvement_lcb95",
+              "audit_ai_max_drawdown_relative_improvement_lcb95",
+              "audit_ai_es95_loss_relative_improvement_lcb95",
+              "minor_risk_efficiency_candidate_minus_active_mdd_improvement_lcb95",
+              "minor_risk_efficiency_candidate_minus_active_es95_improvement_lcb95"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "frozen_release_inputs": {
+            "required": [
+              "paired_risk_evaluation_snapshot"
             ]
           }
         }
