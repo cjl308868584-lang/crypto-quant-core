@@ -466,6 +466,22 @@ class UsdMParserTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.reason_code, "MARKET_FACT_INVALID")
 
+    def test_usdm_kline_rejects_invalid_non_ohlc_business_columns(self):
+        valid = [
+            "1704153600000", "4", "5", "3", "4", "1", "1704153659999",
+            "4", "1", "0.5", "2", "0",
+        ]
+        for index, value in ((5, "-1"), (7, "nope"), (8, "1.5"), (9, "-0.1"), (10, "NaN"), (11, "1")):
+            row = list(valid)
+            row[index] = value
+            with self.subTest(index=index, value=value):
+                with self.assertRaises(MarketDataError) as raised:
+                    parse_market_facts(
+                        self.request(), (",".join(row) + "\n").encode("ascii"),
+                        "2026-07-27T00:00:00Z",
+                    )
+                self.assertEqual(raised.exception.reason_code, "MARKET_FACT_INVALID")
+
     def test_usdm_funding_preserves_signed_rate_and_validates_symbol_columns(self):
         facts = parse_market_facts(
             self.request("FUNDING_RATE"),
@@ -590,6 +606,42 @@ class MarketDataArtifactTests(unittest.TestCase):
         )
         self.assertEqual(historical_market_data_snapshot_reasons(snapshot), ())
 
+    def test_artifact_requires_complete_frozen_eight_hour_funding_month(self):
+        request = HistoricalArchiveRequest.create(
+            market="USD_M", data_family="FUNDING_RATE", symbol="ETHUSDT",
+            interval_or_null=None, period_kind="MONTHLY", period="2024-01",
+        )
+        start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        rows = []
+        for index in range(31 * 3):
+            milliseconds = int((start + timedelta(hours=8 * index)).timestamp() * 1000)
+            rows.append(f"{milliseconds},8,0.0001")
+        facts = parse_market_facts(request, ("\n".join(rows) + "\n").encode("ascii"), "2026-07-27T00:00:00Z")
+        for incomplete in (facts[1:], facts[:10] + facts[11:], facts[:-1]):
+            with self.subTest(length=len(incomplete)):
+                with self.assertRaises(MarketDataError) as raised:
+                    build_historical_market_data_snapshot(
+                        snapshot_id="funding-202401", request=request, facts=incomplete,
+                        archive_sha256="a" * 64, checksum_sha256="b" * 64,
+                        ingested_at="2026-07-27T00:00:00Z", recorded_at="2026-07-27T00:00:01Z",
+                    )
+                self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
+
+    def test_snapshot_replay_rejects_coordinated_archive_identity_mutation(self):
+        snapshot = self.build()
+        mutated = json.loads(json.dumps(snapshot))
+        mutated["source_receipt"]["archive_sha256"] = "c" * 64
+        mutated["source_receipt"]["receipt_hash"] = historical_market_data_snapshot_hash({
+            "snapshot_hash": "discarded", **mutated["source_receipt"]
+        })
+        # The receipt has its own self-hash, then the whole snapshot is rehashed.
+        mutated["source_receipt"]["receipt_hash"] = hashlib.sha256(json.dumps(
+            {key: value for key, value in mutated["source_receipt"].items() if key != "receipt_hash"},
+            sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        mutated["snapshot_hash"] = historical_market_data_snapshot_hash(mutated)
+        self.assertIn("ARCHIVE_FACT_ID_MISMATCH", historical_market_data_snapshot_reasons(mutated))
+
     def test_artifact_hash_and_schema_reject_mutation_and_unknown_business_field(self):
         from jsonschema import Draft202012Validator
 
@@ -606,6 +658,15 @@ class MarketDataArtifactTests(unittest.TestCase):
         unknown = json.loads(json.dumps(snapshot))
         unknown["facts"][0]["unapproved_business_field"] = "no"
         self.assertTrue(list(validator.iter_errors(unknown)))
+        funding = json.loads(json.dumps(snapshot))
+        funding["facts"][0].update({"fact_type": "FUNDING_RATE", "data_family": "FUNDING_RATE", "market": "USD_M", "funding_interval_hours": 8, "funding_rate": "0.1"})
+        self.assertTrue(list(validator.iter_errors(funding)))
+        invalid_time = json.loads(json.dumps(snapshot))
+        invalid_time["ingested_at"] = "2026-07-27 00:00:00Z"
+        self.assertTrue(list(validator.iter_errors(invalid_time)))
+        with self.assertRaises(MarketDataError) as raised:
+            self.build(snapshot_id=" bad snapshot id ")
+        self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
 
 
 class FeeScheduleContractTests(unittest.TestCase):
@@ -684,3 +745,9 @@ class FeeScheduleContractTests(unittest.TestCase):
         non_schema_consumer["schedules"][0]["symbol"] = "X"
         non_schema_consumer["fee_schedule_hash"] = fee_schedule_snapshot_hash(non_schema_consumer)
         self.assertIn("FEE_SCHEDULE_INVALID", fee_schedule_snapshot_reasons(non_schema_consumer))
+        draft = self.schedule()
+        draft["schedules"][0]["lifecycle"] = "DRAFT"
+        draft["schedules"][0]["approval"] = None
+        draft["fee_schedule_hash"] = fee_schedule_snapshot_hash(draft)
+        self.assertIn("FEE_SCHEDULE_APPROVAL_INVALID", fee_schedule_snapshot_reasons(draft))
+        self.assertTrue(list(validator.iter_errors(draft)))

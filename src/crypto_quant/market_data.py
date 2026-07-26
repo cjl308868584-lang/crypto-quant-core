@@ -30,8 +30,10 @@ _VERIFIED_ARCHIVE_TOKEN = object()
 _DECIMAL_CONTEXT = Context(prec=50)
 _SHA256 = re.compile(r"^[a-f0-9]{64}$")
 _FACT_ID = re.compile(r"^mdf_[a-f0-9]{64}$")
+_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _KLINE_INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "4h": 14_400_000, "1d": 86_400_000}
 _SPOT_MICROSECOND_BOUNDARY = datetime(2025, 1, 1, tzinfo=timezone.utc)
+_USD_M_FUNDING_INTERVAL_HOURS = 8
 _FAMILY_SPECS = {
     ("SPOT", "KLINES"): ("spot", "daily", "klines", True),
     ("SPOT", "AGG_TRADES"): ("spot", "daily", "aggTrades", False),
@@ -386,6 +388,13 @@ def _integer(value: str, *, positive: bool = False) -> int:
     return result
 
 
+def _nonnegative_decimal(value: str) -> str:
+    rendered = _decimal(value)
+    if Decimal(rendered) < 0:
+        raise _market_fact_error()
+    return rendered
+
+
 def _boolean(value: str) -> bool:
     if value == "true":
         return True
@@ -459,8 +468,10 @@ def _base_fact(
     fact_type: str,
     source_row: Sequence[str],
 ) -> Dict[str, Any]:
+    source_row_fact_id = _fact_id(request, source_row_number, business_key, source_row)
     return {
-        "fact_id": _fact_id(request, source_row_number, business_key, source_row),
+        "fact_id": source_row_fact_id,
+        "source_row_fact_id": source_row_fact_id,
         "fact_type": fact_type,
         "provider": request.provider,
         "market": request.market,
@@ -500,6 +511,13 @@ def _parse_kline(
         _decimal(row[4], positive=True),
     )
     if not (Decimal(low) <= min(Decimal(open_price), Decimal(close_price)) <= max(Decimal(open_price), Decimal(close_price)) <= Decimal(high)):
+        raise _market_fact_error()
+    _nonnegative_decimal(row[5])
+    _nonnegative_decimal(row[7])
+    _integer(row[8])
+    _nonnegative_decimal(row[9])
+    _nonnegative_decimal(row[10])
+    if _integer(row[11]) != 0:
         raise _market_fact_error()
     business_key = request.symbol + ":" + event_text
     fact = _base_fact(
@@ -543,10 +561,13 @@ def _parse_funding_rate(
     ingested_at: str,
 ) -> Dict[str, Any]:
     event, event_text = _timestamp(row[0], unit="ms")
-    if not _request_period_contains(request, event) or _integer(row[1], positive=True) != 8:
+    if (
+        not _request_period_contains(request, event)
+        or _integer(row[1], positive=True) != _USD_M_FUNDING_INTERVAL_HOURS
+    ):
         raise _market_fact_error()
     fact = _base_fact(request, row_number, request.symbol + ":" + event_text, event_text, ingested_at, "FUNDING_RATE", row)
-    fact.update({"funding_interval_hours": 8, "funding_rate": _decimal(row[2])})
+    fact.update({"funding_interval_hours": _USD_M_FUNDING_INTERVAL_HOURS, "funding_rate": _decimal(row[2])})
     return fact
 
 
@@ -584,7 +605,7 @@ def parse_market_facts(
 
 
 def _request_payload(request: HistoricalArchiveRequest) -> Dict[str, Any]:
-    return {
+    payload = {
         "schema_version": request.schema_version,
         "provider": request.provider,
         "market": request.market,
@@ -594,10 +615,13 @@ def _request_payload(request: HistoricalArchiveRequest) -> Dict[str, Any]:
         "period_kind": request.period_kind,
         "period": request.period,
     }
+    if request.data_family == "FUNDING_RATE":
+        payload["funding_interval_hours"] = _USD_M_FUNDING_INTERVAL_HOURS
+    return payload
 
 
 _FACT_BASE_FIELDS = frozenset((
-    "fact_id", "fact_type", "provider", "market", "data_family", "symbol",
+    "fact_id", "source_row_fact_id", "fact_type", "provider", "market", "data_family", "symbol",
     "business_key", "source_row_number", "event_time", "available_at",
 ))
 _FACT_FIELDS = {
@@ -616,6 +640,8 @@ def _valid_fact_payload(request: HistoricalArchiveRequest, fact: Mapping[str, An
         if (
             not isinstance(fact["fact_id"], str)
             or _FACT_ID.fullmatch(fact["fact_id"]) is None
+            or not isinstance(fact["source_row_fact_id"], str)
+            or _FACT_ID.fullmatch(fact["source_row_fact_id"]) is None
             or not isinstance(fact["business_key"], str)
             or not fact["business_key"]
             or not isinstance(fact["source_row_number"], int)
@@ -635,7 +661,7 @@ def _valid_fact_payload(request: HistoricalArchiveRequest, fact: Mapping[str, An
                 and isinstance(fact["is_best_match"], bool)
             )
         return (
-            fact["funding_interval_hours"] == 8
+            fact["funding_interval_hours"] == _USD_M_FUNDING_INTERVAL_HOURS
             and _decimal(fact["funding_rate"]) == fact["funding_rate"]
         )
     except (MarketDataError, TypeError, ValueError, InvalidOperation):
@@ -714,7 +740,36 @@ def _quality_reasons(
         }
         if set(event_times) != expected or len(event_times) != len(expected):
             reasons.append("MARKET_DATA_PERIOD_COVERAGE")
+    elif request.data_family == "FUNDING_RATE":
+        start = datetime.strptime(request.period, "%Y-%m").replace(tzinfo=timezone.utc)
+        end = (
+            start.replace(year=start.year + 1, month=1)
+            if start.month == 12
+            else start.replace(month=start.month + 1)
+        )
+        interval = timedelta(hours=_USD_M_FUNDING_INTERVAL_HOURS)
+        expected = set()
+        current = start
+        while current < end:
+            expected.add(current)
+            current += interval
+        if set(event_times) != expected or len(event_times) != len(expected):
+            reasons.append("MARKET_DATA_PERIOD_COVERAGE")
     return tuple(sorted(set(reasons)))
+
+
+def _archive_bound_fact_id(
+    archive_sha256: str,
+    source_row_fact_id: str,
+    business_key: str,
+) -> str:
+    return "mdf_" + business_hash(
+        {
+            "archive_sha256": archive_sha256,
+            "source_row_fact_id": source_row_fact_id,
+            "business_key": business_key,
+        }
+    )
 
 
 def historical_market_data_snapshot_hash(snapshot: Mapping[str, Any]) -> str:
@@ -750,6 +805,25 @@ def historical_market_data_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tupl
             symbol=request_fields["symbol"], interval_or_null=request_fields["interval_or_null"],
             period_kind=request_fields["period_kind"], period=request_fields["period"],
         )
+        if dict(request_fields) != _request_payload(request):
+            reasons.append("REQUEST_CROSSLINK_MISMATCH")
+        if (
+            receipt.get("provider") != request.provider
+            or receipt.get("available_at") != snapshot["ingested_at"]
+            or receipt.get("ingested_at") != snapshot["ingested_at"]
+            or not isinstance(receipt.get("archive_sha256"), str)
+            or _SHA256.fullmatch(receipt["archive_sha256"]) is None
+            or not isinstance(receipt.get("checksum_sha256"), str)
+            or _SHA256.fullmatch(receipt["checksum_sha256"]) is None
+        ):
+            reasons.append("RECEIPT_CROSSLINK_MISMATCH")
+        if not isinstance(snapshot.get("snapshot_id"), str) or _ID.fullmatch(snapshot["snapshot_id"]) is None:
+            reasons.append("MARKET_DATA_SCHEMA_INVALID")
+        for fact in snapshot["facts"]:
+            if not isinstance(fact, Mapping) or fact.get("fact_id") != _archive_bound_fact_id(
+                receipt["archive_sha256"], fact.get("source_row_fact_id", ""), fact.get("business_key", "")
+            ):
+                reasons.append("ARCHIVE_FACT_ID_MISMATCH")
         reasons.extend(_quality_reasons(
             request, snapshot["facts"], snapshot["ingested_at"], snapshot["recorded_at"]
         ))
@@ -774,7 +848,7 @@ def build_historical_market_data_snapshot(
 
     if (
         not isinstance(snapshot_id, str)
-        or not snapshot_id
+        or _ID.fullmatch(snapshot_id) is None
         or not isinstance(request, HistoricalArchiveRequest)
         or not isinstance(archive_sha256, str)
         or not isinstance(checksum_sha256, str)
@@ -789,12 +863,8 @@ def build_historical_market_data_snapshot(
     archive_bound_facts = []
     for fact in copied_facts:
         bound = dict(fact)
-        bound["fact_id"] = "mdf_" + business_hash(
-            {
-                "archive_sha256": archive_sha256,
-                "source_row_fact_id": fact["fact_id"],
-                "business_key": fact["business_key"],
-            }
+        bound["fact_id"] = _archive_bound_fact_id(
+            archive_sha256, fact["source_row_fact_id"], fact["business_key"]
         )
         archive_bound_facts.append(bound)
     receipt = {
@@ -910,7 +980,7 @@ def fee_schedule_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tuple[str, ...
             if lifecycle not in ("DRAFT", "APPROVED", "RETIRED"):
                 reasons.append("FEE_SCHEDULE_LIFECYCLE_INVALID")
             approval = item.get("approval")
-            if lifecycle == "APPROVED" and not _approved(approval):
+            if not _approved(approval):
                 reasons.append("FEE_SCHEDULE_APPROVAL_INVALID")
             grouped.setdefault((item.get("market"), item.get("symbol")), []).append((start, end))
         for intervals in grouped.values():
