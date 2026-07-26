@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_EVEN, localcontext
 from functools import wraps
+import re
 from typing import (
     Any,
     Callable,
@@ -40,6 +41,8 @@ _SCOPE_FIELDS = (
     "deployment_line_hash",
 )
 _Result = TypeVar("_Result")
+_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_HASH_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 
 def _fixed_decimal_context(
@@ -373,6 +376,40 @@ def _validate_sources(
         ):
             raise ValueError("TRADE_REPLAY_ORIGINAL_SERIES_MISMATCH")
         pairs.append((observation, snapshot))
+    seen_sequences = set()
+    seen_fact_ids = set()
+    previous_snapshot_max_sequence: Optional[int] = None
+    for _, snapshot in pairs:
+        snapshot_sequences = []
+        for field, id_field in (
+            ("fills", "fill_id"),
+            ("funding_cashflows", "funding_id"),
+            ("external_cash_flows", "flow_id"),
+            ("allocated_costs", "cost_id"),
+            ("equity_points", "equity_snapshot_id"),
+        ):
+            for fact in snapshot[field]:
+                sequence = fact["source_event_sequence"]
+                if sequence in seen_sequences:
+                    raise ValueError(
+                        "TRADE_REPLAY_SOURCE_SEQUENCE_DUPLICATE"
+                    )
+                seen_sequences.add(sequence)
+                snapshot_sequences.append(sequence)
+                fact_identity = (field, fact[id_field])
+                if fact_identity in seen_fact_ids:
+                    raise ValueError(
+                        "TRADE_REPLAY_FACT_ID_DUPLICATE"
+                    )
+                seen_fact_ids.add(fact_identity)
+        if (
+            previous_snapshot_max_sequence is not None
+            and min(snapshot_sequences) <= previous_snapshot_max_sequence
+        ):
+            raise ValueError(
+                "TRADE_REPLAY_SOURCE_SEQUENCE_NOT_INCREASING"
+            )
+        previous_snapshot_max_sequence = max(snapshot_sequences)
     if (
         observations[0]["period_start"]
         != series_scope.get("evaluation_window_start")
@@ -415,6 +452,7 @@ def analyze_trade_replay_source(
         positions: Dict[str, PositionState] = {}
         active_cycles: Dict[str, _ActiveCycle] = {}
         completed: List[CompletedTrade] = []
+        completed_trade_ids = set()
         funding_assignment: Dict[str, str] = {}
         original_replay: List[Mapping[str, Any]] = []
         realized = Decimal("0")
@@ -581,6 +619,11 @@ def analyze_trade_replay_source(
                             closed_at=fact["exchange_event_time"],
                             eligible=cycle.eligible,
                         )
+                        if trade_id in completed_trade_ids:
+                            raise ValueError(
+                                "TRADE_REPLAY_TRADE_ID_DUPLICATE"
+                            )
+                        completed_trade_ids.add(trade_id)
                         completed.append(trade)
                         for funding_id in cycle.funding_ids:
                             funding_assignment[funding_id] = trade_id
@@ -1176,6 +1219,113 @@ def trade_replay_snapshot_reasons(
     if not isinstance(snapshot, Mapping):
         return ("TRADE_REPLAY_INVALID",)
     reasons = []
+    for field, expected in {
+        "$schema": "./trade-replay-snapshot-v1.schema.json",
+        "schema_version": "1.0.0",
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+    }.items():
+        if snapshot.get(field) != expected:
+            reasons.append(
+                f"TRADE_REPLAY_CONTRACT_MISMATCH:{field}"
+            )
+    expected_fields = {
+        "$schema",
+        "schema_version",
+        "replay_id",
+        "replay_hash",
+        "hash_algorithm",
+        "canonicalization",
+        "source_series_snapshot",
+        "source_series_hash",
+        "source_economic_snapshots",
+        "source_economic_snapshot_hashes",
+        "scope",
+        "policy_bindings",
+        "approved_production_capital_usdt",
+        "bootstrap_design",
+        "valuation_checkpoints",
+        "original_replay",
+        "completed_trades",
+        "selected_trade_ids",
+        "counterfactual_series",
+        "generated_at",
+        "replay_verified",
+    }
+    if set(snapshot) - expected_fields:
+        reasons.append(
+            "TRADE_REPLAY_CONTRACT_MISMATCH:additionalProperties"
+        )
+    for field in sorted(expected_fields - set(snapshot)):
+        reasons.append(f"TRADE_REPLAY_CONTRACT_MISMATCH:{field}")
+    replay_id = snapshot.get("replay_id")
+    if (
+        not isinstance(replay_id, str)
+        or _ID_PATTERN.fullmatch(replay_id) is None
+    ):
+        reasons.append("TRADE_REPLAY_CONTRACT_MISMATCH:replay_id")
+    for field in ("replay_hash", "source_series_hash"):
+        value = snapshot.get(field)
+        if (
+            not isinstance(value, str)
+            or _HASH_PATTERN.fullmatch(value) is None
+        ):
+            reasons.append(f"TRADE_REPLAY_CONTRACT_MISMATCH:{field}")
+    economic_hashes = snapshot.get(
+        "source_economic_snapshot_hashes"
+    )
+    if (
+        not isinstance(economic_hashes, list)
+        or not economic_hashes
+        or len(economic_hashes) != len(set(economic_hashes))
+        or any(
+            not isinstance(value, str)
+            or _HASH_PATTERN.fullmatch(value) is None
+            for value in economic_hashes
+        )
+    ):
+        reasons.append(
+            "TRADE_REPLAY_CONTRACT_MISMATCH:"
+            "source_economic_snapshot_hashes"
+        )
+    for field in (
+        "source_series_snapshot",
+        "scope",
+        "policy_bindings",
+        "bootstrap_design",
+        "counterfactual_series",
+    ):
+        if not isinstance(snapshot.get(field), Mapping):
+            reasons.append(f"TRADE_REPLAY_CONTRACT_MISMATCH:{field}")
+    for field in (
+        "source_economic_snapshots",
+        "valuation_checkpoints",
+        "original_replay",
+        "completed_trades",
+        "selected_trade_ids",
+    ):
+        if not isinstance(snapshot.get(field), list):
+            reasons.append(f"TRADE_REPLAY_CONTRACT_MISMATCH:{field}")
+    try:
+        _timestamp(snapshot.get("generated_at"))
+    except (TypeError, ValueError):
+        reasons.append(
+            "TRADE_REPLAY_CONTRACT_MISMATCH:generated_at"
+        )
+    try:
+        if _decimal(
+            snapshot.get("approved_production_capital_usdt")
+        ) <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        reasons.append(
+            "TRADE_REPLAY_CONTRACT_MISMATCH:"
+            "approved_production_capital_usdt"
+        )
+    if snapshot.get("replay_verified") is not True:
+        reasons.append(
+            "TRADE_REPLAY_CONTRACT_MISMATCH:replay_verified"
+        )
     try:
         if snapshot.get("replay_hash") != trade_replay_snapshot_hash(
             snapshot

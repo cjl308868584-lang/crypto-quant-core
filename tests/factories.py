@@ -231,6 +231,7 @@ def complete_trade_replay_inputs(
         context.prec = 50
         context.rounding = ROUND_HALF_EVEN
         for index, pnl_text in enumerate(trade_pnls, start=1):
+            sequence_offset = (index - 1) * 4
             pnl = Decimal(pnl_text)
             start = initial + timedelta(days=index - 1)
             end = start + timedelta(days=1)
@@ -282,7 +283,7 @@ def complete_trade_replay_inputs(
                         "exchange_trade_id": f"exchange-{index}-open",
                         "local_order_id": f"order-{index}-open",
                         "venue_order_id": f"venue-{index}-open",
-                        "source_event_sequence": 2,
+                        "source_event_sequence": sequence_offset + 2,
                         "instrument_id": "BINANCE:SPOT:BTCUSDT",
                         "side": "BUY",
                         "quantity": "1",
@@ -297,7 +298,7 @@ def complete_trade_replay_inputs(
                         "exchange_trade_id": f"exchange-{index}-close",
                         "local_order_id": f"order-{index}-close",
                         "venue_order_id": f"venue-{index}-close",
-                        "source_event_sequence": 3,
+                        "source_event_sequence": sequence_offset + 3,
                         "instrument_id": "BINANCE:SPOT:BTCUSDT",
                         "side": "SELL",
                         "quantity": "1",
@@ -316,7 +317,7 @@ def complete_trade_replay_inputs(
                 "equity_points": [
                     {
                         "equity_snapshot_id": f"equity-{index}-start",
-                        "source_event_sequence": 1,
+                        "source_event_sequence": sequence_offset + 1,
                         "as_of": start_text,
                         "marked_equity_usdt": canonical_decimal(
                             starting_equity
@@ -335,7 +336,7 @@ def complete_trade_replay_inputs(
                     },
                     {
                         "equity_snapshot_id": f"equity-{index}-end",
-                        "source_event_sequence": 4,
+                        "source_event_sequence": sequence_offset + 4,
                         "as_of": end_text,
                         "marked_equity_usdt": canonical_decimal(
                             ending_equity

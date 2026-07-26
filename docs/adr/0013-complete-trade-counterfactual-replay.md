@@ -1,6 +1,7 @@
 # ADR-0013：删除 Top-5 正贡献完整交易后的经济路径重放
 
-状态：Accepted  
+状态：Accepted
+
 日期：2026-07-27
 
 ## 背景
@@ -25,7 +26,8 @@ Funding，删除它会改变持仓、未实现盈亏、退出费用和后续权�
    覆盖；exchange trade ID、订单 ID、Proposal ID 均不作为交易周期主键。
 3. EconomicLedgerSnapshot v1.1 为每个事实保存不可变
    `source_event_sequence`；Fill 还保存 exchange/local/venue order identity。
-   事实顺序固定为 `(event_time, source_event_sequence, stable fact ID)`。
+   事实顺序固定为 `(event_time, source_event_sequence, stable fact ID)`；完整来源序列
+   中的 sequence、Fill ID、Funding ID 和其他稳定事实 ID 必须跨周期唯一。
 4. 删除前必须用可执行估值 checkpoint 重放原始路径，并在每个 EquityPoint 精确
    复现持仓成本、预期退出费用、清算权益及源统计 observation。任一不一致立即
    `FAIL`。
@@ -83,4 +85,3 @@ Funding，删除它会改变持仓、未实现盈亏、退出费用和后续权�
 - Registry、Golden 与 build manifest：`tests/test_estimators.py`
 - GateEvidence 与 Supporting Observation 来源绑定：
   `CompleteTradeReplayEvidenceTests`
-

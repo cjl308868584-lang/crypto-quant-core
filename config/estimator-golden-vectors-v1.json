@@ -882,19 +882,19 @@
       "$schema": "./trade-replay-snapshot-v1.schema.json",
       "schema_version": "1.0.0",
       "replay_id": "golden-computed",
-      "replay_hash": "3f73e220d29f5747842b7173c88a61b528a0c9cda52bef439422062cb3f644e8",
+      "replay_hash": "f2f23f4cf7ed5f80fe6676b69d9c5b6ed5bd4c51362fddeb081b7393734e226b",
       "hash_algorithm": "SHA-256",
       "canonicalization": "RFC8785_JCS",
       "source_series_snapshot": {
         "$schema": "./statistical-series-snapshot-v1.schema.json",
         "schema_version": "1.0.0",
         "series_id": "series-complete-trades",
-        "series_hash": "dc13182d9dd5e9c207455b411b52f58bb6178170d28677fce95b0c032f322884",
+        "series_hash": "1d45914eb95f226485f95476edfe050770f2345459accf9350c5e8a537e3b404",
         "hash_algorithm": "SHA-256",
         "canonicalization": "RFC8785_JCS",
         "source_economic_snapshot_hashes": [
           "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
-          "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a"
+          "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510"
         ],
         "accounting_policy_id": "accounting-replay",
         "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
@@ -939,7 +939,7 @@
             "period_end": "2026-01-03T00:00:00.000Z",
             "value": "0.0088714233874196785872762455613221223997905938998191",
             "calendar_month_complete": false,
-            "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+            "source_economic_snapshot_hash": "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510",
             "fold_id": "fold-2"
           }
         ],
@@ -956,7 +956,7 @@
         "generated_at": "2026-01-03T00:00:00.000Z",
         "replay_verified": true
       },
-      "source_series_hash": "dc13182d9dd5e9c207455b411b52f58bb6178170d28677fce95b0c032f322884",
+      "source_series_hash": "1d45914eb95f226485f95476edfe050770f2345459accf9350c5e8a537e3b404",
       "source_economic_snapshots": [
         {
           "$schema": "./economic-ledger-snapshot-v1.schema.json",
@@ -1063,7 +1063,7 @@
           "$schema": "./economic-ledger-snapshot-v1.schema.json",
           "schema_version": "1.1.0",
           "snapshot_id": "economic-replay-2",
-          "snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "snapshot_hash": "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510",
           "hash_algorithm": "SHA-256",
           "canonicalization": "RFC8785_JCS",
           "source_ledger_hash": "1c7b77ba739fbfa43183d5394822c7a62f98fe833054f0cba22faffcf3615339",
@@ -1096,7 +1096,7 @@
               "exchange_trade_id": "exchange-2-open",
               "local_order_id": "order-2-open",
               "venue_order_id": "venue-2-open",
-              "source_event_sequence": 2,
+              "source_event_sequence": 6,
               "instrument_id": "BINANCE:SPOT:BTCUSDT",
               "side": "BUY",
               "quantity": "1",
@@ -1111,7 +1111,7 @@
               "exchange_trade_id": "exchange-2-close",
               "local_order_id": "order-2-close",
               "venue_order_id": "venue-2-close",
-              "source_event_sequence": 3,
+              "source_event_sequence": 7,
               "instrument_id": "BINANCE:SPOT:BTCUSDT",
               "side": "SELL",
               "quantity": "1",
@@ -1128,7 +1128,7 @@
           "equity_points": [
             {
               "equity_snapshot_id": "equity-2-start",
-              "source_event_sequence": 1,
+              "source_event_sequence": 5,
               "as_of": "2026-01-02T00:00:00.000Z",
               "marked_equity_usdt": "1010",
               "liquidation_equity_usdt": "1010",
@@ -1143,7 +1143,7 @@
             },
             {
               "equity_snapshot_id": "equity-2-end",
-              "source_event_sequence": 4,
+              "source_event_sequence": 8,
               "as_of": "2026-01-03T00:00:00.000Z",
               "marked_equity_usdt": "1019",
               "liquidation_equity_usdt": "1019",
@@ -1163,7 +1163,7 @@
       ],
       "source_economic_snapshot_hashes": [
         "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
-        "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a"
+        "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510"
       ],
       "scope": {
         "account_id": "account-replay",
@@ -1215,13 +1215,13 @@
           "instruments": []
         },
         {
-          "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "source_economic_snapshot_hash": "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510",
           "equity_snapshot_id": "equity-2-start",
           "as_of": "2026-01-02T00:00:00.000Z",
           "instruments": []
         },
         {
-          "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "source_economic_snapshot_hash": "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510",
           "equity_snapshot_id": "equity-2-end",
           "as_of": "2026-01-03T00:00:00.000Z",
           "instruments": []
@@ -1245,7 +1245,7 @@
           "expected_exit_fee_accrued_usdt": "0"
         },
         {
-          "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "source_economic_snapshot_hash": "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510",
           "equity_snapshot_id": "equity-2-start",
           "as_of": "2026-01-02T00:00:00.000Z",
           "liquidation_equity_usdt": "1010",
@@ -1253,7 +1253,7 @@
           "expected_exit_fee_accrued_usdt": "0"
         },
         {
-          "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "source_economic_snapshot_hash": "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510",
           "equity_snapshot_id": "equity-2-end",
           "as_of": "2026-01-03T00:00:00.000Z",
           "liquidation_equity_usdt": "1019",
@@ -1296,13 +1296,13 @@
       "counterfactual_series": {
         "$schema": "./statistical-series-snapshot-v1.schema.json",
         "schema_version": "1.2.0",
-        "series_id": "cf:ee58cb32d2f61e9cc8fd8d03f09ec45f",
-        "series_hash": "55f217a119f5cc858133018a4854872b7852755e328de91db1c1d70450d68746",
+        "series_id": "cf:640e7c05cde5d4a7ea1fe5325e4b7aa3",
+        "series_hash": "63486682cda2c7f94563298013456546cf25e8ea0065120fca146b5e1e6f9ba3",
         "hash_algorithm": "SHA-256",
         "canonicalization": "RFC8785_JCS",
         "source_economic_snapshot_hashes": [
           "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
-          "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a"
+          "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510"
         ],
         "accounting_policy_id": "accounting-replay",
         "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
@@ -1348,7 +1348,7 @@
             "period_end": "2026-01-03T00:00:00.000Z",
             "value": "0",
             "calendar_month_complete": false,
-            "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+            "source_economic_snapshot_hash": "4b225747832916340f2f7e8e6642cadecf61d923e13eab2c3e33324d4e950510",
             "fold_id": "fold-2",
             "counterfactual_replay_period_hash": "3549fece56d81afaf0f0921854d084a0767bb4f876cb49e0d5e5e9433e2b8d85"
           }
@@ -1374,19 +1374,19 @@
       "$schema": "./trade-replay-snapshot-v1.schema.json",
       "schema_version": "1.0.0",
       "replay_id": "golden-no-positive",
-      "replay_hash": "d7a55166bc371127346f5b2a1483a4fca70e5bdc4420b3d48256631a425aa733",
+      "replay_hash": "249364f6c57d722e1dbae10ba11e1330afca61785e9c3ebd9fa2825477277746",
       "hash_algorithm": "SHA-256",
       "canonicalization": "RFC8785_JCS",
       "source_series_snapshot": {
         "$schema": "./statistical-series-snapshot-v1.schema.json",
         "schema_version": "1.0.0",
         "series_id": "series-complete-trades",
-        "series_hash": "fc6e30d3718d5988ab906cd69433b40f38cca1720e72afb5d49e42003b6872ff",
+        "series_hash": "4ef6eb63cd9ab6f3af582d75dff24555ad171b9fa041264cea9c9648274502d8",
         "hash_algorithm": "SHA-256",
         "canonicalization": "RFC8785_JCS",
         "source_economic_snapshot_hashes": [
           "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
-          "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e"
+          "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63"
         ],
         "accounting_policy_id": "accounting-replay",
         "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
@@ -1431,7 +1431,7 @@
             "period_end": "2026-01-03T00:00:00.000Z",
             "value": "-0.0010005003335835335001429822540683449607552052504344",
             "calendar_month_complete": false,
-            "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+            "source_economic_snapshot_hash": "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63",
             "fold_id": "fold-2"
           }
         ],
@@ -1448,7 +1448,7 @@
         "generated_at": "2026-01-03T00:00:00.000Z",
         "replay_verified": true
       },
-      "source_series_hash": "fc6e30d3718d5988ab906cd69433b40f38cca1720e72afb5d49e42003b6872ff",
+      "source_series_hash": "4ef6eb63cd9ab6f3af582d75dff24555ad171b9fa041264cea9c9648274502d8",
       "source_economic_snapshots": [
         {
           "$schema": "./economic-ledger-snapshot-v1.schema.json",
@@ -1555,7 +1555,7 @@
           "$schema": "./economic-ledger-snapshot-v1.schema.json",
           "schema_version": "1.1.0",
           "snapshot_id": "economic-replay-2",
-          "snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "snapshot_hash": "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63",
           "hash_algorithm": "SHA-256",
           "canonicalization": "RFC8785_JCS",
           "source_ledger_hash": "1c7b77ba739fbfa43183d5394822c7a62f98fe833054f0cba22faffcf3615339",
@@ -1588,7 +1588,7 @@
               "exchange_trade_id": "exchange-2-open",
               "local_order_id": "order-2-open",
               "venue_order_id": "venue-2-open",
-              "source_event_sequence": 2,
+              "source_event_sequence": 6,
               "instrument_id": "BINANCE:SPOT:BTCUSDT",
               "side": "BUY",
               "quantity": "1",
@@ -1603,7 +1603,7 @@
               "exchange_trade_id": "exchange-2-close",
               "local_order_id": "order-2-close",
               "venue_order_id": "venue-2-close",
-              "source_event_sequence": 3,
+              "source_event_sequence": 7,
               "instrument_id": "BINANCE:SPOT:BTCUSDT",
               "side": "SELL",
               "quantity": "1",
@@ -1620,7 +1620,7 @@
           "equity_points": [
             {
               "equity_snapshot_id": "equity-2-start",
-              "source_event_sequence": 1,
+              "source_event_sequence": 5,
               "as_of": "2026-01-02T00:00:00.000Z",
               "marked_equity_usdt": "1000",
               "liquidation_equity_usdt": "1000",
@@ -1635,7 +1635,7 @@
             },
             {
               "equity_snapshot_id": "equity-2-end",
-              "source_event_sequence": 4,
+              "source_event_sequence": 8,
               "as_of": "2026-01-03T00:00:00.000Z",
               "marked_equity_usdt": "999",
               "liquidation_equity_usdt": "999",
@@ -1655,7 +1655,7 @@
       ],
       "source_economic_snapshot_hashes": [
         "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
-        "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e"
+        "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63"
       ],
       "scope": {
         "account_id": "account-replay",
@@ -1707,13 +1707,13 @@
           "instruments": []
         },
         {
-          "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "source_economic_snapshot_hash": "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63",
           "equity_snapshot_id": "equity-2-start",
           "as_of": "2026-01-02T00:00:00.000Z",
           "instruments": []
         },
         {
-          "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "source_economic_snapshot_hash": "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63",
           "equity_snapshot_id": "equity-2-end",
           "as_of": "2026-01-03T00:00:00.000Z",
           "instruments": []
@@ -1737,7 +1737,7 @@
           "expected_exit_fee_accrued_usdt": "0"
         },
         {
-          "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "source_economic_snapshot_hash": "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63",
           "equity_snapshot_id": "equity-2-start",
           "as_of": "2026-01-02T00:00:00.000Z",
           "liquidation_equity_usdt": "1000",
@@ -1745,7 +1745,7 @@
           "expected_exit_fee_accrued_usdt": "0"
         },
         {
-          "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "source_economic_snapshot_hash": "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63",
           "equity_snapshot_id": "equity-2-end",
           "as_of": "2026-01-03T00:00:00.000Z",
           "liquidation_equity_usdt": "999",
@@ -1785,13 +1785,13 @@
       "counterfactual_series": {
         "$schema": "./statistical-series-snapshot-v1.schema.json",
         "schema_version": "1.2.0",
-        "series_id": "cf:5aff6647d59f79cf8f66d9c4eefea49b",
-        "series_hash": "56545d390dd1f51b7f28de2c32c90e1efeefd32e77215e6cbf16c204666a09e1",
+        "series_id": "cf:b034650034ebfeb7e570bafdc9e56872",
+        "series_hash": "cfa76112392e7d23927078a91dc156d485ef866269956642e3a49edb6a3d6e23",
         "hash_algorithm": "SHA-256",
         "canonicalization": "RFC8785_JCS",
         "source_economic_snapshot_hashes": [
           "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
-          "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e"
+          "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63"
         ],
         "accounting_policy_id": "accounting-replay",
         "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
@@ -1837,7 +1837,7 @@
             "period_end": "2026-01-03T00:00:00.000Z",
             "value": "-0.0010005003335835335001429822540683449607552052504344",
             "calendar_month_complete": false,
-            "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+            "source_economic_snapshot_hash": "7e5824ba9d748cb11bc15e435b680f3e2dcada5a4b069e70ca2a76fa71234a63",
             "fold_id": "fold-2",
             "counterfactual_replay_period_hash": "4ff91aeb9cbfc3f2876564271fa5936ba21aa6a4e09009a08f4109812c6a0351"
           }
@@ -2966,5 +2966,5 @@
       ]
     }
   ],
-  "bundle_hash": "ee92a5d02edcf3b03bd36a2bd95bea14991ad9386a8028d69d3892124d11fda6"
+  "bundle_hash": "3f5612b9e37ee98c6778403324114188738b6b9dea506186d0e6eeb73235b86f"
 }

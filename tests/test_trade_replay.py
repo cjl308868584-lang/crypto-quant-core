@@ -411,6 +411,106 @@ class CompleteTradeSourceReplayTests(unittest.TestCase):
                 forged_valuations,
             )
 
+    def test_cross_period_source_sequence_must_be_unique(self):
+        source, snapshots, valuations = complete_trade_replay_inputs(
+            trade_pnls=("10", "-5")
+        )
+        snapshots[1]["fills"][0]["source_event_sequence"] = snapshots[0][
+            "fills"
+        ][0]["source_event_sequence"]
+        self.rehash(source, snapshots, valuations)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "TRADE_REPLAY_SOURCE_SEQUENCE_DUPLICATE",
+        ):
+            self.analyze(source, snapshots, valuations)
+
+    def test_cross_period_source_sequence_must_progress(self):
+        source, snapshots, valuations = complete_trade_replay_inputs(
+            trade_pnls=("10", "-5")
+        )
+        for fact in (
+            snapshots[0]["fills"]
+            + snapshots[0]["equity_points"]
+        ):
+            fact["source_event_sequence"] += 100
+        self.rehash(source, snapshots, valuations)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "TRADE_REPLAY_SOURCE_SEQUENCE_NOT_INCREASING",
+        ):
+            self.analyze(source, snapshots, valuations)
+
+    def test_cross_period_fill_identity_must_be_unique(self):
+        source, snapshots, valuations = complete_trade_replay_inputs(
+            trade_pnls=("10", "-5")
+        )
+        for period_index, snapshot in enumerate(snapshots):
+            offset = period_index * 4
+            for fact in snapshot["fills"] + snapshot["equity_points"]:
+                fact["source_event_sequence"] += offset
+        snapshots[1]["fills"][0]["fill_id"] = snapshots[0]["fills"][0][
+            "fill_id"
+        ]
+        snapshots[1]["fills"][1]["fill_id"] = snapshots[0]["fills"][1][
+            "fill_id"
+        ]
+        self.rehash(source, snapshots, valuations)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "TRADE_REPLAY_FACT_ID_DUPLICATE",
+        ):
+            self.analyze(source, snapshots, valuations)
+
+    def test_cross_period_funding_identity_must_be_unique(self):
+        source, snapshots, valuations = complete_trade_replay_inputs(
+            trade_pnls=("10", "-5")
+        )
+        for period_index, snapshot in enumerate(snapshots):
+            sequence = period_index * 5
+            snapshot["equity_points"][0][
+                "source_event_sequence"
+            ] = sequence + 1
+            snapshot["fills"][0]["source_event_sequence"] = sequence + 2
+            snapshot["funding_cashflows"] = [
+                {
+                    "funding_id": "funding-duplicate",
+                    "source_event_sequence": sequence + 3,
+                    "instrument_id": "BINANCE:SPOT:BTCUSDT",
+                    "signed_amount_usdt": "1",
+                    "position_quantity": "1",
+                    "funding_rate": "0.01",
+                    "mark_price": "100",
+                    "settled_at": (
+                        datetime.fromisoformat(
+                            snapshot["fills"][0][
+                                "exchange_event_time"
+                            ].replace("Z", "+00:00")
+                        )
+                        + timedelta(hours=1)
+                    )
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z"),
+                }
+            ]
+            snapshot["fills"][1]["source_event_sequence"] = sequence + 4
+            snapshot["fills"][1]["price"] = canonical_decimal(
+                Decimal(snapshot["fills"][1]["price"]) - Decimal("1")
+            )
+            snapshot["equity_points"][1][
+                "source_event_sequence"
+            ] = sequence + 5
+        self.rehash(source, snapshots, valuations)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "TRADE_REPLAY_FACT_ID_DUPLICATE",
+        ):
+            self.analyze(source, snapshots, valuations)
+
 
 class CompleteTradeCounterfactualTests(unittest.TestCase):
     @staticmethod
@@ -522,6 +622,44 @@ class CompleteTradeCounterfactualTests(unittest.TestCase):
             "TRADE_REPLAY_COUNTERFACTUAL_MISMATCH",
             trade_replay_snapshot_reasons(tampered),
         )
+
+    def test_rehashed_top_level_contract_tampering_fails_closed(self):
+        artifact = self.build()
+        cases = {
+            "$schema": "./forged-trade-replay.schema.json",
+            "schema_version": "9.9.9",
+            "hash_algorithm": "FORGED",
+            "canonicalization": "FORGED",
+            "unexpected_field": "FORGED",
+            "generated_at": "not-a-date",
+        }
+        for field, value in cases.items():
+            with self.subTest(field=field):
+                tampered = deepcopy(artifact)
+                tampered[field] = value
+                tampered["replay_hash"] = trade_replay_snapshot_hash(
+                    tampered
+                )
+                reason_field = (
+                    "additionalProperties"
+                    if field == "unexpected_field"
+                    else field
+                )
+                reason = (
+                    "TRADE_REPLAY_CONTRACT_MISMATCH:"
+                    f"{reason_field}"
+                )
+                self.assertIn(
+                    reason,
+                    trade_replay_snapshot_reasons(tampered),
+                )
+                status, _, reasons = (
+                    leave_top_5_positive_trades_out_mbb_lcb95(
+                        {"trade_replay_snapshot": tampered}
+                    )
+                )
+                self.assertEqual(status, "FAIL")
+                self.assertIn(reason, reasons)
 
     def test_selected_trade_removes_all_fills_and_owned_funding(self):
         source, snapshots, valuations = complete_trade_replay_inputs(

@@ -1,6 +1,7 @@
 # 实施追踪 v0.13.0
 
-状态：Phase 0 第十三个增量  
+状态：Phase 0 第十三个增量
+
 权威范围：[开发路线与验收门槛 v1.1，第 9 节](delivery-roadmap-v1.1.md#9-紧接着执行的第一个迭代)
 
 本表只记录已有实现和自动化证据。所有正收益结果均来自合成 Fixture，不是策略或
@@ -24,6 +25,8 @@ AI 的真实盈利记录。
 - `EconomicLedgerSnapshot v1.1` 保存每个经济事实的
   `source_event_sequence`，Fill 保存三类不可变成交/订单 identity；v1.0 消费者保持
   兼容。
+- 完整 replay 来源额外验证跨周期 sequence 与稳定事实 ID 唯一性，防止一个被选中
+  交易的 Fill/Funding ID 碰撞后误删另一笔未选中交易。
 - 新增 `TradeReplaySnapshot v1`，内嵌源 StatisticalSeries、EconomicSnapshot、
   可执行估值 checkpoint、原始路径、派生完整交易、Top-5 选择和反事实序列。
 - 完整交易固定为单 instrument 的零到零持仓周期；split fills 合并为同一交易，
@@ -40,9 +43,9 @@ AI 的真实盈利记录。
   Estimator Registry 升至 `1.5.0`，Evaluator Build Manifest 升至 `1.6.0`。
 - 57 个 Catalog 算法中 21 个可执行、36 个明确 Fail-Closed；Golden vectors
   由 29 个增至 33 个。
-- v0.13.0 定向发布验证共 48 项通过，覆盖 Registry、Release evaluator 和完整交易
+- v0.13.0 定向发布验证共 53 项通过，覆盖 Registry、Release evaluator 和完整交易
   replay。
-- 全量自动化套件共 155 项通过；确定性构建、5 类发布 Artifact Schema 和 8 份
+- 全量自动化套件共 159 项通过；确定性构建、5 类发布 Artifact Schema 和 8 份
   未审批治理模板均完成独立验证。
 
 ## 围绕赚钱目标的解释
