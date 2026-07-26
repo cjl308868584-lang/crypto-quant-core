@@ -32,8 +32,9 @@
 - 双侧区间、原始单侧 p 值和 MERE 功效使用同一冻结序列、确定性 MBB 和规范
   Decimal；功效使用候选实际 Holm rank 的调整 alpha。
 - GateEvidence 绑定 Artifact、Policy/Catalog、ExperimentManifest、Recipe、
-  Scope、资本、端点、窗口、ESS 和全部 family 源哈希；Supporting Observation
-  缺任一来源即失败关闭。
+  Scope、账户、资本、端点、窗口、ESS 和全部 family 源哈希；每个嵌入源还须
+  通过 StatisticalSeries Schema 并匹配 accounting、cost-allocation、split 和
+  statistical-design policy；Supporting Observation 缺任一来源即失败关闭。
 - 新 required Gate：
   `HOLM_ADJUSTED_PRIMARY_PASS` 和
   `AUDIT_BASE_HOLM_ADJUSTED_PRIMARY_PASS`。
@@ -42,8 +43,8 @@
 - Golden report hash：
   `2c02a9cfd888efd18f348e2583ac0dc12746f612dbb8cd0b820a80802b11f34e`。
 - Evaluator build hash：
-  `74ff520f3c880242146ea285f181ea34532d3c14cc163539658c997f36eb74ec`。
-- 全量自动化套件共 183 项通过；命令：
+  `de5bb5b882b982c8f77790c4893ef4d232a8f7c21b1d0bdb0ba8deadb69a01dd`。
+- 全量自动化套件共 185 项通过；命令：
   `PYTHONPATH=src python3 -m unittest discover -s tests -v`。
 
 ## 失败关闭与变异覆盖
@@ -52,6 +53,7 @@
 - 源序列自哈希、Scope、Recipe、Bootstrap 设计、候选窗口和 family 来源缺失。
 - Holm 缓存的 p 值、rank、阈值、reached/rejected 状态篡改。
 - CI、ESS、功效缓存篡改，以及 GateEvidence 样本 ESS 不一致。
+- 账户、主要端点 ID/单位/方向错配，以及任一源序列政策身份或 Schema 缺失。
 - 样本/区块不足、零方差和 Bootstrap 分辨率不足返回 `INCONCLUSIVE`。
 - GateEvidence 上传的有利标量不会替代可信快照重放结果。
 

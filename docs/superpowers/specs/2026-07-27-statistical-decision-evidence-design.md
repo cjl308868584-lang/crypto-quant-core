@@ -118,6 +118,10 @@ endpoint_unit
 endpoint_direction = GREATER
 ```
 
+GateEvidence 对三个统计决策 Estimator 必须显式携带同名 `account_id`、
+`endpoint_id`、`endpoint_unit` 和 `endpoint_direction`，并把它们纳入 Evidence
+Scope hash；Evaluator 不得把 Snapshot 自己声明的端点或账户当作外部授权来源。
+
 候选的 `recipe_release_id/hash` 可以不同，这是 family 比较的对象。`current_candidate_id` 对应的 recipe 必须与 GateEvidence 实际 Scope 完全一致。
 
 OOS 和 SEALED_AUDIT 必须生成不同 Snapshot；不得把 Audit 序列用于选择 OOS 候选，也不得在同一 Artifact 混合两个 Ledger。
@@ -155,6 +159,8 @@ quantile_rule = CONSERVATIVE_NEAREST_RANK_V1
   区间用途，两者不得因为 side 不同而被判为设计冲突；
 - 与 ExperimentManifest 的 MERE、target power、trial family、Holm 和 FWER alpha 精确一致；
 - Artifact 中的 StatisticalDesignPolicy ID/hash 与 Release Evidence 冻结绑定一致；
+- 每个嵌入源序列都通过 StatisticalSeries Schema，并与权威 accounting、
+  cost-allocation、split 和 statistical-design policy ID/hash 一致；
 - 生成时间不早于评估窗口结束，冻结政策和 Manifest 的时间必须早于首次结果揭晓。
 
 任一设计字段缺失、冲突或在结果后改变均返回 `FAIL`，不得降级为 `INCONCLUSIVE`。
@@ -190,9 +196,10 @@ Trial Registry 身份哈希不得包含 `recipe_release_hash` 或
 `source_series_hash`：Recipe 和来源序列本身都绑定 ExperimentManifest
 hash，如果 Manifest 再通过 Trial Registry hash 反向包含它们，会形成不可
 构造的密码学循环。Registry 仍通过 candidate ID、status 和 recipe ID
-禁止删除或改名；全部 Recipe/source hash 则由 Snapshot 自哈希、
-GateEvidence `artifact_hashes` 和 Supporting Observation 完整集合承诺，
-不能被替换或遗漏。
+禁止删除或改名。全部 Recipe hash 由 Snapshot 自哈希及其冻结证明传递承诺；
+每个 evaluated source hash 还必须独立列入 GateEvidence `artifact_hashes` 和
+Supporting Observation 完整集合，不能被替换或遗漏。这里不要求把 Recipe hash
+再次平铺到来源列表中。
 
 ## 5. 可重放统计方法
 

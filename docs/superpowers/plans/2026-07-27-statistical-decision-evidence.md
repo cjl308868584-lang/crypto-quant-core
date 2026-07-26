@@ -929,7 +929,10 @@ Add to `frozen_release_inputs.properties` in `config/release-evidence-v1.1.schem
 "statistical_decision_snapshot": {"$ref": "#/$defs/freezeProof"}
 ```
 
-In the Estimator-dependent conditional, require this freeze proof whenever `estimator_id` is one of the three Task 2 IDs. Do not also require `trade_replay_snapshot`.
+Add conditional `account_id`, `endpoint_id`, `endpoint_unit`, and
+`endpoint_direction` properties. In the Estimator-dependent conditional, require
+those four fields and this freeze proof whenever `estimator_id` is one of the
+three Task 2 IDs. Do not also require `trade_replay_snapshot`.
 
 Add `statistical_decision_snapshot` to both `PolicyBundle._SCHEMAS` in
 `src/crypto_quant/release.py` and `load_release_artifact_schemas` in
@@ -981,6 +984,13 @@ Run the dedicated reference validator for all three IDs, then pass only the trus
 4. Compare GateEvidence scope fields, current candidate recipe, approved capital, endpoint, and evaluation window.
 5. Require `snapshot_hash`, `trial_registry_hash`, and every evaluated source series hash in Evidence `artifact_hashes`.
 6. Compare current `effective_event_count` to `evidence.sample_status.effective_event_count` with integer/non-boolean semantics.
+7. Validate every evaluated embedded source against the StatisticalSeries Schema
+   and match its accounting, cost-allocation, split, statistical-design, and
+   experiment identities to the authoritative evidence/trust bindings.
+
+For a valid `INCONCLUSIVE` Snapshot, `current_candidate_results` is null; skip
+the ESS equality check rather than manufacturing a mismatch. The Estimator and
+Gate must preserve `INCONCLUSIVE`.
 
 Deduplicate with `tuple(sorted(set(reasons)))`. Reference failures must keep the Gate result `FAIL` even if the cached Artifact estimator result is favorable.
 

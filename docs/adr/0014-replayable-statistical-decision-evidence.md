@@ -88,11 +88,14 @@ GateEvidence 样本状态精确匹配。
 
 Evaluator 重算全部派生量，并绑定 Artifact 自哈希、冻结证明、Policy/Catalog
 身份、ExperimentManifest、trial family、MERE、FWER alpha、Trial 数量、注册表
-哈希、Recipe、资本/端点/窗口 Scope、ESS 和全部可评估源序列哈希。Supporting
+哈希、Recipe、账户、资本/端点/窗口 Scope、ESS 和全部可评估源序列哈希。每个
+嵌入源序列还必须通过 StatisticalSeries Schema，并与权威 accounting、
+cost-allocation、split 和 statistical-design policy ID/hash 一致。Supporting
 Observation 必须列全快照、注册表和 family 源哈希。
 
 样本或区块不足、零方差、Bootstrap 分辨率不足以解析 Holm alpha 时返回
-`INCONCLUSIVE`；哈希、Scope、设计、来源或缓存重放不一致时失败关闭。
+`INCONCLUSIVE`；此时没有派生 ESS 缓存，不把合法 null 误判为 ESS 篡改。哈希、
+Scope、设计、来源或缓存重放不一致时失败关闭。
 
 ## 被拒绝的替代方案
 

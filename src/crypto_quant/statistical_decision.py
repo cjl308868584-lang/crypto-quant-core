@@ -31,6 +31,16 @@ _SOURCE_BOOTSTRAP_FIELDS = (
     "sampling_rule",
     "quantile_rule",
 )
+_SOURCE_POLICY_IDENTITY_FIELDS = (
+    "accounting_policy_id",
+    "accounting_policy_hash",
+    "cost_allocation_policy_id",
+    "cost_allocation_policy_hash",
+    "split_policy_id",
+    "split_policy_hash",
+    "statistical_design_policy_id",
+    "statistical_design_policy_hash",
+)
 _SCOPE_FIELDS = (
     "account_id",
     "evaluation_ledger",
@@ -327,6 +337,7 @@ def _replay_statistical_decision(
     candidate_data: Dict[
         str, Tuple[Mapping[str, Any], Tuple[Decimal, ...], str]
     ] = {}
+    family_policy_identity: Optional[Dict[str, Any]] = None
     sample_reasons = []
     for item in registry:
         if not isinstance(item, Mapping):
@@ -360,6 +371,26 @@ def _replay_statistical_decision(
                 f"STATISTICAL_DECISION_SOURCE_SERIES_INVALID:{candidate_id}"
             )
             continue
+        source_policy_identity = {
+            name: source.get(name)
+            for name in _SOURCE_POLICY_IDENTITY_FIELDS
+        }
+        for name, value in source_policy_identity.items():
+            validator = _valid_hash if name.endswith("_hash") else _valid_id
+            if not validator(value):
+                reasons.append(
+                    "STATISTICAL_DECISION_SOURCE_POLICY_INVALID:"
+                    f"{candidate_id}:{name}"
+                )
+        if family_policy_identity is None:
+            family_policy_identity = source_policy_identity
+        else:
+            for name, expected in family_policy_identity.items():
+                if source_policy_identity[name] != expected:
+                    reasons.append(
+                        "STATISTICAL_DECISION_SOURCE_POLICY_MISMATCH:"
+                        f"{candidate_id}:{name}"
+                    )
         source_reasons = statistical_series_reasons(source)
         try:
             computed_source_hash = statistical_series_hash(source)

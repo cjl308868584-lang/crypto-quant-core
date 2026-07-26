@@ -222,6 +222,54 @@ class StatisticalDecisionTests(unittest.TestCase):
             statistical_decision_snapshot_reasons(tampered),
         )
 
+    def test_source_policy_identity_is_complete_and_common_across_family(self):
+        snapshot = build_snapshot()
+        missing = deepcopy(snapshot)
+        missing_member = next(
+            item
+            for item in missing["trial_registry"]
+            if item["candidate_id"] == "candidate-current"
+        )
+        del missing_member["source_series_snapshot"]["accounting_policy_id"]
+        missing_member["source_series_snapshot"]["series_hash"] = (
+            statistical_series_hash(
+                missing_member["source_series_snapshot"],
+            )
+        )
+        missing_member["source_series_hash"] = missing_member[
+            "source_series_snapshot"
+        ]["series_hash"]
+        missing["snapshot_hash"] = statistical_decision_snapshot_hash(missing)
+        self.assertIn(
+            "STATISTICAL_DECISION_SOURCE_POLICY_INVALID:"
+            "candidate-current:accounting_policy_id",
+            statistical_decision_snapshot_reasons(missing),
+        )
+
+        foreign = deepcopy(snapshot)
+        foreign_member = next(
+            item
+            for item in foreign["trial_registry"]
+            if item["candidate_id"] == "candidate-current"
+        )
+        foreign_member["source_series_snapshot"][
+            "accounting_policy_hash"
+        ] = "e" * 64
+        foreign_member["source_series_snapshot"]["series_hash"] = (
+            statistical_series_hash(
+                foreign_member["source_series_snapshot"],
+            )
+        )
+        foreign_member["source_series_hash"] = foreign_member[
+            "source_series_snapshot"
+        ]["series_hash"]
+        foreign["snapshot_hash"] = statistical_decision_snapshot_hash(foreign)
+        self.assertIn(
+            "STATISTICAL_DECISION_SOURCE_POLICY_MISMATCH:"
+            "candidate-current:accounting_policy_hash",
+            statistical_decision_snapshot_reasons(foreign),
+        )
+
     def test_cached_family_result_tampering_fails_after_outer_rehash(self):
         snapshot = build_snapshot()
         tampered = deepcopy(snapshot)

@@ -823,10 +823,14 @@ class GateEvidenceTests(unittest.TestCase):
             ],
         ]
         evidence = {
+            "account_id": scope["account_id"],
             "release_route": scope["release_route"],
             "evaluation_ledger": scope["evaluation_ledger"],
             "direction": scope["direction"],
             "venue": scope["venue"],
+            "endpoint_id": scope["endpoint_id"],
+            "endpoint_unit": scope["endpoint_unit"],
+            "endpoint_direction": scope["endpoint_direction"],
             "recipe_release_id": current["recipe_release_id"],
             "recipe_release_hash": current["recipe_release_hash"],
             "deployment_line_id": scope["deployment_line_id"],
@@ -840,6 +844,9 @@ class GateEvidenceTests(unittest.TestCase):
             "experiment_manifest_id": snapshot["experiment_manifest_id"],
             "experiment_manifest_hash": snapshot["experiment_manifest_hash"],
             "policy_binding_hashes": {
+                "accounting_policy_id": "3" * 64,
+                "cost_allocation_policy_id": "4" * 64,
+                "split_policy_id": "5" * 64,
                 "statistical_design_policy_id": snapshot[
                     "statistical_design_policy_hash"
                 ],
@@ -875,8 +882,13 @@ class GateEvidenceTests(unittest.TestCase):
         }
         trust = EvidenceTrustContext(
             policy_bundle_hash="",
-            binding_ids={},
-            binding_hashes={},
+            binding_ids={
+                "accounting_policy_id": "accounting-replay",
+                "cost_allocation_policy_id": "cost-replay",
+                "split_policy_id": "split-replay",
+                "statistical_design_policy_id": "statistics-replay",
+            },
+            binding_hashes=dict(evidence["policy_binding_hashes"]),
             artifact_hashes={
                 "statistical_decision_snapshot": snapshot["snapshot_hash"],
             },
@@ -888,7 +900,7 @@ class GateEvidenceTests(unittest.TestCase):
         )
         return snapshot, evidence, trust
 
-    def complete_statistical_gate_fixture(self):
+    def complete_statistical_gate_fixture(self, *, current_values=None):
         bundle, envelopes, _, trust = self.fixture()
         evidence = deepcopy(envelopes[0])
         recipe = deepcopy(trust.artifact_documents["recipe_release"])
@@ -898,7 +910,13 @@ class GateEvidenceTests(unittest.TestCase):
         deployment = deepcopy(
             trust.artifact_documents["deployment_line"]
         )
-        inputs = statistical_decision_inputs()
+        inputs = statistical_decision_inputs(
+            **(
+                {"current_values": current_values}
+                if current_values is not None
+                else {}
+            )
+        )
         current = next(
             item
             for item in inputs["trial_registry"]
@@ -985,6 +1003,20 @@ class GateEvidenceTests(unittest.TestCase):
             source["statistical_design_policy_hash"] = evidence[
                 "policy_binding_hashes"
             ]["statistical_design_policy_id"]
+            for source_prefix, binding_name in (
+                ("accounting_policy", "accounting_policy_id"),
+                (
+                    "cost_allocation_policy",
+                    "cost_allocation_policy_id",
+                ),
+                ("split_policy", "split_policy_id"),
+            ):
+                source[f"{source_prefix}_id"] = trust.binding_ids[
+                    binding_name
+                ]
+                source[f"{source_prefix}_hash"] = evidence[
+                    "policy_binding_hashes"
+                ][binding_name]
             source["scope"]["deployment_line_id"] = deployment[
                 "deployment_line_id"
             ]
@@ -1026,6 +1058,7 @@ class GateEvidenceTests(unittest.TestCase):
             if item["gate_id"] == "HOLM_ADJUSTED_PRIMARY_PASS"
         )
         definition = bundle.metrics.resolve(gate["metric_id"])
+        computed = snapshot["analysis_status"] == "COMPUTED"
         evidence.update(
             {
                 "evidence_id": "evidence-holm-adjusted-primary-pass",
@@ -1034,6 +1067,10 @@ class GateEvidenceTests(unittest.TestCase):
                 "metric_id": gate["metric_id"],
                 "estimator_id": definition["estimator_id"],
                 "metric_unit": definition["unit"],
+                "account_id": inputs["scope"]["account_id"],
+                "endpoint_id": inputs["scope"]["endpoint_id"],
+                "endpoint_unit": inputs["scope"]["endpoint_unit"],
+                "endpoint_direction": inputs["scope"]["endpoint_direction"],
                 "evaluation_ledger": inputs["scope"]["evaluation_ledger"],
                 "recipe_release_id": recipe["recipe_release_id"],
                 "recipe_release_hash": recipe["recipe_release_hash"],
@@ -1049,10 +1086,14 @@ class GateEvidenceTests(unittest.TestCase):
                     "evaluation_window_end"
                 ],
                 "approved_production_capital_usdt": "500",
-                "metric_value": True,
+                "metric_value": (
+                    snapshot["current_candidate_results"]["holm_rejected"]
+                    if computed
+                    else None
+                ),
                 "comparator": "EQ",
-                "threshold_snapshot": True,
-                "result": "PASS",
+                "threshold_snapshot": True if computed else None,
+                "result": "PASS" if computed else "INCONCLUSIVE",
                 "sample_status": {
                     "raw_event_count": 6,
                     "effective_event_count": 2,
@@ -1168,6 +1209,32 @@ class GateEvidenceTests(unittest.TestCase):
             "statistical_decision_snapshot"
         ]
         self.assertTrue(bundle.evidence_schema_errors(missing_freeze))
+        for field in (
+            "account_id",
+            "endpoint_id",
+            "endpoint_unit",
+            "endpoint_direction",
+        ):
+            missing_scope = deepcopy(evidence)
+            del missing_scope[field]
+            self.assertTrue(
+                bundle.evidence_schema_errors(missing_scope),
+                field,
+            )
+
+        inconclusive = self.complete_statistical_gate_fixture(
+            current_values=("1", "1", "1", "1", "1", "1"),
+        )
+        bundle, evidence, scope, trust, snapshot = inconclusive
+        result = bundle.validate_gate_evidence(
+            "SAMPLE",
+            evidence,
+            expected_scope=scope,
+            trust=trust,
+        )
+        self.assertEqual(snapshot["analysis_status"], "INCONCLUSIVE")
+        self.assertTrue(result.valid, result.reason_codes)
+        self.assertEqual(result.computed_gate_result, "INCONCLUSIVE")
 
     def test_supporting_observation_requires_complete_statistical_family_sources(
         self,
@@ -1372,6 +1439,21 @@ class GateEvidenceTests(unittest.TestCase):
                 "evaluation_window_end",
             )
         )
+        for field, wrong_value in (
+            ("account_id", "other-account"),
+            ("endpoint_id", "UNRELATED_ENDPOINT"),
+            ("endpoint_unit", "arbitrary_unit"),
+            ("endpoint_direction", "LESS"),
+        ):
+            wrong_decision_scope = deepcopy(evidence)
+            wrong_decision_scope[field] = wrong_value
+            cases.append(
+                (
+                    wrong_decision_scope,
+                    trust,
+                    f"STATISTICAL_DECISION_SCOPE_MISMATCH:{field}",
+                )
+            )
         wrong_recipe = deepcopy(evidence)
         wrong_recipe["recipe_release_hash"] = "f" * 64
         cases.append(
@@ -1446,6 +1528,106 @@ class GateEvidenceTests(unittest.TestCase):
                 "STATISTICAL_DECISION_POLICY_IDENTITY_MISMATCH",
             )
         )
+        wrong_source_policy = deepcopy(snapshot)
+        wrong_source = next(
+            item["source_series_snapshot"]
+            for item in wrong_source_policy["trial_registry"]
+            if item["candidate_id"] == "candidate-current"
+        )
+        wrong_source["accounting_policy_id"] = "foreign-accounting"
+        wrong_source["accounting_policy_hash"] = "e" * 64
+        wrong_source["series_hash"] = statistical_series_hash(wrong_source)
+        current_member = next(
+            item
+            for item in wrong_source_policy["trial_registry"]
+            if item["candidate_id"] == "candidate-current"
+        )
+        current_member["source_series_hash"] = wrong_source["series_hash"]
+        wrong_source_policy["snapshot_hash"] = (
+            statistical_decision_snapshot_hash(wrong_source_policy)
+        )
+        wrong_source_evidence = deepcopy(evidence)
+        wrong_source_evidence["frozen_release_inputs"][
+            "statistical_decision_snapshot"
+        ]["artifact_hash"] = wrong_source_policy["snapshot_hash"]
+        wrong_source_evidence["artifact_hashes"] = [
+            wrong_source_policy["snapshot_hash"],
+            wrong_source_policy["trial_registry_hash"],
+            *[
+                item["source_series_hash"]
+                for item in wrong_source_policy["trial_registry"]
+                if item["candidate_status"] == "EVALUATED"
+            ],
+        ]
+        cases.append(
+            (
+                wrong_source_evidence,
+                replace(
+                    trust,
+                    artifact_hashes={
+                        "statistical_decision_snapshot": (
+                            wrong_source_policy["snapshot_hash"]
+                        ),
+                    },
+                    artifact_documents={
+                        **trust.artifact_documents,
+                        "statistical_decision_snapshot": wrong_source_policy,
+                    },
+                ),
+                "STATISTICAL_DECISION_SOURCE_POLICY_MISMATCH:"
+                "candidate-current:accounting_policy_id",
+            )
+        )
+        schema_invalid_source = deepcopy(snapshot)
+        schema_invalid_member = next(
+            item
+            for item in schema_invalid_source["trial_registry"]
+            if item["candidate_id"] == "candidate-current"
+        )
+        del schema_invalid_member["source_series_snapshot"]["$schema"]
+        schema_invalid_member["source_series_snapshot"]["series_hash"] = (
+            statistical_series_hash(
+                schema_invalid_member["source_series_snapshot"],
+            )
+        )
+        schema_invalid_member["source_series_hash"] = schema_invalid_member[
+            "source_series_snapshot"
+        ]["series_hash"]
+        schema_invalid_source["snapshot_hash"] = (
+            statistical_decision_snapshot_hash(schema_invalid_source)
+        )
+        schema_invalid_evidence = deepcopy(evidence)
+        schema_invalid_evidence["frozen_release_inputs"][
+            "statistical_decision_snapshot"
+        ]["artifact_hash"] = schema_invalid_source["snapshot_hash"]
+        schema_invalid_evidence["artifact_hashes"] = [
+            schema_invalid_source["snapshot_hash"],
+            schema_invalid_source["trial_registry_hash"],
+            *[
+                item["source_series_hash"]
+                for item in schema_invalid_source["trial_registry"]
+                if item["candidate_status"] == "EVALUATED"
+            ],
+        ]
+        cases.append(
+            (
+                schema_invalid_evidence,
+                replace(
+                    trust,
+                    artifact_hashes={
+                        "statistical_decision_snapshot": (
+                            schema_invalid_source["snapshot_hash"]
+                        ),
+                    },
+                    artifact_documents={
+                        **trust.artifact_documents,
+                        "statistical_decision_snapshot": schema_invalid_source,
+                    },
+                ),
+                "STATISTICAL_DECISION_SOURCE:"
+                "candidate-current_SCHEMA:$",
+            )
+        )
 
         for candidate_evidence, candidate_trust, expected in cases:
             with self.subTest(expected=expected):
@@ -1456,6 +1638,55 @@ class GateEvidenceTests(unittest.TestCase):
                         candidate_trust,
                     ),
                 )
+
+    def test_inconclusive_statistical_decision_keeps_inconclusive_semantics(self):
+        _, evidence, trust = self.statistical_reference_fixture()
+        snapshot = make_statistical_decision_snapshot(
+            current_values=("1", "1", "1", "1", "1", "1"),
+        )
+        evidence["frozen_release_inputs"]["statistical_decision_snapshot"][
+            "artifact_hash"
+        ] = snapshot["snapshot_hash"]
+        evidence["artifact_hashes"] = [
+            snapshot["snapshot_hash"],
+            snapshot["trial_registry_hash"],
+            *[
+                item["source_series_hash"]
+                for item in snapshot["trial_registry"]
+                if item["candidate_status"] == "EVALUATED"
+            ],
+        ]
+        trust = replace(
+            trust,
+            artifact_hashes={
+                "statistical_decision_snapshot": snapshot["snapshot_hash"],
+            },
+            artifact_documents={
+                **trust.artifact_documents,
+                "statistical_decision_snapshot": snapshot,
+            },
+        )
+
+        self.assertEqual(snapshot["analysis_status"], "INCONCLUSIVE")
+        self.assertIsNone(snapshot["current_candidate_results"])
+        self.assertEqual(
+            self.bundle._statistical_decision_reference_reasons(
+                evidence,
+                trust,
+            ),
+            (),
+        )
+        for estimator_id in (
+            "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1",
+            "PRIMARY_ENDPOINT_CI_WIDTH_V1",
+            "ACHIEVED_POWER_AT_MERE_V1",
+        ):
+            execution = self.bundle.estimators.execute(
+                estimator_id,
+                {"statistical_decision_snapshot": snapshot},
+            )
+            self.assertEqual(execution.status, "INCONCLUSIVE")
+            self.assertIsNone(execution.value)
 
     def test_complete_capital_gate_envelopes_validate(self):
         bundle, envelopes, scope, trust = self.fixture()

@@ -108,6 +108,21 @@
         "ROUTE_RUNTIME"
       ]
     },
+    "account_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "endpoint_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "endpoint_unit": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "endpoint_direction": {
+      "const": "GREATER"
+    },
     "fallback_activation_requested": {
       "type": "boolean"
     },
@@ -595,22 +610,25 @@
     {
       "if": {
         "required": [
-          "metric_id"
+          "estimator_id"
         ],
         "properties": {
-          "metric_id": {
+          "estimator_id": {
             "enum": [
-              "primary_endpoint_holm_adjusted_pass",
-              "audit_primary_endpoint_holm_adjusted_pass",
-              "achieved_power_at_minimum_economic_effect",
-              "audit_achieved_power_at_minimum_economic_effect",
-              "actual_primary_endpoint_ci_width",
-              "audit_actual_primary_endpoint_ci_width"
+              "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1",
+              "ACHIEVED_POWER_AT_MERE_V1",
+              "PRIMARY_ENDPOINT_CI_WIDTH_V1"
             ]
           }
         }
       },
       "then": {
+        "required": [
+          "account_id",
+          "endpoint_id",
+          "endpoint_unit",
+          "endpoint_direction"
+        ],
         "properties": {
           "frozen_release_inputs": {
             "required": [

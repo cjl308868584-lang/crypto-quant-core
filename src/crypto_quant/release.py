@@ -580,6 +580,17 @@ class PolicyBundle:
         if evidence.get("release_route") == "AI_ENHANCED":
             dimensions.extend(self.policy["evidence_scope"]["ai_dimensions"])
             dimensions.extend(("model_bundle_schema_id", "model_bundle_hash"))
+        if evidence.get("estimator_id") in (
+            _STATISTICAL_DECISION_ESTIMATOR_IDS
+        ):
+            dimensions.extend(
+                (
+                    "account_id",
+                    "endpoint_id",
+                    "endpoint_unit",
+                    "endpoint_direction",
+                )
+            )
         stage = evidence.get("stage")
         if stage in ("CANARY_25", "CANARY_50", "CANARY_75"):
             dimensions.extend(self.policy["evidence_scope"]["canary_dimensions"])
@@ -1858,6 +1869,7 @@ class PolicyBundle:
         if not isinstance(scope, Mapping):
             scope = {}
         for name in (
+            "account_id",
             "evaluation_ledger",
             "release_route",
             "direction",
@@ -1867,6 +1879,9 @@ class PolicyBundle:
             "evaluation_window_start",
             "evaluation_window_end",
             "approved_production_capital_usdt",
+            "endpoint_id",
+            "endpoint_unit",
+            "endpoint_direction",
         ):
             if not self._same_business_value(
                 scope.get(name),
@@ -1916,30 +1931,65 @@ class PolicyBundle:
                 if (
                     isinstance(item, Mapping)
                     and item.get("candidate_status") == "EVALUATED"
-                    and item.get("source_series_hash") not in artifact_set
                 ):
-                    reasons.append(
-                        "STATISTICAL_DECISION_SOURCE_HASH_MISSING:"
-                        f"{item.get('candidate_id')}"
+                    candidate_id = item.get("candidate_id")
+                    if item.get("source_series_hash") not in artifact_set:
+                        reasons.append(
+                            "STATISTICAL_DECISION_SOURCE_HASH_MISSING:"
+                            f"{candidate_id}"
+                        )
+                    source = item.get("source_series_snapshot")
+                    if not isinstance(source, Mapping):
+                        continue
+                    reasons.extend(
+                        self._artifact_schema_reasons(
+                            "statistical-series-snapshot-v1.schema.json",
+                            source,
+                            "STATISTICAL_DECISION_SOURCE:"
+                            f"{candidate_id}",
+                        )
                     )
+                    for source_prefix, binding_name in (
+                        ("accounting_policy", "accounting_policy_id"),
+                        (
+                            "cost_allocation_policy",
+                            "cost_allocation_policy_id",
+                        ),
+                        ("split_policy", "split_policy_id"),
+                        (
+                            "statistical_design_policy",
+                            "statistical_design_policy_id",
+                        ),
+                    ):
+                        if source.get(
+                            f"{source_prefix}_id"
+                        ) != trust.binding_ids.get(binding_name):
+                            reasons.append(
+                                "STATISTICAL_DECISION_SOURCE_POLICY_MISMATCH:"
+                                f"{candidate_id}:{source_prefix}_id"
+                            )
+                        if source.get(
+                            f"{source_prefix}_hash"
+                        ) != claimed_bindings.get(binding_name):
+                            reasons.append(
+                                "STATISTICAL_DECISION_SOURCE_POLICY_MISMATCH:"
+                                f"{candidate_id}:{source_prefix}_hash"
+                            )
         sample = evidence.get("sample_status")
         current_results = snapshot.get("current_candidate_results")
-        expected_ess = (
-            current_results.get("effective_event_count")
-            if isinstance(current_results, Mapping)
-            else None
-        )
-        actual_ess = (
-            sample.get("effective_event_count")
-            if isinstance(sample, Mapping)
-            else None
-        )
-        if (
-            isinstance(actual_ess, bool)
-            or not isinstance(actual_ess, int)
-            or actual_ess != expected_ess
-        ):
-            reasons.append("STATISTICAL_DECISION_SAMPLE_ESS_MISMATCH")
+        if isinstance(current_results, Mapping):
+            expected_ess = current_results.get("effective_event_count")
+            actual_ess = (
+                sample.get("effective_event_count")
+                if isinstance(sample, Mapping)
+                else None
+            )
+            if (
+                isinstance(actual_ess, bool)
+                or not isinstance(actual_ess, int)
+                or actual_ess != expected_ess
+            ):
+                reasons.append("STATISTICAL_DECISION_SAMPLE_ESS_MISMATCH")
         return tuple(sorted(set(reasons)))
 
     def _endpoint_reevaluation_reference_reasons(
