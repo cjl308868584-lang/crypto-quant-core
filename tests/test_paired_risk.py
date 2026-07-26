@@ -12,6 +12,8 @@ from crypto_quant.economics import (
     economic_snapshot_hash,
     economic_snapshot_reasons,
 )
+from crypto_quant.estimators import EstimatorRegistry
+from crypto_quant.release import MetricResolver, load_json_strict
 from crypto_quant.statistics import (
     statistical_series_hash,
     statistical_series_reasons,
@@ -606,3 +608,82 @@ class PairedRiskEstimatorTests(PairedRiskArtifactTests):
                 ("PAIRED_RISK_NO_CHANGED_PAIRS",),
             ),
         )
+
+
+class PairedRiskRegistryTests(PairedRiskEstimatorTests):
+    @classmethod
+    def setUpClass(cls):
+        cls.catalog = load_json_strict(
+            ROOT / "config" / "release-metrics-v1.1.json"
+        )
+        cls.registry = EstimatorRegistry.load(ROOT / "config", cls.catalog)
+
+    def test_catalog_risk_metrics_resolve_to_executable_estimators(self):
+        resolver = MetricResolver(self.catalog)
+        expected = {
+            "ai_max_drawdown_relative_improvement_lcb95": (
+                "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1"
+            ),
+            "ai_es95_loss_relative_improvement_lcb95": (
+                "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1"
+            ),
+            "audit_ai_max_drawdown_relative_improvement_lcb95": (
+                "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1"
+            ),
+            "audit_ai_es95_loss_relative_improvement_lcb95": (
+                "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1"
+            ),
+            (
+                "minor_risk_efficiency_candidate_minus_active_"
+                "mdd_improvement_lcb95"
+            ): "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1",
+            (
+                "minor_risk_efficiency_candidate_minus_active_"
+                "es95_improvement_lcb95"
+            ): "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1",
+        }
+        snapshot = self.constant_risk_snapshot()
+        for metric_id, estimator_id in expected.items():
+            with self.subTest(metric_id=metric_id):
+                self.assertEqual(
+                    resolver.resolve(metric_id)["estimator_id"],
+                    estimator_id,
+                )
+                result = self.registry.execute(
+                    estimator_id,
+                    {"paired_risk_evaluation_snapshot": snapshot},
+                )
+                self.assertEqual(result.status, "COMPUTED")
+                self.assertIsNotNone(result.value)
+
+    def test_registry_rejects_schema_invalid_paired_risk_input(self):
+        snapshot = self.constant_risk_snapshot()
+        snapshot["unknown"] = True
+        result = self.registry.execute(
+            "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1",
+            {"paired_risk_evaluation_snapshot": snapshot},
+        )
+        self.assertEqual(result.status, "FAIL")
+        self.assertEqual(
+            result.reason_codes,
+            ("PAIRED_RISK_SNAPSHOT_SCHEMA_INVALID",),
+        )
+
+    def test_registry_executes_exact_risk_values(self):
+        snapshot = self.constant_risk_snapshot()
+        expected = {
+            "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1": (
+                "0.43463233152068362788891046805204894154204699941735"
+            ),
+            "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1": (
+                "0.51316397734676037470101922702151960759678732407446"
+            ),
+        }
+        for estimator_id, value in expected.items():
+            with self.subTest(estimator_id=estimator_id):
+                result = self.registry.execute(
+                    estimator_id,
+                    {"paired_risk_evaluation_snapshot": snapshot},
+                )
+                self.assertEqual(result.status, "COMPUTED")
+                self.assertEqual(result.value, value)

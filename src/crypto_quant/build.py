@@ -26,6 +26,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/evaluator-build-manifest-v1.schema.json",
     "config/experiment-manifest-v1.1.schema.json",
     "config/model-bundle-v1.1.schema.json",
+    "config/paired-risk-evaluation-snapshot-v1.schema.json",
     "config/recipe-release-v1.1.schema.json",
     "config/release-evidence-v1.1.schema.json",
     "config/release-gates-v1.1.json",

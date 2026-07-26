@@ -1,7 +1,7 @@
 {
   "$schema": "./release-metrics-v1.1.schema.json",
   "catalog_id": "release-metrics-v1.1",
-  "catalog_version": "1.1.5",
+  "catalog_version": "1.1.6",
   "status": "DESIGN_BASELINE",
   "algorithm_execution": {
     "descriptive_formula_strings_are_not_evaluated": true,
@@ -660,15 +660,25 @@
       "nonpositive_equity": "FAIL"
     },
     "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1": {
-      "point_formula": "(baseline_max_drawdown - ai_max_drawdown) / baseline_max_drawdown",
+      "path_source": "PairedRiskEvaluationSnapshot cash-flow-adjusted economic log-return segments replayed from exact EconomicLedgerSnapshots",
+      "pairing_unit": "proposal_id + decision_time observation segment; all matched changed and unchanged segments remain in each risk path",
+      "point_formula": "(reference_max_drawdown - candidate_max_drawdown) / reference_max_drawdown",
       "interval": "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1",
-      "zero_baseline_loss": "INCONCLUSIVE"
+      "bootstrap_statistic": "(resampled_reference_max_drawdown - resampled_candidate_max_drawdown) / observed_reference_max_drawdown",
+      "paired_sampling": "identical matched segment block indices are applied to reference and candidate; MDD is recomputed inside every replicate",
+      "zero_reference_loss": "INCONCLUSIVE",
+      "unpaired_observation": "INCONCLUSIVE"
     },
     "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1": {
-      "loss_convention": "ES95_is_positive_loss_magnitude",
-      "point_formula": "(baseline_es95_loss - ai_es95_loss) / baseline_es95_loss",
+      "path_source": "PairedRiskEvaluationSnapshot cash-flow-adjusted economic log-return segments replayed from exact EconomicLedgerSnapshots",
+      "loss_convention": "positive_loss_magnitude = max(0, -economic_log_return)",
+      "empirical_es95": "mean of largest max(1, ceil(0.05 * observation_count)) positive loss magnitudes with no interpolation",
+      "point_formula": "(reference_es95_loss - candidate_es95_loss) / reference_es95_loss",
       "interval": "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1",
-      "zero_baseline_loss": "INCONCLUSIVE"
+      "bootstrap_statistic": "(resampled_reference_es95_loss - resampled_candidate_es95_loss) / observed_reference_es95_loss",
+      "paired_sampling": "identical matched segment block indices are applied to reference and candidate; ES95 is recomputed inside every replicate",
+      "zero_reference_loss": "INCONCLUSIVE",
+      "unpaired_observation": "INCONCLUSIVE"
     },
     "RISK_EFFICIENCY_PARETO_DOMINANCE_V1": {
       "all_required": [

@@ -40,16 +40,16 @@ class EstimatorRegistryTests(unittest.TestCase):
         executable = set(self.registry.executable_estimator_ids)
         unavailable = set(self.registry.unavailable_estimator_ids)
 
-        self.assertEqual(self.catalog["catalog_version"], "1.1.5")
+        self.assertEqual(self.catalog["catalog_version"], "1.1.6")
         self.assertEqual(
             self.registry.registry["registry_version"],
-            "1.6.0",
+            "1.7.0",
         )
         self.assertEqual(all_ids, executable | unavailable)
         self.assertFalse(executable & unavailable)
         self.assertEqual(len(all_ids), 58)
-        self.assertEqual(len(executable), 24)
-        self.assertEqual(len(unavailable), 34)
+        self.assertEqual(len(executable), 26)
+        self.assertEqual(len(unavailable), 32)
 
         unavailable_result = self.registry.execute(
             "DEFLATED_SHARPE_CONFIDENCE_V1",
@@ -241,12 +241,12 @@ class EstimatorRegistryTests(unittest.TestCase):
     def test_golden_vectors_are_deterministic(self):
         reports = [self.registry.run_golden_vectors() for _ in range(100)]
         self.assertTrue(all(report.passed for report in reports))
-        self.assertEqual({report.vector_count for report in reports}, {39})
+        self.assertEqual({report.vector_count for report in reports}, {41})
         self.assertEqual(
             {report.report_hash for report in reports},
             {
-                "2c02a9cfd888efd18f348e2583ac0dc"
-                "12746f612dbb8cd0b820a80802b11f34e"
+                "e3e7dc45865d860489514a574c64ca14"
+                "a8dd6f089a0b74129414231741882fc3"
             },
         )
 
@@ -301,13 +301,18 @@ class EvaluatorBuildTests(unittest.TestCase):
             "config/statistical-decision-snapshot-v1.schema.json",
             expected,
         )
+        self.assertIn(
+            "config/paired-risk-evaluation-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.7.0")
+        self.assertEqual(manifest["manifest_version"], "1.8.0")
         self.assertEqual(manifest["package_version"], "0.14.0")
-        self.assertEqual(manifest["metric_catalog_version"], "1.1.5")
-        self.assertEqual(manifest["golden_vector_count"], 39)
-        self.assertEqual(build.executable_estimator_count, 24)
-        self.assertEqual(build.unavailable_estimator_count, 34)
+        self.assertEqual(manifest["metric_catalog_version"], "1.1.6")
+        self.assertEqual(manifest["golden_vector_count"], 41)
+        self.assertEqual(build.executable_estimator_count, 26)
+        self.assertEqual(build.unavailable_estimator_count, 32)
         self.assertEqual(build.build_hash, manifest["manifest_hash"])
 
     def test_modified_evaluator_input_is_rejected(self):

@@ -2,9 +2,9 @@
   "$schema": "./estimator-golden-vectors-v1.schema.json",
   "schema_version": "1.0.0",
   "bundle_id": "estimator-golden-vectors-v1",
-  "bundle_version": "1.3.0",
+  "bundle_version": "1.4.0",
   "estimator_registry_id": "estimator-registry-v1",
-  "estimator_registry_hash": "95fba10fd37bca9d3c86b63037cc984d0b2a6e85a143a5f7f424db0d65b11f3f",
+  "estimator_registry_hash": "6145c7ff5fdbf871980bef07904227079c25364f11e397bc4479ba7a784b3002",
   "fixtures": {
     "economic-snapshot-valid": {
       "$schema": "./economic-ledger-snapshot-v1.schema.json",
@@ -3656,7 +3656,29 @@
       "expected_reason_codes": [
         "STATISTICAL_DECISION_INSUFFICIENT_BLOCKS:candidate-current"
       ]
+    },
+    {
+      "vector_id": "paired-risk-mdd-input-required",
+      "estimator_id": "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1",
+      "inputs": {},
+      "fixture_bindings": {},
+      "expected_status": "FAIL",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "ESTIMATOR_INPUT_MISSING:paired_risk_evaluation_snapshot"
+      ]
+    },
+    {
+      "vector_id": "paired-risk-es95-input-required",
+      "estimator_id": "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1",
+      "inputs": {},
+      "fixture_bindings": {},
+      "expected_status": "FAIL",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "ESTIMATOR_INPUT_MISSING:paired_risk_evaluation_snapshot"
+      ]
     }
   ],
-  "bundle_hash": "4ed220315e83a074603d734e5eac1912360338a4d1527a6d72d39ff60921d6fb"
+  "bundle_hash": "5e29465e6bfb570517924019f9afed8befa006994da07cb00c459a8dee01b18d"
 }

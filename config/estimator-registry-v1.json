@@ -2,9 +2,9 @@
   "$schema": "./estimator-registry-v1.schema.json",
   "schema_version": "1.0.0",
   "registry_id": "estimator-registry-v1",
-  "registry_version": "1.6.0",
+  "registry_version": "1.7.0",
   "metric_catalog_id": "release-metrics-v1.1",
-  "metric_catalog_version": "1.1.5",
+  "metric_catalog_version": "1.1.6",
   "status": "BUILD_CANDIDATE",
   "coverage_mode": "CATALOG_COMPLEMENT",
   "unlisted_estimator_policy": {
@@ -400,7 +400,37 @@
         "statistical-decision-holm-computed",
         "statistical-decision-holm-inconclusive"
       ]
+    },
+    {
+      "estimator_id": "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1",
+      "implementation_id": "paired_risk.paired-max-drawdown-relative-improvement-lcb95",
+      "implementation_version": "1.0.0",
+      "callable_id": "paired_max_drawdown_relative_improvement_lcb95",
+      "input_fields": [
+        "paired_risk_evaluation_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "paired-risk-mdd-input-required"
+      ]
+    },
+    {
+      "estimator_id": "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1",
+      "implementation_id": "paired_risk.paired-es95-relative-improvement-lcb95",
+      "implementation_version": "1.0.0",
+      "callable_id": "paired_es95_relative_improvement_lcb95",
+      "input_fields": [
+        "paired_risk_evaluation_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "paired-risk-es95-input-required"
+      ]
     }
   ],
-  "registry_hash": "95fba10fd37bca9d3c86b63037cc984d0b2a6e85a143a5f7f424db0d65b11f3f"
+  "registry_hash": "6145c7ff5fdbf871980bef07904227079c25364f11e397bc4479ba7a784b3002"
 }

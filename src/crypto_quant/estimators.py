@@ -19,6 +19,10 @@ from .economics import (
 )
 from .errors import CanonicalizationError, PolicyError
 from .evidence import artifact_self_hash
+from .paired_risk import (
+    paired_es95_relative_improvement_lcb95,
+    paired_max_drawdown_relative_improvement_lcb95,
+)
 from .reevaluation import (
     leave_max_positive_delta_event_out_endpoint_reevaluation,
     leave_max_positive_delta_fold_out_endpoint_reevaluation,
@@ -219,6 +223,12 @@ _CALLABLES: Mapping[
     "holm_family_adjusted_primary_pass": (
         holm_family_adjusted_primary_pass
     ),
+    "paired_max_drawdown_relative_improvement_lcb95": (
+        paired_max_drawdown_relative_improvement_lcb95
+    ),
+    "paired_es95_relative_improvement_lcb95": (
+        paired_es95_relative_improvement_lcb95
+    ),
 }
 
 
@@ -236,6 +246,7 @@ class EstimatorRegistry:
         endpoint_reevaluation_schema: Mapping[str, Any],
         trade_replay_schema: Mapping[str, Any],
         statistical_decision_schema: Mapping[str, Any],
+        paired_risk_schema: Mapping[str, Any],
     ) -> None:
         self.registry = registry
         self.golden_vectors = golden_vectors
@@ -245,6 +256,7 @@ class EstimatorRegistry:
         self.endpoint_reevaluation_schema = endpoint_reevaluation_schema
         self.trade_replay_schema = trade_replay_schema
         self.statistical_decision_schema = statistical_decision_schema
+        self.paired_risk_schema = paired_risk_schema
         self.registry_hash = registry["registry_hash"]
         self.golden_bundle_hash = golden_vectors["bundle_hash"]
         self._implementations = {
@@ -281,6 +293,9 @@ class EstimatorRegistry:
         statistical_decision_schema = _load_json_strict(
             config_dir / "statistical-decision-snapshot-v1.schema.json"
         )
+        paired_risk_schema = _load_json_strict(
+            config_dir / "paired-risk-evaluation-snapshot-v1.schema.json"
+        )
         Draft202012Validator.check_schema(registry_schema)
         Draft202012Validator.check_schema(golden_schema)
         Draft202012Validator.check_schema(economic_snapshot_schema)
@@ -288,6 +303,7 @@ class EstimatorRegistry:
         Draft202012Validator.check_schema(endpoint_reevaluation_schema)
         Draft202012Validator.check_schema(trade_replay_schema)
         Draft202012Validator.check_schema(statistical_decision_schema)
+        Draft202012Validator.check_schema(paired_risk_schema)
         registry = _load_json_strict(config_dir / "estimator-registry-v1.json")
         golden = _load_json_strict(
             config_dir / "estimator-golden-vectors-v1.json"
@@ -371,6 +387,7 @@ class EstimatorRegistry:
             endpoint_reevaluation_schema=endpoint_reevaluation_schema,
             trade_replay_schema=trade_replay_schema,
             statistical_decision_schema=statistical_decision_schema,
+            paired_risk_schema=paired_risk_schema,
         )
         report = instance.run_golden_vectors()
         if not report.passed:
@@ -538,6 +555,20 @@ class EstimatorRegistry:
                     (
                         "STATISTICAL_DECISION_SOURCE_SERIES_SCHEMA_INVALID",
                     ),
+                )
+        if "paired_risk_evaluation_snapshot" in required_fields:
+            errors = list(
+                Draft202012Validator(self.paired_risk_schema).iter_errors(
+                    inputs["paired_risk_evaluation_snapshot"]
+                )
+            )
+            if errors:
+                return self._execution(
+                    estimator_id,
+                    implementation,
+                    "FAIL",
+                    None,
+                    ("PAIRED_RISK_SNAPSHOT_SCHEMA_INVALID",),
                 )
         status, value, reasons = _CALLABLES[implementation["callable_id"]](inputs)
         return self._execution(
