@@ -1,0 +1,709 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "experiment-manifest-v1.1.schema.json",
+  "title": "Immutable Experiment Manifest v1.1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "experiment_id",
+    "experiment_manifest_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "hypothesis_id",
+    "parent_experiment_ids",
+    "release_route",
+    "ai_endpoint",
+    "endpoint_policy_version",
+    "baseline_recipe_release_id",
+    "baseline_recipe_release_hash",
+    "route_and_endpoint_frozen_at",
+    "created_by",
+    "created_at",
+    "status",
+    "failure_reason",
+    "code_and_environment",
+    "data",
+    "frozen_design_hashes",
+    "economics",
+    "search_budget",
+    "outputs",
+    "recipe_binding",
+    "manifest_attestation"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./experiment-manifest-v1.1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.1.0"
+    },
+    "experiment_id": {
+      "$ref": "#/$defs/id"
+    },
+    "experiment_manifest_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "hypothesis_id": {
+      "$ref": "#/$defs/id"
+    },
+    "parent_experiment_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "release_route": {
+      "enum": [
+        "BASELINE_ONLY",
+        "AI_ENHANCED"
+      ]
+    },
+    "ai_endpoint": {
+      "enum": [
+        null,
+        "GROWTH",
+        "RISK_EFFICIENCY"
+      ]
+    },
+    "endpoint_policy_version": {
+      "$ref": "#/$defs/version"
+    },
+    "baseline_recipe_release_id": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "baseline_recipe_release_hash": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "route_and_endpoint_frozen_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "created_by": {
+      "enum": [
+        "HUMAN",
+        "AGENT"
+      ]
+    },
+    "created_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "status": {
+      "enum": [
+        "PLANNED",
+        "RUNNING",
+        "FAILED",
+        "COMPLETED",
+        "INVALIDATED"
+      ]
+    },
+    "failure_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "code_and_environment": {
+      "$ref": "#/$defs/codeAndEnvironment"
+    },
+    "data": {
+      "$ref": "#/$defs/data"
+    },
+    "frozen_design_hashes": {
+      "$ref": "#/$defs/frozenDesignHashes"
+    },
+    "economics": {
+      "$ref": "#/$defs/economics"
+    },
+    "search_budget": {
+      "$ref": "#/$defs/searchBudget"
+    },
+    "outputs": {
+      "$ref": "#/$defs/outputs"
+    },
+    "recipe_binding": {
+      "$ref": "#/$defs/recipeBinding"
+    },
+    "manifest_attestation": {
+      "$ref": "#/$defs/attestation"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "release_route": {
+            "const": "BASELINE_ONLY"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ai_endpoint": {
+            "const": null
+          },
+          "baseline_recipe_release_id": {
+            "const": null
+          },
+          "baseline_recipe_release_hash": {
+            "const": null
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "ai_endpoint": {
+            "enum": [
+              "GROWTH",
+              "RISK_EFFICIENCY"
+            ]
+          },
+          "baseline_recipe_release_id": {
+            "$ref": "#/$defs/id"
+          },
+          "baseline_recipe_release_hash": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "FAILED",
+              "INVALIDATED"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failure_reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "failure_reason": {
+            "const": null
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "nullableId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableSha256": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "hashArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "required": [
+        "snapshot_id",
+        "snapshot_hash"
+      ],
+      "properties": {
+        "snapshot_id": {
+          "$ref": "#/$defs/id"
+        },
+        "snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "window": {
+      "type": "object",
+      "required": [
+        "role",
+        "start",
+        "end"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "FIT",
+            "CALIBRATION",
+            "VALIDATION",
+            "SEALED_AUDIT"
+          ]
+        },
+        "start": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "end": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "additionalProperties": false
+    },
+    "codeAndEnvironment": {
+      "type": "object",
+      "required": [
+        "git_commit",
+        "dirty_worktree",
+        "dirty_patch_hash",
+        "environment_lock_hash",
+        "library_hardware_hash",
+        "random_seeds",
+        "training_entrypoint",
+        "parameters_hash"
+      ],
+      "properties": {
+        "git_commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "dirty_worktree": {
+          "type": "boolean"
+        },
+        "dirty_patch_hash": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "environment_lock_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "library_hardware_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "random_seeds": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "training_entrypoint": {
+          "$ref": "#/$defs/id"
+        },
+        "parameters_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "dirty_worktree": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "dirty_patch_hash": {
+                "const": null
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "dirty_patch_hash": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "raw_snapshots",
+        "data_source_policy_hash",
+        "available_time_rule_hash",
+        "instrument_metadata_hashes",
+        "windows",
+        "purge_hours",
+        "embargo_hours",
+        "missing_anomaly_rule_hash",
+        "data_quality_report_hash"
+      ],
+      "properties": {
+        "raw_snapshots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/snapshot"
+          }
+        },
+        "data_source_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "available_time_rule_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "instrument_metadata_hashes": {
+          "$ref": "#/$defs/hashArray"
+        },
+        "windows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/window"
+          }
+        },
+        "purge_hours": {
+          "type": "integer",
+          "minimum": 24
+        },
+        "embargo_hours": {
+          "type": "integer",
+          "minimum": 24
+        },
+        "missing_anomaly_rule_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "data_quality_report_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "frozenDesignHashes": {
+      "type": "object",
+      "required": [
+        "strategy_proposal_hash",
+        "feature_schema_hash",
+        "label_definition_hash",
+        "model_family_hash",
+        "hyperparameter_search_space_hash",
+        "calibration_method_hash",
+        "decision_thresholds_hash",
+        "position_policy_hash",
+        "risk_policy_hash",
+        "execution_fill_model_hash",
+        "data_source_policy_hash",
+        "cost_definition_hash",
+        "accounting_policy_hash",
+        "interface_compatibility_hash",
+        "data_quality_policy_hash",
+        "split_policy_hash",
+        "statistical_design_policy_hash",
+        "cost_allocation_policy_hash",
+        "forward_control_policy_hash",
+        "release_gate_policy_hash",
+        "policy_bundle_hash"
+      ],
+      "properties": {
+        "strategy_proposal_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "feature_schema_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "label_definition_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "model_family_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "hyperparameter_search_space_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "calibration_method_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "decision_thresholds_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "position_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "risk_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "execution_fill_model_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "data_source_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "cost_definition_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "accounting_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "interface_compatibility_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "data_quality_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "split_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "statistical_design_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "cost_allocation_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "forward_control_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "release_gate_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "policy_bundle_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "economics": {
+      "type": "object",
+      "required": [
+        "approved_production_capital_usdt",
+        "reporting_asset",
+        "evaluation_window_start",
+        "evaluation_window_end",
+        "minimum_economic_effect",
+        "target_power",
+        "maximum_ci_width",
+        "trial_family_id",
+        "multiplicity_method",
+        "family_wise_alpha",
+        "benchmark_hash"
+      ],
+      "properties": {
+        "approved_production_capital_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "reporting_asset": {
+          "const": "USDT"
+        },
+        "evaluation_window_start": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "evaluation_window_end": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "minimum_economic_effect": {
+          "$ref": "#/$defs/decimal"
+        },
+        "target_power": {
+          "const": "0.80"
+        },
+        "maximum_ci_width": {
+          "$ref": "#/$defs/decimal"
+        },
+        "trial_family_id": {
+          "$ref": "#/$defs/id"
+        },
+        "multiplicity_method": {
+          "const": "HOLM"
+        },
+        "family_wise_alpha": {
+          "const": "0.05"
+        },
+        "benchmark_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "searchBudget": {
+      "type": "object",
+      "required": [
+        "predeclared_trial_budget",
+        "actual_total_trials",
+        "hyperparameter_search_space_hash",
+        "feature_set_count",
+        "threshold_variant_count",
+        "aborted_trials",
+        "failed_trials",
+        "invalid_trials",
+        "trial_registry_hash"
+      ],
+      "properties": {
+        "predeclared_trial_budget": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "actual_total_trials": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hyperparameter_search_space_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "feature_set_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "threshold_variant_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "aborted_trials": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_trials": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "invalid_trials": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "trial_registry_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputs": {
+      "type": "object",
+      "required": [
+        "model_and_calibrator_hashes",
+        "oos_prediction_artifact_hash",
+        "fold_trades_equity_hash",
+        "metrics_charts_audit_hash",
+        "feature_stability_hash",
+        "failure_log_hash",
+        "conclusion",
+        "signed_by"
+      ],
+      "properties": {
+        "model_and_calibrator_hashes": {
+          "$ref": "#/$defs/hashArray"
+        },
+        "oos_prediction_artifact_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "fold_trades_equity_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "metrics_charts_audit_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "feature_stability_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "failure_log_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "conclusion": {
+          "enum": [
+            "REJECT",
+            "CONTINUE_RESEARCH",
+            "CANDIDATE"
+          ]
+        },
+        "signed_by": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "additionalProperties": false
+    },
+    "recipeBinding": {
+      "type": "object",
+      "required": [
+        "recipe_release_id",
+        "recipe_release_hash",
+        "recipe_binding_hash"
+      ],
+      "properties": {
+        "recipe_release_id": {
+          "$ref": "#/$defs/id"
+        },
+        "recipe_release_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "recipe_binding_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "attestation": {
+      "type": "object",
+      "required": [
+        "algorithm",
+        "key_id",
+        "signed_at",
+        "signature_base64"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "ED25519"
+        },
+        "key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "signed_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "signature_base64": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

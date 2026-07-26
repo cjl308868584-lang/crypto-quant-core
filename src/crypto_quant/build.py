@@ -16,11 +16,13 @@ from .evidence import artifact_self_hash
 
 _FROZEN_CONFIG_PATHS = (
     "config/approved-fallback-registry-v1.1.schema.json",
+    "config/deployment-line-v1.1.schema.json",
     "config/estimator-golden-vectors-v1.json",
     "config/estimator-golden-vectors-v1.schema.json",
     "config/estimator-registry-v1.json",
     "config/estimator-registry-v1.schema.json",
     "config/evaluator-build-manifest-v1.schema.json",
+    "config/experiment-manifest-v1.1.schema.json",
     "config/model-bundle-v1.1.schema.json",
     "config/recipe-release-v1.1.schema.json",
     "config/release-evidence-v1.1.schema.json",
@@ -28,6 +30,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/release-gates-v1.1.schema.json",
     "config/release-metrics-v1.1.json",
     "config/release-metrics-v1.1.schema.json",
+    "config/supporting-observation-bundle-v1.schema.json",
     "pyproject.toml",
     "requirements.lock",
 )

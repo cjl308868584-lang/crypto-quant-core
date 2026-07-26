@@ -28,8 +28,11 @@
 20. [Estimator Golden Vector Schema](config/estimator-golden-vectors-v1.schema.json)
 21. [Evaluator Build Manifest](config/evaluator-build-manifest-v1.json)
 22. [Evaluator Build Manifest Schema](config/evaluator-build-manifest-v1.schema.json)
+23. [ExperimentManifest Schema](config/experiment-manifest-v1.1.schema.json)
+24. [DeploymentLine Schema](config/deployment-line-v1.1.schema.json)
+25. [Supporting Observation Bundle Schema](config/supporting-observation-bundle-v1.schema.json)
 
-如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，发布对象字段分别以三份对象Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
+如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
 机器政策当前是 `DESIGN_BASELINE` 且 `production_activation.enabled=false`。在DataQuality、Split、StatisticalDesign、Accounting、CostAllocation、ForwardControl、Compliance Attestation及Evaluator build hash全部绑定前，任何正式PASS都无效；这是有意的Fail-Closed状态。
 
@@ -42,9 +45,9 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.7.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata与提交前安全舍入、核心决策链首版、SQLite WAL追加账本与Outbox、v1.1列明的账本投影和Checkpoint首版、Golden Replay、RiskLock与部署档位风控、Target/Intent/Attempt顺序约束、订单UNKNOWN对账状态机、PositionExecutor首版、八类未审批治理模板，以及支持安全AST、动态阈值、精确Evidence Scope、完整GateEvidence信封、Recipe/Model/Fallback信任链、版本化Estimator Registry和Evaluator Build Manifest的Fail-Closed Release Evaluator。
+Git中的设计基线已冻结，当前代码版本为 `0.8.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata与提交前安全舍入、核心决策链首版、SQLite WAL追加账本与Outbox、v1.1列明的账本投影和Checkpoint首版、Golden Replay、RiskLock与部署档位风控、Target/Intent/Attempt顺序约束、订单UNKNOWN对账状态机、PositionExecutor首版、八类未审批治理模板，以及支持完整GateEvidence、Recipe/Experiment/DeploymentLine/Model/Fallback信任链、受信Supporting Observation、Estimator Registry和Evaluator Build Manifest的Fail-Closed Release Evaluator。
 
-当前57个Catalog算法中只有4个资本Estimator可执行，其余53个明确Fail-Closed；这避免把尚未实现的统计或AI方法包装成盈利证据。当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度和未完成项见[实施追踪 v0.7.0](docs/implementation-status-v0.7.0.md)，Estimator与构建信任边界见[ADR-0007](docs/adr/0007-estimator-registry-and-evaluator-build.md)。
+当前57个Catalog算法中只有4个资本Estimator可执行，其余53个明确Fail-Closed；这避免把尚未实现的统计或AI方法包装成盈利证据。自由supporting metric映射也已禁止参与正式求值。当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度和未完成项见[实施追踪 v0.8.0](docs/implementation-status-v0.8.0.md)，Artifact lineage决策见[ADR-0008](docs/adr/0008-release-artifact-lineage-and-supporting-observations.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：

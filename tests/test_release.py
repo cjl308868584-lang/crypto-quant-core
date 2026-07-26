@@ -41,7 +41,10 @@ class ReleaseEvaluatorTests(unittest.TestCase):
             "release_kind": "INITIAL",
             "recipe_release_id": "recipe-1",
             "recipe_release_hash": "a" * 64,
+            "experiment_manifest_id": "experiment-1",
+            "experiment_manifest_hash": "e" * 64,
             "deployment_line_id": "line-1",
+            "deployment_line_hash": "f" * 64,
             "direction": "LONG",
             "venue": "BINANCE_SPOT",
             "stage": stage,
@@ -577,7 +580,9 @@ class ReleaseEvaluatorTests(unittest.TestCase):
             {
                 "metric_catalog_id": "release-metrics-v1.1",
                 "release_gate_policy_id": "release-gates-v1.1",
-                "release_gate_policy_version": "1.1.2",
+                "release_gate_policy_version": (
+                    self.bundle.policy["policy_version"]
+                ),
                 "recipe_release_schema_id": "recipe-release-v1.1.schema.json",
                 "frozen_release_inputs": {
                     "approved_capital_and_break_even_plan": {
@@ -590,6 +595,8 @@ class ReleaseEvaluatorTests(unittest.TestCase):
         self.assertEqual(snapshot["ai_endpoint"], "GROWTH")
         self.assertEqual(snapshot["canary_block_number"], 1)
         self.assertEqual(snapshot["actual_deployable_capital_usdt"], "1000")
+        self.assertEqual(snapshot["experiment_manifest_id"], "experiment-1")
+        self.assertEqual(snapshot["deployment_line_hash"], "f" * 64)
         self.assertIn("policy_binding_hashes", snapshot)
         self.assertEqual(
             snapshot["approved_capital_and_break_even_plan_hash"],
@@ -602,6 +609,25 @@ class ReleaseEvaluatorTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertTrue(first)
         self.assertTrue(all(reason.startswith("EVIDENCE_SCHEMA:") for reason in first))
+
+    def test_policy_scope_dimensions_must_exist_in_evidence_schema(self) -> None:
+        policy = deepcopy(self.bundle.policy)
+        policy["evidence_scope"]["required_dimensions"].append(
+            "undeclared_scope_field"
+        )
+        bundle = PolicyBundle(
+            root=self.bundle.root,
+            policy=policy,
+            catalog=deepcopy(self.bundle.catalog),
+            evidence_schema=deepcopy(self.bundle.evidence_schema),
+            estimators=self.bundle.estimators,
+            evaluator_build=self.bundle.evaluator_build,
+        )
+        with self.assertRaisesRegex(
+            PolicyError,
+            "Evidence Scope fields absent from schema",
+        ):
+            bundle.validate_cross_references()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "deployment-line-v1.1.schema.json",
+  "title": "Deployment Line v1.1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "deployment_line_id",
+    "deployment_line_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "release_kind",
+    "recipe_release_id",
+    "recipe_release_hash",
+    "experiment_manifest_hash",
+    "release_route",
+    "ai_endpoint",
+    "baseline_recipe_release_id",
+    "baseline_recipe_release_hash",
+    "direction",
+    "venue",
+    "created_at",
+    "updated_at",
+    "revision",
+    "lifecycle_status",
+    "current_stage",
+    "stage_history",
+    "active_model_bundle_id",
+    "active_model_bundle_hash",
+    "active_no_ai_base_version",
+    "last_known_good_reference_hash",
+    "minor_bundle_refresh_count",
+    "evidence_inheritance",
+    "line_attestation"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./deployment-line-v1.1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.1.0"
+    },
+    "deployment_line_id": {
+      "$ref": "#/$defs/id"
+    },
+    "deployment_line_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "release_kind": {
+      "enum": [
+        "INITIAL",
+        "MAJOR"
+      ]
+    },
+    "recipe_release_id": {
+      "$ref": "#/$defs/id"
+    },
+    "recipe_release_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "experiment_manifest_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "release_route": {
+      "enum": [
+        "BASELINE_ONLY",
+        "AI_ENHANCED"
+      ]
+    },
+    "ai_endpoint": {
+      "enum": [
+        null,
+        "GROWTH",
+        "RISK_EFFICIENCY"
+      ]
+    },
+    "baseline_recipe_release_id": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "baseline_recipe_release_hash": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "direction": {
+      "enum": [
+        "LONG",
+        "SHORT"
+      ]
+    },
+    "venue": {
+      "enum": [
+        "BINANCE_SPOT",
+        "BINANCE_USDT_PERP"
+      ]
+    },
+    "created_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "updated_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "lifecycle_status": {
+      "enum": [
+        "ACTIVE",
+        "PAUSED",
+        "RETIRED"
+      ]
+    },
+    "current_stage": {
+      "$ref": "#/$defs/stage"
+    },
+    "stage_history": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 7,
+      "items": {
+        "$ref": "#/$defs/stageRecord"
+      }
+    },
+    "active_model_bundle_id": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "active_model_bundle_hash": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "active_no_ai_base_version": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "last_known_good_reference_hash": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "minor_bundle_refresh_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "evidence_inheritance": {
+      "type": "object",
+      "required": [
+        "minor_bundle_may_preserve_stage_calendar",
+        "bundle_segments_required",
+        "major_change_inherits_evidence",
+        "stage_runtime_pass_reuse_allowed"
+      ],
+      "properties": {
+        "minor_bundle_may_preserve_stage_calendar": {
+          "const": true
+        },
+        "bundle_segments_required": {
+          "const": true
+        },
+        "major_change_inherits_evidence": {
+          "const": false
+        },
+        "stage_runtime_pass_reuse_allowed": {
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "line_attestation": {
+      "$ref": "#/$defs/attestation"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "release_route": {
+            "const": "BASELINE_ONLY"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ai_endpoint": {
+            "const": null
+          },
+          "baseline_recipe_release_id": {
+            "const": null
+          },
+          "baseline_recipe_release_hash": {
+            "const": null
+          },
+          "active_model_bundle_id": {
+            "const": null
+          },
+          "active_model_bundle_hash": {
+            "const": null
+          },
+          "active_no_ai_base_version": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "ai_endpoint": {
+            "enum": [
+              "GROWTH",
+              "RISK_EFFICIENCY"
+            ]
+          },
+          "baseline_recipe_release_id": {
+            "$ref": "#/$defs/id"
+          },
+          "baseline_recipe_release_hash": {
+            "$ref": "#/$defs/sha256"
+          },
+          "active_model_bundle_id": {
+            "$ref": "#/$defs/id"
+          },
+          "active_model_bundle_hash": {
+            "$ref": "#/$defs/sha256"
+          },
+          "active_no_ai_base_version": {
+            "const": null
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "nullableId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableSha256": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "stage": {
+      "enum": [
+        "RECIPE_CANDIDATE",
+        "SHADOW",
+        "PAPER",
+        "CANARY_25",
+        "CANARY_50",
+        "CANARY_75",
+        "CHAMPION"
+      ]
+    },
+    "stageRecord": {
+      "type": "object",
+      "required": [
+        "stage",
+        "entered_at",
+        "exited_at",
+        "result",
+        "evidence_hash"
+      ],
+      "properties": {
+        "stage": {
+          "$ref": "#/$defs/stage"
+        },
+        "entered_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "exited_at": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "enum": [
+            "IN_PROGRESS",
+            "PASS",
+            "FAIL",
+            "INCONCLUSIVE"
+          ]
+        },
+        "evidence_hash": {
+          "$ref": "#/$defs/nullableSha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "attestation": {
+      "type": "object",
+      "required": [
+        "algorithm",
+        "key_id",
+        "signed_at",
+        "signature_base64"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "ED25519"
+        },
+        "key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "signed_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "signature_base64": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

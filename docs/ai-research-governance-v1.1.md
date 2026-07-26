@@ -318,6 +318,8 @@ OOD只用于拒绝/缩仓，不得简单删除崩盘、跳空、极端Funding或
 
 不得删除失败Experiment来美化研究历史。
 
+实现时采用两段冻结避免与RecipeRelease形成循环self-hash：先冻结不包含`recipe_binding`和attestation的实验预注册内容，再由RecipeRelease引用该内容hash，最后以独立签名的`recipe_binding_hash`绑定实验hash与Recipe ID/hash。任何一段不一致都使发布证据无效。
+
 ## 9. ModelBundle
 
 正式模型包必须自包含：

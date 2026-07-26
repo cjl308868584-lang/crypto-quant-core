@@ -10,6 +10,13 @@ from crypto_quant.evidence import (
     gate_evidence_hash,
 )
 from crypto_quant.release import PolicyBundle
+from crypto_quant.release_artifacts import (
+    deployment_line_hash,
+    experiment_manifest_hash,
+    experiment_recipe_binding_hash,
+    supporting_observation_bundle_hash,
+    supporting_observation_hash,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,7 +85,7 @@ class GateEvidenceTests(unittest.TestCase):
             name: configured_bindings.get(name) or f"approved:{name}"
             for name in binding_hashes
         }
-        experiment_hash = digest("experiment-manifest")
+        experiment_hash = "0" * 64
         policy_bundle_hash = business_hash(
             {
                 "policy_binding_hashes": binding_hashes,
@@ -140,10 +147,172 @@ class GateEvidenceTests(unittest.TestCase):
             },
             "status": "FROZEN",
         }
+        experiment = {
+            "$schema": "./experiment-manifest-v1.1.schema.json",
+            "schema_version": "1.1.0",
+            "experiment_id": "experiment-1",
+            "experiment_manifest_hash": "0" * 64,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "hypothesis_id": "hypothesis-1",
+            "parent_experiment_ids": [],
+            "release_route": recipe["release_route"],
+            "ai_endpoint": recipe["ai_endpoint"],
+            "endpoint_policy_version": bundle.policy["policy_version"],
+            "baseline_recipe_release_id": recipe[
+                "baseline_recipe_release_id"
+            ],
+            "baseline_recipe_release_hash": recipe[
+                "baseline_recipe_release_hash"
+            ],
+            "route_and_endpoint_frozen_at": "2024-12-31T23:59:58Z",
+            "created_by": "HUMAN",
+            "created_at": "2024-12-31T23:59:57Z",
+            "status": "COMPLETED",
+            "failure_reason": None,
+            "code_and_environment": {
+                "git_commit": "a" * 40,
+                "dirty_worktree": False,
+                "dirty_patch_hash": None,
+                "environment_lock_hash": digest("experiment-environment"),
+                "library_hardware_hash": digest("library-hardware"),
+                "random_seeds": {
+                    "numpy": 7,
+                    "model": 11,
+                    "bootstrap": 13,
+                },
+                "training_entrypoint": "crypto_quant.train",
+                "parameters_hash": digest("training-parameters"),
+            },
+            "data": {
+                "raw_snapshots": [
+                    {
+                        "snapshot_id": "market-snapshot-1",
+                        "snapshot_hash": digest("market-snapshot"),
+                    }
+                ],
+                "data_source_policy_hash": recipe[
+                    "data_source_policy_hash"
+                ],
+                "available_time_rule_hash": digest("available-time-rule"),
+                "instrument_metadata_hashes": [
+                    digest("instrument-metadata")
+                ],
+                "windows": [
+                    {
+                        "role": "FIT",
+                        "start": "2023-01-01T00:00:00Z",
+                        "end": "2024-01-01T00:00:00Z",
+                    },
+                    {
+                        "role": "CALIBRATION",
+                        "start": "2024-01-01T00:00:00Z",
+                        "end": "2024-07-01T00:00:00Z",
+                    },
+                    {
+                        "role": "VALIDATION",
+                        "start": "2024-07-01T00:00:00Z",
+                        "end": "2025-01-01T00:00:00Z",
+                    },
+                ],
+                "purge_hours": 24,
+                "embargo_hours": 24,
+                "missing_anomaly_rule_hash": digest(
+                    "missing-anomaly-rule"
+                ),
+                "data_quality_report_hash": digest("data-quality-report"),
+            },
+            "frozen_design_hashes": {
+                name: recipe[name]
+                for name in (
+                    "strategy_proposal_hash",
+                    "feature_schema_hash",
+                    "label_definition_hash",
+                    "model_family_hash",
+                    "hyperparameter_search_space_hash",
+                    "calibration_method_hash",
+                    "decision_thresholds_hash",
+                    "position_policy_hash",
+                    "risk_policy_hash",
+                    "execution_fill_model_hash",
+                    "data_source_policy_hash",
+                    "cost_definition_hash",
+                    "accounting_policy_hash",
+                    "interface_compatibility_hash",
+                    "data_quality_policy_hash",
+                    "split_policy_hash",
+                    "statistical_design_policy_hash",
+                    "cost_allocation_policy_hash",
+                    "forward_control_policy_hash",
+                    "release_gate_policy_hash",
+                    "policy_bundle_hash",
+                )
+            },
+            "economics": {
+                "approved_production_capital_usdt": "500",
+                "reporting_asset": "USDT",
+                "evaluation_window_start": "2025-01-01T00:00:00Z",
+                "evaluation_window_end": "2025-12-31T23:59:59Z",
+                "minimum_economic_effect": "0.001",
+                "target_power": "0.80",
+                "maximum_ci_width": "0.01",
+                "trial_family_id": "trial-family-1",
+                "multiplicity_method": "HOLM",
+                "family_wise_alpha": "0.05",
+                "benchmark_hash": digest("benchmark"),
+            },
+            "search_budget": {
+                "predeclared_trial_budget": 5,
+                "actual_total_trials": 4,
+                "hyperparameter_search_space_hash": recipe[
+                    "hyperparameter_search_space_hash"
+                ],
+                "feature_set_count": 1,
+                "threshold_variant_count": 1,
+                "aborted_trials": 1,
+                "failed_trials": 1,
+                "invalid_trials": 0,
+                "trial_registry_hash": digest("trial-registry"),
+            },
+            "outputs": {
+                "model_and_calibrator_hashes": [
+                    digest("experiment-model-output")
+                ],
+                "oos_prediction_artifact_hash": digest("oos-predictions"),
+                "fold_trades_equity_hash": digest("fold-trades-equity"),
+                "metrics_charts_audit_hash": digest(
+                    "metrics-charts-audit"
+                ),
+                "feature_stability_hash": digest("feature-stability"),
+                "failure_log_hash": digest("failure-log"),
+                "conclusion": "CANDIDATE",
+                "signed_by": "research-authority",
+            },
+            "recipe_binding": {
+                "recipe_release_id": recipe["recipe_release_id"],
+                "recipe_release_hash": "0" * 64,
+                "recipe_binding_hash": "0" * 64,
+            },
+            "manifest_attestation": {
+                "algorithm": "ED25519",
+                "key_id": "research-authority",
+                "signed_at": "2025-01-01T00:00:02Z",
+                "signature_base64": "D" * 86 + "==",
+            },
+        }
+        experiment_hash = experiment_manifest_hash(experiment)
+        experiment["experiment_manifest_hash"] = experiment_hash
+        recipe["experiment_manifest_hash"] = experiment_hash
         recipe["recipe_release_hash"] = artifact_self_hash(
             recipe,
             "recipe_release_hash",
             "freeze_attestation",
+        )
+        experiment["recipe_binding"]["recipe_release_hash"] = recipe[
+            "recipe_release_hash"
+        ]
+        experiment["recipe_binding"]["recipe_binding_hash"] = (
+            experiment_recipe_binding_hash(experiment)
         )
         model = None
         if ai:
@@ -202,6 +371,81 @@ class GateEvidenceTests(unittest.TestCase):
                 "model_bundle_hash",
                 "bundle_signature",
             )
+
+        deployment_line = {
+            "$schema": "./deployment-line-v1.1.schema.json",
+            "schema_version": "1.1.0",
+            "deployment_line_id": "line-1",
+            "deployment_line_hash": "0" * 64,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "release_kind": recipe["release_kind"],
+            "recipe_release_id": recipe["recipe_release_id"],
+            "recipe_release_hash": recipe["recipe_release_hash"],
+            "experiment_manifest_hash": experiment_hash,
+            "release_route": recipe["release_route"],
+            "ai_endpoint": recipe["ai_endpoint"],
+            "baseline_recipe_release_id": recipe[
+                "baseline_recipe_release_id"
+            ],
+            "baseline_recipe_release_hash": recipe[
+                "baseline_recipe_release_hash"
+            ],
+            "direction": "LONG",
+            "venue": "BINANCE_SPOT",
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-12-31T23:59:58Z",
+            "revision": 1,
+            "lifecycle_status": "ACTIVE",
+            "current_stage": "PAPER",
+            "stage_history": [
+                {
+                    "stage": "RECIPE_CANDIDATE",
+                    "entered_at": "2025-01-01T00:00:00Z",
+                    "exited_at": "2025-01-02T00:00:00Z",
+                    "result": "PASS",
+                    "evidence_hash": digest("candidate-evidence"),
+                },
+                {
+                    "stage": "SHADOW",
+                    "entered_at": "2025-01-02T00:00:00Z",
+                    "exited_at": "2025-01-10T00:00:00Z",
+                    "result": "PASS",
+                    "evidence_hash": digest("shadow-evidence"),
+                },
+                {
+                    "stage": "PAPER",
+                    "entered_at": "2025-01-10T00:00:00Z",
+                    "exited_at": None,
+                    "result": "IN_PROGRESS",
+                    "evidence_hash": None,
+                },
+            ],
+            "active_model_bundle_id": (
+                model["model_bundle_id"] if ai else None
+            ),
+            "active_model_bundle_hash": (
+                model["model_bundle_hash"] if ai else None
+            ),
+            "active_no_ai_base_version": None if ai else "no-ai-base-v1",
+            "last_known_good_reference_hash": None,
+            "minor_bundle_refresh_count": 0,
+            "evidence_inheritance": {
+                "minor_bundle_may_preserve_stage_calendar": True,
+                "bundle_segments_required": True,
+                "major_change_inherits_evidence": False,
+                "stage_runtime_pass_reuse_allowed": False,
+            },
+            "line_attestation": {
+                "algorithm": "ED25519",
+                "key_id": "deployment-authority",
+                "signed_at": "2025-12-31T23:59:59Z",
+                "signature_base64": "E" * 86 + "==",
+            },
+        }
+        deployment_line["deployment_line_hash"] = deployment_line_hash(
+            deployment_line
+        )
 
         artifact_hashes = {
             "recipe_release": recipe["recipe_release_hash"],
@@ -262,9 +506,13 @@ class GateEvidenceTests(unittest.TestCase):
                         recipe["recipe_release_id"]
                         if name == "recipe_release"
                         else (
-                            model["model_bundle_id"]
-                            if name == "model_bundle"
-                            else f"{name}-1"
+                            experiment["experiment_id"]
+                            if name == "experiment_manifest"
+                            else (
+                                model["model_bundle_id"]
+                                if name == "model_bundle"
+                                else f"{name}-1"
+                            )
                         )
                     )
                 ),
@@ -279,9 +527,19 @@ class GateEvidenceTests(unittest.TestCase):
         artifact_attestations = {
             recipe["freeze_attestation"]["attestation_hash"]: recipe[
                 "recipe_release_hash"
-            ]
+            ],
+            experiment["manifest_attestation"]["signature_base64"]: (
+                experiment["recipe_binding"]["recipe_binding_hash"]
+            ),
+            deployment_line["line_attestation"]["signature_base64"]: (
+                deployment_line["deployment_line_hash"]
+            ),
         }
-        artifact_documents = {"recipe_release": recipe}
+        artifact_documents = {
+            "recipe_release": recipe,
+            "experiment_manifest": experiment,
+            "deployment_line": deployment_line,
+        }
         if ai:
             artifact_attestations[
                 model["bundle_signature"]["signature_base64"]
@@ -455,7 +713,21 @@ class GateEvidenceTests(unittest.TestCase):
                 "recipe_release_schema_id": "recipe-release-v1.1.schema.json",
                 "recipe_release_id": recipe["recipe_release_id"],
                 "recipe_release_hash": recipe["recipe_release_hash"],
+                "experiment_manifest_schema_id": (
+                    "experiment-manifest-v1.1.schema.json"
+                ),
+                "experiment_manifest_id": experiment["experiment_id"],
+                "experiment_manifest_hash": experiment_hash,
+                "deployment_line_schema_id": (
+                    "deployment-line-v1.1.schema.json"
+                ),
                 "deployment_line_id": "line-1",
+                "deployment_line_hash": deployment_line[
+                    "deployment_line_hash"
+                ],
+                "supporting_observation_bundle_schema_id": None,
+                "supporting_observation_bundle_id": None,
+                "supporting_observation_bundle_hash": None,
                 "model_bundle_id": model["model_bundle_id"] if ai else None,
                 "model_bundle_schema_id": (
                     "model-bundle-v1.1.schema.json" if ai else None
@@ -720,6 +992,228 @@ class GateEvidenceTests(unittest.TestCase):
         self.assertIn("EVIDENCE_METRIC_VALUE_MISMATCH", result.reason_codes)
         self.assertTrue(result.estimator_execution_hash)
 
+    def supporting_bundle(self, bundle, evidence, scope, trust):
+        definition = bundle.metrics.resolve(evidence["metric_id"])
+        execution = bundle.estimators.execute(
+            definition["estimator_id"],
+            {
+                "actual_deployable_capital_usdt": (
+                    evidence["actual_deployable_capital_usdt"]
+                ),
+                "snapshot_verified": True,
+            },
+        )
+        observation = {
+            "observation_id": "supporting-observation-1",
+            "observation_hash": "0" * 64,
+            "metric_id": evidence["metric_id"],
+            "metric_unit": definition["unit"],
+            "estimator_id": definition["estimator_id"],
+            "implementation_id": execution.implementation_id,
+            "implementation_version": execution.implementation_version,
+            "estimator_inputs": {
+                "actual_deployable_capital_usdt": (
+                    evidence["actual_deployable_capital_usdt"]
+                ),
+                "snapshot_verified": True,
+            },
+            "status": execution.status,
+            "value": execution.value,
+            "reason_codes": list(execution.reason_codes),
+            "estimator_execution_hash": execution.execution_hash,
+            "source_artifact_hashes": [
+                trust.artifact_hashes[
+                    "approved_capital_and_break_even_plan"
+                ]
+            ],
+        }
+        observation["observation_hash"] = supporting_observation_hash(
+            observation
+        )
+        supporting = {
+            "$schema": "./supporting-observation-bundle-v1.schema.json",
+            "schema_version": "1.0.0",
+            "bundle_id": "supporting-bundle-1",
+            "bundle_hash": "0" * 64,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "scope_hash": business_hash(scope),
+            "policy_bundle_hash": evidence["policy_bundle_hash"],
+            "evaluator_build_hash": bundle.evaluator_build.build_hash,
+            "computed_at": "2026-01-01T00:00:01Z",
+            "observations": [observation],
+            "bundle_attestation": {
+                "algorithm": "ED25519",
+                "key_id": "evaluator-authority",
+                "signed_at": "2026-01-01T00:00:02Z",
+                "signature_base64": "F" * 86 + "==",
+            },
+        }
+        supporting["bundle_hash"] = supporting_observation_bundle_hash(
+            supporting
+        )
+        return supporting
+
+    def test_supporting_observation_requires_frozen_reexecution_bundle(self):
+        bundle, envelopes, scope, trust = self.fixture()
+        evidence = deepcopy(envelopes[1])
+        supporting = self.supporting_bundle(
+            bundle,
+            evidence,
+            scope,
+            trust,
+        )
+        evidence.update(
+            {
+                "supporting_observation_bundle_schema_id": (
+                    "supporting-observation-bundle-v1.schema.json"
+                ),
+                "supporting_observation_bundle_id": supporting["bundle_id"],
+                "supporting_observation_bundle_hash": supporting[
+                    "bundle_hash"
+                ],
+            }
+        )
+        evidence["evidence_hash"] = gate_evidence_hash(evidence)
+        trusted = replace(
+            trust,
+            verified_artifact_attestations={
+                **trust.verified_artifact_attestations,
+                supporting["bundle_attestation"]["signature_base64"]: (
+                    supporting["bundle_hash"]
+                ),
+            },
+        )
+
+        result = bundle.validate_gate_evidence(
+            "CAPITAL_READINESS",
+            evidence,
+            expected_scope=scope,
+            trust=trusted,
+            supporting_observation_bundle=supporting,
+        )
+
+        self.assertTrue(result.valid, result.reason_codes)
+        self.assertTrue(result.supporting_observation_validation_hash)
+
+        tampered = deepcopy(supporting)
+        tampered["observations"][0]["value"] = "999"
+        tampered["observations"][0]["observation_hash"] = (
+            supporting_observation_hash(tampered["observations"][0])
+        )
+        tampered["bundle_hash"] = supporting_observation_bundle_hash(tampered)
+        evidence["supporting_observation_bundle_hash"] = tampered[
+            "bundle_hash"
+        ]
+        evidence["evidence_hash"] = gate_evidence_hash(evidence)
+        tamper_trusted = replace(
+            trust,
+            verified_artifact_attestations={
+                **trust.verified_artifact_attestations,
+                tampered["bundle_attestation"]["signature_base64"]: (
+                    tampered["bundle_hash"]
+                ),
+            },
+        )
+        result = bundle.validate_gate_evidence(
+            "CAPITAL_READINESS",
+            evidence,
+            expected_scope=scope,
+            trust=tamper_trusted,
+            supporting_observation_bundle=tampered,
+        )
+        self.assertFalse(result.valid)
+        self.assertTrue(
+            any(
+                reason.startswith(
+                    "SUPPORTING_ESTIMATOR_RESULT_MISMATCH:"
+                )
+                for reason in result.reason_codes
+            )
+        )
+
+    def test_raw_supporting_observation_mapping_is_never_trusted(self):
+        bundle, envelopes, scope, trust = self.fixture()
+        result = bundle.validate_gate_evidence(
+            "CAPITAL_READINESS",
+            envelopes[1],
+            expected_scope=scope,
+            trust=trust,
+            supporting_observations={
+                "approved_production_capital_usdt": "1"
+            },
+        )
+        self.assertFalse(result.valid)
+        self.assertIn(
+            "RAW_SUPPORTING_OBSERVATIONS_FORBIDDEN",
+            result.reason_codes,
+        )
+
+    def test_experiment_binding_and_deployment_sequence_fail_closed(self):
+        bundle, envelopes, scope, trust = self.fixture()
+        source = envelopes[1]
+
+        experiment = deepcopy(
+            trust.artifact_documents["experiment_manifest"]
+        )
+        experiment["recipe_binding"]["recipe_release_hash"] = digest(
+            "other-recipe"
+        )
+        changed_experiment = replace(
+            trust,
+            artifact_documents={
+                **trust.artifact_documents,
+                "experiment_manifest": experiment,
+            },
+        )
+        result = bundle.validate_gate_evidence(
+            "CAPITAL_READINESS",
+            source,
+            expected_scope=scope,
+            trust=changed_experiment,
+        )
+        self.assertIn(
+            "EXPERIMENT_RECIPE_BINDING_HASH_MISMATCH",
+            result.reason_codes,
+        )
+        self.assertIn(
+            "EXPERIMENT_RECIPE_REFERENCE_MISMATCH:recipe_release_hash",
+            result.reason_codes,
+        )
+
+        line = deepcopy(trust.artifact_documents["deployment_line"])
+        del line["stage_history"][1]
+        line["deployment_line_hash"] = deployment_line_hash(line)
+        changed_evidence = deepcopy(source)
+        changed_evidence["deployment_line_hash"] = line[
+            "deployment_line_hash"
+        ]
+        changed_evidence["evidence_hash"] = gate_evidence_hash(
+            changed_evidence
+        )
+        line_signature = line["line_attestation"]["signature_base64"]
+        changed_line = replace(
+            trust,
+            verified_artifact_attestations={
+                **trust.verified_artifact_attestations,
+                line_signature: line["deployment_line_hash"],
+            },
+            artifact_documents={
+                **trust.artifact_documents,
+                "deployment_line": line,
+            },
+        )
+        result = bundle.validate_gate_evidence(
+            "CAPITAL_READINESS",
+            changed_evidence,
+            expected_scope=scope,
+            trust=changed_line,
+        )
+        self.assertIn(
+            "DEPLOYMENT_LINE_STAGE_SEQUENCE_INVALID",
+            result.reason_codes,
+        )
+
     def test_catalog_algorithm_without_implementation_cannot_validate(self):
         bundle, envelopes, _, trust = self.fixture()
         catalog = deepcopy(bundle.catalog)
@@ -948,6 +1442,19 @@ class GateEvidenceTests(unittest.TestCase):
             trust=trust,
         )
         self.assertIn("SCOPE_VALUE_MISMATCH:stage", result.reason_codes)
+
+        wrong_line_scope = deepcopy(scope)
+        wrong_line_scope["deployment_line_hash"] = digest("old-line")
+        result = bundle.validate_gate_evidence(
+            "CAPITAL_READINESS",
+            envelopes[0],
+            expected_scope=wrong_line_scope,
+            trust=trust,
+        )
+        self.assertIn(
+            "SCOPE_VALUE_MISMATCH:deployment_line_hash",
+            result.reason_codes,
+        )
 
     def test_production_group_requires_complete_evidence_and_readiness(self):
         bundle, envelopes, scope, trust = self.fixture()

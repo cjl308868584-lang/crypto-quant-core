@@ -20,7 +20,15 @@
     "recipe_release_schema_id",
     "recipe_release_id",
     "recipe_release_hash",
+    "experiment_manifest_schema_id",
+    "experiment_manifest_id",
+    "experiment_manifest_hash",
+    "deployment_line_schema_id",
     "deployment_line_id",
+    "deployment_line_hash",
+    "supporting_observation_bundle_schema_id",
+    "supporting_observation_bundle_id",
+    "supporting_observation_bundle_hash",
     "model_bundle_id",
     "model_bundle_schema_id",
     "model_bundle_hash",
@@ -125,9 +133,51 @@
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
     },
+    "experiment_manifest_schema_id": {
+      "const": "experiment-manifest-v1.1.schema.json"
+    },
+    "experiment_manifest_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "experiment_manifest_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "deployment_line_schema_id": {
+      "const": "deployment-line-v1.1.schema.json"
+    },
     "deployment_line_id": {
       "type": "string",
       "minLength": 1
+    },
+    "deployment_line_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "supporting_observation_bundle_schema_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "supporting-observation-bundle-v1.schema.json",
+        null
+      ]
+    },
+    "supporting_observation_bundle_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "supporting_observation_bundle_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
     },
     "model_bundle_id": {
       "type": [
@@ -527,6 +577,40 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "supporting_observation_bundle_schema_id": {
+            "const": null
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "supporting_observation_bundle_id": {
+            "const": null
+          },
+          "supporting_observation_bundle_hash": {
+            "const": null
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "supporting_observation_bundle_schema_id": {
+            "const": "supporting-observation-bundle-v1.schema.json"
+          },
+          "supporting_observation_bundle_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supporting_observation_bundle_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {

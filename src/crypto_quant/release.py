@@ -23,6 +23,12 @@ from .evidence import (
 )
 from .errors import CanonicalizationError, PolicyError
 from .estimators import EstimatorRegistry
+from .release_artifacts import (
+    load_release_artifact_schemas,
+    validate_deployment_line,
+    validate_experiment_manifest,
+    validate_supporting_observation_bundle,
+)
 
 
 def strict_format_checker() -> FormatChecker:
@@ -206,6 +212,9 @@ class PolicyBundle:
         "release-metrics-v1.1.schema.json",
         "release-evidence-v1.1.schema.json",
         "recipe-release-v1.1.schema.json",
+        "experiment-manifest-v1.1.schema.json",
+        "deployment-line-v1.1.schema.json",
+        "supporting-observation-bundle-v1.schema.json",
         "model-bundle-v1.1.schema.json",
         "approved-fallback-registry-v1.1.schema.json",
     )
@@ -225,6 +234,7 @@ class PolicyBundle:
         self.catalog = catalog
         self.evidence_schema = evidence_schema
         self.metrics = MetricResolver(catalog)
+        self.release_artifact_schemas = load_release_artifact_schemas(root)
         self.estimators = estimators or EstimatorRegistry.load(root, catalog)
         self.evaluator_build = evaluator_build or EvaluatorBuild.load(
             root.parent,
@@ -304,6 +314,21 @@ class PolicyBundle:
             raise PolicyError("policy metric_catalog_id does not match the catalog")
         if self.policy["evidence_schema_id"] != self.evidence_schema["$id"]:
             raise PolicyError("policy evidence_schema_id does not match the schema")
+        scope_dimensions = (
+            list(self.policy["evidence_scope"]["required_dimensions"])
+            + list(self.policy["evidence_scope"]["ai_dimensions"])
+            + list(self.policy["evidence_scope"]["canary_dimensions"])
+        )
+        if len(scope_dimensions) != len(set(scope_dimensions)):
+            raise PolicyError("duplicate Evidence Scope dimension")
+        missing_scope_fields = sorted(
+            set(scope_dimensions)
+            - set(self.evidence_schema.get("properties", {}))
+        )
+        if missing_scope_fields:
+            raise PolicyError(
+                f"Evidence Scope fields absent from schema: {missing_scope_fields}"
+            )
 
         groups = self.flat_gate_groups()
         gate_ids: Set[str] = set()
@@ -820,6 +845,58 @@ class PolicyBundle:
         elif model is not None:
             reasons.append("BASELINE_EVIDENCE_HAS_MODEL_BUNDLE_DOCUMENT")
 
+        experiment_document = trust.artifact_documents.get(
+            "experiment_manifest"
+        )
+        if not isinstance(experiment_document, Mapping):
+            reasons.append("EXPERIMENT_MANIFEST_DOCUMENT_MISSING")
+        else:
+            experiment_validation = validate_experiment_manifest(
+                experiment_document,
+                schema=self.release_artifact_schemas[
+                    "experiment_manifest"
+                ],
+                recipe=recipe if isinstance(recipe, Mapping) else {},
+                evidence=evidence,
+                verified_attestations=trust.verified_artifact_attestations,
+            )
+            reasons.extend(experiment_validation.reason_codes)
+            if experiment_document.get("experiment_id") != evidence.get(
+                "experiment_manifest_id"
+            ):
+                reasons.append("EXPERIMENT_MANIFEST_ID_MISMATCH")
+            if experiment_document.get(
+                "experiment_manifest_hash"
+            ) != evidence.get("experiment_manifest_hash"):
+                reasons.append("EXPERIMENT_MANIFEST_HASH_MISMATCH")
+
+        deployment_line = trust.artifact_documents.get("deployment_line")
+        if not isinstance(deployment_line, Mapping):
+            reasons.append("DEPLOYMENT_LINE_DOCUMENT_MISSING")
+        else:
+            line_validation = validate_deployment_line(
+                deployment_line,
+                schema=self.release_artifact_schemas["deployment_line"],
+                recipe=recipe if isinstance(recipe, Mapping) else {},
+                experiment=(
+                    experiment_document
+                    if isinstance(experiment_document, Mapping)
+                    else {}
+                ),
+                model=model if isinstance(model, Mapping) else None,
+                evidence=evidence,
+                verified_attestations=trust.verified_artifact_attestations,
+            )
+            reasons.extend(line_validation.reason_codes)
+            if deployment_line.get("deployment_line_id") != evidence.get(
+                "deployment_line_id"
+            ):
+                reasons.append("DEPLOYMENT_LINE_ID_MISMATCH")
+            if deployment_line.get("deployment_line_hash") != evidence.get(
+                "deployment_line_hash"
+            ):
+                reasons.append("DEPLOYMENT_LINE_HASH_MISMATCH")
+
         frozen = evidence.get("frozen_release_inputs")
         if isinstance(frozen, Mapping):
             recipe_proof = frozen.get("recipe_release")
@@ -829,6 +906,18 @@ class PolicyBundle:
                 != evidence.get("recipe_release_id")
             ):
                 reasons.append("RECIPE_RELEASE_FREEZE_ID_MISMATCH")
+            experiment_proof = frozen.get("experiment_manifest")
+            if isinstance(experiment_proof, Mapping):
+                if experiment_proof.get("artifact_id") != evidence.get(
+                    "experiment_manifest_id"
+                ):
+                    reasons.append("EXPERIMENT_MANIFEST_FREEZE_ID_MISMATCH")
+                if experiment_proof.get("artifact_hash") != evidence.get(
+                    "experiment_manifest_hash"
+                ):
+                    reasons.append(
+                        "EXPERIMENT_MANIFEST_FREEZE_HASH_MISMATCH"
+                    )
             if route == "AI_ENHANCED":
                 model_proof = frozen.get("model_bundle")
                 if (
@@ -1102,6 +1191,7 @@ class PolicyBundle:
         expected_scope: Mapping[str, Any],
         trust: EvidenceTrustContext,
         binding_documents: Optional[Mapping[str, Any]] = None,
+        supporting_observation_bundle: Optional[Mapping[str, Any]] = None,
         supporting_observations: Optional[Mapping[str, Any]] = None,
     ) -> EvidenceValidation:
         """Validate and independently recompute one complete GateEvidence."""
@@ -1154,6 +1244,65 @@ class PolicyBundle:
         reasons.extend(binding_reasons)
         reasons.extend(artifact_reasons)
         reasons.extend(fallback_reasons)
+
+        supporting_validation_hash = ""
+        verified_supporting_observations: Mapping[str, Any] = {}
+        supporting_inconclusive: Set[str] = set()
+        if supporting_observations is not None:
+            reasons.append("RAW_SUPPORTING_OBSERVATIONS_FORBIDDEN")
+        claimed_supporting_fields = (
+            evidence.get("supporting_observation_bundle_schema_id"),
+            evidence.get("supporting_observation_bundle_id"),
+            evidence.get("supporting_observation_bundle_hash"),
+        )
+        if supporting_observation_bundle is None:
+            if any(value is not None for value in claimed_supporting_fields):
+                reasons.append("SUPPORTING_OBSERVATION_BUNDLE_MISSING")
+        else:
+            if claimed_supporting_fields[0] != (
+                "supporting-observation-bundle-v1.schema.json"
+            ):
+                reasons.append("SUPPORTING_OBSERVATION_SCHEMA_ID_MISMATCH")
+            if supporting_observation_bundle.get("bundle_id") != (
+                claimed_supporting_fields[1]
+            ):
+                reasons.append("SUPPORTING_OBSERVATION_BUNDLE_ID_MISMATCH")
+            if supporting_observation_bundle.get("bundle_hash") != (
+                claimed_supporting_fields[2]
+            ):
+                reasons.append("SUPPORTING_OBSERVATION_BUNDLE_HASH_MISMATCH")
+            allowed_source_hashes = set(trust.artifact_hashes.values())
+            evidence_artifacts = evidence.get("artifact_hashes")
+            if isinstance(evidence_artifacts, list):
+                allowed_source_hashes.update(evidence_artifacts)
+            supporting_validation = validate_supporting_observation_bundle(
+                supporting_observation_bundle,
+                schema=self.release_artifact_schemas[
+                    "supporting_observation_bundle"
+                ],
+                expected_scope=expected_scope,
+                policy_bundle_hash=evidence.get("policy_bundle_hash", ""),
+                evaluator_build_hash=self.evaluator_build.build_hash,
+                resolve_metric=self.metrics.resolve,
+                estimators=self.estimators,
+                allowed_source_hashes=allowed_source_hashes,
+                verified_attestations=trust.verified_artifact_attestations,
+                first_result_revealed_at=evidence.get(
+                    "first_result_revealed_at",
+                    "",
+                ),
+            )
+            supporting_validation_hash = (
+                supporting_validation.validation_hash
+            )
+            reasons.extend(supporting_validation.reason_codes)
+            if supporting_validation.valid:
+                verified_supporting_observations = (
+                    supporting_validation.observations
+                )
+                supporting_inconclusive.update(
+                    supporting_validation.inconclusive_metrics
+                )
 
         if evidence.get("release_gate_policy_id") != self.policy["policy_id"]:
             reasons.append("EVIDENCE_POLICY_ID_MISMATCH")
@@ -1227,8 +1376,11 @@ class PolicyBundle:
                     inconclusive.add(gate["metric_id"])
             if estimator_status == "INCONCLUSIVE":
                 inconclusive.add(gate["metric_id"])
+            inconclusive.update(supporting_inconclusive)
 
-            observations: Dict[str, Any] = dict(supporting_observations or {})
+            observations: Dict[str, Any] = dict(
+                verified_supporting_observations
+            )
             evidence_values = {
                 "approved_production_capital_usdt": evidence.get(
                     "approved_production_capital_usdt"
@@ -1284,6 +1436,9 @@ class PolicyBundle:
             "computed_gate_result": computed_result,
             "computed_gate_hash": computed_gate_hash,
             "estimator_execution_hash": estimator_execution_hash,
+            "supporting_observation_validation_hash": (
+                supporting_validation_hash
+            ),
             "computed_evidence_hash": computed_evidence_hash,
             "reason_codes": reason_codes,
         }
@@ -1293,6 +1448,9 @@ class PolicyBundle:
             valid=not reason_codes,
             computed_gate_result=computed_result,
             estimator_execution_hash=estimator_execution_hash,
+            supporting_observation_validation_hash=(
+                supporting_validation_hash
+            ),
             computed_evidence_hash=computed_evidence_hash,
             reason_codes=reason_codes,
             validation_hash=business_hash(payload),
@@ -1306,6 +1464,7 @@ class PolicyBundle:
         expected_scope: Mapping[str, Any],
         trust: EvidenceTrustContext,
         binding_documents: Optional[Mapping[str, Any]] = None,
+        supporting_observation_bundle: Optional[Mapping[str, Any]] = None,
         supporting_observations: Optional[Mapping[str, Any]] = None,
     ) -> EvidenceGroupValidation:
         """Production entry point for a complete set of per-gate envelopes."""
@@ -1338,6 +1497,9 @@ class PolicyBundle:
                 expected_scope=expected_scope,
                 trust=trust,
                 binding_documents=binding_documents,
+                supporting_observation_bundle=(
+                    supporting_observation_bundle
+                ),
                 supporting_observations=supporting_observations,
             )
             for gate in groups[gate_group_id]

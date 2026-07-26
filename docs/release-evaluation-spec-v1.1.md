@@ -74,6 +74,8 @@ status
 
 route和endpoint必须在结果揭晓前进入RecipeRelease hash。同一RecipeRelease内不能从GROWTH切换到RISK_EFFICIENCY，也不能从AI_ENHANCED改成BASELINE_ONLY来解释同一审计结果。
 
+实现性澄清：RecipeRelease需要引用ExperimentManifest内容hash，而ExperimentManifest又需要记录最终Recipe引用。为避免两个self-hash相互包含形成不可求解循环，ExperimentManifest采用两段冻结：预注册内容先计算不包含`recipe_binding`和attestation的`experiment_manifest_hash`；RecipeRelease绑定该hash并形成`recipe_release_hash`；随后`recipe_binding_hash`再绑定两者，并由独立attestation签名。正式Evaluator必须同时验证内容hash、binding hash、签名验证结果和双向ID/hash引用，详见[ADR-0008](adr/0008-release-artifact-lineage-and-supporting-observations.md)。
+
 在首次结果揭晓前，RecipeRelease中的全部设计、数据、统计、会计、成本、风险、执行和Forward Control hash，以及ModelBundle中的代码/环境hash，必须冻结。GateEvidence还必须在 `frozen_release_inputs` 中保存RecipeRelease及其Schema、ExperimentManifest、Metric Catalog、Evidence Schema、ReleaseGatePolicy、Risk/DataQuality/Split/StatisticalDesign/Accounting/CostAllocation/ForwardControl政策、合规证明和Evaluator build的逐项freeze proof；资本网格/资本搜索计划的内容hash进入 `artifact_hashes`，`approved_production_capital_usdt`、`actual_deployable_capital_usdt` 与 `break_even_capital_lcb_root_usdt` 同时冻结。上述freeze proof的 `frozen_at` 和所有资本输入都必须早于或等于 `first_result_revealed_at`。Initial的“首次揭晓”是第一次打开封存审计结果；Major的“首次揭晓”是第一条prequential预测对应结果变为可见。此后任一设计、会计、成本、资本、代码/环境或Evaluator hash，或任一批准资本/资本搜索输入发生变化，都必须创建新的RecipeRelease/Evidence Scope；已揭晓证据不得继续用于原Release。
 
 ### 2.2 ModelBundle
@@ -93,7 +95,9 @@ gate_group_id
 release_route
 release_kind
 recipe_release_id/hash
+experiment_manifest_id/hash
 deployment_line_id
+deployment_line_hash
 direction
 venue
 stage
@@ -136,6 +140,8 @@ AI证据再加入 `ai_endpoint/model_bundle_id`；Canary证据再加入 `canary_
 9. 样本或区块不足返回INCONCLUSIVE，不允许晋级。
 10. 所有适用的required gate都PASS时，门组才PASS；ADVISORY指标不参与聚合。
 11. 保存完整GateEvidence、输入artifact hash、政策hash、估计器版本和Evaluator build hash。
+
+动态阈值或组合门需要的辅助观测不得以自由键值映射进入正式Runner。每项辅助观测必须属于与当前Evidence完全相同Scope的Supporting Observation Bundle，绑定Policy/Evaluator hash、来源Artifact和Catalog Estimator执行结果；Runner必须重新执行Estimator并核对值、状态、实现版本、原因码和execution hash。
 
 不能用一个名为 `all_checks_pass=true` 的上游布尔替代下游硬门。组合门只允许引用Policy中列明的子Gate ID，并保存每个子结果。
 

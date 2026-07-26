@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "supporting-observation-bundle-v1.schema.json",
+  "title": "Supporting Observation Bundle v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "bundle_id",
+    "bundle_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "scope_hash",
+    "policy_bundle_hash",
+    "evaluator_build_hash",
+    "computed_at",
+    "observations",
+    "bundle_attestation"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./supporting-observation-bundle-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "bundle_id": {
+      "$ref": "#/$defs/id"
+    },
+    "bundle_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "scope_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "policy_bundle_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "evaluator_build_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "computed_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/observation"
+      }
+    },
+    "bundle_attestation": {
+      "$ref": "#/$defs/attestation"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scalar": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "required": [
+        "observation_id",
+        "observation_hash",
+        "metric_id",
+        "metric_unit",
+        "estimator_id",
+        "implementation_id",
+        "implementation_version",
+        "estimator_inputs",
+        "status",
+        "value",
+        "reason_codes",
+        "estimator_execution_hash",
+        "source_artifact_hashes"
+      ],
+      "properties": {
+        "observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "observation_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "metric_id": {
+          "$ref": "#/$defs/id"
+        },
+        "metric_unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "estimator_id": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "implementation_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "implementation_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "estimator_inputs": {
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "COMPUTED",
+            "INCONCLUSIVE",
+            "FAIL"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/scalar"
+        },
+        "reason_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "estimator_execution_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_artifact_hashes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "attestation": {
+      "type": "object",
+      "required": [
+        "algorithm",
+        "key_id",
+        "signed_at",
+        "signature_base64"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "ED25519"
+        },
+        "key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "signed_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "signature_base64": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
