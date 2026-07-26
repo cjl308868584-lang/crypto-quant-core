@@ -32,6 +32,22 @@
 
 AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线失败时，AI 不得用来掩盖失败。
 
+## 实施状态
+
+Git中的设计基线已冻结，当前代码版本为 `0.1.0`，正在执行《开发路线与验收门槛》第9节的首个迭代。已完成规范化哈希、Decimal/tick/step基础、部分核心契约、SQLite WAL追加账本与Outbox、最小经济投影、回撤档位和Fail-Closed Release Evaluator。
+
+当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度和未完成项见[实施追踪 v0.1.0](docs/implementation-status-v0.1.0.md)，架构决策见[ADR-0001](docs/adr/0001-phase0-deterministic-core.md)。
+当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
+
+本地验证：
+
+```bash
+make validate
+make test
+```
+
+`make validate`在当前设计状态输出 `FAIL` 是正确结果：缺少必需Policy绑定且生产激活开关为关闭状态。
+
 ## 已锁定的 V1 范围
 
 - 交易所：Binance 优先，Gate 仅作为后续适配。
