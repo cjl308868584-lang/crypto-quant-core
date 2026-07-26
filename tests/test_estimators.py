@@ -9,6 +9,10 @@ from crypto_quant.build import EvaluatorBuild
 from crypto_quant.errors import PolicyError
 from crypto_quant.estimators import EstimatorRegistry
 from crypto_quant.release import load_json_strict
+from crypto_quant.statistical_decision import (
+    statistical_decision_snapshot_hash,
+)
+from crypto_quant.statistics import statistical_series_hash
 from crypto_quant.trade_replay import (
     build_trade_replay_snapshot,
     trade_replay_snapshot_hash,
@@ -202,6 +206,36 @@ class EstimatorRegistryTests(unittest.TestCase):
         self.assertEqual(
             rejected.reason_codes,
             ("STATISTICAL_DECISION_SCHEMA_INVALID",),
+        )
+
+        embedded_schema_invalid = deepcopy(snapshot)
+        current = next(
+            item
+            for item in embedded_schema_invalid["trial_registry"]
+            if item["candidate_id"]
+            == embedded_schema_invalid["current_candidate_id"]
+        )
+        del current["source_series_snapshot"]["$schema"]
+        current["source_series_snapshot"]["series_hash"] = (
+            statistical_series_hash(current["source_series_snapshot"])
+        )
+        current["source_series_hash"] = current[
+            "source_series_snapshot"
+        ]["series_hash"]
+        embedded_schema_invalid["snapshot_hash"] = (
+            statistical_decision_snapshot_hash(embedded_schema_invalid)
+        )
+        rejected = self.registry.execute(
+            "ACHIEVED_POWER_AT_MERE_V1",
+            {
+                "statistical_decision_snapshot": (
+                    embedded_schema_invalid
+                ),
+            },
+        )
+        self.assertEqual(
+            rejected.reason_codes,
+            ("STATISTICAL_DECISION_SOURCE_SERIES_SCHEMA_INVALID",),
         )
 
     def test_golden_vectors_are_deterministic(self):

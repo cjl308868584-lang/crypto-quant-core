@@ -51,7 +51,7 @@
     "src/crypto_quant/decimal_math.py": "62de35ef82a9ea2ca305985101fc2fcf9df8cae94996b1755293b466c847bd1d",
     "src/crypto_quant/economics.py": "bb06ca95eba396d94c19f0e7d2a76d3f76235178c8c142942cdcb36b0f1909fe",
     "src/crypto_quant/errors.py": "50de7a01cbae9af4670bb255a36942cdb6d022566756e67cdb9656b0fa385568",
-    "src/crypto_quant/estimators.py": "89f1d0fb181236a1cacce5c8b141c44641ff79eea55af3544f970238a97e17da",
+    "src/crypto_quant/estimators.py": "108cf9357febaf507f6bf6761512e0b6d2b9050a881e4c683d074e18fc6067c2",
     "src/crypto_quant/evidence.py": "a870d7fb6c44a683c440b6620b8de95f4ffef1b5779bb32ae2fb3e87665e3ca5",
     "src/crypto_quant/execution.py": "5c03362696a3b50f35fa703cd764fe863ea4c42c42a56fc4f34bd6d1345418c1",
     "src/crypto_quant/governance.py": "879832a56486c187c8fff95987e478f39b4f2defd46b15e09b6aef74dafeccf2",
@@ -66,7 +66,7 @@
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335"
   },
-  "build_input_tree_hash": "607583ecab33a2e5106a210cbbfa4fb4db44d425e0af233fc16fd740313f8fb2",
+  "build_input_tree_hash": "a6c51ac6a49da93416baade86635d9a648661ef43f7a0d46d638e085521b2288",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -74,5 +74,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "de5bb5b882b982c8f77790c4893ef4d232a8f7c21b1d0bdb0ba8deadb69a01dd"
+  "manifest_hash": "2ff2cc6d16c693bbb1af846ce375b68b77f209a712ab4d934def27ce6c9a34ee"
 }

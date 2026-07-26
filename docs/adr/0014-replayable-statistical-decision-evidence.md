@@ -92,6 +92,8 @@ Evaluator 重算全部派生量，并绑定 Artifact 自哈希、冻结证明、
 嵌入源序列还必须通过 StatisticalSeries Schema，并与权威 accounting、
 cost-allocation、split 和 statistical-design policy ID/hash 一致。Supporting
 Observation 必须列全快照、注册表和 family 源哈希。
+StatisticalSeries Schema 校验同时位于 Estimator Registry 输入边界，不能通过
+绕开 GateEvidence 直接调用 Estimator 接受结构不完整的嵌入源。
 
 样本或区块不足、零方差、Bootstrap 分辨率不足以解析 Holm alpha 时返回
 `INCONCLUSIVE`；此时没有派生 ESS 缓存，不把合法 null 误判为 ESS 篡改。哈希、

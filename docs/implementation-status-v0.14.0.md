@@ -43,7 +43,7 @@
 - Golden report hash：
   `2c02a9cfd888efd18f348e2583ac0dc12746f612dbb8cd0b820a80802b11f34e`。
 - Evaluator build hash：
-  `de5bb5b882b982c8f77790c4893ef4d232a8f7c21b1d0bdb0ba8deadb69a01dd`。
+  `2ff2cc6d16c693bbb1af846ce375b68b77f209a712ab4d934def27ce6c9a34ee`。
 - 全量自动化套件共 185 项通过；命令：
   `PYTHONPATH=src python3 -m unittest discover -s tests -v`。
 

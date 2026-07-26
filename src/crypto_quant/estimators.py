@@ -518,6 +518,27 @@ class EstimatorRegistry:
                     None,
                     ("STATISTICAL_DECISION_SCHEMA_INVALID",),
                 )
+            source_validator = Draft202012Validator(
+                self.statistical_series_schema
+            )
+            if any(
+                list(
+                    source_validator.iter_errors(
+                        member.get("source_series_snapshot")
+                    )
+                )
+                for member in decision.get("trial_registry", ())
+                if member.get("candidate_status") == "EVALUATED"
+            ):
+                return self._execution(
+                    estimator_id,
+                    implementation,
+                    "FAIL",
+                    None,
+                    (
+                        "STATISTICAL_DECISION_SOURCE_SERIES_SCHEMA_INVALID",
+                    ),
+                )
         status, value, reasons = _CALLABLES[implementation["callable_id"]](inputs)
         return self._execution(
             estimator_id,
