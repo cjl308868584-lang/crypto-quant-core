@@ -1,10 +1,12 @@
 """Replayable paired risk paths over trusted economic snapshots."""
 
+import hashlib
 import re
 from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_EVEN, localcontext
-from typing import Any, Dict, Mapping, Sequence, Tuple
+from functools import wraps
+from typing import Any, Callable, Dict, Mapping, Sequence, Tuple, TypeVar
 
 from .canonical import business_hash, canonical_decimal, stable_id
 from .economics import (
@@ -13,6 +15,21 @@ from .economics import (
 from .errors import CanonicalizationError
 from .evidence import artifact_self_hash
 from .statistics import statistical_series_reasons
+
+_Result = TypeVar("_Result")
+
+
+def _fixed_decimal_context(
+    function: Callable[..., _Result],
+) -> Callable[..., _Result]:
+    @wraps(function)
+    def wrapped(*args: Any, **kwargs: Any) -> _Result:
+        with localcontext() as context:
+            context.prec = 50
+            context.rounding = ROUND_HALF_EVEN
+            return function(*args, **kwargs)
+
+    return wrapped
 
 
 def paired_risk_evaluation_snapshot_hash(
@@ -254,6 +271,7 @@ def _role_reasons(
     return tuple(reasons)
 
 
+@_fixed_decimal_context
 def paired_risk_evaluation_snapshot_reasons(
     snapshot: Mapping[str, Any],
 ) -> Tuple[str, ...]:
@@ -490,3 +508,190 @@ def build_paired_risk_evaluation_snapshot(
         if reasons:
             raise ValueError(f"invalid paired risk snapshot: {reasons}")
         return artifact
+
+
+def _max_drawdown(log_returns: Sequence[Decimal]) -> Decimal:
+    with localcontext() as context:
+        context.prec = 50
+        context.rounding = ROUND_HALF_EVEN
+        cumulative = Decimal("0")
+        peak = Decimal("0")
+        maximum = Decimal("0")
+        for value in log_returns:
+            cumulative += value
+            if cumulative > peak:
+                peak = cumulative
+            drawdown = Decimal("1") - (cumulative - peak).exp()
+            maximum = max(maximum, drawdown)
+        return +maximum
+
+
+def _empirical_es95(log_returns: Sequence[Decimal]) -> Decimal:
+    with localcontext() as context:
+        context.prec = 50
+        context.rounding = ROUND_HALF_EVEN
+        if not log_returns:
+            raise ValueError("ES95 requires at least one return")
+        losses = sorted(
+            (max(Decimal("0"), -value) for value in log_returns),
+            reverse=True,
+        )
+        tail_count = max(1, (len(losses) * 5 + 99) // 100)
+        return +(sum(losses[:tail_count], Decimal("0")) / tail_count)
+
+
+def _draw_start(
+    *,
+    seed: int,
+    replicate: int,
+    draw: int,
+    start_count: int,
+) -> int:
+    modulus = 1 << 256
+    acceptance_limit = modulus - modulus % start_count
+    attempt = 0
+    while True:
+        material = (
+            "MBB_V1:"
+            f"{seed}:{replicate}:{draw}:{start_count}:{attempt}"
+        ).encode("ascii")
+        candidate = int.from_bytes(hashlib.sha256(material).digest(), "big")
+        if candidate < acceptance_limit:
+            return candidate % start_count
+        attempt += 1
+
+
+def _validated_risk_snapshot(
+    inputs: Mapping[str, Any],
+) -> Tuple[Mapping[str, Any], Tuple[str, ...]]:
+    snapshot = inputs.get("paired_risk_evaluation_snapshot")
+    if not isinstance(snapshot, Mapping):
+        return {}, ("PAIRED_RISK_SNAPSHOT_INVALID",)
+    reasons = paired_risk_evaluation_snapshot_reasons(snapshot)
+    if reasons:
+        return {}, reasons
+    if snapshot.get("ai_endpoint") != "RISK_EFFICIENCY":
+        return {}, ("PAIRED_RISK_ENDPOINT_MISMATCH",)
+    report = snapshot["pairing_report"]
+    if report["changed_pair_count"] == 0:
+        return {}, ("PAIRED_RISK_NO_CHANGED_PAIRS",)
+    if (
+        report["unpaired_reference_count"] != 0
+        or report["unpaired_candidate_count"] != 0
+    ):
+        return {}, ("PAIRED_RISK_INCOMPLETE_PAIRING",)
+    design = snapshot["bootstrap_design"]
+    count = len(snapshot["paired_segments"])
+    length = design["block_length"]
+    if (
+        count < length
+        or count // length < design["minimum_block_count"]
+    ):
+        return {}, ("PAIRED_RISK_INSUFFICIENT_BLOCKS",)
+    return snapshot, ()
+
+
+def _paired_risk_lcb(
+    snapshot: Mapping[str, Any],
+    *,
+    statistic: Any,
+    zero_reason: str,
+) -> Tuple[str, Any, Tuple[str, ...]]:
+    with localcontext() as context:
+        context.prec = 50
+        context.rounding = ROUND_HALF_EVEN
+        segments = snapshot["paired_segments"]
+        observed_reference_returns = tuple(
+            _decimal(value)
+            for segment in segments
+            for value in segment["reference_log_returns"]
+        )
+        observed_reference = statistic(observed_reference_returns)
+        if observed_reference == 0:
+            return "INCONCLUSIVE", None, (zero_reason,)
+        design = snapshot["bootstrap_design"]
+        length = design["block_length"]
+        start_count = len(segments) - length + 1
+        blocks_per_sample = (len(segments) + length - 1) // length
+        replicate_values = []
+        for replicate in range(design["resample_count"]):
+            sampled_segments = []
+            for draw in range(blocks_per_sample):
+                start = _draw_start(
+                    seed=design["seed"],
+                    replicate=replicate,
+                    draw=draw,
+                    start_count=start_count,
+                )
+                sampled_segments.extend(segments[start : start + length])
+            sampled_segments = sampled_segments[: len(segments)]
+            reference_returns = tuple(
+                _decimal(value)
+                for segment in sampled_segments
+                for value in segment["reference_log_returns"]
+            )
+            candidate_returns = tuple(
+                _decimal(value)
+                for segment in sampled_segments
+                for value in segment["candidate_log_returns"]
+            )
+            reference_risk = statistic(reference_returns)
+            candidate_risk = statistic(candidate_returns)
+            replicate_values.append(
+                (reference_risk - candidate_risk) / observed_reference
+            )
+        replicate_values.sort()
+        rank = max(1, (design["resample_count"] * 5 + 99) // 100)
+        return (
+            "COMPUTED",
+            canonical_decimal(replicate_values[rank - 1]),
+            (),
+        )
+
+
+@_fixed_decimal_context
+def paired_max_drawdown_relative_improvement_lcb95(
+    inputs: Mapping[str, Any],
+) -> Tuple[str, Any, Tuple[str, ...]]:
+    snapshot, reasons = _validated_risk_snapshot(inputs)
+    if reasons:
+        status = (
+            "INCONCLUSIVE"
+            if reasons[0]
+            in {
+                "PAIRED_RISK_NO_CHANGED_PAIRS",
+                "PAIRED_RISK_INCOMPLETE_PAIRING",
+                "PAIRED_RISK_INSUFFICIENT_BLOCKS",
+            }
+            else "FAIL"
+        )
+        return status, None, reasons
+    return _paired_risk_lcb(
+        snapshot,
+        statistic=_max_drawdown,
+        zero_reason="PAIRED_RISK_REFERENCE_MDD_ZERO",
+    )
+
+
+@_fixed_decimal_context
+def paired_es95_relative_improvement_lcb95(
+    inputs: Mapping[str, Any],
+) -> Tuple[str, Any, Tuple[str, ...]]:
+    snapshot, reasons = _validated_risk_snapshot(inputs)
+    if reasons:
+        status = (
+            "INCONCLUSIVE"
+            if reasons[0]
+            in {
+                "PAIRED_RISK_NO_CHANGED_PAIRS",
+                "PAIRED_RISK_INCOMPLETE_PAIRING",
+                "PAIRED_RISK_INSUFFICIENT_BLOCKS",
+            }
+            else "FAIL"
+        )
+        return status, None, reasons
+    return _paired_risk_lcb(
+        snapshot,
+        statistic=_empirical_es95,
+        zero_reason="PAIRED_RISK_REFERENCE_ES95_ZERO",
+    )

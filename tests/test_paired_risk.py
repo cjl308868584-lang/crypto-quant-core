@@ -392,3 +392,217 @@ class PairedRiskArtifactTests(unittest.TestCase):
             "PAIRED_RISK_SOURCE_SERIES_INVALID",
             paired_risk_evaluation_snapshot_reasons(snapshot),
         )
+
+
+class PairedRiskEstimatorTests(PairedRiskArtifactTests):
+    def test_max_drawdown_uses_initial_and_prior_log_equity_high_watermarks(
+        self,
+    ):
+        try:
+            from crypto_quant.paired_risk import _max_drawdown
+        except ImportError as exc:
+            self.fail(f"paired MDD kernel is missing: {exc}")
+        with localcontext() as context:
+            context.prec = 50
+            returns = (
+                Decimal("1.10").ln(),
+                Decimal("0.80").ln(),
+                Decimal("1.25").ln(),
+            )
+        self.assertEqual(
+            canonical_decimal(_max_drawdown(returns)),
+            "0.2",
+        )
+
+    def test_es95_is_mean_of_largest_ceil_five_percent_losses(self):
+        try:
+            from crypto_quant.paired_risk import _empirical_es95
+        except ImportError as exc:
+            self.fail(f"paired ES95 kernel is missing: {exc}")
+        returns = [
+            Decimal("-0.50"),
+            Decimal("-0.25"),
+            *([Decimal("-0.01")] * 37),
+            Decimal("0.10"),
+        ]
+        self.assertEqual(
+            canonical_decimal(_empirical_es95(returns)),
+            "0.375",
+        )
+
+    def test_es95_tail_count_has_minimum_one_and_no_interpolation(self):
+        try:
+            from crypto_quant.paired_risk import _empirical_es95
+        except ImportError as exc:
+            self.fail(f"paired ES95 kernel is missing: {exc}")
+        self.assertEqual(
+            canonical_decimal(
+                _empirical_es95(
+                    (
+                        Decimal("0.1"),
+                        Decimal("-0.02"),
+                        Decimal("-0.01"),
+                    )
+                )
+            ),
+            "0.02",
+        )
+
+    def constant_risk_snapshot(self):
+        reference, reference_economics = arm_series(
+            arm="reference",
+            ratios=("0.90",) * 6,
+            recipe_id="baseline-recipe-v1",
+            recipe_hash="1" * 64,
+        )
+        candidate, candidate_economics = arm_series(
+            arm="candidate",
+            ratios=("0.95",) * 6,
+            recipe_id="candidate-recipe-v1",
+            recipe_hash="2" * 64,
+        )
+        return self.build(
+            reference_series_snapshot=reference,
+            candidate_series_snapshot=candidate,
+            economic_snapshots=[
+                *reference_economics,
+                *candidate_economics,
+            ],
+        )
+
+    def test_paired_estimators_recompute_risk_inside_each_replicate(self):
+        try:
+            from crypto_quant.paired_risk import (
+                paired_es95_relative_improvement_lcb95,
+                paired_max_drawdown_relative_improvement_lcb95,
+            )
+        except ImportError as exc:
+            self.fail(f"paired risk estimators are missing: {exc}")
+        snapshot = self.constant_risk_snapshot()
+        mdd = paired_max_drawdown_relative_improvement_lcb95(
+            {"paired_risk_evaluation_snapshot": snapshot}
+        )
+        es95 = paired_es95_relative_improvement_lcb95(
+            {"paired_risk_evaluation_snapshot": snapshot}
+        )
+        self.assertEqual(
+            mdd,
+            (
+                "COMPUTED",
+                "0.43463233152068362788891046805204894154204699941735",
+                (),
+            ),
+        )
+        self.assertEqual(
+            es95,
+            (
+                "COMPUTED",
+                "0.51316397734676037470101922702151960759678732407446",
+                (),
+            ),
+        )
+
+    def test_unchanged_pairs_remain_in_risk_path(self):
+        try:
+            from crypto_quant.paired_risk import (
+                paired_max_drawdown_relative_improvement_lcb95,
+                paired_risk_evaluation_snapshot_hash,
+            )
+        except ImportError as exc:
+            self.fail(f"paired risk estimators are missing: {exc}")
+        snapshot = self.build()
+        segment = snapshot["paired_segments"][0]
+        segment["action_changed"] = False
+        segment["absolute_exposure_changed"] = False
+        segment["changed"] = False
+        snapshot["pairing_report"]["changed_pair_count"] = 5
+        snapshot["pairing_report"]["unchanged_pair_count"] = 1
+        reference = snapshot["reference_arm"]["statistical_series_snapshot"]
+        candidate = snapshot["candidate_arm"]["statistical_series_snapshot"]
+        candidate["observations"][0]["recommended_action"] = reference[
+            "observations"
+        ][0]["recommended_action"]
+        candidate["observations"][0]["absolute_exposure_ratio"] = reference[
+            "observations"
+        ][0]["absolute_exposure_ratio"]
+        candidate["series_hash"] = statistical_series_hash(candidate)
+        for paired_segment in snapshot["paired_segments"]:
+            paired_segment["candidate_series_hash"] = candidate[
+                "series_hash"
+            ]
+        snapshot["snapshot_hash"] = paired_risk_evaluation_snapshot_hash(
+            snapshot
+        )
+        status, value, reasons = (
+            paired_max_drawdown_relative_improvement_lcb95(
+                {"paired_risk_evaluation_snapshot": snapshot}
+            )
+        )
+        self.assertEqual(status, "COMPUTED")
+        self.assertIsNotNone(value)
+        self.assertEqual(reasons, ())
+
+    def test_no_changed_pair_and_unpaired_window_are_inconclusive(self):
+        try:
+            from crypto_quant.paired_risk import (
+                paired_es95_relative_improvement_lcb95,
+            )
+        except ImportError as exc:
+            self.fail(f"paired risk estimators are missing: {exc}")
+        reference, reference_economics = arm_series(
+            arm="reference",
+            ratios=("0.90",) * 6,
+            recipe_id="baseline-recipe-v1",
+            recipe_hash="1" * 64,
+        )
+        candidate = deepcopy(reference)
+        candidate["series_id"] = "candidate-unchanged"
+        candidate["scope"]["evaluation_ledger"] = "AI_LEDGER"
+        candidate["scope"]["recipe_release_id"] = "candidate-recipe-v1"
+        candidate["scope"]["recipe_release_hash"] = "2" * 64
+        candidate_economics = deepcopy(reference_economics)
+        for source in candidate_economics:
+            source["snapshot_id"] = source["snapshot_id"].replace(
+                "reference",
+                "candidate",
+            )
+            source["scope"]["evaluation_ledger"] = "AI_LEDGER"
+            source["scope"]["recipe_release_id"] = "candidate-recipe-v1"
+            source["scope"]["recipe_release_hash"] = "2" * 64
+            source["source_ledger_hash"] = business_hash(
+                {"candidate": source["snapshot_id"]}
+            )
+            source["snapshot_hash"] = economic_snapshot_hash(source)
+        candidate["source_economic_snapshot_hashes"] = [
+            source["snapshot_hash"] for source in candidate_economics
+        ]
+        for observation, source in zip(
+            candidate["observations"],
+            candidate_economics,
+        ):
+            observation["observation_id"] = observation[
+                "observation_id"
+            ].replace("reference", "candidate")
+            observation["source_economic_snapshot_hash"] = source[
+                "snapshot_hash"
+            ]
+        candidate["series_hash"] = statistical_series_hash(candidate)
+        snapshot = self.build(
+            reference_series_snapshot=reference,
+            candidate_series_snapshot=candidate,
+            economic_snapshots=[
+                *reference_economics,
+                *candidate_economics,
+            ],
+        )
+        result = paired_es95_relative_improvement_lcb95(
+            {"paired_risk_evaluation_snapshot": snapshot}
+        )
+        self.assertEqual(
+            result,
+            (
+                "INCONCLUSIVE",
+                None,
+                ("PAIRED_RISK_NO_CHANGED_PAIRS",),
+            ),
+        )
