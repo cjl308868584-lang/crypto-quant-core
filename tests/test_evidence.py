@@ -30,7 +30,7 @@ class GateEvidenceTests(unittest.TestCase):
         for binding in policy["required_policy_bindings"]:
             if binding["value"] is None:
                 if binding["binding"] == "evaluator_build_hash":
-                    binding["value"] = digest("evaluator-build")
+                    binding["value"] = self.bundle.evaluator_build.build_hash
                 else:
                     binding["value"] = f"approved:{binding['binding']}"
         bundle = PolicyBundle(
@@ -59,7 +59,7 @@ class GateEvidenceTests(unittest.TestCase):
             "cost_allocation_policy_id": digest("cost-allocation-policy"),
             "forward_control_policy_id": digest("forward-control-policy"),
             "compliance_attestation_id": digest("compliance-attestation"),
-            "evaluator_build_hash": digest("evaluator-build"),
+            "evaluator_build_hash": builtin["evaluator_build_hash"],
         }
         if ai:
             binding_hashes["model_bundle_schema_id"] = builtin[
@@ -701,6 +701,58 @@ class GateEvidenceTests(unittest.TestCase):
                 )
                 self.assertFalse(result.valid)
                 self.assertIn(expected_reason, result.reason_codes)
+
+    def test_metric_value_must_match_independent_estimator_execution(self):
+        bundle, envelopes, scope, trust = self.fixture()
+        evidence = deepcopy(envelopes[1])
+        evidence["metric_value"] = "999"
+        evidence["evidence_hash"] = gate_evidence_hash(evidence)
+
+        result = bundle.validate_gate_evidence(
+            "CAPITAL_READINESS",
+            evidence,
+            expected_scope=scope,
+            trust=trust,
+        )
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.computed_gate_result, "PASS")
+        self.assertIn("EVIDENCE_METRIC_VALUE_MISMATCH", result.reason_codes)
+        self.assertTrue(result.estimator_execution_hash)
+
+    def test_catalog_algorithm_without_implementation_cannot_validate(self):
+        bundle, envelopes, _, trust = self.fixture()
+        catalog = deepcopy(bundle.catalog)
+        metric_id = envelopes[1]["metric_id"]
+        catalog["exact_overrides"][metric_id]["estimator_id"] = (
+            "ACHIEVED_POWER_AT_MERE_V1"
+        )
+        unavailable_bundle = PolicyBundle(
+            root=bundle.root,
+            policy=deepcopy(bundle.policy),
+            catalog=catalog,
+            evidence_schema=deepcopy(bundle.evidence_schema),
+            estimators=bundle.estimators,
+            evaluator_build=bundle.evaluator_build,
+        )
+        evidence = deepcopy(envelopes[1])
+        evidence["estimator_id"] = "ACHIEVED_POWER_AT_MERE_V1"
+        evidence["evidence_hash"] = gate_evidence_hash(evidence)
+        expected_scope = unavailable_bundle.evidence_scope_snapshot(evidence)
+
+        result = unavailable_bundle.validate_gate_evidence(
+            "CAPITAL_READINESS",
+            evidence,
+            expected_scope=expected_scope,
+            trust=trust,
+        )
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.computed_gate_result, "FAIL")
+        self.assertIn(
+            "ESTIMATOR_EXECUTION:ESTIMATOR_NOT_EXECUTABLE",
+            result.reason_codes,
+        )
 
     def test_hash_freeze_signature_reveal_and_capital_are_independent_proofs(self):
         bundle, envelopes, scope, trust = self.fixture()

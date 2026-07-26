@@ -45,6 +45,7 @@ class EvidenceValidation:
     gate_id: str
     valid: bool
     computed_gate_result: str
+    estimator_execution_hash: str
     computed_evidence_hash: str
     reason_codes: Tuple[str, ...]
     validation_hash: str

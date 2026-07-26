@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+from .build import EvaluatorBuild
 from .canonical import business_hash, canonical_decimal
 from .evidence import (
     EvidenceGroupValidation,
@@ -21,6 +22,7 @@ from .evidence import (
     verify_trust_context,
 )
 from .errors import CanonicalizationError, PolicyError
+from .estimators import EstimatorRegistry
 
 
 def strict_format_checker() -> FormatChecker:
@@ -215,12 +217,19 @@ class PolicyBundle:
         policy: Dict[str, Any],
         catalog: Dict[str, Any],
         evidence_schema: Dict[str, Any],
+        estimators: Optional[EstimatorRegistry] = None,
+        evaluator_build: Optional[EvaluatorBuild] = None,
     ) -> None:
         self.root = root
         self.policy = policy
         self.catalog = catalog
         self.evidence_schema = evidence_schema
         self.metrics = MetricResolver(catalog)
+        self.estimators = estimators or EstimatorRegistry.load(root, catalog)
+        self.evaluator_build = evaluator_build or EvaluatorBuild.load(
+            root.parent,
+            self.estimators,
+        )
 
     @classmethod
     def load(cls, config_dir: Path) -> "PolicyBundle":
@@ -555,6 +564,7 @@ class PolicyBundle:
                 )
             ),
             "risk_policy_id": business_hash(self.policy["risk_thresholds"]),
+            "evaluator_build_hash": self.evaluator_build.build_hash,
         }
 
     def _artifact_schema_reasons(
@@ -1033,6 +1043,57 @@ class PolicyBundle:
                 reasons.append(f"FALLBACK_POLICY_HASH_MISMATCH:{name}")
         return tuple(sorted(set(reasons)))
 
+    @staticmethod
+    def _estimator_inputs(
+        estimator_id: str,
+        metric_id: str,
+        evidence: Mapping[str, Any],
+        *,
+        scope_verified: bool,
+        trust_verified: bool,
+    ) -> Mapping[str, Any]:
+        if estimator_id == "ACTUAL_DEPLOYABLE_CAPITAL_V1":
+            return {
+                "actual_deployable_capital_usdt": evidence.get(
+                    "actual_deployable_capital_usdt"
+                ),
+                "snapshot_verified": trust_verified,
+            }
+        if estimator_id == "APPROVED_PRODUCTION_CAPITAL_FROM_EVIDENCE_V1":
+            return {
+                "approved_production_capital_usdt": evidence.get(
+                    "approved_production_capital_usdt"
+                ),
+                "scope_verified": scope_verified and trust_verified,
+            }
+        if estimator_id == "FINITE_BREAK_EVEN_ROOT_CHECK_V1":
+            return {
+                "break_even_capital_lcb_root_usdt": evidence.get(
+                    "break_even_capital_lcb_root_usdt"
+                ),
+                "capital_grid_replay_verified": trust_verified,
+            }
+        if estimator_id == "DECIMAL_CAPITAL_COMPARISON_V1":
+            comparison = (
+                "APPROVED"
+                if "approved_production_capital" in metric_id
+                else "BREAK_EVEN"
+            )
+            return {
+                "actual_deployable_capital_usdt": evidence.get(
+                    "actual_deployable_capital_usdt"
+                ),
+                "approved_production_capital_usdt": evidence.get(
+                    "approved_production_capital_usdt"
+                ),
+                "break_even_capital_lcb_root_usdt": evidence.get(
+                    "break_even_capital_lcb_root_usdt"
+                ),
+                "comparison": comparison,
+                "scope_verified": scope_verified and trust_verified,
+            }
+        return {}
+
     def validate_gate_evidence(
         self,
         gate_group_id: str,
@@ -1071,24 +1132,28 @@ class PolicyBundle:
             else:
                 context[name] = value
 
+        scope_reasons: Tuple[str, ...] = ()
         try:
             actual_scope = self.evidence_scope_snapshot(evidence)
-            reasons.extend(
-                self._scope_reason_codes(
-                    gate_group_id,
-                    actual_scope,
-                    expected_scope,
-                    context,
-                )
+            scope_reasons = self._scope_reason_codes(
+                gate_group_id,
+                actual_scope,
+                expected_scope,
+                context,
             )
+            reasons.extend(scope_reasons)
         except PolicyError:
             actual_scope = {}
             reasons.append("EVIDENCE_SCOPE_INVALID")
 
-        reasons.extend(verify_trust_context(evidence, trust))
-        reasons.extend(self._binding_and_artifact_reasons(evidence, trust))
-        reasons.extend(self._artifact_reference_reasons(evidence, trust))
-        reasons.extend(self._fallback_registry_reasons(evidence, trust))
+        trust_reasons = verify_trust_context(evidence, trust)
+        binding_reasons = self._binding_and_artifact_reasons(evidence, trust)
+        artifact_reasons = self._artifact_reference_reasons(evidence, trust)
+        fallback_reasons = self._fallback_registry_reasons(evidence, trust)
+        reasons.extend(trust_reasons)
+        reasons.extend(binding_reasons)
+        reasons.extend(artifact_reasons)
+        reasons.extend(fallback_reasons)
 
         if evidence.get("release_gate_policy_id") != self.policy["policy_id"]:
             reasons.append("EVIDENCE_POLICY_ID_MISMATCH")
@@ -1099,6 +1164,7 @@ class PolicyBundle:
 
         computed_result = "FAIL"
         computed_gate_hash = ""
+        estimator_execution_hash = ""
         if gate is not None:
             try:
                 definition = self.metrics.resolve(gate["metric_id"])
@@ -1115,6 +1181,41 @@ class PolicyBundle:
                 if evidence.get("estimator_id") != definition["estimator_id"]:
                     reasons.append("EVIDENCE_ESTIMATOR_MISMATCH")
 
+            estimator_value = None
+            estimator_status = "FAIL"
+            if definition:
+                estimator_inputs = self._estimator_inputs(
+                    definition["estimator_id"],
+                    gate["metric_id"],
+                    evidence,
+                    scope_verified=not scope_reasons and bool(actual_scope),
+                    trust_verified=not (
+                        trust_reasons
+                        or binding_reasons
+                        or artifact_reasons
+                        or fallback_reasons
+                    ),
+                )
+                execution = self.estimators.execute(
+                    definition["estimator_id"],
+                    estimator_inputs,
+                )
+                estimator_execution_hash = execution.execution_hash
+                estimator_status = execution.status
+                estimator_value = execution.value
+                if execution.status == "FAIL":
+                    reasons.extend(
+                        f"ESTIMATOR_EXECUTION:{reason}"
+                        for reason in execution.reason_codes
+                    )
+                elif execution.status == "INCONCLUSIVE":
+                    pass
+                elif not self._same_business_value(
+                    evidence.get("metric_value"),
+                    execution.value,
+                ):
+                    reasons.append("EVIDENCE_METRIC_VALUE_MISMATCH")
+
             sample_status = evidence.get("sample_status")
             inconclusive: Set[str] = set()
             if isinstance(sample_status, Mapping):
@@ -1124,10 +1225,11 @@ class PolicyBundle:
                     reasons.append("EFFECTIVE_SAMPLE_EXCEEDS_RAW_SAMPLE")
                 if sample_status.get("sufficient") is False:
                     inconclusive.add(gate["metric_id"])
+            if estimator_status == "INCONCLUSIVE":
+                inconclusive.add(gate["metric_id"])
 
             observations: Dict[str, Any] = dict(supporting_observations or {})
             evidence_values = {
-                gate["metric_id"]: evidence.get("metric_value"),
                 "approved_production_capital_usdt": evidence.get(
                     "approved_production_capital_usdt"
                 ),
@@ -1138,6 +1240,9 @@ class PolicyBundle:
                     "break_even_capital_lcb_root_usdt"
                 ),
             }
+            evidence_values[gate["metric_id"]] = (
+                estimator_value if estimator_status == "COMPUTED" else None
+            )
             if isinstance(sample_status, Mapping):
                 evidence_values["effective_event_count"] = sample_status.get(
                     "effective_event_count"
@@ -1178,6 +1283,7 @@ class PolicyBundle:
             "valid": not reason_codes,
             "computed_gate_result": computed_result,
             "computed_gate_hash": computed_gate_hash,
+            "estimator_execution_hash": estimator_execution_hash,
             "computed_evidence_hash": computed_evidence_hash,
             "reason_codes": reason_codes,
         }
@@ -1186,6 +1292,7 @@ class PolicyBundle:
             gate_id=evidence.get("gate_id", "UNKNOWN"),
             valid=not reason_codes,
             computed_gate_result=computed_result,
+            estimator_execution_hash=estimator_execution_hash,
             computed_evidence_hash=computed_evidence_hash,
             reason_codes=reason_codes,
             validation_hash=business_hash(payload),
@@ -2076,6 +2183,11 @@ class PolicyBundle:
         for binding in self.policy["required_policy_bindings"]:
             if binding["value"] is None:
                 reasons.append(f"MISSING_BINDING:{binding['binding']}")
+            elif (
+                binding["binding"] == "evaluator_build_hash"
+                and binding["value"] != self.evaluator_build.build_hash
+            ):
+                reasons.append("EVALUATOR_BUILD_HASH_MISMATCH")
         if self.policy["status"] != "ACTIVE":
             reasons.append(f"POLICY_STATUS:{self.policy['status']}")
         if not self.policy["production_activation"]["enabled"]:

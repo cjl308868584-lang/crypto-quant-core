@@ -1,0 +1,93 @@
+{
+  "$schema": "./estimator-registry-v1.schema.json",
+  "schema_version": "1.0.0",
+  "registry_id": "estimator-registry-v1",
+  "registry_version": "1.0.0",
+  "metric_catalog_id": "release-metrics-v1.1",
+  "metric_catalog_version": "1.1.1",
+  "status": "BUILD_CANDIDATE",
+  "coverage_mode": "CATALOG_COMPLEMENT",
+  "unlisted_estimator_policy": {
+    "status": "UNAVAILABLE",
+    "evaluation_result": "FAIL",
+    "reason_code": "ESTIMATOR_NOT_EXECUTABLE"
+  },
+  "implementations": [
+    {
+      "estimator_id": "ACTUAL_DEPLOYABLE_CAPITAL_V1",
+      "implementation_id": "capital.actual-deployable",
+      "implementation_version": "1.0.0",
+      "callable_id": "actual_deployable_capital",
+      "input_fields": [
+        "actual_deployable_capital_usdt",
+        "snapshot_verified"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "actual-capital-canonical",
+        "actual-capital-unverified"
+      ]
+    },
+    {
+      "estimator_id": "APPROVED_PRODUCTION_CAPITAL_FROM_EVIDENCE_V1",
+      "implementation_id": "capital.approved-production",
+      "implementation_version": "1.0.0",
+      "callable_id": "approved_production_capital",
+      "input_fields": [
+        "approved_production_capital_usdt",
+        "scope_verified"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "approved-capital-canonical",
+        "approved-capital-scope-mismatch"
+      ]
+    },
+    {
+      "estimator_id": "FINITE_BREAK_EVEN_ROOT_CHECK_V1",
+      "implementation_id": "capital.finite-break-even-root",
+      "implementation_version": "1.0.0",
+      "callable_id": "finite_break_even_root",
+      "input_fields": [
+        "break_even_capital_lcb_root_usdt",
+        "capital_grid_replay_verified"
+      ],
+      "output_type": "boolean",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "finite-root-positive",
+        "finite-root-null",
+        "finite-root-zero",
+        "finite-root-unverified"
+      ]
+    },
+    {
+      "estimator_id": "DECIMAL_CAPITAL_COMPARISON_V1",
+      "implementation_id": "capital.decimal-comparison",
+      "implementation_version": "1.0.0",
+      "callable_id": "decimal_capital_comparison",
+      "input_fields": [
+        "actual_deployable_capital_usdt",
+        "approved_production_capital_usdt",
+        "break_even_capital_lcb_root_usdt",
+        "comparison",
+        "scope_verified"
+      ],
+      "output_type": "boolean",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "capital-approved-pass",
+        "capital-approved-fail",
+        "capital-break-even-pass",
+        "capital-break-even-null"
+      ]
+    }
+  ],
+  "registry_hash": "f71b5e4a27e51cbc519c7a8f44ceccb1c5543be75ee84394ff8d2232c0f9f410"
+}

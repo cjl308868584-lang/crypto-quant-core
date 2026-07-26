@@ -1,0 +1,161 @@
+{
+  "$schema": "./estimator-golden-vectors-v1.schema.json",
+  "schema_version": "1.0.0",
+  "bundle_id": "estimator-golden-vectors-v1",
+  "bundle_version": "1.0.0",
+  "estimator_registry_id": "estimator-registry-v1",
+  "estimator_registry_hash": "f71b5e4a27e51cbc519c7a8f44ceccb1c5543be75ee84394ff8d2232c0f9f410",
+  "vectors": [
+    {
+      "vector_id": "actual-capital-canonical",
+      "estimator_id": "ACTUAL_DEPLOYABLE_CAPITAL_V1",
+      "inputs": {
+        "actual_deployable_capital_usdt": "1000.00",
+        "snapshot_verified": true
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "1000",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "actual-capital-unverified",
+      "estimator_id": "ACTUAL_DEPLOYABLE_CAPITAL_V1",
+      "inputs": {
+        "actual_deployable_capital_usdt": "1000",
+        "snapshot_verified": false
+      },
+      "expected_status": "FAIL",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "CAPITAL_SNAPSHOT_UNVERIFIED"
+      ]
+    },
+    {
+      "vector_id": "approved-capital-canonical",
+      "estimator_id": "APPROVED_PRODUCTION_CAPITAL_FROM_EVIDENCE_V1",
+      "inputs": {
+        "approved_production_capital_usdt": "500.00",
+        "scope_verified": true
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "500",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "approved-capital-scope-mismatch",
+      "estimator_id": "APPROVED_PRODUCTION_CAPITAL_FROM_EVIDENCE_V1",
+      "inputs": {
+        "approved_production_capital_usdt": "500",
+        "scope_verified": false
+      },
+      "expected_status": "FAIL",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "CAPITAL_SCOPE_UNVERIFIED"
+      ]
+    },
+    {
+      "vector_id": "finite-root-positive",
+      "estimator_id": "FINITE_BREAK_EVEN_ROOT_CHECK_V1",
+      "inputs": {
+        "break_even_capital_lcb_root_usdt": "800",
+        "capital_grid_replay_verified": true
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": true,
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "finite-root-null",
+      "estimator_id": "FINITE_BREAK_EVEN_ROOT_CHECK_V1",
+      "inputs": {
+        "break_even_capital_lcb_root_usdt": null,
+        "capital_grid_replay_verified": true
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": false,
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "finite-root-zero",
+      "estimator_id": "FINITE_BREAK_EVEN_ROOT_CHECK_V1",
+      "inputs": {
+        "break_even_capital_lcb_root_usdt": "0",
+        "capital_grid_replay_verified": true
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": false,
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "finite-root-unverified",
+      "estimator_id": "FINITE_BREAK_EVEN_ROOT_CHECK_V1",
+      "inputs": {
+        "break_even_capital_lcb_root_usdt": "800",
+        "capital_grid_replay_verified": false
+      },
+      "expected_status": "FAIL",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "CAPITAL_GRID_REPLAY_UNVERIFIED"
+      ]
+    },
+    {
+      "vector_id": "capital-approved-pass",
+      "estimator_id": "DECIMAL_CAPITAL_COMPARISON_V1",
+      "inputs": {
+        "actual_deployable_capital_usdt": "500",
+        "approved_production_capital_usdt": "500",
+        "break_even_capital_lcb_root_usdt": "800",
+        "comparison": "APPROVED",
+        "scope_verified": true
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": true,
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "capital-approved-fail",
+      "estimator_id": "DECIMAL_CAPITAL_COMPARISON_V1",
+      "inputs": {
+        "actual_deployable_capital_usdt": "499.99",
+        "approved_production_capital_usdt": "500",
+        "break_even_capital_lcb_root_usdt": "800",
+        "comparison": "APPROVED",
+        "scope_verified": true
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": false,
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "capital-break-even-pass",
+      "estimator_id": "DECIMAL_CAPITAL_COMPARISON_V1",
+      "inputs": {
+        "actual_deployable_capital_usdt": "800",
+        "approved_production_capital_usdt": "500",
+        "break_even_capital_lcb_root_usdt": "800",
+        "comparison": "BREAK_EVEN",
+        "scope_verified": true
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": true,
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "capital-break-even-null",
+      "estimator_id": "DECIMAL_CAPITAL_COMPARISON_V1",
+      "inputs": {
+        "actual_deployable_capital_usdt": "800",
+        "approved_production_capital_usdt": "500",
+        "break_even_capital_lcb_root_usdt": null,
+        "comparison": "BREAK_EVEN",
+        "scope_verified": true
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": false,
+      "expected_reason_codes": []
+    }
+  ],
+  "bundle_hash": "a8c65d362a6ef802817df765e796e643b21fa37543e30521cdc05822061c855b"
+}

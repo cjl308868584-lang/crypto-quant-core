@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "estimator-registry-v1.schema.json",
+  "title": "Versioned Estimator Function Registry v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "registry_id",
+    "registry_version",
+    "metric_catalog_id",
+    "metric_catalog_version",
+    "status",
+    "coverage_mode",
+    "unlisted_estimator_policy",
+    "implementations",
+    "registry_hash"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./estimator-registry-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "registry_id": {
+      "const": "estimator-registry-v1"
+    },
+    "registry_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "metric_catalog_id": {
+      "const": "release-metrics-v1.1"
+    },
+    "metric_catalog_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "status": {
+      "const": "BUILD_CANDIDATE"
+    },
+    "coverage_mode": {
+      "const": "CATALOG_COMPLEMENT"
+    },
+    "unlisted_estimator_policy": {
+      "type": "object",
+      "required": [
+        "status",
+        "evaluation_result",
+        "reason_code"
+      ],
+      "properties": {
+        "status": {
+          "const": "UNAVAILABLE"
+        },
+        "evaluation_result": {
+          "const": "FAIL"
+        },
+        "reason_code": {
+          "const": "ESTIMATOR_NOT_EXECUTABLE"
+        }
+      },
+      "additionalProperties": false
+    },
+    "implementations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/implementation"
+      }
+    },
+    "registry_hash": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "implementation": {
+      "type": "object",
+      "required": [
+        "estimator_id",
+        "implementation_id",
+        "implementation_version",
+        "callable_id",
+        "input_fields",
+        "output_type",
+        "deterministic",
+        "binary_float_allowed",
+        "golden_vector_ids"
+      ],
+      "properties": {
+        "estimator_id": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "implementation_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]+$"
+        },
+        "implementation_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "callable_id": {
+          "enum": [
+            "actual_deployable_capital",
+            "approved_production_capital",
+            "finite_break_even_root",
+            "decimal_capital_comparison"
+          ]
+        },
+        "input_fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        },
+        "output_type": {
+          "enum": [
+            "decimal",
+            "boolean"
+          ]
+        },
+        "deterministic": {
+          "const": true
+        },
+        "binary_float_allowed": {
+          "const": false
+        },
+        "golden_vector_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]+$"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

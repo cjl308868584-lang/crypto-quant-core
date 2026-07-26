@@ -80,6 +80,30 @@ class ReleaseEvaluatorTests(unittest.TestCase):
         self.assertIn("PRODUCTION_ACTIVATION_DISABLED", reasons)
         self.assertIn("MISSING_BINDING:evaluator_build_hash", reasons)
 
+    def test_wrong_evaluator_build_binding_fails_readiness(self) -> None:
+        policy = deepcopy(self.bundle.policy)
+        policy["status"] = "ACTIVE"
+        policy["production_activation"]["enabled"] = True
+        for binding in policy["required_policy_bindings"]:
+            binding["value"] = (
+                "f" * 64
+                if binding["binding"] == "evaluator_build_hash"
+                else f"approved:{binding['binding']}"
+            )
+        bundle = PolicyBundle(
+            root=self.bundle.root,
+            policy=policy,
+            catalog=deepcopy(self.bundle.catalog),
+            evidence_schema=deepcopy(self.bundle.evidence_schema),
+            estimators=self.bundle.estimators,
+            evaluator_build=self.bundle.evaluator_build,
+        )
+
+        result = bundle.readiness()
+
+        self.assertEqual(result.result, "FAIL")
+        self.assertIn("EVALUATOR_BUILD_HASH_MISMATCH", result.reason_codes)
+
     def test_all_authoritative_gates_resolve(self) -> None:
         groups = self.bundle.flat_gate_groups()
         self.assertEqual(len(groups), 20)

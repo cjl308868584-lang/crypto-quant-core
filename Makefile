@@ -6,3 +6,4 @@ test:
 validate:
 	PYTHONPATH=src python3 scripts/validate_release_config.py
 	PYTHONPATH=src python3 scripts/validate_governance_templates.py
+	PYTHONPATH=src python3 scripts/validate_evaluator_build.py

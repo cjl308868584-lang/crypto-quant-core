@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "estimator-golden-vectors-v1.schema.json",
+  "title": "Estimator Golden Vector Bundle v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "bundle_id",
+    "bundle_version",
+    "estimator_registry_id",
+    "estimator_registry_hash",
+    "vectors",
+    "bundle_hash"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./estimator-golden-vectors-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "bundle_id": {
+      "const": "estimator-golden-vectors-v1"
+    },
+    "bundle_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "estimator_registry_id": {
+      "const": "estimator-registry-v1"
+    },
+    "estimator_registry_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "vectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/vector"
+      }
+    },
+    "bundle_hash": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "scalar": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "vector": {
+      "type": "object",
+      "required": [
+        "vector_id",
+        "estimator_id",
+        "inputs",
+        "expected_status",
+        "expected_value",
+        "expected_reason_codes"
+      ],
+      "properties": {
+        "vector_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]+$"
+        },
+        "estimator_id": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "inputs": {
+          "type": "object"
+        },
+        "expected_status": {
+          "enum": [
+            "COMPUTED",
+            "FAIL",
+            "INCONCLUSIVE"
+          ]
+        },
+        "expected_value": {
+          "$ref": "#/$defs/scalar"
+        },
+        "expected_reason_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

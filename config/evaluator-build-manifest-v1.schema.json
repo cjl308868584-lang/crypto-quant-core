@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evaluator-build-manifest-v1.schema.json",
+  "title": "Deterministic Evaluator Build Manifest v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "manifest_id",
+    "manifest_version",
+    "status",
+    "evaluator_id",
+    "package_name",
+    "package_version",
+    "python_requires",
+    "metric_catalog_id",
+    "metric_catalog_version",
+    "catalog_algorithm_count",
+    "estimator_registry_id",
+    "estimator_registry_hash",
+    "golden_bundle_id",
+    "golden_bundle_hash",
+    "golden_report_hash",
+    "golden_vector_count",
+    "executable_estimator_count",
+    "unavailable_estimator_count",
+    "file_set_policy",
+    "file_hashes",
+    "build_input_tree_hash",
+    "capabilities",
+    "manifest_hash"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./evaluator-build-manifest-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "manifest_id": {
+      "const": "release-evaluator-build-v1"
+    },
+    "manifest_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "status": {
+      "const": "BUILD_CANDIDATE"
+    },
+    "evaluator_id": {
+      "const": "release-gate-evaluator-v1"
+    },
+    "package_name": {
+      "const": "crypto-quant-core"
+    },
+    "package_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "python_requires": {
+      "const": ">=3.9"
+    },
+    "metric_catalog_id": {
+      "const": "release-metrics-v1.1"
+    },
+    "metric_catalog_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "catalog_algorithm_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "estimator_registry_id": {
+      "const": "estimator-registry-v1"
+    },
+    "estimator_registry_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "golden_bundle_id": {
+      "const": "estimator-golden-vectors-v1"
+    },
+    "golden_bundle_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "golden_report_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "golden_vector_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "executable_estimator_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "unavailable_estimator_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "file_set_policy": {
+      "const": "ALL_PACKAGE_PYTHON_PLUS_FROZEN_RELEASE_CONFIG"
+    },
+    "file_hashes": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_./-]+$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "build_input_tree_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "capabilities": {
+      "type": "object",
+      "required": [
+        "free_form_expression_execution",
+        "binary_float_business_math",
+        "unknown_estimator_fails_closed",
+        "golden_vectors_required",
+        "all_catalog_estimators_executable"
+      ],
+      "properties": {
+        "free_form_expression_execution": {
+          "const": false
+        },
+        "binary_float_business_math": {
+          "const": false
+        },
+        "unknown_estimator_fails_closed": {
+          "const": true
+        },
+        "golden_vectors_required": {
+          "const": true
+        },
+        "all_catalog_estimators_executable": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "manifest_hash": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "additionalProperties": false
+}
