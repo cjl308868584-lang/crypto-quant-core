@@ -4,7 +4,7 @@
   "bundle_id": "estimator-golden-vectors-v1",
   "bundle_version": "1.3.0",
   "estimator_registry_id": "estimator-registry-v1",
-  "estimator_registry_hash": "f200716395079175205c577976264ec57990465aa50bec7756089cc2a6078bad",
+  "estimator_registry_hash": "95fba10fd37bca9d3c86b63037cc984d0b2a6e85a143a5f7f424db0d65b11f3f",
   "fixtures": {
     "economic-snapshot-valid": {
       "$schema": "./economic-ledger-snapshot-v1.schema.json",
@@ -3658,5 +3658,5 @@
       ]
     }
   ],
-  "bundle_hash": "7f6d6afb492bb964302309e8e3763c577d5dc5352a39c8228382be6931e3924f"
+  "bundle_hash": "b811eb1ce1dd34f1c54d8788f3ffa108e790409843da6d620d15bb212588fa8a"
 }

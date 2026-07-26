@@ -2,7 +2,7 @@
   "$schema": "./release-gates-v1.1.schema.json",
   "schema_version": "1.0.0",
   "policy_id": "release-gates-v1.1",
-  "policy_version": "1.1.4",
+  "policy_version": "1.1.5",
   "metric_catalog_id": "release-metrics-v1.1",
   "evidence_schema_id": "release-evidence-v1.1",
   "artifact_schemas": {
@@ -363,6 +363,13 @@
         "gate_id": "STATISTICAL_DESIGN_FROZEN",
         "required": true,
         "metric_id": "statistical_design_frozen_before_outcomes",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "HOLM_ADJUSTED_PRIMARY_PASS",
+        "required": true,
+        "metric_id": "primary_endpoint_holm_adjusted_pass",
         "comparator": "EQ",
         "threshold": true
       },
@@ -758,6 +765,13 @@
       }
     ],
     "AUDIT_BASE_ARM": [
+      {
+        "gate_id": "AUDIT_BASE_HOLM_ADJUSTED_PRIMARY_PASS",
+        "required": true,
+        "metric_id": "audit_primary_endpoint_holm_adjusted_pass",
+        "comparator": "EQ",
+        "threshold": true
+      },
       {
         "gate_id": "AUDIT_BASE_ACHIEVED_POWER",
         "required": true,

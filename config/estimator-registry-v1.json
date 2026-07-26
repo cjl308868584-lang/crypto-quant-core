@@ -4,7 +4,7 @@
   "registry_id": "estimator-registry-v1",
   "registry_version": "1.6.0",
   "metric_catalog_id": "release-metrics-v1.1",
-  "metric_catalog_version": "1.1.4",
+  "metric_catalog_version": "1.1.5",
   "status": "BUILD_CANDIDATE",
   "coverage_mode": "CATALOG_COMPLEMENT",
   "unlisted_estimator_policy": {
@@ -402,5 +402,5 @@
       ]
     }
   ],
-  "registry_hash": "f200716395079175205c577976264ec57990465aa50bec7756089cc2a6078bad"
+  "registry_hash": "95fba10fd37bca9d3c86b63037cc984d0b2a6e85a143a5f7f424db0d65b11f3f"
 }

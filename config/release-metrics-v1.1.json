@@ -1,7 +1,7 @@
 {
   "$schema": "./release-metrics-v1.1.schema.json",
   "catalog_id": "release-metrics-v1.1",
-  "catalog_version": "1.1.4",
+  "catalog_version": "1.1.5",
   "status": "DESIGN_BASELINE",
   "algorithm_execution": {
     "descriptive_formula_strings_are_not_evaluated": true,
@@ -156,6 +156,16 @@
       "value_type": "decimal",
       "unit": "endpoint_unit",
       "estimator_id": "PRIMARY_ENDPOINT_CI_WIDTH_V1"
+    },
+    "primary_endpoint_holm_adjusted_pass": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1"
+    },
+    "audit_primary_endpoint_holm_adjusted_pass": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1"
     },
     "baseline_variable_net_log_growth_lcb95": {
       "value_type": "decimal",
@@ -676,13 +686,14 @@
     "ACHIEVED_POWER_AT_MERE_V1": {
       "minimum_effect_source": "StatisticalDesignPolicy",
       "alpha_source": "ReleaseGatePolicy familywise_alpha after adjustment",
-      "sample_source": "effective_event_count",
-      "method_source": "StatisticalDesignPolicy",
+      "sample_source": "StatisticalDecisionSnapshot source StatisticalSeriesSnapshot with rederived effective_event_count",
+      "method": "SHIFTED_CENTERED_MBB_AT_MERE_V1",
       "missing_design": "FAIL"
     },
     "PRIMARY_ENDPOINT_CI_WIDTH_V1": {
       "formula": "upper_confidence_bound - lower_confidence_bound",
-      "endpoint_and_unit_source": "StatisticalDesignPolicy"
+      "method": "PERCENTILE_MBB_V1",
+      "endpoint_and_unit_source": "StatisticalDecisionSnapshot bound to StatisticalDesignPolicy"
     },
     "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1": {
       "family_source": "StatisticalDecisionSnapshot cumulative trial registry",

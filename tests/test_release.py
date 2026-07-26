@@ -110,9 +110,46 @@ class ReleaseEvaluatorTests(unittest.TestCase):
     def test_all_authoritative_gates_resolve(self) -> None:
         groups = self.bundle.flat_gate_groups()
         self.assertEqual(len(groups), 20)
-        self.assertEqual(sum(len(gates) for gates in groups.values()), 149)
+        self.assertEqual(sum(len(gates) for gates in groups.values()), 151)
         with self.assertRaises(PolicyError):
             self.bundle.metrics.resolve("unknown_profit_metric")
+
+    def test_statistical_decision_gates_are_required_and_executable(self):
+        sample = {
+            gate["gate_id"]: gate
+            for gate in self.bundle.policy["gates"]["SAMPLE"]
+        }
+        audit = {
+            gate["gate_id"]: gate
+            for gate in self.bundle.policy["gates"]["AUDIT_BASE_ARM"]
+        }
+
+        self.assertEqual(
+            sample["HOLM_ADJUSTED_PRIMARY_PASS"],
+            {
+                "gate_id": "HOLM_ADJUSTED_PRIMARY_PASS",
+                "required": True,
+                "metric_id": "primary_endpoint_holm_adjusted_pass",
+                "comparator": "EQ",
+                "threshold": True,
+            },
+        )
+        self.assertEqual(
+            audit["AUDIT_BASE_HOLM_ADJUSTED_PRIMARY_PASS"],
+            {
+                "gate_id": "AUDIT_BASE_HOLM_ADJUSTED_PRIMARY_PASS",
+                "required": True,
+                "metric_id": "audit_primary_endpoint_holm_adjusted_pass",
+                "comparator": "EQ",
+                "threshold": True,
+            },
+        )
+        for estimator_id in (
+            "ACHIEVED_POWER_AT_MERE_V1",
+            "PRIMARY_ENDPOINT_CI_WIDTH_V1",
+            "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1",
+        ):
+            self.assertTrue(self.bundle.estimators.is_executable(estimator_id))
 
     def test_schema_dates_are_checked_without_optional_format_packages(self) -> None:
         checker = _format_checker()

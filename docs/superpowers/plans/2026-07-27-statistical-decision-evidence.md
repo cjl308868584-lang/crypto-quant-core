@@ -33,6 +33,7 @@
 - Modify `config/release-metrics-v1.1.json`, `config/release-gates-v1.1.json`, `tests/test_release.py`, and `tests/test_governance.py`: add executable Holm metrics and required gates.
 - Modify `src/crypto_quant/release.py`, `src/crypto_quant/release_artifacts.py`, `config/release-evidence-v1.1.schema.json`, `tests/test_evidence.py`, and `tests/test_release.py`: bind the artifact and verify every family source in Gate Evidence and Supporting Observations.
 - Modify `src/crypto_quant/build.py`, `config/evaluator-build-manifest-v1.json`, `pyproject.toml`, `README.md`, and release documentation: freeze and publish v0.14.0.
+- Refresh `config/evaluator-build-manifest-v1.json` mechanically after every task that changes a frozen source/config file, so intermediate commits remain loadable; Task 5 applies the final v0.14 version and evidence values.
 - Create `docs/adr/0014-replayable-statistical-decision-evidence.md` and `docs/implementation-status-v0.14.0.md`: record exact semantics, verification evidence, and remaining fail-closed scope.
 
 ---

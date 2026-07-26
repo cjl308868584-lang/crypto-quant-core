@@ -36,7 +36,7 @@ class EstimatorRegistryTests(unittest.TestCase):
         executable = set(self.registry.executable_estimator_ids)
         unavailable = set(self.registry.unavailable_estimator_ids)
 
-        self.assertEqual(self.catalog["catalog_version"], "1.1.4")
+        self.assertEqual(self.catalog["catalog_version"], "1.1.5")
         self.assertEqual(
             self.registry.registry["registry_version"],
             "1.6.0",
@@ -211,8 +211,8 @@ class EstimatorRegistryTests(unittest.TestCase):
         self.assertEqual(
             {report.report_hash for report in reports},
             {
-                "567f277c621698ab9a601833c1ca4c4b"
-                "58aaaecbb5a41a5bcb406b219b7994c6"
+                "6b1a3df50ed7512bf3a81ceed655fe70"
+                "e6c75768df3912660b01b8a33f997714"
             },
         )
 
@@ -263,12 +263,17 @@ class EvaluatorBuildTests(unittest.TestCase):
             "config/trade-replay-snapshot-v1.schema.json",
             expected,
         )
-        self.assertEqual(manifest["manifest_version"], "1.6.0")
+        self.assertIn(
+            "config/statistical-decision-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertIn("src/crypto_quant/statistical_decision.py", expected)
+        self.assertEqual(manifest["manifest_version"], "1.7.0")
         self.assertEqual(manifest["package_version"], "0.13.0")
-        self.assertEqual(manifest["metric_catalog_version"], "1.1.4")
-        self.assertEqual(manifest["golden_vector_count"], 33)
-        self.assertEqual(build.executable_estimator_count, 21)
-        self.assertEqual(build.unavailable_estimator_count, 36)
+        self.assertEqual(manifest["metric_catalog_version"], "1.1.5")
+        self.assertEqual(manifest["golden_vector_count"], 39)
+        self.assertEqual(build.executable_estimator_count, 24)
+        self.assertEqual(build.unavailable_estimator_count, 34)
         self.assertEqual(build.build_hash, manifest["manifest_hash"])
 
     def test_modified_evaluator_input_is_rejected(self):

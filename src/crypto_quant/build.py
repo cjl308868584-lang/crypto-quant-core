@@ -34,6 +34,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/release-metrics-v1.1.schema.json",
     "config/supporting-observation-bundle-v1.schema.json",
     "config/statistical-series-snapshot-v1.schema.json",
+    "config/statistical-decision-snapshot-v1.schema.json",
     "config/trade-replay-snapshot-v1.schema.json",
     "pyproject.toml",
     "requirements.lock",
