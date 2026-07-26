@@ -374,6 +374,9 @@
         },
         "statistical_series_snapshot": {
           "$ref": "#/$defs/freezeProof"
+        },
+        "endpoint_reevaluation_snapshot": {
+          "$ref": "#/$defs/freezeProof"
         }
       },
       "additionalProperties": false
@@ -613,6 +616,31 @@
           "supporting_observation_bundle_hash": {
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "metric_id"
+        ],
+        "properties": {
+          "metric_id": {
+            "enum": [
+              "ai_leave_max_positive_delta_fold_out_selected_endpoint_pass",
+              "audit_ai_leave_max_positive_delta_event_out_selected_endpoint_pass"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "frozen_release_inputs": {
+            "required": [
+              "endpoint_reevaluation_snapshot",
+              "statistical_series_snapshot"
+            ]
           }
         }
       }

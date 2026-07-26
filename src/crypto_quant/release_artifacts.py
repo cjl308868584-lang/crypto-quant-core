@@ -78,6 +78,10 @@ def load_release_artifact_schemas(
         "supporting_observation_bundle": _load_json_strict(
             Path(config_dir) / "supporting-observation-bundle-v1.schema.json"
         ),
+        "endpoint_reevaluation_snapshot": _load_json_strict(
+            Path(config_dir)
+            / "endpoint-reevaluation-snapshot-v1.schema.json"
+        ),
     }
     for schema in schemas.values():
         Draft202012Validator.check_schema(schema)
@@ -798,6 +802,42 @@ def validate_supporting_observation_bundle(
             ):
                 reasons.append(
                     f"SUPPORTING_STATISTICAL_SOURCE_INCOMPLETE:{metric_id}"
+                )
+        endpoint_reevaluation = (
+            inputs.get("endpoint_reevaluation_snapshot")
+            if isinstance(inputs, Mapping)
+            else None
+        )
+        if isinstance(endpoint_reevaluation, Mapping):
+            if (
+                isinstance(statistical_series, Mapping)
+                and endpoint_reevaluation.get("source_paired_series_hash")
+                != statistical_series.get("series_hash")
+            ):
+                reasons.append(
+                    f"SUPPORTING_ENDPOINT_SOURCE_MISMATCH:{metric_id}"
+                )
+            if endpoint_reevaluation.get("ai_endpoint") != (
+                expected_scope.get("ai_endpoint")
+            ):
+                reasons.append(
+                    f"SUPPORTING_ENDPOINT_SCOPE_MISMATCH:{metric_id}"
+                )
+            required_endpoint_sources = {
+                endpoint_reevaluation.get("reevaluation_hash"),
+                endpoint_reevaluation.get("source_paired_series_hash"),
+                endpoint_reevaluation.get(
+                    "reevaluated_paired_series_hash"
+                ),
+            }
+            if (
+                not isinstance(source_hashes, list)
+                or not required_endpoint_sources.issubset(
+                    set(source_hashes)
+                )
+            ):
+                reasons.append(
+                    f"SUPPORTING_ENDPOINT_SOURCE_INCOMPLETE:{metric_id}"
                 )
         if execution.status == "COMPUTED":
             observations[metric_id] = execution.value

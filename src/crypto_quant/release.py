@@ -52,6 +52,12 @@ _STATISTICAL_SERIES_ESTIMATOR_IDS = frozenset(
         "COMPLETE_UTC_CALENDAR_MONTH_COUNT_V1",
     }
 )
+_ENDPOINT_REEVALUATION_ESTIMATOR_IDS = frozenset(
+    {
+        "LEAVE_MAX_POSITIVE_DELTA_FOLD_OUT_ENDPOINT_REEVALUATION_V1",
+        "LEAVE_MAX_POSITIVE_DELTA_EVENT_OUT_ENDPOINT_REEVALUATION_V1",
+    }
+)
 
 
 def strict_format_checker() -> FormatChecker:
@@ -238,6 +244,7 @@ class PolicyBundle:
         "experiment-manifest-v1.1.schema.json",
         "deployment-line-v1.1.schema.json",
         "supporting-observation-bundle-v1.schema.json",
+        "endpoint-reevaluation-snapshot-v1.schema.json",
         "model-bundle-v1.1.schema.json",
         "approved-fallback-registry-v1.1.schema.json",
     )
@@ -1155,8 +1162,8 @@ class PolicyBundle:
                 reasons.append(f"FALLBACK_POLICY_HASH_MISMATCH:{name}")
         return tuple(sorted(set(reasons)))
 
-    @staticmethod
     def _estimator_inputs(
+        self,
         estimator_id: str,
         metric_id: str,
         evidence: Mapping[str, Any],
@@ -1165,6 +1172,9 @@ class PolicyBundle:
         trust_verified: bool,
         economic_ledger_snapshot: Optional[Mapping[str, Any]] = None,
         statistical_series_snapshot: Optional[Mapping[str, Any]] = None,
+        endpoint_reevaluation_snapshot: Optional[
+            Mapping[str, Any]
+        ] = None,
     ) -> Mapping[str, Any]:
         if estimator_id == "ACTUAL_DEPLOYABLE_CAPITAL_V1":
             return {
@@ -1214,7 +1224,77 @@ class PolicyBundle:
             return {
                 "statistical_series_snapshot": statistical_series_snapshot,
             }
+        if estimator_id in _ENDPOINT_REEVALUATION_ESTIMATOR_IDS:
+            is_audit = (
+                estimator_id
+                == "LEAVE_MAX_POSITIVE_DELTA_EVENT_OUT_ENDPOINT_REEVALUATION_V1"
+            )
+            endpoint = evidence.get("ai_endpoint")
+            target_group = (
+                f"{'AUDIT_AI_ENDPOINT' if is_audit else 'AI_ENDPOINT'}."
+                f"{endpoint}"
+            )
+            try:
+                endpoint_gate_definitions = (
+                    self.endpoint_reevaluation_gate_definitions(target_group)
+                )
+            except PolicyError:
+                endpoint_gate_definitions = ()
+            return {
+                "endpoint_reevaluation_snapshot": (
+                    endpoint_reevaluation_snapshot
+                ),
+                "statistical_series_snapshot": (
+                    statistical_series_snapshot
+                ),
+                "endpoint_gate_definitions": endpoint_gate_definitions,
+                "policy_identity": self.endpoint_reevaluation_policy_identity(),
+            }
         return {}
+
+    def endpoint_reevaluation_policy_identity(self) -> Mapping[str, str]:
+        """Return the exact policy identity embedded in reevaluation facts."""
+
+        return {
+            "release_gate_policy_id": self.policy["policy_id"],
+            "release_gate_policy_version": self.policy["policy_version"],
+            "metric_catalog_id": self.catalog["catalog_id"],
+            "metric_catalog_version": self.catalog["catalog_version"],
+        }
+
+    def endpoint_reevaluation_gate_definitions(
+        self,
+        gate_group_id: str,
+    ) -> Tuple[Mapping[str, Any], ...]:
+        """Resolve a complete endpoint group to executable frozen definitions."""
+
+        groups = self.flat_gate_groups()
+        if gate_group_id not in groups:
+            raise PolicyError(
+                f"unknown endpoint reevaluation group: {gate_group_id}"
+            )
+        definitions = []
+        for gate in groups[gate_group_id]:
+            if (
+                "threshold" not in gate
+                or "threshold_ast" in gate
+                or "threshold_ref" in gate
+            ):
+                raise PolicyError(
+                    "endpoint reevaluation gate threshold is not executable"
+                )
+            metric = self.metrics.resolve(gate["metric_id"])
+            definitions.append(
+                {
+                    "gate_id": gate["gate_id"],
+                    "required": gate["required"],
+                    "metric_id": gate["metric_id"],
+                    "estimator_id": metric["estimator_id"],
+                    "comparator": gate["comparator"],
+                    "threshold": gate["threshold"],
+                }
+            )
+        return tuple(definitions)
 
     @staticmethod
     def _economic_snapshot_reference_reasons(
@@ -1456,6 +1536,207 @@ class PolicyBundle:
             reasons.append("STATISTICAL_SERIES_SOURCE_HASH_MISSING")
         return tuple(sorted(set(reasons)))
 
+    def _endpoint_reevaluation_reference_reasons(
+        self,
+        evidence: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+        estimator_id: str,
+    ) -> Tuple[str, ...]:
+        snapshot = trust.artifact_documents.get(
+            "endpoint_reevaluation_snapshot"
+        )
+        if not isinstance(snapshot, Mapping):
+            return ("ENDPOINT_REEVALUATION_DOCUMENT_MISSING",)
+        reasons: List[str] = list(
+            self._artifact_schema_reasons(
+                "endpoint-reevaluation-snapshot-v1.schema.json",
+                snapshot,
+                "ENDPOINT_REEVALUATION",
+            )
+        )
+        reasons.extend(
+            self._statistical_series_reference_reasons(evidence, trust)
+        )
+        try:
+            computed_hash = artifact_self_hash(
+                snapshot,
+                "reevaluation_hash",
+            )
+        except CanonicalizationError:
+            computed_hash = ""
+        if snapshot.get("reevaluation_hash") != computed_hash:
+            reasons.append("ENDPOINT_REEVALUATION_SELF_HASH_MISMATCH")
+
+        frozen = evidence.get("frozen_release_inputs")
+        proof = (
+            frozen.get("endpoint_reevaluation_snapshot")
+            if isinstance(frozen, Mapping)
+            else None
+        )
+        if not isinstance(proof, Mapping):
+            reasons.append("ENDPOINT_REEVALUATION_FREEZE_PROOF_MISSING")
+        else:
+            if proof.get("artifact_id") != snapshot.get("reevaluation_id"):
+                reasons.append("ENDPOINT_REEVALUATION_FREEZE_ID_MISMATCH")
+            if proof.get("artifact_hash") != snapshot.get(
+                "reevaluation_hash"
+            ):
+                reasons.append("ENDPOINT_REEVALUATION_FREEZE_HASH_MISMATCH")
+        if trust.artifact_hashes.get(
+            "endpoint_reevaluation_snapshot"
+        ) != snapshot.get("reevaluation_hash"):
+            reasons.append("ENDPOINT_REEVALUATION_TRUST_HASH_MISMATCH")
+
+        identity = self.endpoint_reevaluation_policy_identity()
+        for name, expected in identity.items():
+            if snapshot.get(name) != expected:
+                reasons.append(
+                    f"ENDPOINT_REEVALUATION_POLICY_MISMATCH:{name}"
+                )
+        is_audit = (
+            estimator_id
+            == "LEAVE_MAX_POSITIVE_DELTA_EVENT_OUT_ENDPOINT_REEVALUATION_V1"
+        )
+        expected_method = (
+            "MAX_POSITIVE_DELTA_EVENT"
+            if is_audit
+            else "MAX_POSITIVE_DELTA_FOLD"
+        )
+        expected_group = (
+            f"{'AUDIT_AI_ENDPOINT' if is_audit else 'AI_ENDPOINT'}."
+            f"{evidence.get('ai_endpoint')}"
+        )
+        if snapshot.get("exclusion_method") != expected_method:
+            reasons.append("ENDPOINT_REEVALUATION_METHOD_MISMATCH")
+        if snapshot.get("endpoint_gate_group_id") != expected_group:
+            reasons.append("ENDPOINT_REEVALUATION_GATE_GROUP_MISMATCH")
+        try:
+            expected_definitions = (
+                self.endpoint_reevaluation_gate_definitions(expected_group)
+            )
+        except PolicyError:
+            expected_definitions = ()
+            reasons.append(
+                "ENDPOINT_REEVALUATION_GATE_GROUP_NOT_EXECUTABLE"
+            )
+        if not self._same_business_value(
+            snapshot.get("endpoint_gate_definitions"),
+            expected_definitions,
+        ):
+            reasons.append("ENDPOINT_REEVALUATION_GATE_SET_MISMATCH")
+
+        source = trust.artifact_documents.get(
+            "statistical_series_snapshot"
+        )
+        if not isinstance(source, Mapping):
+            reasons.append("ENDPOINT_REEVALUATION_SOURCE_SERIES_MISSING")
+            source = {}
+        if snapshot.get("source_paired_series_hash") != source.get(
+            "series_hash"
+        ):
+            reasons.append(
+                "ENDPOINT_REEVALUATION_SOURCE_SERIES_HASH_MISMATCH"
+            )
+        for label, series in (("SOURCE", source),):
+            if series.get("ai_endpoint") != evidence.get("ai_endpoint"):
+                reasons.append(
+                    f"ENDPOINT_REEVALUATION_{label}_ENDPOINT_MISMATCH"
+                )
+            if (
+                series.get("model_bundle_id")
+                != evidence.get("model_bundle_id")
+                or series.get("model_bundle_hash")
+                != evidence.get("model_bundle_hash")
+            ):
+                reasons.append(
+                    f"ENDPOINT_REEVALUATION_{label}_MODEL_MISMATCH"
+                )
+            if (
+                series.get("experiment_manifest_id")
+                != evidence.get("experiment_manifest_id")
+                or series.get("experiment_manifest_hash")
+                != evidence.get("experiment_manifest_hash")
+            ):
+                reasons.append(
+                    f"ENDPOINT_REEVALUATION_{label}_EXPERIMENT_MISMATCH"
+                )
+            if not self._same_business_value(
+                series.get("approved_production_capital_usdt"),
+                evidence.get("approved_production_capital_usdt"),
+            ):
+                reasons.append(
+                    f"ENDPOINT_REEVALUATION_{label}_CAPITAL_MISMATCH"
+                )
+            scope = series.get("scope")
+            if not isinstance(scope, Mapping):
+                reasons.append(
+                    f"ENDPOINT_REEVALUATION_{label}_SCOPE_MISSING"
+                )
+                scope = {}
+            for name in (
+                "release_route",
+                "direction",
+                "venue",
+                "recipe_release_id",
+                "recipe_release_hash",
+                "deployment_line_id",
+                "deployment_line_hash",
+                "evaluation_window_start",
+                "evaluation_window_end",
+            ):
+                if scope.get(name) != evidence.get(name):
+                    reasons.append(
+                        "ENDPOINT_REEVALUATION_"
+                        f"{label}_SCOPE_MISMATCH:{name}"
+                    )
+            if scope.get("evaluation_ledger") != "PAIRED_COMPARISON":
+                reasons.append(
+                    f"ENDPOINT_REEVALUATION_{label}_LEDGER_MISMATCH"
+                )
+
+        claimed = evidence.get("policy_binding_hashes")
+        if not isinstance(claimed, Mapping):
+            claimed = {}
+        for series_field, binding_name in {
+            "accounting_policy_hash": "accounting_policy_id",
+            "cost_allocation_policy_hash": "cost_allocation_policy_id",
+            "split_policy_hash": "split_policy_id",
+            "statistical_design_policy_hash": (
+                "statistical_design_policy_id"
+            ),
+        }.items():
+            for label, series in (("SOURCE", source),):
+                if series.get(series_field) != claimed.get(binding_name):
+                    reasons.append(
+                        "ENDPOINT_REEVALUATION_"
+                        f"{label}_POLICY_MISMATCH:{binding_name}"
+                    )
+
+        artifact_hashes = evidence.get("artifact_hashes")
+        artifact_set = (
+            set(artifact_hashes) if isinstance(artifact_hashes, list) else set()
+        )
+        required_hashes = {
+            snapshot.get("reevaluation_hash"),
+            snapshot.get("source_paired_series_hash"),
+            snapshot.get("reevaluated_paired_series_hash"),
+        }
+        for series in (source,):
+            economic_hashes = series.get(
+                "source_economic_snapshot_hashes"
+            )
+            if isinstance(economic_hashes, list):
+                required_hashes.update(economic_hashes)
+            arms = series.get("source_arm_series")
+            if isinstance(arms, Mapping):
+                for arm in ("baseline", "ai"):
+                    arm_series = arms.get(arm)
+                    if isinstance(arm_series, Mapping):
+                        required_hashes.add(arm_series.get("series_hash"))
+        if not required_hashes.issubset(artifact_set):
+            reasons.append("ENDPOINT_REEVALUATION_SOURCE_HASH_MISSING")
+        return tuple(sorted(set(reasons)))
+
     def validate_gate_evidence(
         self,
         gate_group_id: str,
@@ -1612,6 +1893,9 @@ class PolicyBundle:
                 statistical_series = trust.artifact_documents.get(
                     "statistical_series_snapshot"
                 )
+                endpoint_reevaluation = trust.artifact_documents.get(
+                    "endpoint_reevaluation_snapshot"
+                )
                 if definition["estimator_id"] in (
                     _ECONOMIC_SNAPSHOT_ESTIMATOR_IDS
                 ):
@@ -1628,6 +1912,16 @@ class PolicyBundle:
                         self._statistical_series_reference_reasons(
                             evidence,
                             trust,
+                        )
+                    )
+                if definition["estimator_id"] in (
+                    _ENDPOINT_REEVALUATION_ESTIMATOR_IDS
+                ):
+                    reasons.extend(
+                        self._endpoint_reevaluation_reference_reasons(
+                            evidence,
+                            trust,
+                            definition["estimator_id"],
                         )
                     )
                 estimator_inputs = self._estimator_inputs(
@@ -1649,6 +1943,11 @@ class PolicyBundle:
                     statistical_series_snapshot=(
                         statistical_series
                         if isinstance(statistical_series, Mapping)
+                        else None
+                    ),
+                    endpoint_reevaluation_snapshot=(
+                        endpoint_reevaluation
+                        if isinstance(endpoint_reevaluation, Mapping)
                         else None
                     ),
                 )

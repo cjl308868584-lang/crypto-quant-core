@@ -29,8 +29,8 @@ class EstimatorRegistryTests(unittest.TestCase):
         self.assertEqual(all_ids, executable | unavailable)
         self.assertFalse(executable & unavailable)
         self.assertEqual(len(all_ids), 57)
-        self.assertEqual(len(executable), 18)
-        self.assertEqual(len(unavailable), 39)
+        self.assertEqual(len(executable), 20)
+        self.assertEqual(len(unavailable), 37)
 
         unavailable_result = self.registry.execute(
             "ACHIEVED_POWER_AT_MERE_V1",
@@ -105,12 +105,12 @@ class EstimatorRegistryTests(unittest.TestCase):
     def test_golden_vectors_are_deterministic(self):
         reports = [self.registry.run_golden_vectors() for _ in range(100)]
         self.assertTrue(all(report.passed for report in reports))
-        self.assertEqual({report.vector_count for report in reports}, {27})
+        self.assertEqual({report.vector_count for report in reports}, {29})
         self.assertEqual(
             {report.report_hash for report in reports},
             {
-                "60752f0b0acfa3c7d40e7aeed0c216ddd"
-                "38d2904793d4470e057e370e439d8ee"
+                "aa56c07dac0c5a84e8ffaa46dbc65c46e"
+                "7a53905a3816a70a8b1da29355cb806"
             },
         )
 
@@ -157,8 +157,8 @@ class EvaluatorBuildTests(unittest.TestCase):
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
-        self.assertEqual(build.executable_estimator_count, 18)
-        self.assertEqual(build.unavailable_estimator_count, 39)
+        self.assertEqual(build.executable_estimator_count, 20)
+        self.assertEqual(build.unavailable_estimator_count, 37)
         self.assertEqual(build.build_hash, manifest["manifest_hash"])
 
     def test_modified_evaluator_input_is_rejected(self):

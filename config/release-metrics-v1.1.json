@@ -1,7 +1,7 @@
 {
   "$schema": "./release-metrics-v1.1.schema.json",
   "catalog_id": "release-metrics-v1.1",
-  "catalog_version": "1.1.2",
+  "catalog_version": "1.1.3",
   "status": "DESIGN_BASELINE",
   "algorithm_execution": {
     "descriptive_formula_strings_are_not_evaluated": true,
@@ -811,10 +811,18 @@
       "procedure": "Remove the audit event with the largest positive contribution, then run ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1."
     },
     "LEAVE_MAX_POSITIVE_DELTA_FOLD_OUT_ENDPOINT_REEVALUATION_V1": {
-      "procedure": "Remove the OOS fold with largest positive paired delta contribution and rerun every gate for the selected AI endpoint."
+      "ranking": "Sum eligible changed-pair AI-minus-baseline economic contributions within each OOS fold.",
+      "tie_break": "canonical fold_id ascending",
+      "no_positive_unit": "Remove nothing and still rerun the endpoint group.",
+      "procedure": "Remove the OOS fold with largest positive paired delta contribution, rebuild both source arms and their paired series, then rerun every required gate from the frozen selected AI endpoint group.",
+      "pass": "Every applicable required endpoint gate passes; FAIL or INCONCLUSIVE never maps to true."
     },
     "LEAVE_MAX_POSITIVE_DELTA_EVENT_OUT_ENDPOINT_REEVALUATION_V1": {
-      "procedure": "Remove the audit event with largest positive paired delta contribution and rerun every gate for the selected AI endpoint."
+      "ranking": "Eligible changed-pair AI-minus-baseline economic contribution.",
+      "tie_break": "proposal_id then decision_time ascending",
+      "no_positive_unit": "Remove nothing and still rerun the endpoint group.",
+      "procedure": "Remove the audit event with largest positive paired delta contribution from both source arms, rebuild their paired series, then rerun every required gate from the frozen selected AI endpoint group.",
+      "pass": "Every applicable required endpoint gate passes; FAIL or INCONCLUSIVE never maps to true."
     },
     "SIGNED_FALLBACK_REGISTRY_VALIDATION_V1": {
       "record_source": "approved fallback registry artifact bound by GateEvidence approved_fallback_registry_record_hash",

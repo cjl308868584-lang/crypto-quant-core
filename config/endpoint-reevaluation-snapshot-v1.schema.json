@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "endpoint-reevaluation-snapshot-v1.schema.json",
+  "title": "Selected AI Endpoint Reevaluation Snapshot v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "reevaluation_id",
+    "reevaluation_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "release_gate_policy_id",
+    "release_gate_policy_version",
+    "metric_catalog_id",
+    "metric_catalog_version",
+    "ai_endpoint",
+    "endpoint_gate_group_id",
+    "exclusion_method",
+    "excluded_unit_id",
+    "excluded_positive_delta_contribution",
+    "source_paired_series_hash",
+    "reevaluated_paired_series_hash",
+    "endpoint_gate_definitions",
+    "gate_results",
+    "result",
+    "generated_at"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./endpoint-reevaluation-snapshot-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "reevaluation_id": {
+      "$ref": "#/$defs/id"
+    },
+    "reevaluation_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "release_gate_policy_id": {
+      "const": "release-gates-v1.1"
+    },
+    "release_gate_policy_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "metric_catalog_id": {
+      "const": "release-metrics-v1.1"
+    },
+    "metric_catalog_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "ai_endpoint": {
+      "enum": [
+        "GROWTH",
+        "RISK_EFFICIENCY"
+      ]
+    },
+    "endpoint_gate_group_id": {
+      "pattern": "^(AI_ENDPOINT|AUDIT_AI_ENDPOINT)\\.(GROWTH|RISK_EFFICIENCY)$"
+    },
+    "exclusion_method": {
+      "enum": [
+        "MAX_POSITIVE_DELTA_FOLD",
+        "MAX_POSITIVE_DELTA_EVENT"
+      ]
+    },
+    "excluded_unit_id": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "excluded_positive_delta_contribution": {
+      "$ref": "#/$defs/nonnegativeDecimal"
+    },
+    "source_paired_series_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "reevaluated_paired_series_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "endpoint_gate_definitions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/gateDefinition"
+      }
+    },
+    "gate_results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/gateResult"
+      }
+    },
+    "result": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INCONCLUSIVE"
+      ]
+    },
+    "generated_at": {
+      "$ref": "#/$defs/dateTime"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "nonnegativeDecimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scalar": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/decimal"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "gateDefinition": {
+      "type": "object",
+      "required": [
+        "gate_id",
+        "required",
+        "metric_id",
+        "estimator_id",
+        "comparator",
+        "threshold"
+      ],
+      "properties": {
+        "gate_id": {
+          "$ref": "#/$defs/id"
+        },
+        "required": {
+          "const": true
+        },
+        "metric_id": {
+          "$ref": "#/$defs/id"
+        },
+        "estimator_id": {
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "comparator": {
+          "enum": [
+            "EQ",
+            "NEQ",
+            "GT",
+            "GTE",
+            "LT",
+            "LTE"
+          ]
+        },
+        "threshold": {
+          "$ref": "#/$defs/scalar"
+        }
+      },
+      "additionalProperties": false
+    },
+    "gateResult": {
+      "type": "object",
+      "required": [
+        "gate_id",
+        "metric_id",
+        "estimator_id",
+        "estimator_status",
+        "observed_value",
+        "comparator",
+        "threshold_value",
+        "result",
+        "result_hash"
+      ],
+      "properties": {
+        "gate_id": {
+          "$ref": "#/$defs/id"
+        },
+        "metric_id": {
+          "$ref": "#/$defs/id"
+        },
+        "estimator_id": {
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "estimator_status": {
+          "const": "COMPUTED"
+        },
+        "observed_value": {
+          "$ref": "#/$defs/decimal"
+        },
+        "comparator": {
+          "enum": [
+            "EQ",
+            "NEQ",
+            "GT",
+            "GTE",
+            "LT",
+            "LTE"
+          ]
+        },
+        "threshold_value": {
+          "$ref": "#/$defs/decimal"
+        },
+        "result": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "result_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ai_endpoint": {
+            "const": "GROWTH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "endpoint_gate_group_id": {
+            "pattern": "\\.GROWTH$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exclusion_method": {
+            "const": "MAX_POSITIVE_DELTA_FOLD"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "endpoint_gate_group_id": {
+            "pattern": "^AI_ENDPOINT\\."
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "endpoint_gate_group_id": {
+            "pattern": "^AUDIT_AI_ENDPOINT\\."
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

@@ -2,9 +2,9 @@
   "$schema": "./estimator-registry-v1.schema.json",
   "schema_version": "1.0.0",
   "registry_id": "estimator-registry-v1",
-  "registry_version": "1.3.0",
+  "registry_version": "1.4.0",
   "metric_catalog_id": "release-metrics-v1.1",
-  "metric_catalog_version": "1.1.2",
+  "metric_catalog_version": "1.1.3",
   "status": "BUILD_CANDIDATE",
   "coverage_mode": "CATALOG_COMPLEMENT",
   "unlisted_estimator_policy": {
@@ -298,7 +298,43 @@
       "golden_vector_ids": [
         "statistics-economic-log-growth"
       ]
+    },
+    {
+      "estimator_id": "LEAVE_MAX_POSITIVE_DELTA_FOLD_OUT_ENDPOINT_REEVALUATION_V1",
+      "implementation_id": "reevaluation.leave-max-positive-delta-fold-out-endpoint",
+      "implementation_version": "1.0.0",
+      "callable_id": "leave_max_positive_delta_fold_out_endpoint_reevaluation",
+      "input_fields": [
+        "endpoint_reevaluation_snapshot",
+        "statistical_series_snapshot",
+        "endpoint_gate_definitions",
+        "policy_identity"
+      ],
+      "output_type": "boolean",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "endpoint-leave-max-delta-fold-reevaluation"
+      ]
+    },
+    {
+      "estimator_id": "LEAVE_MAX_POSITIVE_DELTA_EVENT_OUT_ENDPOINT_REEVALUATION_V1",
+      "implementation_id": "reevaluation.leave-max-positive-delta-event-out-endpoint",
+      "implementation_version": "1.0.0",
+      "callable_id": "leave_max_positive_delta_event_out_endpoint_reevaluation",
+      "input_fields": [
+        "endpoint_reevaluation_snapshot",
+        "statistical_series_snapshot",
+        "endpoint_gate_definitions",
+        "policy_identity"
+      ],
+      "output_type": "boolean",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "endpoint-leave-max-delta-event-reevaluation"
+      ]
     }
   ],
-  "registry_hash": "4316a2b1f78a4f8d915a7f15f6674ec357f6a748856f446554aa53870cb62a7c"
+  "registry_hash": "3fe783f9d2e82adc1dd71955a419460abae60cd41a0142c3073da4c701ab55ad"
 }

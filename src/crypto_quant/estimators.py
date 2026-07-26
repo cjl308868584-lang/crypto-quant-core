@@ -19,6 +19,10 @@ from .economics import (
 )
 from .errors import CanonicalizationError, PolicyError
 from .evidence import artifact_self_hash
+from .reevaluation import (
+    leave_max_positive_delta_event_out_endpoint_reevaluation,
+    leave_max_positive_delta_fold_out_endpoint_reevaluation,
+)
 from .statistics import (
     cash_flow_adjusted_economic_log_growth,
     complete_utc_calendar_month_count,
@@ -193,6 +197,12 @@ _CALLABLES: Mapping[
     "cash_flow_adjusted_economic_log_growth": (
         cash_flow_adjusted_economic_log_growth
     ),
+    "leave_max_positive_delta_fold_out_endpoint_reevaluation": (
+        leave_max_positive_delta_fold_out_endpoint_reevaluation
+    ),
+    "leave_max_positive_delta_event_out_endpoint_reevaluation": (
+        leave_max_positive_delta_event_out_endpoint_reevaluation
+    ),
 }
 
 
@@ -207,12 +217,14 @@ class EstimatorRegistry:
         catalog: Mapping[str, Any],
         economic_snapshot_schema: Mapping[str, Any],
         statistical_series_schema: Mapping[str, Any],
+        endpoint_reevaluation_schema: Mapping[str, Any],
     ) -> None:
         self.registry = registry
         self.golden_vectors = golden_vectors
         self.catalog = catalog
         self.economic_snapshot_schema = economic_snapshot_schema
         self.statistical_series_schema = statistical_series_schema
+        self.endpoint_reevaluation_schema = endpoint_reevaluation_schema
         self.registry_hash = registry["registry_hash"]
         self.golden_bundle_hash = golden_vectors["bundle_hash"]
         self._implementations = {
@@ -240,10 +252,14 @@ class EstimatorRegistry:
         statistical_series_schema = _load_json_strict(
             config_dir / "statistical-series-snapshot-v1.schema.json"
         )
+        endpoint_reevaluation_schema = _load_json_strict(
+            config_dir / "endpoint-reevaluation-snapshot-v1.schema.json"
+        )
         Draft202012Validator.check_schema(registry_schema)
         Draft202012Validator.check_schema(golden_schema)
         Draft202012Validator.check_schema(economic_snapshot_schema)
         Draft202012Validator.check_schema(statistical_series_schema)
+        Draft202012Validator.check_schema(endpoint_reevaluation_schema)
         registry = _load_json_strict(config_dir / "estimator-registry-v1.json")
         golden = _load_json_strict(
             config_dir / "estimator-golden-vectors-v1.json"
@@ -324,6 +340,7 @@ class EstimatorRegistry:
             catalog=catalog,
             economic_snapshot_schema=economic_snapshot_schema,
             statistical_series_schema=statistical_series_schema,
+            endpoint_reevaluation_schema=endpoint_reevaluation_schema,
         )
         report = instance.run_golden_vectors()
         if not report.passed:
@@ -426,6 +443,21 @@ class EstimatorRegistry:
                         None,
                         ("PAIRED_SOURCE_SERIES_SCHEMA_INVALID",),
                     )
+        if "endpoint_reevaluation_snapshot" in required_fields:
+            reevaluation = inputs["endpoint_reevaluation_snapshot"]
+            errors = list(
+                Draft202012Validator(
+                    self.endpoint_reevaluation_schema
+                ).iter_errors(reevaluation)
+            )
+            if errors:
+                return self._execution(
+                    estimator_id,
+                    implementation,
+                    "FAIL",
+                    None,
+                    ("ENDPOINT_REEVALUATION_SCHEMA_INVALID",),
+                )
         status, value, reasons = _CALLABLES[implementation["callable_id"]](inputs)
         return self._execution(
             estimator_id,
