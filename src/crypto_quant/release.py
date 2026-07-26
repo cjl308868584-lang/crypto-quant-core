@@ -12,6 +12,14 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 from jsonschema import Draft202012Validator, FormatChecker
 
 from .canonical import business_hash, canonical_decimal
+from .evidence import (
+    EvidenceGroupValidation,
+    EvidenceTrustContext,
+    EvidenceValidation,
+    artifact_self_hash,
+    gate_evidence_hash,
+    verify_trust_context,
+)
 from .errors import CanonicalizationError, PolicyError
 
 
@@ -173,6 +181,24 @@ class PolicyBundle:
     }
     _MAX_EXPRESSION_DEPTH = 32
     _MAX_EXPRESSION_NODES = 256
+    _BINDING_TO_FROZEN_INPUT = {
+        "metric_catalog_id": "metric_catalog",
+        "evidence_schema_id": "evidence_schema",
+        "recipe_release_schema_id": "recipe_release_schema",
+        "model_bundle_schema_id": "model_bundle_schema",
+        "approved_fallback_registry_schema_id": (
+            "approved_fallback_registry_schema"
+        ),
+        "risk_policy_id": "risk_policy",
+        "data_quality_policy_id": "data_quality_policy",
+        "split_policy_id": "split_policy",
+        "statistical_design_policy_id": "statistical_design_policy",
+        "accounting_policy_id": "accounting_policy",
+        "cost_allocation_policy_id": "cost_allocation_policy",
+        "forward_control_policy_id": "forward_control_policy",
+        "compliance_attestation_id": "compliance_attestation",
+        "evaluator_build_hash": "evaluator_build",
+    }
     _SCHEMAS = (
         "release-gates-v1.1.schema.json",
         "release-metrics-v1.1.schema.json",
@@ -510,6 +536,775 @@ class PolicyBundle:
             "artifact_hash"
         ]
         return snapshot
+
+    def authoritative_builtin_binding_hashes(self) -> Dict[str, str]:
+        """Return hashes the evaluator can derive from its own frozen bundle."""
+
+        return {
+            "metric_catalog_id": business_hash(self.catalog),
+            "evidence_schema_id": business_hash(self.evidence_schema),
+            "recipe_release_schema_id": business_hash(
+                load_json_strict(self.root / "recipe-release-v1.1.schema.json")
+            ),
+            "model_bundle_schema_id": business_hash(
+                load_json_strict(self.root / "model-bundle-v1.1.schema.json")
+            ),
+            "approved_fallback_registry_schema_id": business_hash(
+                load_json_strict(
+                    self.root / "approved-fallback-registry-v1.1.schema.json"
+                )
+            ),
+            "risk_policy_id": business_hash(self.policy["risk_thresholds"]),
+        }
+
+    def _artifact_schema_reasons(
+        self,
+        schema_name: str,
+        artifact: Mapping[str, Any],
+        label: str,
+    ) -> Tuple[str, ...]:
+        schema = load_json_strict(self.root / schema_name)
+        validator = Draft202012Validator(
+            schema,
+            format_checker=strict_format_checker(),
+        )
+        errors = sorted(
+            validator.iter_errors(artifact),
+            key=lambda error: (
+                "/".join(map(str, error.absolute_path)),
+                error.message,
+            ),
+        )
+        return tuple(
+            f"{label}_SCHEMA:"
+            + ("/".join(map(str, error.absolute_path)) or "$")
+            for error in errors
+        )
+
+    @staticmethod
+    def _same_business_value(left: Any, right: Any) -> bool:
+        try:
+            return business_hash(left) == business_hash(right)
+        except CanonicalizationError:
+            return False
+
+    def _binding_and_artifact_reasons(
+        self,
+        evidence: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+    ) -> Tuple[str, ...]:
+        reasons: List[str] = []
+        claimed = evidence.get("policy_binding_hashes")
+        frozen = evidence.get("frozen_release_inputs")
+        if not isinstance(claimed, Mapping) or not isinstance(frozen, Mapping):
+            return ()
+
+        builtin = self.authoritative_builtin_binding_hashes()
+        policy_bindings = {
+            item["binding"]: item["value"]
+            for item in self.policy["required_policy_bindings"]
+        }
+        for name, resolved_id in trust.binding_ids.items():
+            if name not in policy_bindings:
+                reasons.append(f"UNKNOWN_RESOLVED_POLICY_BINDING:{name}")
+                continue
+            configured_id = policy_bindings[name]
+            if configured_id is not None and configured_id != resolved_id:
+                reasons.append(f"POLICY_BINDING_ID_MISMATCH:{name}")
+        for name, expected_hash in builtin.items():
+            if name in claimed and claimed[name] != expected_hash:
+                reasons.append(f"BUILTIN_BINDING_HASH_MISMATCH:{name}")
+
+        for binding, claimed_hash in claimed.items():
+            proof_name = self._BINDING_TO_FROZEN_INPUT.get(binding)
+            if proof_name is None:
+                reasons.append(f"UNKNOWN_POLICY_BINDING_HASH:{binding}")
+                continue
+            proof = frozen.get(proof_name)
+            if not isinstance(proof, Mapping):
+                reasons.append(f"BINDING_FREEZE_PROOF_MISSING:{binding}")
+            else:
+                if proof.get("artifact_hash") != claimed_hash:
+                    reasons.append(f"BINDING_FREEZE_HASH_MISMATCH:{binding}")
+                if proof.get("artifact_id") != trust.binding_ids.get(binding):
+                    reasons.append(f"BINDING_FREEZE_ID_MISMATCH:{binding}")
+
+        release_policy = frozen.get("release_gate_policy")
+        release_policy_hash = business_hash(self.policy)
+        if (
+            isinstance(release_policy, Mapping)
+            and release_policy.get("artifact_hash") != release_policy_hash
+        ):
+            reasons.append("RELEASE_GATE_POLICY_HASH_MISMATCH")
+        expected_bundle_hash = business_hash(
+            {
+                "policy_binding_hashes": dict(claimed),
+                "release_gate_policy_hash": release_policy_hash,
+            }
+        )
+        if evidence.get("policy_bundle_hash") != expected_bundle_hash:
+            reasons.append("POLICY_BUNDLE_CONTENT_HASH_MISMATCH")
+
+        recipe_proof = frozen.get("recipe_release")
+        if (
+            isinstance(recipe_proof, Mapping)
+            and recipe_proof.get("artifact_hash")
+            != evidence.get("recipe_release_hash")
+        ):
+            reasons.append("RECIPE_RELEASE_FREEZE_HASH_MISMATCH")
+        if evidence.get("release_route") == "AI_ENHANCED":
+            model_proof = frozen.get("model_bundle")
+            if (
+                isinstance(model_proof, Mapping)
+                and model_proof.get("artifact_hash")
+                != evidence.get("model_bundle_hash")
+            ):
+                reasons.append("MODEL_BUNDLE_FREEZE_HASH_MISMATCH")
+
+        for name, proof in frozen.items():
+            if (
+                isinstance(proof, Mapping)
+                and name in trust.artifact_hashes
+                and proof.get("artifact_hash") != trust.artifact_hashes[name]
+            ):
+                reasons.append(f"TRUSTED_ARTIFACT_HASH_MISMATCH:{name}")
+        return tuple(sorted(set(reasons)))
+
+    def _artifact_reference_reasons(
+        self,
+        evidence: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+    ) -> Tuple[str, ...]:
+        reasons: List[str] = []
+        recipe = trust.artifact_documents.get("recipe_release")
+        if not isinstance(recipe, Mapping):
+            reasons.append("RECIPE_RELEASE_DOCUMENT_MISSING")
+        else:
+            reasons.extend(
+                self._artifact_schema_reasons(
+                    "recipe-release-v1.1.schema.json",
+                    recipe,
+                    "RECIPE_RELEASE",
+                )
+            )
+            direct_fields = (
+                "recipe_release_id",
+                "recipe_release_hash",
+                "release_kind",
+                "release_route",
+                "ai_endpoint",
+                "policy_bundle_hash",
+            )
+            for name in direct_fields:
+                if recipe.get(name) != evidence.get(name):
+                    reasons.append(f"RECIPE_RELEASE_REFERENCE_MISMATCH:{name}")
+            directions = recipe.get("directions")
+            if not isinstance(directions, list) or evidence.get(
+                "direction"
+            ) not in directions:
+                reasons.append("RECIPE_RELEASE_DIRECTION_MISMATCH")
+            venues = recipe.get("venues")
+            if not isinstance(venues, list) or evidence.get("venue") not in venues:
+                reasons.append("RECIPE_RELEASE_VENUE_MISMATCH")
+            if recipe.get("status") != "FROZEN":
+                reasons.append("RECIPE_RELEASE_NOT_FROZEN")
+            try:
+                recipe_hash = artifact_self_hash(
+                    recipe,
+                    "recipe_release_hash",
+                    "freeze_attestation",
+                )
+            except CanonicalizationError:
+                recipe_hash = ""
+            if recipe.get("recipe_release_hash") != recipe_hash:
+                reasons.append("RECIPE_RELEASE_SELF_HASH_MISMATCH")
+            attestation = recipe.get("freeze_attestation")
+            if (
+                not isinstance(attestation, Mapping)
+                or trust.verified_artifact_attestations.get(
+                    attestation.get("attestation_hash")
+                )
+                != recipe.get("recipe_release_hash")
+            ):
+                reasons.append("RECIPE_RELEASE_ATTESTATION_UNVERIFIED")
+
+            binding_fields = {
+                "risk_policy_hash": "risk_policy_id",
+                "data_quality_policy_hash": "data_quality_policy_id",
+                "split_policy_hash": "split_policy_id",
+                "statistical_design_policy_hash": "statistical_design_policy_id",
+                "accounting_policy_hash": "accounting_policy_id",
+                "cost_allocation_policy_hash": "cost_allocation_policy_id",
+                "forward_control_policy_hash": "forward_control_policy_id",
+            }
+            claimed = evidence.get("policy_binding_hashes", {})
+            if isinstance(claimed, Mapping):
+                for recipe_field, binding in binding_fields.items():
+                    if recipe.get(recipe_field) != claimed.get(binding):
+                        reasons.append(
+                            f"RECIPE_RELEASE_BINDING_MISMATCH:{binding}"
+                        )
+            frozen = evidence.get("frozen_release_inputs", {})
+            if isinstance(frozen, Mapping):
+                release_policy = frozen.get("release_gate_policy", {})
+                experiment = frozen.get("experiment_manifest", {})
+                if (
+                    isinstance(release_policy, Mapping)
+                    and recipe.get("release_gate_policy_hash")
+                    != release_policy.get("artifact_hash")
+                ):
+                    reasons.append("RECIPE_RELEASE_GATE_POLICY_HASH_MISMATCH")
+                if (
+                    isinstance(experiment, Mapping)
+                    and recipe.get("experiment_manifest_hash")
+                    != experiment.get("artifact_hash")
+                ):
+                    reasons.append("RECIPE_EXPERIMENT_MANIFEST_HASH_MISMATCH")
+
+        route = evidence.get("release_route")
+        model = trust.artifact_documents.get("model_bundle")
+        if route == "AI_ENHANCED":
+            if not isinstance(model, Mapping):
+                reasons.append("MODEL_BUNDLE_DOCUMENT_MISSING")
+            else:
+                reasons.extend(
+                    self._artifact_schema_reasons(
+                        "model-bundle-v1.1.schema.json",
+                        model,
+                        "MODEL_BUNDLE",
+                    )
+                )
+                model_fields = (
+                    "model_bundle_id",
+                    "model_bundle_hash",
+                    "recipe_release_id",
+                    "recipe_release_hash",
+                    "deployment_line_id",
+                    "release_route",
+                    "ai_endpoint",
+                    "direction",
+                    "venue",
+                )
+                for name in model_fields:
+                    if model.get(name) != evidence.get(name):
+                        reasons.append(f"MODEL_BUNDLE_REFERENCE_MISMATCH:{name}")
+                try:
+                    model_hash = artifact_self_hash(
+                        model,
+                        "model_bundle_hash",
+                        "bundle_signature",
+                    )
+                except CanonicalizationError:
+                    model_hash = ""
+                if model.get("model_bundle_hash") != model_hash:
+                    reasons.append("MODEL_BUNDLE_SELF_HASH_MISMATCH")
+                signature = model.get("bundle_signature")
+                if (
+                    not isinstance(signature, Mapping)
+                    or trust.verified_artifact_attestations.get(
+                        signature.get("signature_base64")
+                    )
+                    != model.get("model_bundle_hash")
+                ):
+                    reasons.append("MODEL_BUNDLE_SIGNATURE_UNVERIFIED")
+        elif model is not None:
+            reasons.append("BASELINE_EVIDENCE_HAS_MODEL_BUNDLE_DOCUMENT")
+
+        frozen = evidence.get("frozen_release_inputs")
+        if isinstance(frozen, Mapping):
+            recipe_proof = frozen.get("recipe_release")
+            if (
+                isinstance(recipe_proof, Mapping)
+                and recipe_proof.get("artifact_id")
+                != evidence.get("recipe_release_id")
+            ):
+                reasons.append("RECIPE_RELEASE_FREEZE_ID_MISMATCH")
+            if route == "AI_ENHANCED":
+                model_proof = frozen.get("model_bundle")
+                if (
+                    isinstance(model_proof, Mapping)
+                    and model_proof.get("artifact_id")
+                    != evidence.get("model_bundle_id")
+                ):
+                    reasons.append("MODEL_BUNDLE_FREEZE_ID_MISMATCH")
+        return tuple(sorted(set(reasons)))
+
+    def _fallback_registry_reasons(
+        self,
+        evidence: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+    ) -> Tuple[str, ...]:
+        if evidence.get("fallback_activation_requested") is not True:
+            return ()
+        reasons: List[str] = []
+        registry = trust.artifact_documents.get("approved_fallback_registry")
+        if not isinstance(registry, Mapping):
+            return ("APPROVED_FALLBACK_REGISTRY_DOCUMENT_MISSING",)
+        reasons.extend(
+            self._artifact_schema_reasons(
+                "approved-fallback-registry-v1.1.schema.json",
+                registry,
+                "APPROVED_FALLBACK_REGISTRY",
+            )
+        )
+        if registry.get("status") != "ACTIVE":
+            reasons.append("APPROVED_FALLBACK_REGISTRY_NOT_ACTIVE")
+        if registry.get("policy_bundle_hash") != evidence.get("policy_bundle_hash"):
+            reasons.append("FALLBACK_REGISTRY_POLICY_BUNDLE_MISMATCH")
+        try:
+            registry_hash = artifact_self_hash(
+                registry,
+                "registry_hash",
+                "registry_signature",
+            )
+        except CanonicalizationError:
+            registry_hash = ""
+        if registry.get("registry_hash") != registry_hash:
+            reasons.append("APPROVED_FALLBACK_REGISTRY_SELF_HASH_MISMATCH")
+        registry_signature = registry.get("registry_signature")
+        if (
+            not isinstance(registry_signature, Mapping)
+            or trust.verified_artifact_attestations.get(
+                registry_signature.get("signature_base64")
+            )
+            != registry.get("registry_hash")
+        ):
+            reasons.append("APPROVED_FALLBACK_REGISTRY_SIGNATURE_UNVERIFIED")
+
+        record_id = evidence.get("approved_fallback_registry_record_id")
+        records = registry.get("records")
+        if not isinstance(records, list):
+            reasons.append("APPROVED_FALLBACK_REGISTRY_RECORDS_INVALID")
+            records = ()
+        record = next(
+            (
+                item
+                for item in records
+                if isinstance(item, Mapping)
+                and item.get("fallback_approval_id") == record_id
+            ),
+            None,
+        )
+        if record is None:
+            return tuple(
+                sorted(set(reasons + ["APPROVED_FALLBACK_RECORD_NOT_FOUND"]))
+            )
+        try:
+            record_hash = artifact_self_hash(
+                record,
+                "record_hash",
+                "signature",
+            )
+        except CanonicalizationError:
+            record_hash = ""
+        if record.get("record_hash") != record_hash:
+            reasons.append("APPROVED_FALLBACK_RECORD_SELF_HASH_MISMATCH")
+        if record.get("record_hash") != evidence.get(
+            "approved_fallback_registry_record_hash"
+        ):
+            reasons.append("APPROVED_FALLBACK_RECORD_HASH_MISMATCH")
+        record_signature = record.get("signature")
+        if (
+            not isinstance(record_signature, Mapping)
+            or trust.verified_artifact_attestations.get(
+                record_signature.get("signature_base64")
+            )
+            != record.get("record_hash")
+        ):
+            reasons.append("APPROVED_FALLBACK_RECORD_SIGNATURE_UNVERIFIED")
+        if (
+            isinstance(record_signature, Mapping)
+            and record_signature.get("key_id")
+            != evidence.get("approved_fallback_registry_signer_id")
+        ):
+            reasons.append("FALLBACK_RECORD_SIGNER_SNAPSHOT_MISMATCH")
+        if record.get("status") != "APPROVED":
+            reasons.append("APPROVED_FALLBACK_RECORD_STATUS_INVALID")
+        if record.get("status") != evidence.get(
+            "approved_fallback_registry_status"
+        ):
+            reasons.append("FALLBACK_RECORD_STATUS_SNAPSHOT_MISMATCH")
+        if record.get("expires_at") != evidence.get(
+            "approved_fallback_registry_expires_at"
+        ):
+            reasons.append("FALLBACK_RECORD_EXPIRY_SNAPSHOT_MISMATCH")
+        try:
+            expires_at = datetime.fromisoformat(
+                str(record.get("expires_at")).replace("Z", "+00:00")
+            )
+            computed_at = datetime.fromisoformat(
+                str(evidence.get("computed_at")).replace("Z", "+00:00")
+            )
+            if expires_at <= computed_at:
+                reasons.append("APPROVED_FALLBACK_RECORD_EXPIRED")
+        except (TypeError, ValueError):
+            reasons.append("APPROVED_FALLBACK_RECORD_EXPIRY_INVALID")
+        if record.get("last_known_good_evidence_hash") != evidence.get(
+            "approved_fallback_registry_evidence_hash"
+        ):
+            reasons.append("FALLBACK_QUALIFICATION_EVIDENCE_MISMATCH")
+
+        source = record.get("source", {})
+        if isinstance(source, Mapping):
+            source_fields = (
+                "release_route",
+                "ai_endpoint",
+                "recipe_release_id",
+                "recipe_release_hash",
+                "deployment_line_id",
+                "model_bundle_id",
+            )
+            for name in source_fields:
+                if source.get(name) != evidence.get(name):
+                    reasons.append(f"FALLBACK_SOURCE_SCOPE_MISMATCH:{name}")
+        if record.get("direction") != evidence.get("direction"):
+            reasons.append("FALLBACK_SOURCE_SCOPE_MISMATCH:direction")
+        if record.get("venue") != evidence.get("venue"):
+            reasons.append("FALLBACK_SOURCE_SCOPE_MISMATCH:venue")
+        if record.get("source") == record.get("fallback"):
+            reasons.append("FALLBACK_TARGET_EQUALS_SOURCE")
+        if record.get("fallback_qualification") not in (
+            "CHAMPION",
+            "LAST_KNOWN_GOOD",
+        ):
+            reasons.append("FALLBACK_TARGET_NOT_CHAMPION_OR_LKG")
+
+        stage_order = {
+            "PAPER": 0,
+            "CANARY_25": 1,
+            "CANARY_50": 2,
+            "CANARY_75": 3,
+            "CHAMPION": 4,
+        }
+        stage = evidence.get("stage")
+        maximum_stage = record.get("maximum_approved_stage")
+        if (
+            stage not in stage_order
+            or maximum_stage not in stage_order
+            or stage_order[stage] > stage_order[maximum_stage]
+        ):
+            reasons.append("FALLBACK_STAGE_EXCEEDS_APPROVAL")
+
+        recipe = trust.artifact_documents.get("recipe_release", {})
+        frozen = evidence.get("frozen_release_inputs", {})
+        claimed = evidence.get("policy_binding_hashes", {})
+        expected_policy_hashes = {
+            "policy_bundle_hash": evidence.get("policy_bundle_hash"),
+            "release_gate_policy_hash": (
+                frozen.get("release_gate_policy", {}).get("artifact_hash")
+                if isinstance(frozen, Mapping)
+                else None
+            ),
+            "data_quality_policy_hash": claimed.get("data_quality_policy_id"),
+            "split_policy_hash": claimed.get("split_policy_id"),
+            "statistical_design_policy_hash": claimed.get(
+                "statistical_design_policy_id"
+            ),
+            "position_policy_hash": (
+                recipe.get("position_policy_hash")
+                if isinstance(recipe, Mapping)
+                else None
+            ),
+            "risk_policy_hash": claimed.get("risk_policy_id"),
+            "execution_fill_model_hash": (
+                recipe.get("execution_fill_model_hash")
+                if isinstance(recipe, Mapping)
+                else None
+            ),
+            "accounting_policy_hash": claimed.get("accounting_policy_id"),
+            "cost_allocation_policy_hash": claimed.get(
+                "cost_allocation_policy_id"
+            ),
+            "forward_control_policy_hash": claimed.get(
+                "forward_control_policy_id"
+            ),
+            "interface_compatibility_hash": (
+                recipe.get("interface_compatibility_hash")
+                if isinstance(recipe, Mapping)
+                else None
+            ),
+        }
+        policy_hashes = record.get("policy_hashes", {})
+        for name, expected in expected_policy_hashes.items():
+            if (
+                not isinstance(policy_hashes, Mapping)
+                or policy_hashes.get(name) != expected
+            ):
+                reasons.append(f"FALLBACK_POLICY_HASH_MISMATCH:{name}")
+        return tuple(sorted(set(reasons)))
+
+    def validate_gate_evidence(
+        self,
+        gate_group_id: str,
+        evidence: Mapping[str, Any],
+        *,
+        expected_scope: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+        binding_documents: Optional[Mapping[str, Any]] = None,
+        supporting_observations: Optional[Mapping[str, Any]] = None,
+    ) -> EvidenceValidation:
+        """Validate and independently recompute one complete GateEvidence."""
+
+        reasons: List[str] = list(self.evidence_schema_errors(evidence))
+        groups = self.flat_gate_groups()
+        gate = next(
+            (
+                candidate
+                for candidate in groups.get(gate_group_id, ())
+                if candidate["gate_id"] == evidence.get("gate_id")
+            ),
+            None,
+        )
+        if evidence.get("gate_group_id") != gate_group_id:
+            reasons.append("EVIDENCE_GATE_GROUP_MISMATCH")
+        if gate is None:
+            reasons.append("EVIDENCE_GATE_UNKNOWN")
+
+        context: Dict[str, Any] = dict(evidence)
+        condition_snapshot = evidence.get("condition_snapshot", {})
+        if not isinstance(condition_snapshot, Mapping):
+            reasons.append("CONDITION_SNAPSHOT_INVALID")
+            condition_snapshot = {}
+        for name, value in condition_snapshot.items():
+            if name in context and not self._same_business_value(context[name], value):
+                reasons.append(f"CONDITION_SNAPSHOT_CONFLICT:{name}")
+            else:
+                context[name] = value
+
+        try:
+            actual_scope = self.evidence_scope_snapshot(evidence)
+            reasons.extend(
+                self._scope_reason_codes(
+                    gate_group_id,
+                    actual_scope,
+                    expected_scope,
+                    context,
+                )
+            )
+        except PolicyError:
+            actual_scope = {}
+            reasons.append("EVIDENCE_SCOPE_INVALID")
+
+        reasons.extend(verify_trust_context(evidence, trust))
+        reasons.extend(self._binding_and_artifact_reasons(evidence, trust))
+        reasons.extend(self._artifact_reference_reasons(evidence, trust))
+        reasons.extend(self._fallback_registry_reasons(evidence, trust))
+
+        if evidence.get("release_gate_policy_id") != self.policy["policy_id"]:
+            reasons.append("EVIDENCE_POLICY_ID_MISMATCH")
+        if evidence.get("release_gate_policy_version") != self.policy["policy_version"]:
+            reasons.append("EVIDENCE_POLICY_VERSION_MISMATCH")
+        if evidence.get("metric_catalog_id") != self.catalog["catalog_id"]:
+            reasons.append("EVIDENCE_METRIC_CATALOG_MISMATCH")
+
+        computed_result = "FAIL"
+        computed_gate_hash = ""
+        if gate is not None:
+            try:
+                definition = self.metrics.resolve(gate["metric_id"])
+            except PolicyError:
+                definition = {}
+                reasons.append("GATE_METRIC_UNRESOLVED")
+            if evidence.get("metric_id") != gate["metric_id"]:
+                reasons.append("EVIDENCE_METRIC_ID_MISMATCH")
+            if evidence.get("comparator") != gate["comparator"]:
+                reasons.append("EVIDENCE_COMPARATOR_MISMATCH")
+            if definition:
+                if evidence.get("metric_unit") != definition["unit"]:
+                    reasons.append("EVIDENCE_METRIC_UNIT_MISMATCH")
+                if evidence.get("estimator_id") != definition["estimator_id"]:
+                    reasons.append("EVIDENCE_ESTIMATOR_MISMATCH")
+
+            sample_status = evidence.get("sample_status")
+            inconclusive: Set[str] = set()
+            if isinstance(sample_status, Mapping):
+                raw = sample_status.get("raw_event_count")
+                effective = sample_status.get("effective_event_count")
+                if isinstance(raw, int) and isinstance(effective, int) and effective > raw:
+                    reasons.append("EFFECTIVE_SAMPLE_EXCEEDS_RAW_SAMPLE")
+                if sample_status.get("sufficient") is False:
+                    inconclusive.add(gate["metric_id"])
+
+            observations: Dict[str, Any] = dict(supporting_observations or {})
+            evidence_values = {
+                gate["metric_id"]: evidence.get("metric_value"),
+                "approved_production_capital_usdt": evidence.get(
+                    "approved_production_capital_usdt"
+                ),
+                "actual_deployable_capital_usdt": evidence.get(
+                    "actual_deployable_capital_usdt"
+                ),
+                "break_even_capital_lcb_root_usdt": evidence.get(
+                    "break_even_capital_lcb_root_usdt"
+                ),
+            }
+            if isinstance(sample_status, Mapping):
+                evidence_values["effective_event_count"] = sample_status.get(
+                    "effective_event_count"
+                )
+            for name, value in evidence_values.items():
+                if (
+                    name in observations
+                    and not self._same_business_value(observations[name], value)
+                ):
+                    reasons.append(f"SUPPORTING_OBSERVATION_CONFLICT:{name}")
+                observations[name] = value
+
+            computed = self.evaluate_gate(
+                gate_group_id,
+                gate,
+                observations,
+                context,
+                binding_documents=binding_documents,
+                inconclusive_metrics=inconclusive,
+            )
+            computed_result = computed.result
+            computed_gate_hash = computed.result_hash
+            if evidence.get("result") != computed.result:
+                reasons.append("EVIDENCE_CLAIMED_RESULT_MISMATCH")
+            if not self._same_business_value(
+                evidence.get("threshold_snapshot"),
+                computed.threshold_value,
+            ):
+                reasons.append("EVIDENCE_THRESHOLD_SNAPSHOT_MISMATCH")
+
+        try:
+            computed_evidence_hash = gate_evidence_hash(evidence)
+        except CanonicalizationError:
+            computed_evidence_hash = ""
+        reason_codes = tuple(sorted(set(reasons)))
+        payload = {
+            "evidence_id": evidence.get("evidence_id", "UNKNOWN"),
+            "valid": not reason_codes,
+            "computed_gate_result": computed_result,
+            "computed_gate_hash": computed_gate_hash,
+            "computed_evidence_hash": computed_evidence_hash,
+            "reason_codes": reason_codes,
+        }
+        return EvidenceValidation(
+            evidence_id=evidence.get("evidence_id", "UNKNOWN"),
+            gate_id=evidence.get("gate_id", "UNKNOWN"),
+            valid=not reason_codes,
+            computed_gate_result=computed_result,
+            computed_evidence_hash=computed_evidence_hash,
+            reason_codes=reason_codes,
+            validation_hash=business_hash(payload),
+        )
+
+    def evaluate_evidence_group(
+        self,
+        gate_group_id: str,
+        evidence_envelopes: Sequence[Mapping[str, Any]],
+        *,
+        expected_scope: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+        binding_documents: Optional[Mapping[str, Any]] = None,
+        supporting_observations: Optional[Mapping[str, Any]] = None,
+    ) -> EvidenceGroupValidation:
+        """Production entry point for a complete set of per-gate envelopes."""
+
+        groups = self.flat_gate_groups()
+        if gate_group_id not in groups:
+            raise PolicyError(f"unknown gate group: {gate_group_id}")
+        reasons: List[str] = []
+        by_gate: Dict[str, Mapping[str, Any]] = {}
+        for evidence in evidence_envelopes:
+            gate_id = evidence.get("gate_id")
+            if not isinstance(gate_id, str):
+                reasons.append("EVIDENCE_WITHOUT_GATE_ID")
+                continue
+            if gate_id in by_gate:
+                reasons.append(f"DUPLICATE_GATE_EVIDENCE:{gate_id}")
+                continue
+            by_gate[gate_id] = evidence
+
+        expected_gate_ids = {gate["gate_id"] for gate in groups[gate_group_id]}
+        for gate_id in sorted(expected_gate_ids - set(by_gate)):
+            reasons.append(f"MISSING_GATE_EVIDENCE:{gate_id}")
+        for gate_id in sorted(set(by_gate) - expected_gate_ids):
+            reasons.append(f"UNEXPECTED_GATE_EVIDENCE:{gate_id}")
+
+        validations = tuple(
+            self.validate_gate_evidence(
+                gate_group_id,
+                by_gate[gate["gate_id"]],
+                expected_scope=expected_scope,
+                trust=trust,
+                binding_documents=binding_documents,
+                supporting_observations=supporting_observations,
+            )
+            for gate in groups[gate_group_id]
+            if gate["gate_id"] in by_gate
+        )
+        for validation in validations:
+            if not validation.valid:
+                reasons.append(
+                    f"INVALID_GATE_EVIDENCE:{validation.evidence_id}"
+                )
+
+        readiness = self.readiness()
+        if readiness.result != "PASS":
+            reasons.extend(
+                f"RELEASE_NOT_READY:{reason}" for reason in readiness.reason_codes
+            )
+
+        validation_by_gate = {
+            validation.gate_id: validation for validation in validations
+        }
+        required_results = [
+            (
+                gate["gate_id"],
+                validation_by_gate[gate["gate_id"]].computed_gate_result,
+            )
+            for gate in groups[gate_group_id]
+            if gate["required"] and gate["gate_id"] in validation_by_gate
+        ]
+        failed = [
+            gate_id for gate_id, result in required_results if result == "FAIL"
+        ]
+        inconclusive = [
+            gate_id
+            for gate_id, result in required_results
+            if result == "INCONCLUSIVE"
+        ]
+        has_validation_failure = bool(reasons)
+        if failed:
+            reasons.extend(f"REQUIRED_GATE_FAIL:{gate_id}" for gate_id in failed)
+        if inconclusive:
+            reasons.extend(
+                f"REQUIRED_GATE_INCONCLUSIVE:{gate_id}"
+                for gate_id in inconclusive
+            )
+        if has_validation_failure or failed:
+            result = "FAIL"
+        elif inconclusive:
+            result = "INCONCLUSIVE"
+        elif required_results and all(
+            result == "NOT_APPLICABLE" for _, result in required_results
+        ):
+            result = "NOT_APPLICABLE"
+            reasons.append("NO_APPLICABLE_REQUIRED_GATES")
+        else:
+            result = "PASS"
+
+        reason_codes = tuple(sorted(set(reasons)))
+        payload = {
+            "gate_group_id": gate_group_id,
+            "result": result,
+            "evidence_validation_hashes": [
+                validation.validation_hash for validation in validations
+            ],
+            "reason_codes": reason_codes,
+            "expected_scope_hash": business_hash(expected_scope),
+            "readiness_hash": readiness.result_hash,
+        }
+        return EvidenceGroupValidation(
+            gate_group_id=gate_group_id,
+            result=result,
+            evidence_results=validations,
+            reason_codes=reason_codes,
+            result_hash=business_hash(payload),
+        )
 
     @staticmethod
     def _policy_path(root: Mapping[str, Any], path: str) -> Any:

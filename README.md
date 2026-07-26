@@ -36,9 +36,9 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.5.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata与提交前安全舍入、核心决策链首版、SQLite WAL追加账本与Outbox、v1.1列明的账本投影和Checkpoint首版、Golden Replay、RiskLock与部署档位风控、Target/Intent/Attempt顺序约束、订单UNKNOWN对账状态机、PositionExecutor首版、八类未审批治理模板，以及支持安全AST、动态阈值、精确Evidence Scope和四态门组聚合的Fail-Closed Release Evaluator。
+Git中的设计基线已冻结，当前代码版本为 `0.6.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata与提交前安全舍入、核心决策链首版、SQLite WAL追加账本与Outbox、v1.1列明的账本投影和Checkpoint首版、Golden Replay、RiskLock与部署档位风控、Target/Intent/Attempt顺序约束、订单UNKNOWN对账状态机、PositionExecutor首版、八类未审批治理模板，以及支持安全AST、动态阈值、精确Evidence Scope、完整GateEvidence信封和Recipe/Model/Fallback信任链的Fail-Closed Release Evaluator。
 
-当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度和未完成项见[实施追踪 v0.5.0](docs/implementation-status-v0.5.0.md)，发布求值决策见[ADR-0005](docs/adr/0005-scoped-release-evaluator.md)。
+当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度和未完成项见[实施追踪 v0.6.0](docs/implementation-status-v0.6.0.md)，证据信任链决策见[ADR-0006](docs/adr/0006-gate-evidence-trust-chain.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
