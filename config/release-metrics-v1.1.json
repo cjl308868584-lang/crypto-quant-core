@@ -1,7 +1,7 @@
 {
   "$schema": "./release-metrics-v1.1.schema.json",
   "catalog_id": "release-metrics-v1.1",
-  "catalog_version": "1.1.1",
+  "catalog_version": "1.1.2",
   "status": "DESIGN_BASELINE",
   "algorithm_execution": {
     "descriptive_formula_strings_are_not_evaluated": true,
@@ -170,7 +170,7 @@
     "baseline_leave_top_5_positive_trades_out_net_log_growth_lcb95": {
       "value_type": "decimal",
       "unit": "log_return_per_evaluation_window",
-      "estimator_id": "LEAVE_TOP_5_POSITIVE_EVENTS_OUT_MBB_LCB95_V1"
+      "estimator_id": "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1"
     },
     "baseline_full_risk_monthly_economic_pnl_usdt_lcb95": {
       "value_type": "decimal",

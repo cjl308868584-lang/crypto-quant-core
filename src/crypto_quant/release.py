@@ -44,6 +44,10 @@ _STATISTICAL_SERIES_ESTIMATOR_IDS = frozenset(
     {
         "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1",
         "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1",
+        "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1",
+        "LEAVE_MAX_POSITIVE_FOLD_OUT_MBB_LCB95_V1",
+        "LEAVE_TOP_5_POSITIVE_EVENTS_OUT_MBB_LCB95_V1",
+        "LEAVE_MAX_POSITIVE_EVENT_OUT_MBB_LCB95_V1",
         "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1",
         "COMPLETE_UTC_CALENDAR_MONTH_COUNT_V1",
     }
@@ -1245,6 +1249,7 @@ class PolicyBundle:
         if not isinstance(scope, Mapping):
             reasons.append("ECONOMIC_SNAPSHOT_SCOPE_MISSING")
             scope = {}
+        experiment = trust.artifact_documents.get("experiment_manifest")
         for name in (
             "evaluation_ledger",
             "release_route",
@@ -1257,7 +1262,20 @@ class PolicyBundle:
             "evaluation_window_start",
             "evaluation_window_end",
         ):
-            if scope.get(name) != evidence.get(name):
+            expected = evidence.get(name)
+            if (
+                evidence.get("release_route") == "AI_ENHANCED"
+                and evidence.get("evaluation_ledger")
+                == "BASELINE_LEDGER"
+                and isinstance(experiment, Mapping)
+            ):
+                if name == "recipe_release_id":
+                    expected = experiment.get("baseline_recipe_release_id")
+                elif name == "recipe_release_hash":
+                    expected = experiment.get(
+                        "baseline_recipe_release_hash"
+                    )
+            if scope.get(name) != expected:
                 reasons.append(f"ECONOMIC_SNAPSHOT_SCOPE_MISMATCH:{name}")
 
         claimed = evidence.get("policy_binding_hashes")
@@ -1324,6 +1342,7 @@ class PolicyBundle:
         if not isinstance(scope, Mapping):
             reasons.append("STATISTICAL_SERIES_SCOPE_MISSING")
             scope = {}
+        experiment = trust.artifact_documents.get("experiment_manifest")
         for name in (
             "evaluation_ledger",
             "release_route",
@@ -1336,7 +1355,20 @@ class PolicyBundle:
             "evaluation_window_start",
             "evaluation_window_end",
         ):
-            if scope.get(name) != evidence.get(name):
+            expected = evidence.get(name)
+            if (
+                evidence.get("release_route") == "AI_ENHANCED"
+                and evidence.get("evaluation_ledger")
+                == "BASELINE_LEDGER"
+                and isinstance(experiment, Mapping)
+            ):
+                if name == "recipe_release_id":
+                    expected = experiment.get("baseline_recipe_release_id")
+                elif name == "recipe_release_hash":
+                    expected = experiment.get(
+                        "baseline_recipe_release_hash"
+                    )
+            if scope.get(name) != expected:
                 reasons.append(f"STATISTICAL_SERIES_SCOPE_MISMATCH:{name}")
 
         claimed = evidence.get("policy_binding_hashes")
@@ -1382,6 +1414,44 @@ class PolicyBundle:
             series.get("series_hash"),
             *source_economic_hashes,
         }
+        if (
+            series.get("series_kind")
+            == "PAIRED_AI_ECONOMIC_NET_LOG_GROWTH_DELTA"
+        ):
+            if evidence.get("evaluation_ledger") != "PAIRED_COMPARISON":
+                reasons.append("PAIRED_SERIES_EVIDENCE_LEDGER_MISMATCH")
+            if (
+                series.get("model_bundle_id")
+                != evidence.get("model_bundle_id")
+                or series.get("model_bundle_hash")
+                != evidence.get("model_bundle_hash")
+            ):
+                reasons.append("PAIRED_SERIES_MODEL_BUNDLE_MISMATCH")
+            if series.get("ai_endpoint") != evidence.get("ai_endpoint"):
+                reasons.append("PAIRED_SERIES_ENDPOINT_MISMATCH")
+            if not isinstance(experiment, Mapping):
+                reasons.append(
+                    "PAIRED_SERIES_EXPERIMENT_DOCUMENT_MISSING"
+                )
+            elif (
+                series.get("baseline_recipe_release_id")
+                != experiment.get("baseline_recipe_release_id")
+                or series.get("baseline_recipe_release_hash")
+                != experiment.get("baseline_recipe_release_hash")
+            ):
+                reasons.append("PAIRED_SERIES_BASELINE_RECIPE_MISMATCH")
+            source_arms = series.get("source_arm_series")
+            if not isinstance(source_arms, Mapping):
+                reasons.append("PAIRED_SERIES_SOURCE_ARMS_MISSING")
+            else:
+                for arm in ("baseline", "ai"):
+                    arm_series = source_arms.get(arm)
+                    if not isinstance(arm_series, Mapping):
+                        reasons.append(
+                            f"PAIRED_SERIES_SOURCE_ARM_MISSING:{arm}"
+                        )
+                    else:
+                        required_sources.add(arm_series.get("series_hash"))
         if not required_sources.issubset(artifact_set):
             reasons.append("STATISTICAL_SERIES_SOURCE_HASH_MISSING")
         return tuple(sorted(set(reasons)))

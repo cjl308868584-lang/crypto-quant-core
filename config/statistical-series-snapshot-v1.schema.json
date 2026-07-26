@@ -36,7 +36,10 @@
       "const": "./statistical-series-snapshot-v1.schema.json"
     },
     "schema_version": {
-      "const": "1.0.0"
+      "enum": [
+        "1.0.0",
+        "1.1.0"
+      ]
     },
     "series_id": {
       "$ref": "#/$defs/id"
@@ -57,6 +60,36 @@
       "items": {
         "$ref": "#/$defs/sha256"
       }
+    },
+    "source_arm_series": {
+      "$ref": "#/$defs/sourceArmSeries"
+    },
+    "baseline_recipe_release_id": {
+      "$ref": "#/$defs/id"
+    },
+    "baseline_recipe_release_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "model_bundle_id": {
+      "$ref": "#/$defs/id"
+    },
+    "model_bundle_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "ai_endpoint": {
+      "enum": [
+        "GROWTH",
+        "RISK_EFFICIENCY"
+      ]
+    },
+    "pairing_rule": {
+      "const": "PROPOSAL_ID_PLUS_DECISION_TIME"
+    },
+    "eligibility_rule": {
+      "const": "AI_ACTION_OR_ABSOLUTE_EXPOSURE_CHANGED"
+    },
+    "pairing_report": {
+      "$ref": "#/$defs/pairingReport"
     },
     "accounting_policy_id": {
       "$ref": "#/$defs/id"
@@ -103,7 +136,8 @@
     "series_kind": {
       "enum": [
         "PRIMARY_ENDPOINT_CONTRIBUTION",
-        "MONTHLY_ECONOMIC_PNL_USDT"
+        "MONTHLY_ECONOMIC_PNL_USDT",
+        "PAIRED_AI_ECONOMIC_NET_LOG_GROWTH_DELTA"
       ]
     },
     "aggregation": {
@@ -116,7 +150,14 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "#/$defs/observation"
+        "oneOf": [
+          {
+            "$ref": "#/$defs/singleArmObservation"
+          },
+          {
+            "$ref": "#/$defs/pairedObservation"
+          }
+        ]
       }
     },
     "bootstrap_design": {
@@ -129,6 +170,54 @@
       "const": true
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "series_kind"
+        ],
+        "properties": {
+          "series_kind": {
+            "const": "PAIRED_AI_ECONOMIC_NET_LOG_GROWTH_DELTA"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "source_arm_series",
+          "baseline_recipe_release_id",
+          "baseline_recipe_release_hash",
+          "model_bundle_id",
+          "model_bundle_hash",
+          "ai_endpoint",
+          "pairing_rule",
+          "eligibility_rule",
+          "pairing_report"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "1.1.0"
+          },
+          "capital_normalization": {
+            "const": "APPROVED_CAPITAL_EVALUATION_WINDOW"
+          },
+          "aggregation": {
+            "const": "SUM"
+          },
+          "scope": {
+            "properties": {
+              "evaluation_ledger": {
+                "const": "PAIRED_COMPARISON"
+              },
+              "release_route": {
+                "const": "AI_ENHANCED"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "id": {
       "type": "string",
@@ -173,6 +262,7 @@
           "enum": [
             "BASELINE_LEDGER",
             "AI_LEDGER",
+            "PAIRED_COMPARISON",
             "ROUTE_RUNTIME"
           ]
         },
@@ -215,7 +305,7 @@
       },
       "additionalProperties": false
     },
-    "observation": {
+    "singleArmObservation": {
       "type": "object",
       "required": [
         "observation_id",
@@ -243,9 +333,231 @@
         },
         "source_economic_snapshot_hash": {
           "$ref": "#/$defs/sha256"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/id"
+        },
+        "decision_time": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "fold_id": {
+          "$ref": "#/$defs/id"
+        },
+        "recommended_action": {
+          "$ref": "#/$defs/targetAction"
+        },
+        "absolute_exposure_ratio": {
+          "$ref": "#/$defs/nonnegativeDecimal"
         }
       },
       "additionalProperties": false
+    },
+    "pairedObservation": {
+      "type": "object",
+      "required": [
+        "observation_id",
+        "proposal_id",
+        "decision_time",
+        "fold_id",
+        "period_start",
+        "period_end",
+        "value",
+        "calendar_month_complete",
+        "baseline_observation_id",
+        "ai_observation_id",
+        "baseline_value",
+        "ai_value",
+        "baseline_action",
+        "ai_action",
+        "baseline_absolute_exposure_ratio",
+        "ai_absolute_exposure_ratio",
+        "action_changed",
+        "absolute_exposure_changed",
+        "eligible",
+        "baseline_source_economic_snapshot_hash",
+        "ai_source_economic_snapshot_hash"
+      ],
+      "properties": {
+        "observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/id"
+        },
+        "decision_time": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "fold_id": {
+          "$ref": "#/$defs/id"
+        },
+        "period_start": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "period_end": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "value": {
+          "$ref": "#/$defs/decimal"
+        },
+        "calendar_month_complete": {
+          "const": false
+        },
+        "baseline_observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "ai_observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "baseline_value": {
+          "$ref": "#/$defs/decimal"
+        },
+        "ai_value": {
+          "$ref": "#/$defs/decimal"
+        },
+        "baseline_action": {
+          "$ref": "#/$defs/targetAction"
+        },
+        "ai_action": {
+          "$ref": "#/$defs/targetAction"
+        },
+        "baseline_absolute_exposure_ratio": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "ai_absolute_exposure_ratio": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "action_changed": {
+          "type": "boolean"
+        },
+        "absolute_exposure_changed": {
+          "type": "boolean"
+        },
+        "eligible": {
+          "type": "boolean"
+        },
+        "baseline_source_economic_snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "ai_source_economic_snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceArmSeries": {
+      "type": "object",
+      "required": [
+        "baseline",
+        "ai"
+      ],
+      "properties": {
+        "baseline": {
+          "type": "object"
+        },
+        "ai": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pairingReport": {
+      "type": "object",
+      "required": [
+        "baseline_observation_count",
+        "ai_observation_count",
+        "matched_pair_count",
+        "eligible_changed_pair_count",
+        "excluded_unchanged_pair_count",
+        "unpaired_baseline_count",
+        "unpaired_ai_count",
+        "unpaired_baseline",
+        "unpaired_ai"
+      ],
+      "properties": {
+        "baseline_observation_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ai_observation_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "matched_pair_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "eligible_changed_pair_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excluded_unchanged_pair_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unpaired_baseline_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unpaired_ai_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unpaired_baseline": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unpairedObservation"
+          }
+        },
+        "unpaired_ai": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unpairedObservation"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "unpairedObservation": {
+      "type": "object",
+      "required": [
+        "observation_id",
+        "proposal_id",
+        "decision_time",
+        "source_economic_snapshot_hash",
+        "reason"
+      ],
+      "properties": {
+        "observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/id"
+        },
+        "decision_time": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "source_economic_snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reason": {
+          "const": "UNPAIRED"
+        }
+      },
+      "additionalProperties": false
+    },
+    "targetAction": {
+      "enum": [
+        "NO_DECISION",
+        "HOLD_CURRENT",
+        "FREEZE_INCREASES",
+        "REDUCE_TO",
+        "SET_TARGET",
+        "FLATTEN"
+      ]
+    },
+    "nonnegativeDecimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
     },
     "bootstrapDesign": {
       "type": "object",

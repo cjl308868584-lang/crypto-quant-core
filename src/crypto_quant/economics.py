@@ -79,9 +79,6 @@ def economic_snapshot_reasons(
     if not isinstance(scope, Mapping):
         return tuple(sorted(set(reasons + ["ECONOMIC_SNAPSHOT_SCOPE_INVALID"])))
     if (
-        scope.get("evaluation_ledger") == "BASELINE_LEDGER"
-        and scope.get("release_route") != "BASELINE_ONLY"
-    ) or (
         scope.get("evaluation_ledger") == "AI_LEDGER"
         and scope.get("release_route") != "AI_ENHANCED"
     ):

@@ -2,12 +2,13 @@
 
 import hashlib
 import re
+from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_EVEN, localcontext
 from functools import wraps
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, TypeVar
 
-from .canonical import canonical_decimal
+from .canonical import business_hash, canonical_decimal, stable_id
 from .economics import economic_snapshot_reasons, period_economic_pnl
 from .errors import CanonicalizationError
 from .evidence import artifact_self_hash
@@ -78,6 +79,361 @@ def _is_complete_utc_month(start: datetime, end: datetime) -> bool:
     )
 
 
+_TARGET_ACTIONS = frozenset(
+    {
+        "NO_DECISION",
+        "HOLD_CURRENT",
+        "FREEZE_INCREASES",
+        "REDUCE_TO",
+        "SET_TARGET",
+        "FLATTEN",
+    }
+)
+_PAIR_METADATA_FIELDS = (
+    "proposal_id",
+    "decision_time",
+    "recommended_action",
+    "absolute_exposure_ratio",
+)
+_PAIRED_TOP_LEVEL_FIELDS = (
+    "source_arm_series",
+    "baseline_recipe_release_id",
+    "baseline_recipe_release_hash",
+    "model_bundle_id",
+    "model_bundle_hash",
+    "ai_endpoint",
+    "pairing_rule",
+    "eligibility_rule",
+    "pairing_report",
+)
+
+
+def _same_business_value(left: Any, right: Any) -> bool:
+    try:
+        return business_hash(left) == business_hash(right)
+    except CanonicalizationError:
+        return False
+
+
+def _pair_key(observation: Mapping[str, Any]) -> Tuple[str, str]:
+    proposal_id = observation.get("proposal_id")
+    decision_time = observation.get("decision_time")
+    _require_id(proposal_id, "proposal_id")
+    parsed_decision = _timestamp(decision_time)
+    if parsed_decision != _timestamp(observation.get("period_start")):
+        raise ValueError("decision time must equal observation period start")
+    _require_id(observation.get("fold_id"), "fold_id")
+    if observation.get("recommended_action") not in _TARGET_ACTIONS:
+        raise ValueError("recommended action is invalid")
+    if _decimal(observation.get("absolute_exposure_ratio")) < 0:
+        raise ValueError("absolute exposure cannot be negative")
+    return proposal_id, decision_time
+
+
+def _unpaired_record(observation: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "observation_id": observation["observation_id"],
+        "proposal_id": observation["proposal_id"],
+        "decision_time": observation["decision_time"],
+        "source_economic_snapshot_hash": observation[
+            "source_economic_snapshot_hash"
+        ],
+        "reason": "UNPAIRED",
+    }
+
+
+def _derive_pairing(
+    baseline: Mapping[str, Any],
+    ai: Mapping[str, Any],
+) -> Tuple[Sequence[Dict[str, Any]], Dict[str, Any]]:
+    arm_indexes = []
+    for arm in (baseline, ai):
+        indexed = {}
+        for observation in arm["observations"]:
+            key = _pair_key(observation)
+            if key in indexed:
+                raise ValueError("duplicate proposal and decision-time pair key")
+            indexed[key] = observation
+        arm_indexes.append(indexed)
+    baseline_index, ai_index = arm_indexes
+    matched_keys = sorted(
+        set(baseline_index) & set(ai_index),
+        key=lambda item: (_timestamp(item[1]), item[0]),
+    )
+    if not matched_keys:
+        raise ValueError("paired series has no matched observations")
+
+    paired_observations = []
+    for key in matched_keys:
+        base_observation = baseline_index[key]
+        ai_observation = ai_index[key]
+        for name in ("period_start", "period_end", "fold_id"):
+            if base_observation.get(name) != ai_observation.get(name):
+                raise ValueError(f"paired observations disagree on {name}")
+        baseline_value = _decimal(base_observation["value"])
+        ai_value = _decimal(ai_observation["value"])
+        baseline_exposure = _decimal(
+            base_observation["absolute_exposure_ratio"]
+        )
+        ai_exposure = _decimal(ai_observation["absolute_exposure_ratio"])
+        action_changed = (
+            base_observation["recommended_action"]
+            != ai_observation["recommended_action"]
+        )
+        exposure_changed = baseline_exposure != ai_exposure
+        proposal_id, decision_time = key
+        paired_observations.append(
+            {
+                "observation_id": stable_id(
+                    "pair",
+                    {
+                        "proposal_id": proposal_id,
+                        "decision_time": decision_time,
+                    },
+                ),
+                "proposal_id": proposal_id,
+                "decision_time": decision_time,
+                "fold_id": base_observation["fold_id"],
+                "period_start": base_observation["period_start"],
+                "period_end": base_observation["period_end"],
+                "value": canonical_decimal(ai_value - baseline_value),
+                "calendar_month_complete": False,
+                "baseline_observation_id": base_observation["observation_id"],
+                "ai_observation_id": ai_observation["observation_id"],
+                "baseline_value": canonical_decimal(baseline_value),
+                "ai_value": canonical_decimal(ai_value),
+                "baseline_action": base_observation["recommended_action"],
+                "ai_action": ai_observation["recommended_action"],
+                "baseline_absolute_exposure_ratio": canonical_decimal(
+                    baseline_exposure
+                ),
+                "ai_absolute_exposure_ratio": canonical_decimal(ai_exposure),
+                "action_changed": action_changed,
+                "absolute_exposure_changed": exposure_changed,
+                "eligible": action_changed or exposure_changed,
+                "baseline_source_economic_snapshot_hash": base_observation[
+                    "source_economic_snapshot_hash"
+                ],
+                "ai_source_economic_snapshot_hash": ai_observation[
+                    "source_economic_snapshot_hash"
+                ],
+            }
+        )
+
+    unmatched_baseline_keys = sorted(
+        set(baseline_index) - set(ai_index),
+        key=lambda item: (_timestamp(item[1]), item[0]),
+    )
+    unmatched_ai_keys = sorted(
+        set(ai_index) - set(baseline_index),
+        key=lambda item: (_timestamp(item[1]), item[0]),
+    )
+    unpaired_baseline = [
+        _unpaired_record(baseline_index[key])
+        for key in unmatched_baseline_keys
+    ]
+    unpaired_ai = [
+        _unpaired_record(ai_index[key])
+        for key in unmatched_ai_keys
+    ]
+    eligible_count = sum(
+        observation["eligible"] for observation in paired_observations
+    )
+    report = {
+        "baseline_observation_count": len(baseline_index),
+        "ai_observation_count": len(ai_index),
+        "matched_pair_count": len(paired_observations),
+        "eligible_changed_pair_count": eligible_count,
+        "excluded_unchanged_pair_count": (
+            len(paired_observations) - eligible_count
+        ),
+        "unpaired_baseline_count": len(unpaired_baseline),
+        "unpaired_ai_count": len(unpaired_ai),
+        "unpaired_baseline": unpaired_baseline,
+        "unpaired_ai": unpaired_ai,
+    }
+    return paired_observations, report
+
+
+def _paired_series_reasons(
+    series: Mapping[str, Any],
+) -> Tuple[str, ...]:
+    reasons = []
+    if series.get("schema_version") != "1.1.0":
+        reasons.append("PAIRED_SERIES_SCHEMA_VERSION_INVALID")
+    scope = series["scope"]
+    if (
+        scope.get("evaluation_ledger") != "PAIRED_COMPARISON"
+        or scope.get("release_route") != "AI_ENHANCED"
+    ):
+        reasons.append("PAIRED_SERIES_SCOPE_ROLE_INVALID")
+    if series.get("aggregation") != "SUM":
+        reasons.append("PAIRED_SERIES_AGGREGATION_INVALID")
+    if (
+        series.get("capital_normalization")
+        != "APPROVED_CAPITAL_EVALUATION_WINDOW"
+    ):
+        reasons.append("PAIRED_SERIES_CAPITAL_NORMALIZATION_INVALID")
+    if series.get("pairing_rule") != "PROPOSAL_ID_PLUS_DECISION_TIME":
+        reasons.append("PAIRED_SERIES_PAIRING_RULE_INVALID")
+    if (
+        series.get("eligibility_rule")
+        != "AI_ACTION_OR_ABSOLUTE_EXPOSURE_CHANGED"
+    ):
+        reasons.append("PAIRED_SERIES_ELIGIBILITY_RULE_INVALID")
+
+    source_arms = series.get("source_arm_series")
+    if not isinstance(source_arms, Mapping):
+        return tuple(
+            sorted(set(reasons + ["PAIRED_SERIES_SOURCE_ARMS_MISSING"]))
+        )
+    baseline = source_arms.get("baseline")
+    ai = source_arms.get("ai")
+    if not isinstance(baseline, Mapping) or not isinstance(ai, Mapping):
+        return tuple(
+            sorted(set(reasons + ["PAIRED_SERIES_SOURCE_ARMS_INVALID"]))
+        )
+    for label, arm in (("BASELINE", baseline), ("AI", ai)):
+        arm_reasons = statistical_series_reasons(arm)
+        reasons.extend(
+            f"PAIRED_SERIES_{label}_SOURCE:{reason}"
+            for reason in arm_reasons
+        )
+        if arm.get("series_kind") != "PRIMARY_ENDPOINT_CONTRIBUTION":
+            reasons.append(f"PAIRED_SERIES_{label}_KIND_INVALID")
+        if any(
+            not isinstance(observation, Mapping)
+            or any(name not in observation for name in _PAIR_METADATA_FIELDS)
+            for observation in arm.get("observations", ())
+        ):
+            reasons.append(f"PAIRED_SERIES_{label}_PAIR_METADATA_MISSING")
+
+    baseline_scope = baseline.get("scope")
+    ai_scope = ai.get("scope")
+    if not isinstance(baseline_scope, Mapping) or not isinstance(
+        ai_scope,
+        Mapping,
+    ):
+        return tuple(
+            sorted(set(reasons + ["PAIRED_SERIES_ARM_SCOPE_INVALID"]))
+        )
+    if (
+        baseline_scope.get("evaluation_ledger") != "BASELINE_LEDGER"
+        or baseline_scope.get("release_route") != "AI_ENHANCED"
+    ):
+        reasons.append("PAIRED_SERIES_BASELINE_ROLE_INVALID")
+    if (
+        ai_scope.get("evaluation_ledger") != "AI_LEDGER"
+        or ai_scope.get("release_route") != "AI_ENHANCED"
+    ):
+        reasons.append("PAIRED_SERIES_AI_ROLE_INVALID")
+
+    common_scope_fields = (
+        "account_id",
+        "direction",
+        "venue",
+        "deployment_line_id",
+        "deployment_line_hash",
+        "evaluation_window_start",
+        "evaluation_window_end",
+    )
+    for name in common_scope_fields:
+        if baseline_scope.get(name) != ai_scope.get(name):
+            reasons.append(f"PAIRED_SERIES_ARM_SCOPE_MISMATCH:{name}")
+    if (
+        series.get("baseline_recipe_release_id")
+        != baseline_scope.get("recipe_release_id")
+        or series.get("baseline_recipe_release_hash")
+        != baseline_scope.get("recipe_release_hash")
+    ):
+        reasons.append("PAIRED_SERIES_BASELINE_RECIPE_MISMATCH")
+
+    outer_scope_fields = (
+        "account_id",
+        "release_route",
+        "direction",
+        "venue",
+        "recipe_release_id",
+        "recipe_release_hash",
+        "deployment_line_id",
+        "deployment_line_hash",
+        "evaluation_window_start",
+        "evaluation_window_end",
+    )
+    for name in outer_scope_fields:
+        if scope.get(name) != ai_scope.get(name):
+            reasons.append(f"PAIRED_SERIES_OUTER_SCOPE_MISMATCH:{name}")
+
+    common_series_fields = (
+        "accounting_policy_id",
+        "accounting_policy_hash",
+        "cost_allocation_policy_id",
+        "cost_allocation_policy_hash",
+        "split_policy_id",
+        "split_policy_hash",
+        "statistical_design_policy_id",
+        "statistical_design_policy_hash",
+        "experiment_manifest_id",
+        "experiment_manifest_hash",
+        "approved_production_capital_usdt",
+        "capital_normalization",
+        "aggregation",
+        "bootstrap_design",
+    )
+    for name in common_series_fields:
+        if not _same_business_value(baseline.get(name), ai.get(name)):
+            reasons.append(f"PAIRED_SERIES_ARM_SETTING_MISMATCH:{name}")
+        if not _same_business_value(series.get(name), ai.get(name)):
+            reasons.append(f"PAIRED_SERIES_OUTER_SETTING_MISMATCH:{name}")
+
+    declared_sources = series.get("source_economic_snapshot_hashes")
+    expected_sources = (
+        list(baseline.get("source_economic_snapshot_hashes", ()))
+        + list(ai.get("source_economic_snapshot_hashes", ()))
+    )
+    if declared_sources != expected_sources:
+        reasons.append("PAIRED_SERIES_SOURCE_SEQUENCE_MISMATCH")
+    if len(expected_sources) != len(set(expected_sources)):
+        reasons.append("PAIRED_SERIES_SOURCE_DUPLICATE")
+
+    try:
+        expected_observations, expected_report = _derive_pairing(baseline, ai)
+    except (CanonicalizationError, KeyError, TypeError, ValueError):
+        reasons.append("PAIRED_SERIES_REPLAY_FAILED")
+    else:
+        if not _same_business_value(
+            series.get("observations"),
+            expected_observations,
+        ):
+            reasons.append("PAIRED_SERIES_OBSERVATION_REPLAY_MISMATCH")
+        if not _same_business_value(
+            series.get("pairing_report"),
+            expected_report,
+        ):
+            reasons.append("PAIRED_SERIES_REPORT_REPLAY_MISMATCH")
+
+    for name in (
+        "baseline_recipe_release_id",
+        "model_bundle_id",
+    ):
+        try:
+            _require_id(series.get(name), name)
+        except ValueError:
+            reasons.append(f"PAIRED_SERIES_REFERENCE_INVALID:{name}")
+    for name in (
+        "baseline_recipe_release_hash",
+        "model_bundle_hash",
+    ):
+        try:
+            _require_hash(series.get(name), name)
+        except ValueError:
+            reasons.append(f"PAIRED_SERIES_REFERENCE_INVALID:{name}")
+    if series.get("ai_endpoint") not in ("GROWTH", "RISK_EFFICIENCY"):
+        reasons.append("PAIRED_SERIES_ENDPOINT_INVALID")
+    return tuple(sorted(set(reasons)))
+
+
+@_fixed_decimal_context
 def statistical_series_reasons(
     series: Mapping[str, Any],
 ) -> Tuple[str, ...]:
@@ -97,12 +453,11 @@ def statistical_series_reasons(
         return tuple(
             sorted(set(reasons + ["STATISTICAL_SERIES_SCOPE_INVALID"]))
         )
+    ledger = scope.get("evaluation_ledger")
+    route = scope.get("release_route")
     if (
-        scope.get("evaluation_ledger") == "BASELINE_LEDGER"
-        and scope.get("release_route") != "BASELINE_ONLY"
-    ) or (
-        scope.get("evaluation_ledger") == "AI_LEDGER"
-        and scope.get("release_route") != "AI_ENHANCED"
+        ledger in ("AI_LEDGER", "PAIRED_COMPARISON")
+        and route != "AI_ENHANCED"
     ):
         reasons.append("STATISTICAL_SERIES_LEDGER_ROUTE_MISMATCH")
     if (
@@ -125,6 +480,21 @@ def statistical_series_reasons(
         return tuple(
             sorted(set(reasons + ["STATISTICAL_SERIES_TIME_INVALID"]))
         )
+
+    kind = series.get("series_kind")
+    if kind == "PAIRED_AI_ECONOMIC_NET_LOG_GROWTH_DELTA":
+        reasons.extend(
+            _paired_series_reasons(series)
+        )
+        return tuple(sorted(set(reasons)))
+
+    if kind not in (
+        "PRIMARY_ENDPOINT_CONTRIBUTION",
+        "MONTHLY_ECONOMIC_PNL_USDT",
+    ):
+        reasons.append("STATISTICAL_SERIES_KIND_INVALID")
+    if any(name in series for name in _PAIRED_TOP_LEVEL_FIELDS):
+        reasons.append("STATISTICAL_SERIES_PAIRED_FIELDS_UNEXPECTED")
 
     observations = series.get("observations")
     if not isinstance(observations, list) or not observations:
@@ -164,6 +534,21 @@ def statistical_series_reasons(
                 observation.get("calendar_month_complete")
             )
             _decimal(observation.get("value"))
+            metadata_present = [
+                name in observation for name in _PAIR_METADATA_FIELDS
+            ]
+            if any(metadata_present) and not all(metadata_present):
+                reasons.append(
+                    "STATISTICAL_SERIES_PAIR_METADATA_INCOMPLETE"
+                )
+            elif all(metadata_present):
+                if "fold_id" not in observation:
+                    reasons.append(
+                        "STATISTICAL_SERIES_PAIR_FOLD_ID_MISSING"
+                    )
+                _pair_key(observation)
+            elif "fold_id" in observation:
+                _require_id(observation.get("fold_id"), "fold_id")
             previous_end = end
         except (CanonicalizationError, TypeError, ValueError):
             reasons.append("STATISTICAL_SERIES_OBSERVATION_VALUE_INVALID")
@@ -182,7 +567,7 @@ def statistical_series_reasons(
             or period_boundaries[-1][1] != scope_end
         ):
             reasons.append("STATISTICAL_SERIES_BOUNDARY_MISMATCH")
-    if series.get("series_kind") == "MONTHLY_ECONOMIC_PNL_USDT":
+    if kind == "MONTHLY_ECONOMIC_PNL_USDT":
         if series.get("aggregation") != "MEAN":
             reasons.append("STATISTICAL_SERIES_MONTHLY_AGGREGATION_INVALID")
         if any(
@@ -194,7 +579,8 @@ def statistical_series_reasons(
         ):
             reasons.append("STATISTICAL_SERIES_MONTHLY_PERIOD_GAP")
         if any(
-            complete is not True and index not in (0, len(month_completeness) - 1)
+            complete is not True
+            and index not in (0, len(month_completeness) - 1)
             for index, complete in enumerate(month_completeness)
         ):
             reasons.append("STATISTICAL_SERIES_INTERIOR_PARTIAL_MONTH")
@@ -205,7 +591,7 @@ def statistical_series_reasons(
             reasons.append(
                 "STATISTICAL_SERIES_MONTHLY_CAPITAL_NORMALIZATION_INVALID"
             )
-    else:
+    elif kind == "PRIMARY_ENDPOINT_CONTRIBUTION":
         if series.get("aggregation") != "SUM":
             reasons.append("STATISTICAL_SERIES_ENDPOINT_AGGREGATION_INVALID")
         if (
@@ -236,8 +622,15 @@ def _eligible_values(
     return tuple(
         _decimal(observation["value"])
         for observation in series["observations"]
-        if not complete_months_only
-        or observation["calendar_month_complete"]
+        if (
+            not complete_months_only
+            or observation["calendar_month_complete"]
+        )
+        and (
+            series["series_kind"]
+            != "PAIRED_AI_ECONOMIC_NET_LOG_GROWTH_DELTA"
+            or observation["eligible"]
+        )
     )
 
 
@@ -328,7 +721,19 @@ def _moving_block_lcb(
         series,
         complete_months_only=complete_months_only,
     )
-    design = series["bootstrap_design"]
+    return _moving_block_lcb_values(
+        values,
+        design=series["bootstrap_design"],
+        aggregation=series["aggregation"],
+    )
+
+
+def _moving_block_lcb_values(
+    values: Sequence[Decimal],
+    *,
+    design: Mapping[str, Any],
+    aggregation: str,
+) -> Tuple[str, Any, Tuple[str, ...]]:
     length = design["block_length"]
     if (
         not values
@@ -355,7 +760,7 @@ def _moving_block_lcb(
             sampled.extend(values[start : start + length])
         sampled = sampled[: len(values)]
         statistic = sum(sampled, Decimal("0"))
-        if series["aggregation"] == "MEAN":
+        if aggregation == "MEAN":
             statistic /= Decimal(len(sampled))
         replicates.append(statistic)
     replicates.sort()
@@ -373,6 +778,126 @@ def one_sided_95_moving_block_bootstrap(
     if series["series_kind"] != "PRIMARY_ENDPOINT_CONTRIBUTION":
         return "FAIL", None, ("STATISTICAL_SERIES_KIND_MISMATCH",)
     return _moving_block_lcb(series, complete_months_only=False)
+
+
+@_fixed_decimal_context
+def one_sided_95_paired_moving_block_bootstrap(
+    inputs: Mapping[str, Any],
+) -> Tuple[str, Any, Tuple[str, ...]]:
+    series, reasons = _validated_series(inputs)
+    if reasons:
+        return "FAIL", None, reasons
+    if (
+        series["series_kind"]
+        != "PAIRED_AI_ECONOMIC_NET_LOG_GROWTH_DELTA"
+    ):
+        return "FAIL", None, ("STATISTICAL_SERIES_KIND_MISMATCH",)
+    if not any(
+        observation["eligible"] for observation in series["observations"]
+    ):
+        return (
+            "INCONCLUSIVE",
+            None,
+            ("PAIRED_SERIES_NO_ELIGIBLE_CHANGED_PAIRS",),
+        )
+    return _moving_block_lcb(series, complete_months_only=False)
+
+
+def _validated_primary_endpoint(
+    inputs: Mapping[str, Any],
+) -> Tuple[Optional[Mapping[str, Any]], Tuple[str, ...]]:
+    series, reasons = _validated_series(inputs)
+    if reasons:
+        return None, reasons
+    if series["series_kind"] != "PRIMARY_ENDPOINT_CONTRIBUTION":
+        return None, ("STATISTICAL_SERIES_KIND_MISMATCH",)
+    return series, ()
+
+
+@_fixed_decimal_context
+def leave_max_positive_fold_out_mbb_lcb95(
+    inputs: Mapping[str, Any],
+) -> Tuple[str, Any, Tuple[str, ...]]:
+    series, reasons = _validated_primary_endpoint(inputs)
+    if reasons:
+        return "FAIL", None, reasons
+    if any("fold_id" not in item for item in series["observations"]):
+        return "FAIL", None, ("STATISTICAL_SERIES_FOLD_ID_MISSING",)
+    fold_contributions: Dict[str, Decimal] = {}
+    for observation in series["observations"]:
+        fold_id = observation["fold_id"]
+        fold_contributions[fold_id] = (
+            fold_contributions.get(fold_id, Decimal("0"))
+            + _decimal(observation["value"])
+        )
+    positive_folds = sorted(
+        (
+            (-contribution, fold_id)
+            for fold_id, contribution in fold_contributions.items()
+            if contribution > 0
+        ),
+    )
+    excluded_fold = (
+        positive_folds[0][1] if positive_folds else None
+    )
+    values = tuple(
+        _decimal(observation["value"])
+        for observation in series["observations"]
+        if observation["fold_id"] != excluded_fold
+    )
+    return _moving_block_lcb_values(
+        values,
+        design=series["bootstrap_design"],
+        aggregation=series["aggregation"],
+    )
+
+
+def _leave_top_positive_events(
+    inputs: Mapping[str, Any],
+    *,
+    limit: int,
+) -> Tuple[str, Any, Tuple[str, ...]]:
+    series, reasons = _validated_primary_endpoint(inputs)
+    if reasons:
+        return "FAIL", None, reasons
+    ranked = sorted(
+        (
+            observation
+            for observation in series["observations"]
+            if _decimal(observation["value"]) > 0
+        ),
+        key=lambda item: (
+            -_decimal(item["value"]),
+            item["observation_id"],
+        ),
+    )
+    excluded_ids = {
+        observation["observation_id"] for observation in ranked[:limit]
+    }
+    values = tuple(
+        _decimal(observation["value"])
+        for observation in series["observations"]
+        if observation["observation_id"] not in excluded_ids
+    )
+    return _moving_block_lcb_values(
+        values,
+        design=series["bootstrap_design"],
+        aggregation=series["aggregation"],
+    )
+
+
+@_fixed_decimal_context
+def leave_top_5_positive_events_out_mbb_lcb95(
+    inputs: Mapping[str, Any],
+) -> Tuple[str, Any, Tuple[str, ...]]:
+    return _leave_top_positive_events(inputs, limit=5)
+
+
+@_fixed_decimal_context
+def leave_max_positive_event_out_mbb_lcb95(
+    inputs: Mapping[str, Any],
+) -> Tuple[str, Any, Tuple[str, ...]]:
+    return _leave_top_positive_events(inputs, limit=1)
 
 
 @_fixed_decimal_context
@@ -624,4 +1149,90 @@ def monthly_economic_series_snapshot(
     reasons = statistical_series_reasons(artifact)
     if reasons:
         raise ValueError(f"invalid statistical series: {reasons}")
+    return artifact
+
+
+@_fixed_decimal_context
+def paired_ai_delta_series_snapshot(
+    *,
+    series_id: str,
+    baseline_series_snapshot: Mapping[str, Any],
+    ai_series_snapshot: Mapping[str, Any],
+    model_bundle_id: str,
+    model_bundle_hash: str,
+    ai_endpoint: str,
+    generated_at: str,
+) -> Dict[str, Any]:
+    """Build a replayable AI-minus-baseline series from exact paired facts."""
+
+    _require_id(series_id, "series_id")
+    _require_id(model_bundle_id, "model_bundle_id")
+    _require_hash(model_bundle_hash, "model_bundle_hash")
+    if ai_endpoint not in ("GROWTH", "RISK_EFFICIENCY"):
+        raise ValueError("AI endpoint is invalid")
+    baseline = deepcopy(dict(baseline_series_snapshot))
+    ai = deepcopy(dict(ai_series_snapshot))
+    observations, report = _derive_pairing(baseline, ai)
+    ai_scope = ai["scope"]
+    baseline_scope = baseline["scope"]
+    artifact = {
+        "$schema": "./statistical-series-snapshot-v1.schema.json",
+        "schema_version": "1.1.0",
+        "series_id": series_id,
+        "series_hash": "0" * 64,
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_economic_snapshot_hashes": [
+            *baseline["source_economic_snapshot_hashes"],
+            *ai["source_economic_snapshot_hashes"],
+        ],
+        "source_arm_series": {
+            "baseline": baseline,
+            "ai": ai,
+        },
+        "baseline_recipe_release_id": baseline_scope[
+            "recipe_release_id"
+        ],
+        "baseline_recipe_release_hash": baseline_scope[
+            "recipe_release_hash"
+        ],
+        "model_bundle_id": model_bundle_id,
+        "model_bundle_hash": model_bundle_hash,
+        "ai_endpoint": ai_endpoint,
+        "pairing_rule": "PROPOSAL_ID_PLUS_DECISION_TIME",
+        "eligibility_rule": "AI_ACTION_OR_ABSOLUTE_EXPOSURE_CHANGED",
+        "pairing_report": report,
+        "accounting_policy_id": ai["accounting_policy_id"],
+        "accounting_policy_hash": ai["accounting_policy_hash"],
+        "cost_allocation_policy_id": ai["cost_allocation_policy_id"],
+        "cost_allocation_policy_hash": ai["cost_allocation_policy_hash"],
+        "split_policy_id": ai["split_policy_id"],
+        "split_policy_hash": ai["split_policy_hash"],
+        "statistical_design_policy_id": ai[
+            "statistical_design_policy_id"
+        ],
+        "statistical_design_policy_hash": ai[
+            "statistical_design_policy_hash"
+        ],
+        "experiment_manifest_id": ai["experiment_manifest_id"],
+        "experiment_manifest_hash": ai["experiment_manifest_hash"],
+        "scope": {
+            **dict(ai_scope),
+            "evaluation_ledger": "PAIRED_COMPARISON",
+        },
+        "approved_production_capital_usdt": ai[
+            "approved_production_capital_usdt"
+        ],
+        "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+        "series_kind": "PAIRED_AI_ECONOMIC_NET_LOG_GROWTH_DELTA",
+        "aggregation": "SUM",
+        "observations": observations,
+        "bootstrap_design": deepcopy(ai["bootstrap_design"]),
+        "generated_at": generated_at,
+        "replay_verified": True,
+    }
+    artifact["series_hash"] = statistical_series_hash(artifact)
+    reasons = statistical_series_reasons(artifact)
+    if reasons:
+        raise ValueError(f"invalid paired statistical series: {reasons}")
     return artifact

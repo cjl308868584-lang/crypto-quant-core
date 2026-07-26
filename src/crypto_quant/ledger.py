@@ -1024,9 +1024,6 @@ class EventLedger:
                 f"{event_type} release route is invalid"
             )
         if (
-            payload["evaluation_ledger"] == "BASELINE_LEDGER"
-            and payload["release_route"] != "BASELINE_ONLY"
-        ) or (
             payload["evaluation_ledger"] == "AI_LEDGER"
             and payload["release_route"] != "AI_ENHANCED"
         ):
@@ -1940,9 +1937,6 @@ class EventLedger:
         if venue not in ("BINANCE_SPOT", "BINANCE_USDT_PERP"):
             raise LedgerIntegrityError("economic snapshot venue is invalid")
         if (
-            evaluation_ledger == "BASELINE_LEDGER"
-            and release_route != "BASELINE_ONLY"
-        ) or (
             evaluation_ledger == "AI_LEDGER"
             and release_route != "AI_ENHANCED"
         ):

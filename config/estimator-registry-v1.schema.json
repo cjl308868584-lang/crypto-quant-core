@@ -118,6 +118,10 @@
             "worst_case_gross_exposure_ratio",
             "geyer_initial_positive_sequence_ess",
             "one_sided_95_moving_block_bootstrap",
+            "one_sided_95_paired_moving_block_bootstrap",
+            "leave_max_positive_fold_out_mbb_lcb95",
+            "leave_top_5_positive_events_out_mbb_lcb95",
+            "leave_max_positive_event_out_mbb_lcb95",
             "monthly_economic_pnl_mbb_lcb95",
             "complete_utc_calendar_month_count",
             "cash_flow_adjusted_economic_log_growth"

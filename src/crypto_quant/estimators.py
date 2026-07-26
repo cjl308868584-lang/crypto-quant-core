@@ -23,8 +23,12 @@ from .statistics import (
     cash_flow_adjusted_economic_log_growth,
     complete_utc_calendar_month_count,
     geyer_initial_positive_sequence_ess,
+    leave_max_positive_event_out_mbb_lcb95,
+    leave_max_positive_fold_out_mbb_lcb95,
+    leave_top_5_positive_events_out_mbb_lcb95,
     monthly_economic_pnl_mbb_lcb95,
     one_sided_95_moving_block_bootstrap,
+    one_sided_95_paired_moving_block_bootstrap,
 )
 
 
@@ -167,6 +171,18 @@ _CALLABLES: Mapping[
     ),
     "one_sided_95_moving_block_bootstrap": (
         one_sided_95_moving_block_bootstrap
+    ),
+    "one_sided_95_paired_moving_block_bootstrap": (
+        one_sided_95_paired_moving_block_bootstrap
+    ),
+    "leave_max_positive_fold_out_mbb_lcb95": (
+        leave_max_positive_fold_out_mbb_lcb95
+    ),
+    "leave_top_5_positive_events_out_mbb_lcb95": (
+        leave_top_5_positive_events_out_mbb_lcb95
+    ),
+    "leave_max_positive_event_out_mbb_lcb95": (
+        leave_max_positive_event_out_mbb_lcb95
     ),
     "monthly_economic_pnl_mbb_lcb95": (
         monthly_economic_pnl_mbb_lcb95
@@ -376,10 +392,11 @@ class EstimatorRegistry:
                     ("ECONOMIC_SNAPSHOT_SCHEMA_INVALID",),
                 )
         if "statistical_series_snapshot" in required_fields:
+            statistical_series = inputs["statistical_series_snapshot"]
             errors = list(
                 Draft202012Validator(
                     self.statistical_series_schema
-                ).iter_errors(inputs["statistical_series_snapshot"])
+                ).iter_errors(statistical_series)
             )
             if errors:
                 return self._execution(
@@ -389,6 +406,26 @@ class EstimatorRegistry:
                     None,
                     ("STATISTICAL_SERIES_SCHEMA_INVALID",),
                 )
+            if (
+                statistical_series.get("series_kind")
+                == "PAIRED_AI_ECONOMIC_NET_LOG_GROWTH_DELTA"
+            ):
+                source_arms = statistical_series.get("source_arm_series")
+                if not isinstance(source_arms, Mapping) or any(
+                    list(
+                        Draft202012Validator(
+                            self.statistical_series_schema
+                        ).iter_errors(source_arms.get(arm))
+                    )
+                    for arm in ("baseline", "ai")
+                ):
+                    return self._execution(
+                        estimator_id,
+                        implementation,
+                        "FAIL",
+                        None,
+                        ("PAIRED_SOURCE_SERIES_SCHEMA_INVALID",),
+                    )
         status, value, reasons = _CALLABLES[implementation["callable_id"]](inputs)
         return self._execution(
             estimator_id,

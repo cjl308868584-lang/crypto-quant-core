@@ -47,9 +47,9 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.10.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本，以及完整UTC月份、有效样本量和依赖时间序列Moving-block Bootstrap首版。
+Git中的设计基线已冻结，当前代码版本为 `0.11.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计，以及AI相对简单基线的同proposal/time配对增量首版。
 
-当前57个Catalog算法中有14个Estimator可执行，其余43个明确Fail-Closed。系统现在能对受信逐月全成本经济PnL计算一侧95% Moving-block Bootstrap下界，但仓库里只有合成Golden Fixture，没有真实获批月份，因此不能声称策略已经证明赚钱。AI配对增量、Holm校正、功效和脆弱性分析仍未实现。当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度见[实施追踪 v0.10.0](docs/implementation-status-v0.10.0.md)，统计推断决策见[ADR-0010](docs/adr/0010-dependent-series-profitability-inference.md)。
+当前57个Catalog算法中有18个Estimator可执行，其余39个明确Fail-Closed。系统能对受信AI/基线双臂计算一侧95%配对Moving-block Bootstrap增量下界，并执行fold/event集中度压力估计；但仓库里只有合成Golden Fixture，没有真实获批配对观察，因此不能声称AI优于基线或策略已经赚钱。Holm、实际功效、CI宽度、风险效率配对区间和逐交易重放仍未实现。当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度见[实施追踪 v0.11.0](docs/implementation-status-v0.11.0.md)，配对增量决策见[ADR-0011](docs/adr/0011-paired-ai-incremental-value.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：

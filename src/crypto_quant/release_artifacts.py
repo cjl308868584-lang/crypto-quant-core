@@ -756,6 +756,41 @@ def validate_supporting_observation_bundle(
                 *statistical_source_hashes,
             }
             if (
+                statistical_series.get("series_kind")
+                == "PAIRED_AI_ECONOMIC_NET_LOG_GROWTH_DELTA"
+            ):
+                for name in (
+                    "model_bundle_id",
+                    "model_bundle_hash",
+                    "ai_endpoint",
+                ):
+                    if (
+                        name in expected_scope
+                        and not _same_value(
+                            statistical_series.get(name),
+                            expected_scope.get(name),
+                        )
+                    ):
+                        reasons.append(
+                            f"SUPPORTING_PAIRED_REFERENCE_MISMATCH:{metric_id}:{name}"
+                        )
+                source_arms = statistical_series.get("source_arm_series")
+                if not isinstance(source_arms, Mapping):
+                    reasons.append(
+                        f"SUPPORTING_PAIRED_SOURCE_ARMS_MISSING:{metric_id}"
+                    )
+                else:
+                    for arm in ("baseline", "ai"):
+                        arm_series = source_arms.get(arm)
+                        if not isinstance(arm_series, Mapping):
+                            reasons.append(
+                                f"SUPPORTING_PAIRED_SOURCE_ARM_MISSING:{metric_id}:{arm}"
+                            )
+                        else:
+                            required_statistical_sources.add(
+                                arm_series.get("series_hash")
+                            )
+            if (
                 not isinstance(source_hashes, list)
                 or not required_statistical_sources.issubset(
                     set(source_hashes)
