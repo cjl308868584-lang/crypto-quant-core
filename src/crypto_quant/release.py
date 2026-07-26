@@ -29,6 +29,7 @@ from .release_artifacts import (
     validate_experiment_manifest,
     validate_supporting_observation_bundle,
 )
+from .trade_replay import trade_replay_snapshot_reasons
 
 _ECONOMIC_SNAPSHOT_ESTIMATOR_IDS = frozenset(
     {
@@ -57,6 +58,9 @@ _ENDPOINT_REEVALUATION_ESTIMATOR_IDS = frozenset(
         "LEAVE_MAX_POSITIVE_DELTA_FOLD_OUT_ENDPOINT_REEVALUATION_V1",
         "LEAVE_MAX_POSITIVE_DELTA_EVENT_OUT_ENDPOINT_REEVALUATION_V1",
     }
+)
+_TRADE_REPLAY_ESTIMATOR_IDS = frozenset(
+    {"LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1"}
 )
 
 
@@ -245,6 +249,7 @@ class PolicyBundle:
         "deployment-line-v1.1.schema.json",
         "supporting-observation-bundle-v1.schema.json",
         "endpoint-reevaluation-snapshot-v1.schema.json",
+        "trade-replay-snapshot-v1.schema.json",
         "model-bundle-v1.1.schema.json",
         "approved-fallback-registry-v1.1.schema.json",
     )
@@ -1175,6 +1180,7 @@ class PolicyBundle:
         endpoint_reevaluation_snapshot: Optional[
             Mapping[str, Any]
         ] = None,
+        trade_replay_snapshot: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
         if estimator_id == "ACTUAL_DEPLOYABLE_CAPITAL_V1":
             return {
@@ -1223,6 +1229,10 @@ class PolicyBundle:
         if estimator_id in _STATISTICAL_SERIES_ESTIMATOR_IDS:
             return {
                 "statistical_series_snapshot": statistical_series_snapshot,
+            }
+        if estimator_id in _TRADE_REPLAY_ESTIMATOR_IDS:
+            return {
+                "trade_replay_snapshot": trade_replay_snapshot,
             }
         if estimator_id in _ENDPOINT_REEVALUATION_ESTIMATOR_IDS:
             is_audit = (
@@ -1534,6 +1544,167 @@ class PolicyBundle:
                         required_sources.add(arm_series.get("series_hash"))
         if not required_sources.issubset(artifact_set):
             reasons.append("STATISTICAL_SERIES_SOURCE_HASH_MISSING")
+        return tuple(sorted(set(reasons)))
+
+    def _trade_replay_reference_reasons(
+        self,
+        evidence: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+    ) -> Tuple[str, ...]:
+        snapshot = trust.artifact_documents.get("trade_replay_snapshot")
+        if not isinstance(snapshot, Mapping):
+            return ("TRADE_REPLAY_DOCUMENT_MISSING",)
+        reasons: List[str] = list(
+            self._artifact_schema_reasons(
+                "trade-replay-snapshot-v1.schema.json",
+                snapshot,
+                "TRADE_REPLAY",
+            )
+        )
+        reasons.extend(trade_replay_snapshot_reasons(snapshot))
+
+        frozen = evidence.get("frozen_release_inputs")
+        replay_proof = (
+            frozen.get("trade_replay_snapshot")
+            if isinstance(frozen, Mapping)
+            else None
+        )
+        if not isinstance(replay_proof, Mapping):
+            reasons.append("TRADE_REPLAY_FREEZE_PROOF_MISSING")
+        else:
+            if replay_proof.get("artifact_id") != snapshot.get(
+                "replay_id"
+            ):
+                reasons.append("TRADE_REPLAY_FREEZE_ID_MISMATCH")
+            if replay_proof.get("artifact_hash") != snapshot.get(
+                "replay_hash"
+            ):
+                reasons.append("TRADE_REPLAY_FREEZE_HASH_MISMATCH")
+        if trust.artifact_hashes.get(
+            "trade_replay_snapshot"
+        ) != snapshot.get("replay_hash"):
+            reasons.append("TRADE_REPLAY_TRUST_HASH_MISMATCH")
+
+        source_series = trust.artifact_documents.get(
+            "statistical_series_snapshot"
+        )
+        if not isinstance(source_series, Mapping):
+            reasons.append("TRADE_REPLAY_SOURCE_SERIES_DOCUMENT_MISSING")
+        else:
+            reasons.extend(
+                self._statistical_series_reference_reasons(
+                    evidence,
+                    trust,
+                )
+            )
+            if (
+                snapshot.get("source_series_hash")
+                != source_series.get("series_hash")
+                or not self._same_business_value(
+                    snapshot.get("source_series_snapshot"),
+                    source_series,
+                )
+            ):
+                reasons.append("TRADE_REPLAY_SOURCE_SERIES_MISMATCH")
+
+        scope = snapshot.get("scope")
+        if not isinstance(scope, Mapping):
+            reasons.append("TRADE_REPLAY_SCOPE_MISSING")
+            scope = {}
+        experiment = trust.artifact_documents.get("experiment_manifest")
+        for name in (
+            "evaluation_ledger",
+            "release_route",
+            "direction",
+            "venue",
+            "recipe_release_id",
+            "recipe_release_hash",
+            "deployment_line_id",
+            "deployment_line_hash",
+            "evaluation_window_start",
+            "evaluation_window_end",
+        ):
+            expected = evidence.get(name)
+            if (
+                evidence.get("release_route") == "AI_ENHANCED"
+                and evidence.get("evaluation_ledger")
+                == "BASELINE_LEDGER"
+                and isinstance(experiment, Mapping)
+            ):
+                if name == "recipe_release_id":
+                    expected = experiment.get("baseline_recipe_release_id")
+                elif name == "recipe_release_hash":
+                    expected = experiment.get(
+                        "baseline_recipe_release_hash"
+                    )
+            if scope.get(name) != expected:
+                reasons.append(f"TRADE_REPLAY_SCOPE_MISMATCH:{name}")
+
+        claimed = evidence.get("policy_binding_hashes")
+        if not isinstance(claimed, Mapping):
+            claimed = {}
+        bindings = snapshot.get("policy_bindings")
+        if not isinstance(bindings, Mapping):
+            reasons.append("TRADE_REPLAY_POLICY_BINDINGS_MISSING")
+            bindings = {}
+        for replay_field, binding_name in {
+            "accounting_policy_hash": "accounting_policy_id",
+            "cost_allocation_policy_hash": "cost_allocation_policy_id",
+            "split_policy_hash": "split_policy_id",
+            "statistical_design_policy_hash": (
+                "statistical_design_policy_id"
+            ),
+        }.items():
+            if bindings.get(replay_field) != claimed.get(binding_name):
+                reasons.append(
+                    f"TRADE_REPLAY_POLICY_MISMATCH:{binding_name}"
+                )
+        if (
+            bindings.get("experiment_manifest_id")
+            != evidence.get("experiment_manifest_id")
+            or bindings.get("experiment_manifest_hash")
+            != evidence.get("experiment_manifest_hash")
+        ):
+            reasons.append("TRADE_REPLAY_EXPERIMENT_MISMATCH")
+        if not self._same_business_value(
+            snapshot.get("approved_production_capital_usdt"),
+            evidence.get("approved_production_capital_usdt"),
+        ):
+            reasons.append("TRADE_REPLAY_APPROVED_CAPITAL_MISMATCH")
+
+        artifact_hashes = evidence.get("artifact_hashes")
+        artifact_set = (
+            set(artifact_hashes) if isinstance(artifact_hashes, list) else set()
+        )
+        required_sources = {
+            snapshot.get("replay_hash"),
+            snapshot.get("source_series_hash"),
+        }
+        economic_hashes = snapshot.get(
+            "source_economic_snapshot_hashes"
+        )
+        if isinstance(economic_hashes, list):
+            required_sources.update(economic_hashes)
+        else:
+            reasons.append("TRADE_REPLAY_SOURCE_LIST_INVALID")
+        counterfactual = snapshot.get("counterfactual_series")
+        if isinstance(counterfactual, Mapping):
+            required_sources.add(counterfactual.get("series_hash"))
+            observations = counterfactual.get("observations")
+            if isinstance(observations, list):
+                required_sources.update(
+                    item.get("counterfactual_replay_period_hash")
+                    for item in observations
+                    if isinstance(item, Mapping)
+                )
+            else:
+                reasons.append(
+                    "TRADE_REPLAY_COUNTERFACTUAL_SOURCE_LIST_INVALID"
+                )
+        else:
+            reasons.append("TRADE_REPLAY_COUNTERFACTUAL_SERIES_MISSING")
+        if not required_sources.issubset(artifact_set):
+            reasons.append("TRADE_REPLAY_SOURCE_HASH_MISSING")
         return tuple(sorted(set(reasons)))
 
     def _endpoint_reevaluation_reference_reasons(
@@ -1896,6 +2067,9 @@ class PolicyBundle:
                 endpoint_reevaluation = trust.artifact_documents.get(
                     "endpoint_reevaluation_snapshot"
                 )
+                trade_replay = trust.artifact_documents.get(
+                    "trade_replay_snapshot"
+                )
                 if definition["estimator_id"] in (
                     _ECONOMIC_SNAPSHOT_ESTIMATOR_IDS
                 ):
@@ -1924,6 +2098,15 @@ class PolicyBundle:
                             definition["estimator_id"],
                         )
                     )
+                if definition["estimator_id"] in (
+                    _TRADE_REPLAY_ESTIMATOR_IDS
+                ):
+                    reasons.extend(
+                        self._trade_replay_reference_reasons(
+                            evidence,
+                            trust,
+                        )
+                    )
                 estimator_inputs = self._estimator_inputs(
                     definition["estimator_id"],
                     gate["metric_id"],
@@ -1948,6 +2131,11 @@ class PolicyBundle:
                     endpoint_reevaluation_snapshot=(
                         endpoint_reevaluation
                         if isinstance(endpoint_reevaluation, Mapping)
+                        else None
+                    ),
+                    trade_replay_snapshot=(
+                        trade_replay
+                        if isinstance(trade_replay, Mapping)
                         else None
                     ),
                 )

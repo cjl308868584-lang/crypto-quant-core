@@ -82,6 +82,9 @@ def load_release_artifact_schemas(
             Path(config_dir)
             / "endpoint-reevaluation-snapshot-v1.schema.json"
         ),
+        "trade_replay_snapshot": _load_json_strict(
+            Path(config_dir) / "trade-replay-snapshot-v1.schema.json"
+        ),
     }
     for schema in schemas.values():
         Draft202012Validator.check_schema(schema)
@@ -802,6 +805,144 @@ def validate_supporting_observation_bundle(
             ):
                 reasons.append(
                     f"SUPPORTING_STATISTICAL_SOURCE_INCOMPLETE:{metric_id}"
+                )
+        trade_replay = (
+            inputs.get("trade_replay_snapshot")
+            if isinstance(inputs, Mapping)
+            else None
+        )
+        if isinstance(trade_replay, Mapping):
+            replay_scope = trade_replay.get("scope")
+            if not isinstance(replay_scope, Mapping):
+                reasons.append(
+                    f"SUPPORTING_TRADE_REPLAY_SCOPE_MISSING:{metric_id}"
+                )
+                replay_scope = {}
+            for name in (
+                "evaluation_ledger",
+                "release_route",
+                "direction",
+                "venue",
+                "recipe_release_id",
+                "recipe_release_hash",
+                "deployment_line_id",
+                "deployment_line_hash",
+                "evaluation_window_start",
+                "evaluation_window_end",
+            ):
+                if (
+                    name in expected_scope
+                    and replay_scope.get(name) != expected_scope.get(name)
+                ):
+                    reasons.append(
+                        "SUPPORTING_TRADE_REPLAY_SCOPE_MISMATCH:"
+                        f"{metric_id}:{name}"
+                    )
+            bindings = expected_scope.get("policy_binding_hashes")
+            replay_bindings = trade_replay.get("policy_bindings")
+            if isinstance(bindings, Mapping):
+                if not isinstance(replay_bindings, Mapping):
+                    reasons.append(
+                        "SUPPORTING_TRADE_REPLAY_POLICY_MISSING:"
+                        f"{metric_id}"
+                    )
+                    replay_bindings = {}
+                for replay_field, binding_name in {
+                    "accounting_policy_hash": "accounting_policy_id",
+                    "cost_allocation_policy_hash": (
+                        "cost_allocation_policy_id"
+                    ),
+                    "split_policy_hash": "split_policy_id",
+                    "statistical_design_policy_hash": (
+                        "statistical_design_policy_id"
+                    ),
+                }.items():
+                    if replay_bindings.get(
+                        replay_field
+                    ) != bindings.get(binding_name):
+                        reasons.append(
+                            "SUPPORTING_TRADE_REPLAY_POLICY_MISMATCH:"
+                            f"{metric_id}:{binding_name}"
+                        )
+            if not isinstance(replay_bindings, Mapping):
+                replay_bindings = {}
+            for replay_field, expected_field in (
+                ("experiment_manifest_id", "experiment_manifest_id"),
+                ("experiment_manifest_hash", "experiment_manifest_hash"),
+            ):
+                if (
+                    expected_field in expected_scope
+                    and replay_bindings.get(replay_field)
+                    != expected_scope.get(expected_field)
+                ):
+                    reasons.append(
+                        "SUPPORTING_TRADE_REPLAY_REFERENCE_MISMATCH:"
+                        f"{metric_id}:{expected_field}"
+                    )
+            if (
+                "approved_production_capital_usdt" in expected_scope
+                and not _same_value(
+                    trade_replay.get(
+                        "approved_production_capital_usdt"
+                    ),
+                    expected_scope.get(
+                        "approved_production_capital_usdt"
+                    ),
+                )
+            ):
+                reasons.append(
+                    "SUPPORTING_TRADE_REPLAY_REFERENCE_MISMATCH:"
+                    f"{metric_id}:approved_production_capital_usdt"
+                )
+            required_replay_sources = {
+                trade_replay.get("replay_hash"),
+                trade_replay.get("source_series_hash"),
+            }
+            economic_hashes = trade_replay.get(
+                "source_economic_snapshot_hashes"
+            )
+            if isinstance(economic_hashes, list):
+                required_replay_sources.update(economic_hashes)
+            else:
+                reasons.append(
+                    "SUPPORTING_TRADE_REPLAY_SOURCE_LIST_INVALID:"
+                    f"{metric_id}"
+                )
+            counterfactual = trade_replay.get("counterfactual_series")
+            if isinstance(counterfactual, Mapping):
+                required_replay_sources.add(
+                    counterfactual.get("series_hash")
+                )
+                counterfactual_observations = counterfactual.get(
+                    "observations"
+                )
+                if isinstance(counterfactual_observations, list):
+                    required_replay_sources.update(
+                        observation.get(
+                            "counterfactual_replay_period_hash"
+                        )
+                        for observation in counterfactual_observations
+                        if isinstance(observation, Mapping)
+                    )
+                else:
+                    reasons.append(
+                        "SUPPORTING_TRADE_REPLAY_PERIOD_LIST_INVALID:"
+                        f"{metric_id}"
+                    )
+            else:
+                reasons.append(
+                    "SUPPORTING_TRADE_REPLAY_COUNTERFACTUAL_MISSING:"
+                    f"{metric_id}"
+                )
+            if (
+                not isinstance(source_hashes, list)
+                or not required_replay_sources.issubset(
+                    set(source_hashes)
+                )
+            ):
+                reasons.append(
+                    "SUPPORTING_TRADE_REPLAY_SOURCE_INCOMPLETE:"
+                    f"{metric_id}"
                 )
         endpoint_reevaluation = (
             inputs.get("endpoint_reevaluation_snapshot")

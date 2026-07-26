@@ -12,8 +12,16 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from crypto_quant.canonical import canonical_decimal
+from crypto_quant.canonical import business_hash, canonical_decimal
 from crypto_quant.economics import economic_snapshot_hash
+from crypto_quant.estimators import EstimatorRegistry
+from crypto_quant.evidence import EvidenceTrustContext
+from crypto_quant.release import MetricResolver, PolicyBundle, load_json_strict
+from crypto_quant.release_artifacts import (
+    supporting_observation_bundle_hash,
+    supporting_observation_hash,
+    validate_supporting_observation_bundle,
+)
 from crypto_quant.statistics import statistical_series_hash
 from crypto_quant.trade_replay import (
     analyze_trade_replay_source,
@@ -684,8 +692,256 @@ class CompleteTradeCounterfactualTests(unittest.TestCase):
         finally:
             getcontext().prec = original_precision
 
+
+class CompleteTradeReplayEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.artifact = CompleteTradeCounterfactualTests.build()
+        self.source_series = self.artifact["source_series_snapshot"]
+        self.policy_bundle = PolicyBundle.__new__(PolicyBundle)
+        self.policy_bundle.root = ROOT / "config"
+
+    def expected_scope(self):
+        bindings = self.artifact["policy_bindings"]
+        return {
+            **self.artifact["scope"],
+            "policy_binding_hashes": {
+                "accounting_policy_id": bindings[
+                    "accounting_policy_hash"
+                ],
+                "cost_allocation_policy_id": bindings[
+                    "cost_allocation_policy_hash"
+                ],
+                "split_policy_id": bindings["split_policy_hash"],
+                "statistical_design_policy_id": bindings[
+                    "statistical_design_policy_hash"
+                ],
+            },
+            "experiment_manifest_id": bindings[
+                "experiment_manifest_id"
+            ],
+            "experiment_manifest_hash": bindings[
+                "experiment_manifest_hash"
+            ],
+            "approved_production_capital_usdt": self.artifact[
+                "approved_production_capital_usdt"
+            ],
+        }
+
+    def required_source_hashes(self):
+        counterfactual = self.artifact["counterfactual_series"]
+        return [
+            self.artifact["replay_hash"],
+            self.artifact["source_series_hash"],
+            *self.artifact["source_economic_snapshot_hashes"],
+            counterfactual["series_hash"],
+            *[
+                observation["counterfactual_replay_period_hash"]
+                for observation in counterfactual["observations"]
+            ],
+        ]
+
+    def test_release_estimator_inputs_use_trade_replay_snapshot(self):
+        inputs = self.policy_bundle._estimator_inputs(
+            "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+            "baseline_leave_top_5_positive_trades_out_net_log_growth_lcb95",
+            {},
+            scope_verified=True,
+            trust_verified=True,
+            trade_replay_snapshot=self.artifact,
+        )
+        self.assertEqual(inputs, {"trade_replay_snapshot": self.artifact})
+
+    def test_release_reference_requires_complete_trade_replay_sources(self):
+        expected = self.expected_scope()
+        evidence = {
+            **self.artifact["scope"],
+            "policy_binding_hashes": expected["policy_binding_hashes"],
+            "experiment_manifest_id": expected["experiment_manifest_id"],
+            "experiment_manifest_hash": expected[
+                "experiment_manifest_hash"
+            ],
+            "approved_production_capital_usdt": expected[
+                "approved_production_capital_usdt"
+            ],
+            "artifact_hashes": self.required_source_hashes(),
+            "frozen_release_inputs": {
+                "trade_replay_snapshot": {
+                    "artifact_id": self.artifact["replay_id"],
+                    "artifact_hash": self.artifact["replay_hash"],
+                },
+                "statistical_series_snapshot": {
+                    "artifact_id": self.source_series["series_id"],
+                    "artifact_hash": self.source_series["series_hash"],
+                },
+            },
+        }
+        trust = EvidenceTrustContext(
+            policy_bundle_hash="policy",
+            binding_ids={},
+            binding_hashes={},
+            artifact_hashes={
+                "trade_replay_snapshot": self.artifact["replay_hash"],
+                "statistical_series_snapshot": self.source_series[
+                    "series_hash"
+                ],
+            },
+            capital_values={},
+            artifact_documents={
+                "trade_replay_snapshot": self.artifact,
+                "statistical_series_snapshot": self.source_series,
+            },
+        )
+
+        reasons = self.policy_bundle._trade_replay_reference_reasons(
+            evidence,
+            trust,
+        )
+        self.assertEqual(reasons, ())
+
+        incomplete = deepcopy(evidence)
+        incomplete["artifact_hashes"] = incomplete["artifact_hashes"][:-1]
+        reasons = self.policy_bundle._trade_replay_reference_reasons(
+            incomplete,
+            trust,
+        )
+        self.assertIn("TRADE_REPLAY_SOURCE_HASH_MISSING", reasons)
+
+    def test_supporting_observation_requires_complete_trade_replay_sources(
+        self,
+    ):
+        catalog = load_json_strict(
+            ROOT / "config" / "release-metrics-v1.1.json"
+        )
+        registry = EstimatorRegistry.load(ROOT / "config", catalog)
+        resolver = MetricResolver(catalog)
+        metric_id = (
+            "baseline_leave_top_5_positive_trades_out_net_log_growth_lcb95"
+        )
+        definition = resolver.resolve(metric_id)
+        estimator_inputs = {"trade_replay_snapshot": self.artifact}
+        execution = registry.execute(
+            definition["estimator_id"],
+            estimator_inputs,
+        )
+        source_hashes = self.required_source_hashes()
+        observation = {
+            "observation_id": "trade-replay-observation-1",
+            "observation_hash": "0" * 64,
+            "metric_id": metric_id,
+            "metric_unit": definition["unit"],
+            "estimator_id": definition["estimator_id"],
+            "implementation_id": execution.implementation_id,
+            "implementation_version": execution.implementation_version,
+            "estimator_inputs": estimator_inputs,
+            "status": execution.status,
+            "value": execution.value,
+            "reason_codes": list(execution.reason_codes),
+            "estimator_execution_hash": execution.execution_hash,
+            "source_artifact_hashes": source_hashes[:-1],
+        }
+        observation["observation_hash"] = supporting_observation_hash(
+            observation
+        )
+        expected_scope = self.expected_scope()
+        signature = "T" * 86 + "=="
+        bundle = {
+            "$schema": "./supporting-observation-bundle-v1.schema.json",
+            "schema_version": "1.0.0",
+            "bundle_id": "trade-replay-supporting-bundle-1",
+            "bundle_hash": "0" * 64,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "scope_hash": business_hash(expected_scope),
+            "policy_bundle_hash": "a" * 64,
+            "evaluator_build_hash": "b" * 64,
+            "computed_at": "2026-01-02T00:00:01Z",
+            "observations": [observation],
+            "bundle_attestation": {
+                "algorithm": "ED25519",
+                "key_id": "trade-replay-authority",
+                "signed_at": "2026-01-02T00:00:02Z",
+                "signature_base64": signature,
+            },
+        }
+        bundle["bundle_hash"] = supporting_observation_bundle_hash(bundle)
+        validation = validate_supporting_observation_bundle(
+            bundle,
+            schema=load_json_strict(
+                ROOT
+                / "config"
+                / "supporting-observation-bundle-v1.schema.json"
+            ),
+            expected_scope=expected_scope,
+            policy_bundle_hash="a" * 64,
+            evaluator_build_hash="b" * 64,
+            resolve_metric=resolver.resolve,
+            estimators=registry,
+            allowed_source_hashes=set(source_hashes),
+            verified_attestations={signature: bundle["bundle_hash"]},
+            first_result_revealed_at="2026-01-01T00:00:00Z",
+        )
+
+        self.assertFalse(validation.valid)
+        self.assertIn(
+            f"SUPPORTING_TRADE_REPLAY_SOURCE_INCOMPLETE:{metric_id}",
+            validation.reason_codes,
+        )
+
+        complete = deepcopy(bundle)
+        complete["observations"][0][
+            "source_artifact_hashes"
+        ] = source_hashes
+        complete["observations"][0]["observation_hash"] = (
+            supporting_observation_hash(complete["observations"][0])
+        )
+        complete["bundle_hash"] = supporting_observation_bundle_hash(
+            complete
+        )
+        validation = validate_supporting_observation_bundle(
+            complete,
+            schema=load_json_strict(
+                ROOT
+                / "config"
+                / "supporting-observation-bundle-v1.schema.json"
+            ),
+            expected_scope=expected_scope,
+            policy_bundle_hash="a" * 64,
+            evaluator_build_hash="b" * 64,
+            resolve_metric=resolver.resolve,
+            estimators=registry,
+            allowed_source_hashes=set(source_hashes),
+            verified_attestations={signature: complete["bundle_hash"]},
+            first_result_revealed_at="2026-01-01T00:00:00Z",
+        )
+        self.assertTrue(validation.valid, validation.reason_codes)
+
+    def test_release_schema_freezes_replay_and_source_series(self):
+        schema = load_json_strict(
+            ROOT / "config" / "release-evidence-v1.1.schema.json"
+        )
+        errors = list(
+            Draft202012Validator(schema).iter_errors(
+                {
+                    "metric_id": (
+                        "baseline_leave_top_5_positive_trades_out_"
+                        "net_log_growth_lcb95"
+                    ),
+                    "frozen_release_inputs": {},
+                }
+            )
+        )
+        replay_errors = [
+            error
+            for error in errors
+            if list(error.absolute_path) == ["frozen_release_inputs"]
+            and error.validator == "required"
+        ]
+        messages = " ".join(error.message for error in replay_errors)
+        self.assertIn("trade_replay_snapshot", messages)
+        self.assertIn("statistical_series_snapshot", messages)
+
     def test_insufficient_blocks_is_inconclusive(self):
-        artifact = self.build(
+        artifact = CompleteTradeCounterfactualTests.build(
             trade_pnls=("10",),
             block_length=2,
             minimum_block_count=2,

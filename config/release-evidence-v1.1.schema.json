@@ -377,6 +377,9 @@
         },
         "endpoint_reevaluation_snapshot": {
           "$ref": "#/$defs/freezeProof"
+        },
+        "trade_replay_snapshot": {
+          "$ref": "#/$defs/freezeProof"
         }
       },
       "additionalProperties": false
@@ -616,6 +619,32 @@
           "supporting_observation_bundle_hash": {
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "metric_id"
+        ],
+        "properties": {
+          "metric_id": {
+            "enum": [
+              "baseline_leave_top_5_positive_trades_out_net_log_growth_lcb95",
+              "audit_base_leave_top5_positive_trades_net_log_growth_lcb95",
+              "audit_ai_leave_top5_positive_trades_net_log_growth_lcb95"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "frozen_release_inputs": {
+            "required": [
+              "trade_replay_snapshot",
+              "statistical_series_snapshot"
+            ]
           }
         }
       }
