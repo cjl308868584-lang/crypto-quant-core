@@ -33,6 +33,11 @@ class EstimatorRegistryTests(unittest.TestCase):
         executable = set(self.registry.executable_estimator_ids)
         unavailable = set(self.registry.unavailable_estimator_ids)
 
+        self.assertEqual(self.catalog["catalog_version"], "1.1.4")
+        self.assertEqual(
+            self.registry.registry["registry_version"],
+            "1.5.0",
+        )
         self.assertEqual(all_ids, executable | unavailable)
         self.assertFalse(executable & unavailable)
         self.assertEqual(len(all_ids), 57)
@@ -221,8 +226,16 @@ class EvaluatorBuildTests(unittest.TestCase):
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
-        self.assertEqual(build.executable_estimator_count, 20)
-        self.assertEqual(build.unavailable_estimator_count, 37)
+        self.assertIn(
+            "config/trade-replay-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertEqual(manifest["manifest_version"], "1.6.0")
+        self.assertEqual(manifest["package_version"], "0.13.0")
+        self.assertEqual(manifest["metric_catalog_version"], "1.1.4")
+        self.assertEqual(manifest["golden_vector_count"], 33)
+        self.assertEqual(build.executable_estimator_count, 21)
+        self.assertEqual(build.unavailable_estimator_count, 36)
         self.assertEqual(build.build_hash, manifest["manifest_hash"])
 
     def test_modified_evaluator_input_is_rejected(self):

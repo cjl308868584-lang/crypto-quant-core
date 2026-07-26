@@ -34,6 +34,7 @@
 26. [Economic Ledger Snapshot Schema](config/economic-ledger-snapshot-v1.schema.json)
 27. [Statistical Series Snapshot Schema](config/statistical-series-snapshot-v1.schema.json)
 28. [Endpoint Reevaluation Snapshot Schema](config/endpoint-reevaluation-snapshot-v1.schema.json)
+29. [Trade Replay Snapshot Schema](config/trade-replay-snapshot-v1.schema.json)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -48,9 +49,9 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.12.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量，以及删除最大正贡献单元后的完整GROWTH endpoint复评首版。
+Git中的设计基线已冻结，当前代码版本为 `0.13.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评，以及删除Top-5正贡献完整交易后的路径依赖经济重放首版。
 
-当前57个Catalog算法中有20个Estimator可执行，其余37个明确Fail-Closed。系统能对受信AI/基线双臂计算一侧95%配对Moving-block Bootstrap增量下界，并在删除最大正贡献fold或审计事件后，从双臂重建配对序列并重跑完整GROWTH endpoint门组；但仓库里只有合成Golden Fixture，没有真实获批配对观察，因此不能声称AI优于基线或策略已经赚钱。Holm、实际功效、CI宽度、风险效率配对区间和逐交易路径依赖重放仍未实现。当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度见[实施追踪 v0.12.0](docs/implementation-status-v0.12.0.md)，集中度复评决策见[ADR-0012](docs/adr/0012-selected-endpoint-concentration-reevaluation.md)。
+当前57个Catalog算法中有21个Estimator可执行，其余36个明确Fail-Closed。系统现可在每个估值checkpoint复现原始权益路径，按instrument派生零到零完整交易，移除五笔最大正贡献交易的全部Fill与归属Funding，保留现金流和全部allocated cost，再重建反事实统计序列与保守下界。它能识别利润是否过度依赖少数交易，但仓库里仍只有合成Golden Fixture，没有真实封存的历史/Paper证据，因此不能声称AI优于基线或策略已经赚钱。Holm、实际功效、CI宽度、风险效率配对区间和离线Paper证据管线仍未实现。当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度见[实施追踪 v0.13.0](docs/implementation-status-v0.13.0.md)，交易重放决策见[ADR-0013](docs/adr/0013-complete-trade-counterfactual-replay.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
