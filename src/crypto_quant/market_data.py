@@ -433,6 +433,7 @@ def _fact_id(
     request: HistoricalArchiveRequest,
     source_row_number: int,
     business_key: str,
+    source_row: Sequence[str],
 ) -> str:
     return "mdf_" + business_hash(
         {
@@ -443,6 +444,7 @@ def _fact_id(
             "period": request.period,
             "source_row_number": source_row_number,
             "business_key": business_key,
+            "source_row_hash": business_hash(list(source_row)),
         }
     )
 
@@ -454,9 +456,10 @@ def _base_fact(
     event_time: str,
     ingested_at: str,
     fact_type: str,
+    source_row: Sequence[str],
 ) -> Dict[str, Any]:
     return {
-        "fact_id": _fact_id(request, source_row_number, business_key),
+        "fact_id": _fact_id(request, source_row_number, business_key, source_row),
         "fact_type": fact_type,
         "provider": request.provider,
         "market": request.market,
@@ -480,7 +483,7 @@ def _parse_kline(
         event, event_text, unit = _spot_timestamp(row[0])
     else:
         event, event_text = _timestamp(row[0], unit=unit)
-    close, _ = _timestamp(row[6], unit=unit)
+    close, close_text = _timestamp(row[6], unit=unit)
     if not _request_period_contains(request, event) or close < event:
         raise _market_fact_error()
     interval = _KLINE_INTERVAL_MS[request.interval_or_null or ""]
@@ -499,8 +502,9 @@ def _parse_kline(
         raise _market_fact_error()
     business_key = request.symbol + ":" + event_text
     fact = _base_fact(
-        request, row_number, business_key, event_text, ingested_at,
+        request, row_number, business_key, close_text, ingested_at,
         "KLINE" if request.market == "SPOT" else "MARK_PRICE_KLINE",
+        row,
     )
     fact.update({"open": open_price, "high": high, "low": low, "close": close_price})
     return fact
@@ -518,7 +522,7 @@ def _parse_agg_trade(
     event, event_text, _ = _spot_timestamp(row[5])
     if not _request_period_contains(request, event):
         raise _market_fact_error()
-    fact = _base_fact(request, row_number, request.symbol + ":" + str(aggregate_id), event_text, ingested_at, "AGG_TRADE")
+    fact = _base_fact(request, row_number, request.symbol + ":" + str(aggregate_id), event_text, ingested_at, "AGG_TRADE", row)
     fact.update({
         "aggregate_trade_id": aggregate_id,
         "price": _decimal(row[1], positive=True),
@@ -540,7 +544,7 @@ def _parse_funding_rate(
     event, event_text = _timestamp(row[0], unit="ms")
     if not _request_period_contains(request, event) or _integer(row[1], positive=True) != 8:
         raise _market_fact_error()
-    fact = _base_fact(request, row_number, request.symbol + ":" + event_text, event_text, ingested_at, "FUNDING_RATE")
+    fact = _base_fact(request, row_number, request.symbol + ":" + event_text, event_text, ingested_at, "FUNDING_RATE", row)
     fact.update({"funding_interval_hours": 8, "funding_rate": _decimal(row[2])})
     return fact
 
@@ -591,6 +595,43 @@ def _request_payload(request: HistoricalArchiveRequest) -> Dict[str, Any]:
     }
 
 
+_FACT_BASE_FIELDS = frozenset((
+    "fact_id", "fact_type", "provider", "market", "data_family", "symbol",
+    "business_key", "source_row_number", "event_time", "available_at",
+))
+_FACT_FIELDS = {
+    "KLINES": ("KLINE", _FACT_BASE_FIELDS | frozenset(("open", "high", "low", "close"))),
+    "MARK_PRICE_KLINES": ("MARK_PRICE_KLINE", _FACT_BASE_FIELDS | frozenset(("open", "high", "low", "close"))),
+    "AGG_TRADES": ("AGG_TRADE", _FACT_BASE_FIELDS | frozenset(("aggregate_trade_id", "price", "quantity", "first_trade_id", "last_trade_id", "is_buyer_maker", "is_best_match"))),
+    "FUNDING_RATE": ("FUNDING_RATE", _FACT_BASE_FIELDS | frozenset(("funding_interval_hours", "funding_rate"))),
+}
+
+
+def _valid_fact_payload(request: HistoricalArchiveRequest, fact: Mapping[str, Any]) -> bool:
+    expected_type, expected_fields = _FACT_FIELDS[request.data_family]
+    if set(fact) != expected_fields or fact.get("fact_type") != expected_type:
+        return False
+    try:
+        if request.data_family in ("KLINES", "MARK_PRICE_KLINES"):
+            open_price, high, low, close = (Decimal(_decimal(fact[name], positive=True)) for name in ("open", "high", "low", "close"))
+            return low <= min(open_price, close) <= max(open_price, close) <= high
+        if request.data_family == "AGG_TRADES":
+            return (
+                _integer(str(fact["aggregate_trade_id"]), positive=True) > 0
+                and _integer(str(fact["first_trade_id"]), positive=True) <= _integer(str(fact["last_trade_id"]), positive=True)
+                and _decimal(fact["price"], positive=True) == fact["price"]
+                and _decimal(fact["quantity"], positive=True) == fact["quantity"]
+                and isinstance(fact["is_buyer_maker"], bool)
+                and isinstance(fact["is_best_match"], bool)
+            )
+        return (
+            fact["funding_interval_hours"] == 8
+            and _decimal(fact["funding_rate"]) == fact["funding_rate"]
+        )
+    except (MarketDataError, TypeError, ValueError, InvalidOperation):
+        return False
+
+
 def _quality_reasons(
     request: HistoricalArchiveRequest,
     facts: Sequence[Mapping[str, Any]],
@@ -607,11 +648,14 @@ def _quality_reasons(
         reasons.append("MARKET_DATA_TIME_ORDER")
     seen_ids, seen_keys = set(), set()
     previous_row = None
+    previous_event = None
     event_times = []
     for fact in facts:
         if not isinstance(fact, Mapping):
             reasons.append("MARKET_DATA_FACT_INVALID")
             continue
+        if not _valid_fact_payload(request, fact):
+            reasons.append("MARKET_DATA_FACT_INVALID")
         try:
             row_number = fact["source_row_number"]
             fact_id = fact["fact_id"]
@@ -643,13 +687,21 @@ def _quality_reasons(
             reasons.append("MARKET_DATA_TIME_ORDER")
         if not _request_period_contains(request, event):
             reasons.append("MARKET_DATA_PERIOD_SCOPE")
+        if previous_event is not None and event <= previous_event:
+            reasons.append("MARKET_DATA_EVENT_ORDER")
+        previous_event = event
         event_times.append(event)
     if not facts:
         reasons.append("MARKET_DATA_PERIOD_COVERAGE")
     if request.data_family in ("KLINES", "MARK_PRICE_KLINES"):
         start = datetime.strptime(request.period, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         interval = timedelta(milliseconds=_KLINE_INTERVAL_MS[request.interval_or_null or ""])
-        expected = {start + index * interval for index in range(int(timedelta(days=1) / interval))}
+        uses_microseconds = request.market == "SPOT" and start >= _SPOT_MICROSECOND_BOUNDARY
+        closing_precision = timedelta(microseconds=1 if uses_microseconds else 1_000)
+        expected = {
+            start + (index + 1) * interval - closing_precision
+            for index in range(int(timedelta(days=1) / interval))
+        }
         if set(event_times) != expected or len(event_times) != len(expected):
             reasons.append("MARKET_DATA_PERIOD_COVERAGE")
     return tuple(sorted(set(reasons)))
@@ -788,6 +840,20 @@ def fee_schedule_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tuple[str, ...
     if snapshot.get("$schema") != "./fee-schedule-snapshot-v1.schema.json" or snapshot.get("schema_version") != "1.0.0":
         reasons.append("FEE_SCHEDULE_INVALID")
     try:
+        allowed_snapshot_fields = {
+            "$schema", "schema_version", "fee_schedule_id", "fee_schedule_hash",
+            "hash_algorithm", "canonicalization", "usage_environment", "schedules",
+            "production_approval",
+        }
+        if (
+            not set(snapshot).issubset(allowed_snapshot_fields)
+            or not isinstance(snapshot.get("fee_schedule_id"), str)
+            or not snapshot.get("fee_schedule_id")
+            or snapshot.get("hash_algorithm") != "SHA-256"
+            or snapshot.get("canonicalization") != "RFC8785_JCS"
+            or snapshot.get("usage_environment") not in ("RESEARCH", "PRODUCTION")
+        ):
+            reasons.append("FEE_SCHEDULE_INVALID")
         if snapshot.get("fee_schedule_hash") != fee_schedule_snapshot_hash(snapshot):
             reasons.append("FEE_SCHEDULE_HASH_MISMATCH")
         schedules = snapshot["schedules"]
@@ -795,8 +861,18 @@ def fee_schedule_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tuple[str, ...
             raise ValueError("schedules")
         grouped: Dict[Tuple[Any, Any], list] = {}
         for item in schedules:
-            if not isinstance(item, Mapping):
+            required_fields = {
+                "fee_id", "market", "symbol", "effective_at", "expires_at", "maker_rate",
+                "taker_rate", "lifecycle", "approval",
+            }
+            if not isinstance(item, Mapping) or set(item) != required_fields:
                 raise ValueError("schedule")
+            if (
+                not isinstance(item["fee_id"], str) or not item["fee_id"]
+                or item["market"] not in ("SPOT", "USD_M")
+                or item["symbol"] not in _ALLOWED_SYMBOLS
+            ):
+                reasons.append("FEE_SCHEDULE_INVALID")
             start, _ = _utc_input(item["effective_at"])
             end = None
             if item.get("expires_at") is not None:

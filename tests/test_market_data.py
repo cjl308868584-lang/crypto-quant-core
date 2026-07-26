@@ -371,8 +371,8 @@ class SpotParserTests(unittest.TestCase):
             "2026-07-27T00:00:00Z",
         )
 
-        self.assertEqual(before[0]["event_time"], "2024-12-31T23:59:00.000Z")
-        self.assertEqual(after[0]["event_time"], "2025-01-01T00:00:00.123456Z")
+        self.assertEqual(before[0]["event_time"], "2024-12-31T23:59:59.999Z")
+        self.assertEqual(after[0]["event_time"], "2025-01-01T00:01:00.123455Z")
         self.assertEqual(after[0]["open"], "100")
         self.assertEqual(after[0]["close"], "101.5")
         self.assertEqual(after[0]["available_at"], "2026-07-27T00:00:00Z")
@@ -399,6 +399,18 @@ class SpotParserTests(unittest.TestCase):
             "2026-07-27T00:00:00Z",
         )
         self.assertEqual(facts[0]["event_time"], "2025-01-01T00:00:00.123456Z")
+
+    def test_market_fact_id_changes_when_source_row_content_changes(self):
+        request = self.request()
+        first = parse_market_facts(
+            request, b"1704153600000,100,101,99,100.5,1,1704153659999,0,1,0,0,0\n",
+            "2026-07-27T00:00:00Z",
+        )
+        revised = parse_market_facts(
+            request, b"1704153600000,100,102,99,101,1,1704153659999,0,1,0,0,0\n",
+            "2026-07-27T00:00:00Z",
+        )
+        self.assertNotEqual(first[0]["fact_id"], revised[0]["fact_id"])
 
     def test_spot_parsers_reject_malformed_business_values(self):
         cases = (
@@ -443,7 +455,7 @@ class UsdMParserTests(unittest.TestCase):
             b"1704153600000,40000.00,40100,39900,40050.500,0,1704153659999,0,0,0,0,0\n",
             "2026-07-27T00:00:00Z",
         )
-        self.assertEqual(facts[0]["event_time"], "2024-01-02T00:00:00.000Z")
+        self.assertEqual(facts[0]["event_time"], "2024-01-02T00:00:59.999Z")
         self.assertEqual(facts[0]["high"], "40100")
 
         with self.assertRaises(MarketDataError) as raised:
@@ -529,13 +541,26 @@ class MarketDataArtifactTests(unittest.TestCase):
         gap = tuple(self.facts[:10]) + tuple(self.facts[11:])
         time_invalid = list(self.facts)
         time_invalid[0] = dict(time_invalid[0], available_at="2026-07-28T00:00:00Z")
-        for facts in (duplicate, out_of_order, gap, time_invalid):
+        reverse_time = [
+            dict(fact, source_row_number=index + 1)
+            for index, fact in enumerate(reversed(self.facts))
+        ]
+        for facts in (duplicate, out_of_order, gap, time_invalid, reverse_time):
             with self.subTest(facts=facts[:2]):
                 with self.assertRaises(MarketDataError) as raised:
                     self.build(facts)
                 self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
         with self.assertRaises(MarketDataError) as raised:
             self.build(recorded_at="2026-07-26T23:59:59Z")
+        self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
+
+    def test_artifact_rejects_facts_missing_required_family_payload(self):
+        incomplete = [
+            {key: value for key, value in fact.items() if key not in {"open", "high", "low", "close"}}
+            for fact in self.facts
+        ]
+        with self.assertRaises(MarketDataError) as raised:
+            self.build(incomplete)
         self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
 
     def test_artifact_hash_and_schema_reject_mutation_and_unknown_business_field(self):
@@ -624,3 +649,10 @@ class FeeScheduleContractTests(unittest.TestCase):
         unknown = self.schedule()
         unknown["schedules"][0]["rebate"] = "0"
         self.assertTrue(list(validator.iter_errors(unknown)))
+
+        non_schema_consumer = self.schedule(environment="NOT_PRODUCTION")
+        non_schema_consumer["schedules"][0].pop("fee_id")
+        non_schema_consumer["schedules"][0]["market"] = "UNKNOWN"
+        non_schema_consumer["schedules"][0]["symbol"] = "X"
+        non_schema_consumer["fee_schedule_hash"] = fee_schedule_snapshot_hash(non_schema_consumer)
+        self.assertIn("FEE_SCHEDULE_INVALID", fee_schedule_snapshot_reasons(non_schema_consumer))
