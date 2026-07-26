@@ -42,6 +42,8 @@ AI 的真实盈利记录。
   由 29 个增至 33 个。
 - v0.13.0 定向发布验证共 48 项通过，覆盖 Registry、Release evaluator 和完整交易
   replay。
+- 全量自动化套件共 155 项通过；确定性构建、5 类发布 Artifact Schema 和 8 份
+  未审批治理模板均完成独立验证。
 
 ## 围绕赚钱目标的解释
 
@@ -86,4 +88,3 @@ AI 的真实盈利记录。
 3. 建立不连接真实 Broker 的离线双臂 Paper 数据生成、封存和重放管线。
 4. 用封存历史/Paper 数据生成第一份非 Golden 的 BASELINE/AI 配对 Evidence。
 5. 只有前述证据通过后，再讨论只读交易所数据 Adapter；真实下单仍保持禁用。
-

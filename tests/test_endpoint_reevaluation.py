@@ -313,7 +313,19 @@ class EndpointReevaluationTests(unittest.TestCase):
     def test_release_reference_binds_policy_scope_and_all_sources(self):
         bundle = PolicyBundle.load(ROOT / "config")
         source = self.source
-        snapshot = self.fold
+        snapshot = build_endpoint_reevaluation_snapshot(
+            reevaluation_id="current-policy-fold-reevaluation",
+            source_paired_series=source,
+            endpoint_gate_group_id="AI_ENDPOINT.GROWTH",
+            endpoint_gate_definitions=self.fold[
+                "endpoint_gate_definitions"
+            ],
+            policy_identity=(
+                bundle.endpoint_reevaluation_policy_identity()
+            ),
+            exclusion_method="MAX_POSITIVE_DELTA_FOLD",
+            generated_at=self.fold["generated_at"],
+        )
         arm_hashes = [
             source["source_arm_series"][arm]["series_hash"]
             for arm in ("baseline", "ai")
