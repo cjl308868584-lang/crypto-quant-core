@@ -622,6 +622,63 @@ def validate_supporting_observation_bundle(
             allowed_source_hashes
         ):
             reasons.append(f"SUPPORTING_SOURCE_UNVERIFIED:{metric_id}")
+        economic_snapshot = (
+            inputs.get("economic_ledger_snapshot")
+            if isinstance(inputs, Mapping)
+            else None
+        )
+        if isinstance(economic_snapshot, Mapping):
+            economic_scope = economic_snapshot.get("scope")
+            if not isinstance(economic_scope, Mapping):
+                reasons.append(
+                    f"SUPPORTING_ECONOMIC_SCOPE_MISSING:{metric_id}"
+                )
+                economic_scope = {}
+            for name in (
+                "evaluation_ledger",
+                "release_route",
+                "direction",
+                "venue",
+                "recipe_release_id",
+                "recipe_release_hash",
+                "deployment_line_id",
+                "deployment_line_hash",
+                "evaluation_window_start",
+                "evaluation_window_end",
+            ):
+                if (
+                    name in expected_scope
+                    and economic_scope.get(name) != expected_scope.get(name)
+                ):
+                    reasons.append(
+                        f"SUPPORTING_ECONOMIC_SCOPE_MISMATCH:{metric_id}:{name}"
+                    )
+            bindings = expected_scope.get("policy_binding_hashes")
+            if isinstance(bindings, Mapping):
+                if economic_snapshot.get(
+                    "accounting_policy_hash"
+                ) != bindings.get("accounting_policy_id"):
+                    reasons.append(
+                        f"SUPPORTING_ECONOMIC_ACCOUNTING_POLICY_MISMATCH:{metric_id}"
+                    )
+                if economic_snapshot.get(
+                    "cost_allocation_policy_hash"
+                ) != bindings.get("cost_allocation_policy_id"):
+                    reasons.append(
+                        f"SUPPORTING_ECONOMIC_COST_POLICY_MISMATCH:{metric_id}"
+                    )
+            required_economic_sources = {
+                economic_snapshot.get("snapshot_hash"),
+                economic_snapshot.get("source_ledger_hash"),
+                economic_snapshot.get("source_projection_hash"),
+            }
+            if (
+                not isinstance(source_hashes, list)
+                or not required_economic_sources.issubset(set(source_hashes))
+            ):
+                reasons.append(
+                    f"SUPPORTING_ECONOMIC_SOURCE_INCOMPLETE:{metric_id}"
+                )
         if execution.status == "COMPUTED":
             observations[metric_id] = execution.value
         elif execution.status == "INCONCLUSIVE":

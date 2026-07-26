@@ -11,7 +11,7 @@ from crypto_quant.ledger import EventLedger
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 HASH_A = "a" * 64
 GOLDEN_PROJECTION_HASH = (
-    "eeeb20f66a72bb148146732ece4d724172b2db20d758ee6cb5235b89dfd511b0"
+    "7a9428cdda20f2687b08d93c95664aefeabccbf297645f675359481e0e3dd113"
 )
 
 
@@ -214,6 +214,7 @@ def execution_facts():
                 "side": "BUY",
                 "quantity": Decimal("0.004"),
                 "price": Decimal("1800"),
+                "contract_multiplier": Decimal("1"),
                 "decision_reference_price": Decimal("1799"),
                 "liquidity_role": "TAKER",
                 "fee_amount": Decimal("0.000004"),
@@ -223,6 +224,14 @@ def execution_facts():
                 "implementation_shortfall_usdt": Decimal("0.004"),
                 "exchange_event_time": "2026-01-01T00:00:00.000Z",
                 "raw_payload_hash": HASH_A,
+                "evaluation_ledger": "BASELINE_LEDGER",
+                "release_route": "BASELINE_ONLY",
+                "direction": "LONG",
+                "venue": "BINANCE_SPOT",
+                "recipe_release_id": "recipe-1",
+                "recipe_release_hash": HASH_A,
+                "deployment_line_id": "line-1",
+                "deployment_line_hash": HASH_A,
             },
         ),
     )

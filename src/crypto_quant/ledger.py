@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterator, Mapping, Tuple
 
 from .canonical import business_hash, canonical_decimal, canonical_json, utc_datetime
 from .contracts import EventEnvelope
+from .economics import economic_snapshot_hash
 from .errors import LedgerConflictError, LedgerIntegrityError
 
 _GENESIS_HASH = "0" * 64
@@ -184,6 +185,39 @@ _DEPLOYMENT_MULTIPLIERS = {
     "CANARY_75": Decimal("0.75"),
     "CHAMPION": Decimal("1"),
 }
+_OPERATING_COST_CATEGORIES = {
+    "INFRASTRUCTURE",
+    "DATA",
+    "ALERTING",
+    "AI_INFERENCE",
+    "MODEL_TRAINING",
+    "MONITORING_AND_AUDIT",
+}
+_EXTERNAL_CASH_FLOW_TYPES = {
+    "DEPOSIT",
+    "WITHDRAWAL",
+    "INTERNAL_TRANSFER",
+}
+_ALLOCATION_SCOPES = {
+    "SHARED",
+    "BASELINE_ONLY",
+    "AI_ENHANCED",
+}
+_ECONOMIC_LEDGERS = {
+    "BASELINE_LEDGER",
+    "AI_LEDGER",
+    "ROUTE_RUNTIME",
+}
+_ECONOMIC_SCOPE_FIELDS = {
+    "evaluation_ledger",
+    "release_route",
+    "direction",
+    "venue",
+    "recipe_release_id",
+    "recipe_release_hash",
+    "deployment_line_id",
+    "deployment_line_hash",
+}
 
 
 def _require_sha256(value: Any, field_name: str) -> None:
@@ -296,10 +330,47 @@ class EventLedger:
 
             CREATE TABLE IF NOT EXISTS external_cash_flows_projection (
                 event_id TEXT PRIMARY KEY,
+                flow_id TEXT NOT NULL UNIQUE,
+                account_id TEXT NOT NULL,
                 flow_type TEXT NOT NULL,
                 signed_amount_usdt TEXT NOT NULL,
                 occurred_at TEXT NOT NULL,
                 FOREIGN KEY(event_id) REFERENCES events(event_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS allocated_costs_projection (
+                cost_id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                evaluation_ledger TEXT NOT NULL,
+                release_route TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                projection_hash TEXT NOT NULL,
+                source_event_id TEXT NOT NULL UNIQUE,
+                occurred_at TEXT NOT NULL,
+                FOREIGN KEY(source_event_id) REFERENCES events(event_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS funding_cashflows_projection (
+                funding_id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                instrument_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                projection_hash TEXT NOT NULL,
+                source_event_id TEXT NOT NULL UNIQUE,
+                settled_at TEXT NOT NULL,
+                FOREIGN KEY(source_event_id) REFERENCES events(event_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS equity_snapshots_projection (
+                equity_snapshot_id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                evaluation_ledger TEXT NOT NULL,
+                release_route TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                projection_hash TEXT NOT NULL,
+                source_event_id TEXT NOT NULL UNIQUE,
+                as_of TEXT NOT NULL,
+                FOREIGN KEY(source_event_id) REFERENCES events(event_id)
             );
 
             CREATE TABLE IF NOT EXISTS execution_intents_projection (
@@ -570,6 +641,10 @@ class EventLedger:
             amount = Decimal(canonical_decimal(payload["amount_usdt"]))
             if amount < 0:
                 raise LedgerIntegrityError("operating cost cannot be negative")
+            if payload.get("category") not in _OPERATING_COST_CATEGORIES:
+                raise LedgerIntegrityError(
+                    "operating cost category is not recognized"
+                )
             self.connection.execute(
                 """
                 INSERT INTO operating_costs_projection
@@ -584,23 +659,59 @@ class EventLedger:
                 ),
             )
         elif event_type == "ExternalCashFlowRecorded":
-            amount = canonical_decimal(payload["signed_amount_usdt"])
+            required = {
+                "flow_id",
+                "account_id",
+                "flow_type",
+                "signed_amount_usdt",
+            }
+            missing = sorted(required - set(payload))
+            if missing:
+                raise LedgerIntegrityError(
+                    f"ExternalCashFlowRecorded missing fields: {missing}"
+                )
+            if payload["flow_type"] not in _EXTERNAL_CASH_FLOW_TYPES:
+                raise LedgerIntegrityError(
+                    "external cash flow type is not recognized"
+                )
+            amount = Decimal(
+                canonical_decimal(payload["signed_amount_usdt"])
+            )
+            if payload["flow_type"] == "DEPOSIT" and amount <= 0:
+                raise LedgerIntegrityError("deposit must be positive")
+            if payload["flow_type"] == "WITHDRAWAL" and amount >= 0:
+                raise LedgerIntegrityError("withdrawal must be negative")
             self.connection.execute(
                 """
                 INSERT INTO external_cash_flows_projection
-                (event_id, flow_type, signed_amount_usdt, occurred_at)
-                VALUES (?, ?, ?, ?)
+                (event_id, flow_id, account_id, flow_type,
+                 signed_amount_usdt, occurred_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_id,
+                    payload["flow_id"],
+                    payload["account_id"],
                     payload["flow_type"],
-                    amount,
+                    canonical_decimal(amount),
                     event_time,
                 ),
+            )
+        elif event_type in (
+            "AllocatedCostRecorded",
+            "FundingCashFlowRecorded",
+            "EquitySnapshotRecorded",
+        ):
+            self._apply_economic_fact_projection(
+                event_type=event_type,
+                event_id=event_id,
+                event_time=event_time,
+                payload=payload,
             )
         elif event_type == "FillRecorded":
             self._apply_fill_projection(
                 event_id=event_id,
+                event_time=event_time,
                 payload=payload,
             )
         elif event_type == "CheckpointRecorded":
@@ -617,10 +728,346 @@ class EventLedger:
                 payload=payload,
             )
 
+    def _apply_economic_fact_projection(
+        self,
+        *,
+        event_type: str,
+        event_id: str,
+        event_time: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        if event_type == "AllocatedCostRecorded":
+            required = {
+                "cost_id",
+                "account_id",
+                "evaluation_ledger",
+                "release_route",
+                "category",
+                "amount_usdt",
+                "allocation_scope",
+                "allocation_policy_hash",
+                "occurred_at",
+                *_ECONOMIC_SCOPE_FIELDS,
+            }
+            missing = sorted(required - set(payload))
+            if missing:
+                raise LedgerIntegrityError(
+                    f"AllocatedCostRecorded missing fields: {missing}"
+                )
+            amount = Decimal(canonical_decimal(payload["amount_usdt"]))
+            if amount < 0:
+                raise LedgerIntegrityError("allocated cost cannot be negative")
+            if payload["category"] not in _OPERATING_COST_CATEGORIES:
+                raise LedgerIntegrityError("allocated cost category is invalid")
+            if payload["allocation_scope"] not in _ALLOCATION_SCOPES:
+                raise LedgerIntegrityError("allocated cost scope is invalid")
+            self._validate_economic_scope(payload, event_type)
+            if (
+                payload["release_route"] == "BASELINE_ONLY"
+                and payload["allocation_scope"] == "AI_ENHANCED"
+            ) or (
+                payload["release_route"] == "AI_ENHANCED"
+                and payload["allocation_scope"] == "BASELINE_ONLY"
+            ):
+                raise LedgerIntegrityError(
+                    "allocated cost scope conflicts with release route"
+                )
+            _require_sha256(
+                payload["allocation_policy_hash"],
+                "allocation_policy_hash",
+            )
+            _require_utc_datetime(payload["occurred_at"], "occurred_at")
+            if payload["occurred_at"] != event_time:
+                raise LedgerIntegrityError(
+                    "allocated cost time must equal event time"
+                )
+            table = "allocated_costs_projection"
+            id_field = "cost_id"
+            time_field = "occurred_at"
+            columns = (
+                payload["account_id"],
+                payload["evaluation_ledger"],
+                payload["release_route"],
+            )
+        elif event_type == "FundingCashFlowRecorded":
+            required = {
+                "funding_id",
+                "account_id",
+                "instrument_id",
+                "signed_amount_usdt",
+                "position_quantity",
+                "funding_rate",
+                "mark_price",
+                "settled_at",
+                "raw_payload_hash",
+                *_ECONOMIC_SCOPE_FIELDS,
+            }
+            missing = sorted(required - set(payload))
+            if missing:
+                raise LedgerIntegrityError(
+                    f"FundingCashFlowRecorded missing fields: {missing}"
+                )
+            mark = Decimal(canonical_decimal(payload["mark_price"]))
+            Decimal(canonical_decimal(payload["signed_amount_usdt"]))
+            position = Decimal(
+                canonical_decimal(payload["position_quantity"])
+            )
+            Decimal(canonical_decimal(payload["funding_rate"]))
+            if mark <= 0 or position == 0:
+                raise LedgerIntegrityError(
+                    "funding requires positive mark and actual position"
+                )
+            _require_sha256(payload["raw_payload_hash"], "raw_payload_hash")
+            self._validate_economic_scope(payload, event_type)
+            _require_utc_datetime(payload["settled_at"], "settled_at")
+            if payload["settled_at"] != event_time:
+                raise LedgerIntegrityError(
+                    "funding settlement time must equal event time"
+                )
+            table = "funding_cashflows_projection"
+            id_field = "funding_id"
+            time_field = "settled_at"
+            columns = (
+                payload["account_id"],
+                payload["instrument_id"],
+            )
+        else:
+            required = {
+                "equity_snapshot_id",
+                "account_id",
+                "evaluation_ledger",
+                "release_route",
+                "marked_equity_usdt",
+                "liquidation_equity_usdt",
+                "spot_notional_usdt",
+                "perp_notional_usdt",
+                "active_order_risk_increasing_notional_usdt",
+                "active_order_unknown_notional_usdt",
+                "expected_exit_fee_accrued_usdt",
+                "conservative_close_verified",
+                "is_utc_day_start",
+                "position_cost_bases",
+                "as_of",
+                "source_snapshot_hash",
+                *_ECONOMIC_SCOPE_FIELDS,
+            }
+            missing = sorted(required - set(payload))
+            if missing:
+                raise LedgerIntegrityError(
+                    f"EquitySnapshotRecorded missing fields: {missing}"
+                )
+            for name in (
+                "marked_equity_usdt",
+                "liquidation_equity_usdt",
+                "spot_notional_usdt",
+                "perp_notional_usdt",
+                "active_order_risk_increasing_notional_usdt",
+                "active_order_unknown_notional_usdt",
+                "expected_exit_fee_accrued_usdt",
+            ):
+                if Decimal(canonical_decimal(payload[name])) < 0:
+                    raise LedgerIntegrityError(
+                        f"equity snapshot {name} cannot be negative"
+                    )
+            self._validate_economic_scope(payload, event_type)
+            if payload["conservative_close_verified"] is not True:
+                raise LedgerIntegrityError(
+                    "equity snapshot executable close is unverified"
+                )
+            if not isinstance(payload["is_utc_day_start"], bool):
+                raise LedgerIntegrityError("is_utc_day_start must be boolean")
+            if not isinstance(payload["position_cost_bases"], list):
+                raise LedgerIntegrityError(
+                    "position_cost_bases must be an array"
+                )
+            instrument_ids = [
+                position.get("instrument_id")
+                for position in payload["position_cost_bases"]
+                if isinstance(position, Mapping)
+            ]
+            if len(instrument_ids) != len(set(instrument_ids)):
+                raise LedgerIntegrityError(
+                    "position cost basis instruments must be unique"
+                )
+            for position in payload["position_cost_bases"]:
+                if not isinstance(position, Mapping):
+                    raise LedgerIntegrityError(
+                        "position cost basis must be an object"
+                    )
+                for name in (
+                    "instrument_id",
+                    "signed_quantity",
+                    "moving_average_entry_price",
+                    "contract_multiplier",
+                ):
+                    if name not in position:
+                        raise LedgerIntegrityError(
+                            f"position cost basis missing {name}"
+                        )
+                quantity = Decimal(
+                    canonical_decimal(position["signed_quantity"])
+                )
+                average = Decimal(
+                    canonical_decimal(
+                        position["moving_average_entry_price"]
+                    )
+                )
+                multiplier = Decimal(
+                    canonical_decimal(position["contract_multiplier"])
+                )
+                if multiplier <= 0 or average < 0:
+                    raise LedgerIntegrityError(
+                        "position cost basis values are invalid"
+                    )
+                if (quantity == 0) != (average == 0):
+                    raise LedgerIntegrityError(
+                        "zero position and entry price disagree"
+                    )
+            _require_sha256(
+                payload["source_snapshot_hash"],
+                "source_snapshot_hash",
+            )
+            _require_utc_datetime(payload["as_of"], "as_of")
+            if payload["as_of"] != event_time:
+                raise LedgerIntegrityError(
+                    "equity snapshot time must equal event time"
+                )
+            table = "equity_snapshots_projection"
+            id_field = "equity_snapshot_id"
+            time_field = "as_of"
+            columns = (
+                payload["account_id"],
+                payload["evaluation_ledger"],
+                payload["release_route"],
+            )
+
+        for name in (id_field, "account_id"):
+            if not isinstance(payload[name], str) or not payload[name]:
+                raise LedgerIntegrityError(
+                    f"{event_type} {name} must be non-empty"
+                )
+        payload_json = canonical_json(payload)
+        projection_hash = business_hash(payload)
+        if table == "allocated_costs_projection":
+            self.connection.execute(
+                """
+                INSERT INTO allocated_costs_projection (
+                    cost_id, account_id, evaluation_ledger, release_route,
+                    payload_json, projection_hash, source_event_id, occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload[id_field],
+                    *columns,
+                    payload_json,
+                    projection_hash,
+                    event_id,
+                    payload[time_field],
+                ),
+            )
+
+        elif table == "funding_cashflows_projection":
+            self.connection.execute(
+                """
+                INSERT INTO funding_cashflows_projection (
+                    funding_id, account_id, instrument_id, payload_json,
+                    projection_hash, source_event_id, settled_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload[id_field],
+                    *columns,
+                    payload_json,
+                    projection_hash,
+                    event_id,
+                    payload[time_field],
+                ),
+            )
+        else:
+            self.connection.execute(
+                """
+                INSERT INTO equity_snapshots_projection (
+                    equity_snapshot_id, account_id, evaluation_ledger,
+                    release_route, payload_json, projection_hash,
+                    source_event_id, as_of
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload[id_field],
+                    *columns,
+                    payload_json,
+                    projection_hash,
+                    event_id,
+                    payload[time_field],
+                ),
+            )
+
+    @staticmethod
+    def _validate_economic_scope(
+        payload: Mapping[str, Any],
+        event_type: str,
+    ) -> None:
+        missing = sorted(_ECONOMIC_SCOPE_FIELDS - set(payload))
+        if missing:
+            raise LedgerIntegrityError(
+                f"{event_type} economic scope missing fields: {missing}"
+            )
+        if payload["evaluation_ledger"] not in _ECONOMIC_LEDGERS:
+            raise LedgerIntegrityError(
+                f"{event_type} economic ledger is invalid"
+            )
+        if payload["release_route"] not in (
+            "BASELINE_ONLY",
+            "AI_ENHANCED",
+        ):
+            raise LedgerIntegrityError(
+                f"{event_type} release route is invalid"
+            )
+        if (
+            payload["evaluation_ledger"] == "BASELINE_LEDGER"
+            and payload["release_route"] != "BASELINE_ONLY"
+        ) or (
+            payload["evaluation_ledger"] == "AI_LEDGER"
+            and payload["release_route"] != "AI_ENHANCED"
+        ):
+            raise LedgerIntegrityError(
+                f"{event_type} ledger and release route disagree"
+            )
+        if payload["direction"] not in ("LONG", "SHORT"):
+            raise LedgerIntegrityError(
+                f"{event_type} direction is invalid"
+            )
+        if payload["venue"] not in (
+            "BINANCE_SPOT",
+            "BINANCE_USDT_PERP",
+        ):
+            raise LedgerIntegrityError(f"{event_type} venue is invalid")
+        if (
+            payload["direction"],
+            payload["venue"],
+        ) not in {
+            ("LONG", "BINANCE_SPOT"),
+            ("SHORT", "BINANCE_USDT_PERP"),
+        }:
+            raise LedgerIntegrityError(
+                f"{event_type} direction and venue disagree"
+            )
+        for name in ("recipe_release_id", "deployment_line_id"):
+            if not isinstance(payload[name], str) or not payload[name]:
+                raise LedgerIntegrityError(
+                    f"{event_type} {name} must be non-empty"
+                )
+        for name in (
+            "recipe_release_hash",
+            "deployment_line_hash",
+        ):
+            _require_sha256(payload[name], name)
+
     def _apply_fill_projection(
         self,
         *,
         event_id: str,
+        event_time: str,
         payload: Dict[str, Any],
     ) -> None:
         required = {
@@ -634,6 +1081,7 @@ class EventLedger:
             "side",
             "quantity",
             "price",
+            "contract_multiplier",
             "decision_reference_price",
             "liquidity_role",
             "fee_amount",
@@ -643,6 +1091,7 @@ class EventLedger:
             "implementation_shortfall_usdt",
             "exchange_event_time",
             "raw_payload_hash",
+            *_ECONOMIC_SCOPE_FIELDS,
         }
         missing = sorted(required - set(payload))
         if missing:
@@ -670,13 +1119,21 @@ class EventLedger:
             raise LedgerIntegrityError("FillRecorded liquidity role is invalid")
         quantity = Decimal(canonical_decimal(payload["quantity"]))
         price = Decimal(canonical_decimal(payload["price"]))
+        multiplier = Decimal(
+            canonical_decimal(payload["contract_multiplier"])
+        )
         reference = Decimal(
             canonical_decimal(payload["decision_reference_price"])
         )
         fee_amount = Decimal(canonical_decimal(payload["fee_amount"]))
         fee_value = Decimal(canonical_decimal(payload["fee_value_usdt"]))
         Decimal(canonical_decimal(payload["implementation_shortfall_usdt"]))
-        if quantity <= 0 or price <= 0 or reference <= 0:
+        if (
+            quantity <= 0
+            or price <= 0
+            or multiplier <= 0
+            or reference <= 0
+        ):
             raise LedgerIntegrityError(
                 "FillRecorded quantity and prices must be positive"
             )
@@ -693,6 +1150,11 @@ class EventLedger:
             payload["exchange_event_time"],
             "exchange_event_time",
         )
+        if payload["exchange_event_time"] != event_time:
+            raise LedgerIntegrityError(
+                "fill exchange time must equal event time"
+            )
+        self._validate_economic_scope(payload, "FillRecorded")
         _require_sha256(payload["raw_payload_hash"], "raw_payload_hash")
         payload_json = canonical_json(payload)
         projection_hash = business_hash(payload)
@@ -1242,6 +1704,9 @@ class EventLedger:
         with self.connection:
             self.connection.execute("DELETE FROM operating_costs_projection")
             self.connection.execute("DELETE FROM external_cash_flows_projection")
+            self.connection.execute("DELETE FROM allocated_costs_projection")
+            self.connection.execute("DELETE FROM funding_cashflows_projection")
+            self.connection.execute("DELETE FROM equity_snapshots_projection")
             self.connection.execute("DELETE FROM fills_projection")
             self.connection.execute("DELETE FROM checkpoints")
             for table in _VERSIONED_PROJECTION_TABLES:
@@ -1279,7 +1744,8 @@ class EventLedger:
             dict(row)
             for row in self.connection.execute(
                 """
-                SELECT event_id, flow_type, signed_amount_usdt, occurred_at
+                SELECT event_id, flow_id, account_id, flow_type,
+                       signed_amount_usdt, occurred_at
                 FROM external_cash_flows_projection ORDER BY event_id
                 """
             ).fetchall()
@@ -1287,6 +1753,67 @@ class EventLedger:
         snapshot: Dict[str, Any] = {
             "operating_costs_projection": costs,
             "external_cash_flows_projection": cash_flows,
+            "allocated_costs_projection": [
+                {
+                    "cost_id": row["cost_id"],
+                    "account_id": row["account_id"],
+                    "evaluation_ledger": row["evaluation_ledger"],
+                    "release_route": row["release_route"],
+                    "payload": json.loads(row["payload_json"]),
+                    "projection_hash": row["projection_hash"],
+                    "source_event_id": row["source_event_id"],
+                    "occurred_at": row["occurred_at"],
+                }
+                for row in self.connection.execute(
+                    """
+                    SELECT cost_id, account_id, evaluation_ledger,
+                           release_route, payload_json, projection_hash,
+                           source_event_id, occurred_at
+                    FROM allocated_costs_projection
+                    ORDER BY occurred_at, cost_id
+                    """
+                ).fetchall()
+            ],
+            "funding_cashflows_projection": [
+                {
+                    "funding_id": row["funding_id"],
+                    "account_id": row["account_id"],
+                    "instrument_id": row["instrument_id"],
+                    "payload": json.loads(row["payload_json"]),
+                    "projection_hash": row["projection_hash"],
+                    "source_event_id": row["source_event_id"],
+                    "settled_at": row["settled_at"],
+                }
+                for row in self.connection.execute(
+                    """
+                    SELECT funding_id, account_id, instrument_id, payload_json,
+                           projection_hash, source_event_id, settled_at
+                    FROM funding_cashflows_projection
+                    ORDER BY settled_at, funding_id
+                    """
+                ).fetchall()
+            ],
+            "equity_snapshots_projection": [
+                {
+                    "equity_snapshot_id": row["equity_snapshot_id"],
+                    "account_id": row["account_id"],
+                    "evaluation_ledger": row["evaluation_ledger"],
+                    "release_route": row["release_route"],
+                    "payload": json.loads(row["payload_json"]),
+                    "projection_hash": row["projection_hash"],
+                    "source_event_id": row["source_event_id"],
+                    "as_of": row["as_of"],
+                }
+                for row in self.connection.execute(
+                    """
+                    SELECT equity_snapshot_id, account_id, evaluation_ledger,
+                           release_route, payload_json, projection_hash,
+                           source_event_id, as_of
+                    FROM equity_snapshots_projection
+                    ORDER BY as_of, equity_snapshot_id
+                    """
+                ).fetchall()
+            ],
             "fills_projection": [
                 {
                     "fill_id": row["fill_id"],
@@ -1371,6 +1898,328 @@ class EventLedger:
             self._projection_snapshot(include_checkpoints=True)
         )
 
+    def economic_ledger_snapshot(
+        self,
+        *,
+        snapshot_id: str,
+        account_id: str,
+        evaluation_ledger: str,
+        release_route: str,
+        direction: str,
+        venue: str,
+        recipe_release_id: str,
+        recipe_release_hash: str,
+        deployment_line_id: str,
+        deployment_line_hash: str,
+        evaluation_window_start: str,
+        evaluation_window_end: str,
+        accounting_policy_id: str,
+        accounting_policy_hash: str,
+        cost_allocation_policy_id: str,
+        cost_allocation_policy_hash: str,
+        generated_at: str,
+    ) -> Dict[str, Any]:
+        """Freeze a verified accounting input over the half-open event window."""
+
+        for name, value in (
+            ("snapshot_id", snapshot_id),
+            ("account_id", account_id),
+            ("recipe_release_id", recipe_release_id),
+            ("deployment_line_id", deployment_line_id),
+            ("accounting_policy_id", accounting_policy_id),
+            ("cost_allocation_policy_id", cost_allocation_policy_id),
+        ):
+            if not isinstance(value, str) or not value:
+                raise LedgerIntegrityError(f"{name} must be non-empty")
+        if evaluation_ledger not in _ECONOMIC_LEDGERS:
+            raise LedgerIntegrityError("economic snapshot ledger is invalid")
+        if release_route not in ("BASELINE_ONLY", "AI_ENHANCED"):
+            raise LedgerIntegrityError("economic snapshot route is invalid")
+        if direction not in ("LONG", "SHORT"):
+            raise LedgerIntegrityError("economic snapshot direction is invalid")
+        if venue not in ("BINANCE_SPOT", "BINANCE_USDT_PERP"):
+            raise LedgerIntegrityError("economic snapshot venue is invalid")
+        if (
+            evaluation_ledger == "BASELINE_LEDGER"
+            and release_route != "BASELINE_ONLY"
+        ) or (
+            evaluation_ledger == "AI_LEDGER"
+            and release_route != "AI_ENHANCED"
+        ):
+            raise LedgerIntegrityError(
+                "economic snapshot ledger and route disagree"
+            )
+        if (direction, venue) not in {
+            ("LONG", "BINANCE_SPOT"),
+            ("SHORT", "BINANCE_USDT_PERP"),
+        }:
+            raise LedgerIntegrityError(
+                "economic snapshot direction and venue disagree"
+            )
+        for name, value in (
+            ("recipe_release_hash", recipe_release_hash),
+            ("deployment_line_hash", deployment_line_hash),
+            ("accounting_policy_hash", accounting_policy_hash),
+            ("cost_allocation_policy_hash", cost_allocation_policy_hash),
+        ):
+            _require_sha256(value, name)
+        for name, value in (
+            ("evaluation_window_start", evaluation_window_start),
+            ("evaluation_window_end", evaluation_window_end),
+            ("generated_at", generated_at),
+        ):
+            _require_utc_datetime(value, name)
+        start = datetime.fromisoformat(
+            evaluation_window_start.replace("Z", "+00:00")
+        )
+        end = datetime.fromisoformat(
+            evaluation_window_end.replace("Z", "+00:00")
+        )
+        generated = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        if end <= start:
+            raise LedgerIntegrityError(
+                "economic snapshot window must increase"
+            )
+        if generated < end:
+            raise LedgerIntegrityError(
+                "economic snapshot cannot precede its window end"
+            )
+
+        source_ledger_hash = self.verify_integrity()
+        source_projection_hash = self.state_projection_hash()
+
+        def in_event_window(value: str) -> bool:
+            current = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return start < current <= end
+
+        def in_equity_window(value: str) -> bool:
+            current = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return start <= current <= end
+
+        expected_fact_scope = {
+            "evaluation_ledger": evaluation_ledger,
+            "release_route": release_route,
+            "direction": direction,
+            "venue": venue,
+            "recipe_release_id": recipe_release_id,
+            "recipe_release_hash": recipe_release_hash,
+            "deployment_line_id": deployment_line_id,
+            "deployment_line_hash": deployment_line_hash,
+        }
+
+        def in_exact_scope(payload: Mapping[str, Any]) -> bool:
+            return all(
+                payload.get(name) == value
+                for name, value in expected_fact_scope.items()
+            )
+
+        fills = []
+        for row in self.connection.execute(
+            """
+            SELECT payload_json FROM fills_projection
+            WHERE account_id = ?
+            ORDER BY exchange_event_time, fill_id
+            """,
+            (account_id,),
+        ).fetchall():
+            payload = json.loads(row["payload_json"])
+            if (
+                not in_exact_scope(payload)
+                or not in_event_window(payload["exchange_event_time"])
+            ):
+                continue
+            fills.append(
+                {
+                    name: payload[name]
+                    for name in (
+                        "fill_id",
+                        "instrument_id",
+                        "side",
+                        "quantity",
+                        "price",
+                        "contract_multiplier",
+                        "fee_value_usdt",
+                        "implementation_shortfall_usdt",
+                        "exchange_event_time",
+                    )
+                }
+            )
+
+        funding = []
+        for row in self.connection.execute(
+            """
+            SELECT payload_json FROM funding_cashflows_projection
+            WHERE account_id = ?
+            ORDER BY settled_at, funding_id
+            """,
+            (account_id,),
+        ).fetchall():
+            payload = json.loads(row["payload_json"])
+            if (
+                not in_exact_scope(payload)
+                or not in_event_window(payload["settled_at"])
+            ):
+                continue
+            funding.append(
+                {
+                    name: payload[name]
+                    for name in (
+                        "funding_id",
+                        "instrument_id",
+                        "signed_amount_usdt",
+                        "position_quantity",
+                        "funding_rate",
+                        "mark_price",
+                        "settled_at",
+                    )
+                }
+            )
+
+        cash_flows = [
+            {
+                "flow_id": row["flow_id"],
+                "flow_type": row["flow_type"],
+                "signed_amount_usdt": row["signed_amount_usdt"],
+                "occurred_at": row["occurred_at"],
+            }
+            for row in self.connection.execute(
+                """
+                SELECT flow_id, flow_type, signed_amount_usdt, occurred_at
+                FROM external_cash_flows_projection
+                WHERE account_id = ?
+                ORDER BY occurred_at, flow_id
+                """,
+                (account_id,),
+            ).fetchall()
+            if in_event_window(row["occurred_at"])
+        ]
+
+        allocated_costs = []
+        for row in self.connection.execute(
+            """
+            SELECT payload_json FROM allocated_costs_projection
+            WHERE account_id = ? AND evaluation_ledger = ?
+                  AND release_route = ?
+            ORDER BY occurred_at, cost_id
+            """,
+            (account_id, evaluation_ledger, release_route),
+        ).fetchall():
+            payload = json.loads(row["payload_json"])
+            if (
+                not in_exact_scope(payload)
+                or not in_event_window(payload["occurred_at"])
+            ):
+                continue
+            if (
+                payload["allocation_policy_hash"]
+                != cost_allocation_policy_hash
+            ):
+                raise LedgerIntegrityError(
+                    "allocated cost policy hash does not match snapshot"
+                )
+            allocated_costs.append(
+                {
+                    name: payload[name]
+                    for name in (
+                        "cost_id",
+                        "category",
+                        "amount_usdt",
+                        "allocation_scope",
+                        "occurred_at",
+                    )
+                }
+            )
+
+        equity_points = []
+        for row in self.connection.execute(
+            """
+            SELECT payload_json FROM equity_snapshots_projection
+            WHERE account_id = ? AND evaluation_ledger = ?
+                  AND release_route = ?
+            ORDER BY as_of, equity_snapshot_id
+            """,
+            (account_id, evaluation_ledger, release_route),
+        ).fetchall():
+            payload = json.loads(row["payload_json"])
+            if (
+                not in_exact_scope(payload)
+                or not in_equity_window(payload["as_of"])
+            ):
+                continue
+            equity_points.append(
+                {
+                    name: payload[name]
+                    for name in (
+                        "equity_snapshot_id",
+                        "as_of",
+                        "marked_equity_usdt",
+                        "liquidation_equity_usdt",
+                        "spot_notional_usdt",
+                        "perp_notional_usdt",
+                        "active_order_risk_increasing_notional_usdt",
+                        "active_order_unknown_notional_usdt",
+                        "expected_exit_fee_accrued_usdt",
+                        "conservative_close_verified",
+                        "is_utc_day_start",
+                        "position_cost_bases",
+                    )
+                }
+            )
+        if (
+            len(equity_points) < 2
+            or equity_points[0]["as_of"] != evaluation_window_start
+            or equity_points[-1]["as_of"] != evaluation_window_end
+        ):
+            raise LedgerIntegrityError(
+                "economic snapshot requires exact boundary equity facts"
+            )
+
+        snapshot = {
+            "$schema": "./economic-ledger-snapshot-v1.schema.json",
+            "schema_version": "1.0.0",
+            "snapshot_id": snapshot_id,
+            "snapshot_hash": "0" * 64,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "source_ledger_hash": source_ledger_hash,
+            "source_projection_hash": source_projection_hash,
+            "accounting_policy_id": accounting_policy_id,
+            "accounting_policy_hash": accounting_policy_hash,
+            "cost_allocation_policy_id": cost_allocation_policy_id,
+            "cost_allocation_policy_hash": cost_allocation_policy_hash,
+            "scope": {
+                "account_id": account_id,
+                "evaluation_ledger": evaluation_ledger,
+                "release_route": release_route,
+                "direction": direction,
+                "venue": venue,
+                "recipe_release_id": recipe_release_id,
+                "recipe_release_hash": recipe_release_hash,
+                "deployment_line_id": deployment_line_id,
+                "deployment_line_hash": deployment_line_hash,
+                "evaluation_window_start": evaluation_window_start,
+                "evaluation_window_end": evaluation_window_end,
+            },
+            "reporting_asset": "USDT",
+            "window_event_convention": "START_EXCLUSIVE_END_INCLUSIVE",
+            "starting_liquidation_equity_usdt": equity_points[0][
+                "liquidation_equity_usdt"
+            ],
+            "ending_liquidation_equity_usdt": equity_points[-1][
+                "liquidation_equity_usdt"
+            ],
+            "opening_positions": equity_points[0]["position_cost_bases"],
+            "fills": fills,
+            "funding_cashflows": funding,
+            "external_cash_flows": cash_flows,
+            "allocated_costs": allocated_costs,
+            "equity_points": equity_points,
+            "generated_at": generated_at,
+            "replay_verified": True,
+        }
+        snapshot["snapshot_hash"] = economic_snapshot_hash(snapshot)
+        return snapshot
+
     def verify_projection_integrity(self) -> None:
         """Detect derived-state tampering before it can be treated as current truth."""
 
@@ -1419,6 +2268,106 @@ class EventLedger:
                     raise LedgerIntegrityError(
                         f"projection does not match its source event in {table}"
                     )
+        for table, event_type in (
+            ("operating_costs_projection", "OperatingCostRecorded"),
+            ("external_cash_flows_projection", "ExternalCashFlowRecorded"),
+        ):
+            rows = self.connection.execute(
+                f"SELECT * FROM {table}"
+            ).fetchall()
+            for row in rows:
+                source = self.connection.execute(
+                    """
+                    SELECT event_type, event_time, payload_json
+                    FROM events WHERE event_id = ?
+                    """,
+                    (row["event_id"],),
+                ).fetchone()
+                if source is None or source["event_type"] != event_type:
+                    raise LedgerIntegrityError(
+                        f"{table} source event is invalid"
+                    )
+                payload = json.loads(source["payload_json"])
+                mismatch = source["event_time"] != row["occurred_at"]
+                if table == "external_cash_flows_projection":
+                    mismatch = mismatch or (
+                        canonical_decimal(payload["signed_amount_usdt"])
+                        != row["signed_amount_usdt"]
+                    )
+                else:
+                    mismatch = mismatch or (
+                        canonical_decimal(payload["amount_usdt"])
+                        != row["amount_usdt"]
+                    )
+                if mismatch:
+                    raise LedgerIntegrityError(
+                        f"{table} does not match its source event"
+                    )
+                if table == "external_cash_flows_projection":
+                    if (
+                        payload["flow_id"] != row["flow_id"]
+                        or payload["account_id"] != row["account_id"]
+                        or payload["flow_type"] != row["flow_type"]
+                    ):
+                        raise LedgerIntegrityError(
+                            "external cash flow columns disagree"
+                        )
+                elif payload["category"] != row["category"]:
+                    raise LedgerIntegrityError(
+                        "operating cost category disagrees"
+                    )
+        economic_specs = (
+            (
+                "allocated_costs_projection",
+                "AllocatedCostRecorded",
+                "cost_id",
+                "occurred_at",
+                ("account_id", "evaluation_ledger", "release_route"),
+            ),
+            (
+                "funding_cashflows_projection",
+                "FundingCashFlowRecorded",
+                "funding_id",
+                "settled_at",
+                ("account_id", "instrument_id"),
+            ),
+            (
+                "equity_snapshots_projection",
+                "EquitySnapshotRecorded",
+                "equity_snapshot_id",
+                "as_of",
+                ("account_id", "evaluation_ledger", "release_route"),
+            ),
+        )
+        for table, event_type, id_field, time_field, columns in economic_specs:
+            rows = self.connection.execute(f"SELECT * FROM {table}").fetchall()
+            for row in rows:
+                payload = json.loads(row["payload_json"])
+                if (
+                    payload.get(id_field) != row[id_field]
+                    or payload.get(time_field) != row[time_field]
+                    or business_hash(payload) != row["projection_hash"]
+                    or any(payload.get(name) != row[name] for name in columns)
+                ):
+                    raise LedgerIntegrityError(
+                        f"economic projection integrity mismatch in {table}"
+                    )
+                source = self.connection.execute(
+                    """
+                    SELECT event_type, event_time, payload_json
+                    FROM events WHERE event_id = ?
+                    """,
+                    (row["source_event_id"],),
+                ).fetchone()
+                if (
+                    source is None
+                    or source["event_type"] != event_type
+                    or source["event_time"] != row[time_field]
+                    or source["payload_json"] != row["payload_json"]
+                ):
+                    raise LedgerIntegrityError(
+                        f"economic projection source mismatch in {table}"
+                    )
         fills = self.connection.execute(
             """
             SELECT fill_id, payload_json, projection_hash, source_event_id,
@@ -1436,13 +2385,15 @@ class EventLedger:
                 raise LedgerIntegrityError("fill projection integrity mismatch")
             source = self.connection.execute(
                 """
-                SELECT event_type, payload_json FROM events WHERE event_id = ?
+                SELECT event_type, event_time, payload_json
+                FROM events WHERE event_id = ?
                 """,
                 (row["source_event_id"],),
             ).fetchone()
             if (
                 source is None
                 or source["event_type"] != "FillRecorded"
+                or source["event_time"] != row["exchange_event_time"]
                 or source["payload_json"] != row["payload_json"]
             ):
                 raise LedgerIntegrityError(

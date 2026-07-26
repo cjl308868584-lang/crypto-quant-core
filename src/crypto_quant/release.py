@@ -1140,6 +1140,7 @@ class PolicyBundle:
         *,
         scope_verified: bool,
         trust_verified: bool,
+        economic_ledger_snapshot: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
         if estimator_id == "ACTUAL_DEPLOYABLE_CAPITAL_V1":
             return {
@@ -1181,7 +1182,96 @@ class PolicyBundle:
                 "comparison": comparison,
                 "scope_verified": scope_verified and trust_verified,
             }
+        if estimator_id in {
+            "FILL_BASED_GROSS_MINUS_FEES_PLUS_SIGNED_FUNDING_V1",
+            "CASH_FLOW_ADJUSTED_LIQUIDATION_EQUITY_MINUS_ALLOCATED_COSTS_V1",
+            "CASH_FLOW_ADJUSTED_DAILY_LOSS_V1",
+            "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1",
+            "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1",
+        }:
+            return {
+                "economic_ledger_snapshot": economic_ledger_snapshot,
+            }
         return {}
+
+    @staticmethod
+    def _economic_snapshot_reference_reasons(
+        evidence: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+    ) -> Tuple[str, ...]:
+        snapshot = trust.artifact_documents.get(
+            "economic_ledger_snapshot"
+        )
+        if not isinstance(snapshot, Mapping):
+            return ("ECONOMIC_SNAPSHOT_DOCUMENT_MISSING",)
+        reasons: List[str] = []
+        frozen = evidence.get("frozen_release_inputs")
+        proof = (
+            frozen.get("economic_ledger_snapshot")
+            if isinstance(frozen, Mapping)
+            else None
+        )
+        if not isinstance(proof, Mapping):
+            reasons.append("ECONOMIC_SNAPSHOT_FREEZE_PROOF_MISSING")
+        else:
+            if proof.get("artifact_id") != snapshot.get("snapshot_id"):
+                reasons.append("ECONOMIC_SNAPSHOT_FREEZE_ID_MISMATCH")
+            if proof.get("artifact_hash") != snapshot.get("snapshot_hash"):
+                reasons.append("ECONOMIC_SNAPSHOT_FREEZE_HASH_MISMATCH")
+        if trust.artifact_hashes.get(
+            "economic_ledger_snapshot"
+        ) != snapshot.get("snapshot_hash"):
+            reasons.append("ECONOMIC_SNAPSHOT_TRUST_HASH_MISMATCH")
+
+        scope = snapshot.get("scope")
+        if not isinstance(scope, Mapping):
+            reasons.append("ECONOMIC_SNAPSHOT_SCOPE_MISSING")
+            scope = {}
+        for name in (
+            "evaluation_ledger",
+            "release_route",
+            "direction",
+            "venue",
+            "recipe_release_id",
+            "recipe_release_hash",
+            "deployment_line_id",
+            "deployment_line_hash",
+            "evaluation_window_start",
+            "evaluation_window_end",
+        ):
+            if scope.get(name) != evidence.get(name):
+                reasons.append(f"ECONOMIC_SNAPSHOT_SCOPE_MISMATCH:{name}")
+
+        claimed = evidence.get("policy_binding_hashes")
+        if not isinstance(claimed, Mapping):
+            claimed = {}
+        if snapshot.get("accounting_policy_hash") != claimed.get(
+            "accounting_policy_id"
+        ):
+            reasons.append(
+                "ECONOMIC_SNAPSHOT_ACCOUNTING_POLICY_MISMATCH"
+            )
+        if snapshot.get("cost_allocation_policy_hash") != claimed.get(
+            "cost_allocation_policy_id"
+        ):
+            reasons.append(
+                "ECONOMIC_SNAPSHOT_COST_POLICY_MISMATCH"
+            )
+
+        artifact_hashes = evidence.get("artifact_hashes")
+        artifact_set = (
+            set(artifact_hashes) if isinstance(artifact_hashes, list) else set()
+        )
+        for field in (
+            "snapshot_hash",
+            "source_ledger_hash",
+            "source_projection_hash",
+        ):
+            if snapshot.get(field) not in artifact_set:
+                reasons.append(
+                    f"ECONOMIC_SNAPSHOT_SOURCE_HASH_MISSING:{field}"
+                )
+        return tuple(sorted(set(reasons)))
 
     def validate_gate_evidence(
         self,
@@ -1333,6 +1423,22 @@ class PolicyBundle:
             estimator_value = None
             estimator_status = "FAIL"
             if definition:
+                economic_snapshot = trust.artifact_documents.get(
+                    "economic_ledger_snapshot"
+                )
+                if definition["estimator_id"] in {
+                    "FILL_BASED_GROSS_MINUS_FEES_PLUS_SIGNED_FUNDING_V1",
+                    "CASH_FLOW_ADJUSTED_LIQUIDATION_EQUITY_MINUS_ALLOCATED_COSTS_V1",
+                    "CASH_FLOW_ADJUSTED_DAILY_LOSS_V1",
+                    "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1",
+                    "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1",
+                }:
+                    reasons.extend(
+                        self._economic_snapshot_reference_reasons(
+                            evidence,
+                            trust,
+                        )
+                    )
                 estimator_inputs = self._estimator_inputs(
                     definition["estimator_id"],
                     gate["metric_id"],
@@ -1343,6 +1449,11 @@ class PolicyBundle:
                         or binding_reasons
                         or artifact_reasons
                         or fallback_reasons
+                    ),
+                    economic_ledger_snapshot=(
+                        economic_snapshot
+                        if isinstance(economic_snapshot, Mapping)
+                        else None
                     ),
                 )
                 execution = self.estimators.execute(

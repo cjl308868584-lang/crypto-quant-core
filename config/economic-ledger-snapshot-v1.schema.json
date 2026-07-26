@@ -1,0 +1,454 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "economic-ledger-snapshot-v1.schema.json",
+  "title": "Economic Ledger Snapshot v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "snapshot_id",
+    "snapshot_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "source_ledger_hash",
+    "source_projection_hash",
+    "accounting_policy_id",
+    "accounting_policy_hash",
+    "cost_allocation_policy_id",
+    "cost_allocation_policy_hash",
+    "scope",
+    "reporting_asset",
+    "window_event_convention",
+    "starting_liquidation_equity_usdt",
+    "ending_liquidation_equity_usdt",
+    "opening_positions",
+    "fills",
+    "funding_cashflows",
+    "external_cash_flows",
+    "allocated_costs",
+    "equity_points",
+    "generated_at",
+    "replay_verified"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./economic-ledger-snapshot-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "snapshot_id": {
+      "$ref": "#/$defs/id"
+    },
+    "snapshot_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "source_ledger_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_projection_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "accounting_policy_id": {
+      "$ref": "#/$defs/id"
+    },
+    "accounting_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "cost_allocation_policy_id": {
+      "$ref": "#/$defs/id"
+    },
+    "cost_allocation_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "reporting_asset": {
+      "const": "USDT"
+    },
+    "window_event_convention": {
+      "const": "START_EXCLUSIVE_END_INCLUSIVE"
+    },
+    "starting_liquidation_equity_usdt": {
+      "$ref": "#/$defs/nonnegativeDecimal"
+    },
+    "ending_liquidation_equity_usdt": {
+      "$ref": "#/$defs/nonnegativeDecimal"
+    },
+    "opening_positions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/openingPosition"
+      }
+    },
+    "fills": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fill"
+      }
+    },
+    "funding_cashflows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/funding"
+      }
+    },
+    "external_cash_flows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/cashFlow"
+      }
+    },
+    "allocated_costs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/allocatedCost"
+      }
+    },
+    "equity_points": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "#/$defs/equityPoint"
+      }
+    },
+    "generated_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "replay_verified": {
+      "const": true
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "nonnegativeDecimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "positiveDecimal": {
+      "type": "string",
+      "pattern": "^((0\\.[0-9]*[1-9][0-9]*)|([1-9][0-9]*(\\.[0-9]+)?))$"
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "account_id",
+        "evaluation_ledger",
+        "release_route",
+        "direction",
+        "venue",
+        "recipe_release_id",
+        "recipe_release_hash",
+        "deployment_line_id",
+        "deployment_line_hash",
+        "evaluation_window_start",
+        "evaluation_window_end"
+      ],
+      "properties": {
+        "account_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evaluation_ledger": {
+          "enum": [
+            "BASELINE_LEDGER",
+            "AI_LEDGER",
+            "ROUTE_RUNTIME"
+          ]
+        },
+        "release_route": {
+          "enum": [
+            "BASELINE_ONLY",
+            "AI_ENHANCED"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "LONG",
+            "SHORT"
+          ]
+        },
+        "venue": {
+          "enum": [
+            "BINANCE_SPOT",
+            "BINANCE_USDT_PERP"
+          ]
+        },
+        "recipe_release_id": {
+          "$ref": "#/$defs/id"
+        },
+        "recipe_release_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "deployment_line_id": {
+          "$ref": "#/$defs/id"
+        },
+        "deployment_line_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "evaluation_window_start": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "evaluation_window_end": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "additionalProperties": false
+    },
+    "openingPosition": {
+      "type": "object",
+      "required": [
+        "instrument_id",
+        "signed_quantity",
+        "moving_average_entry_price",
+        "contract_multiplier"
+      ],
+      "properties": {
+        "instrument_id": {
+          "$ref": "#/$defs/id"
+        },
+        "signed_quantity": {
+          "$ref": "#/$defs/decimal"
+        },
+        "moving_average_entry_price": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "contract_multiplier": {
+          "$ref": "#/$defs/positiveDecimal"
+        }
+      },
+      "additionalProperties": false
+    },
+    "fill": {
+      "type": "object",
+      "required": [
+        "fill_id",
+        "instrument_id",
+        "side",
+        "quantity",
+        "price",
+        "contract_multiplier",
+        "fee_value_usdt",
+        "implementation_shortfall_usdt",
+        "exchange_event_time"
+      ],
+      "properties": {
+        "fill_id": {
+          "$ref": "#/$defs/id"
+        },
+        "instrument_id": {
+          "$ref": "#/$defs/id"
+        },
+        "side": {
+          "enum": [
+            "BUY",
+            "SELL"
+          ]
+        },
+        "quantity": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "price": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "contract_multiplier": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "fee_value_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "implementation_shortfall_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "exchange_event_time": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "additionalProperties": false
+    },
+    "funding": {
+      "type": "object",
+      "required": [
+        "funding_id",
+        "instrument_id",
+        "signed_amount_usdt",
+        "position_quantity",
+        "funding_rate",
+        "mark_price",
+        "settled_at"
+      ],
+      "properties": {
+        "funding_id": {
+          "$ref": "#/$defs/id"
+        },
+        "instrument_id": {
+          "$ref": "#/$defs/id"
+        },
+        "signed_amount_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "position_quantity": {
+          "$ref": "#/$defs/decimal"
+        },
+        "funding_rate": {
+          "$ref": "#/$defs/decimal"
+        },
+        "mark_price": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "settled_at": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cashFlow": {
+      "type": "object",
+      "required": [
+        "flow_id",
+        "flow_type",
+        "signed_amount_usdt",
+        "occurred_at"
+      ],
+      "properties": {
+        "flow_id": {
+          "$ref": "#/$defs/id"
+        },
+        "flow_type": {
+          "enum": [
+            "DEPOSIT",
+            "WITHDRAWAL",
+            "INTERNAL_TRANSFER"
+          ]
+        },
+        "signed_amount_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "additionalProperties": false
+    },
+    "allocatedCost": {
+      "type": "object",
+      "required": [
+        "cost_id",
+        "category",
+        "amount_usdt",
+        "allocation_scope",
+        "occurred_at"
+      ],
+      "properties": {
+        "cost_id": {
+          "$ref": "#/$defs/id"
+        },
+        "category": {
+          "enum": [
+            "INFRASTRUCTURE",
+            "DATA",
+            "ALERTING",
+            "AI_INFERENCE",
+            "MODEL_TRAINING",
+            "MONITORING_AND_AUDIT"
+          ]
+        },
+        "amount_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "allocation_scope": {
+          "enum": [
+            "SHARED",
+            "BASELINE_ONLY",
+            "AI_ENHANCED"
+          ]
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "additionalProperties": false
+    },
+    "equityPoint": {
+      "type": "object",
+      "required": [
+        "equity_snapshot_id",
+        "as_of",
+        "marked_equity_usdt",
+        "liquidation_equity_usdt",
+        "spot_notional_usdt",
+        "perp_notional_usdt",
+        "active_order_risk_increasing_notional_usdt",
+        "active_order_unknown_notional_usdt",
+        "expected_exit_fee_accrued_usdt",
+        "conservative_close_verified",
+        "is_utc_day_start",
+        "position_cost_bases"
+      ],
+      "properties": {
+        "equity_snapshot_id": {
+          "$ref": "#/$defs/id"
+        },
+        "as_of": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "marked_equity_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "liquidation_equity_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "spot_notional_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "perp_notional_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "active_order_risk_increasing_notional_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "active_order_unknown_notional_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "expected_exit_fee_accrued_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "conservative_close_verified": {
+          "const": true
+        },
+        "is_utc_day_start": {
+          "type": "boolean"
+        },
+        "position_cost_bases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/openingPosition"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

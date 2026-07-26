@@ -10,6 +10,7 @@
     "bundle_version",
     "estimator_registry_id",
     "estimator_registry_hash",
+    "fixtures",
     "vectors",
     "bundle_hash"
   ],
@@ -32,6 +33,15 @@
     },
     "estimator_registry_hash": {
       "$ref": "#/$defs/sha256"
+    },
+    "fixtures": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9-]+$"
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
     },
     "vectors": {
       "type": "array",
@@ -71,6 +81,7 @@
         "vector_id",
         "estimator_id",
         "inputs",
+        "fixture_bindings",
         "expected_status",
         "expected_value",
         "expected_reason_codes"
@@ -86,6 +97,16 @@
         },
         "inputs": {
           "type": "object"
+        },
+        "fixture_bindings": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]+$"
+          }
         },
         "expected_status": {
           "enum": [

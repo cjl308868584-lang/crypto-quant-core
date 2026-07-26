@@ -110,7 +110,12 @@
             "actual_deployable_capital",
             "approved_production_capital",
             "finite_break_even_root",
-            "decimal_capital_comparison"
+            "decimal_capital_comparison",
+            "fill_based_trading_net_pnl",
+            "period_economic_pnl",
+            "cash_flow_adjusted_daily_loss",
+            "cash_flow_adjusted_max_drawdown",
+            "worst_case_gross_exposure_ratio"
           ]
         },
         "input_fields": {

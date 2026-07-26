@@ -2,7 +2,7 @@
   "$schema": "./estimator-registry-v1.schema.json",
   "schema_version": "1.0.0",
   "registry_id": "estimator-registry-v1",
-  "registry_version": "1.0.0",
+  "registry_version": "1.1.0",
   "metric_catalog_id": "release-metrics-v1.1",
   "metric_catalog_version": "1.1.1",
   "status": "BUILD_CANDIDATE",
@@ -87,7 +87,82 @@
         "capital-break-even-pass",
         "capital-break-even-null"
       ]
+    },
+    {
+      "estimator_id": "FILL_BASED_GROSS_MINUS_FEES_PLUS_SIGNED_FUNDING_V1",
+      "implementation_id": "economics.fill-based-trading-net-pnl",
+      "implementation_version": "1.0.0",
+      "callable_id": "fill_based_trading_net_pnl",
+      "input_fields": [
+        "economic_ledger_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "economic-fill-net-pnl"
+      ]
+    },
+    {
+      "estimator_id": "CASH_FLOW_ADJUSTED_LIQUIDATION_EQUITY_MINUS_ALLOCATED_COSTS_V1",
+      "implementation_id": "economics.period-economic-pnl",
+      "implementation_version": "1.0.0",
+      "callable_id": "period_economic_pnl",
+      "input_fields": [
+        "economic_ledger_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "economic-period-pnl"
+      ]
+    },
+    {
+      "estimator_id": "CASH_FLOW_ADJUSTED_DAILY_LOSS_V1",
+      "implementation_id": "economics.cash-flow-adjusted-daily-loss",
+      "implementation_version": "1.0.0",
+      "callable_id": "cash_flow_adjusted_daily_loss",
+      "input_fields": [
+        "economic_ledger_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "economic-daily-loss"
+      ]
+    },
+    {
+      "estimator_id": "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1",
+      "implementation_id": "economics.cash-flow-adjusted-max-drawdown",
+      "implementation_version": "1.0.0",
+      "callable_id": "cash_flow_adjusted_max_drawdown",
+      "input_fields": [
+        "economic_ledger_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "economic-max-drawdown"
+      ]
+    },
+    {
+      "estimator_id": "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1",
+      "implementation_id": "economics.worst-case-gross-exposure",
+      "implementation_version": "1.0.0",
+      "callable_id": "worst_case_gross_exposure_ratio",
+      "input_fields": [
+        "economic_ledger_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "economic-worst-gross-exposure"
+      ]
     }
   ],
-  "registry_hash": "f71b5e4a27e51cbc519c7a8f44ceccb1c5543be75ee84394ff8d2232c0f9f410"
+  "registry_hash": "7ec8db77714e6d90679ff8c3551f2e99e4a2ceec52f0769bc74c53baff18cdff"
 }

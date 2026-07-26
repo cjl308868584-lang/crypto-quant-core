@@ -1,6 +1,7 @@
 """Versioned, fail-closed estimator function registry."""
 
 import json
+from copy import deepcopy
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -9,6 +10,13 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_decimal
+from .economics import (
+    cash_flow_adjusted_daily_loss,
+    cash_flow_adjusted_max_drawdown,
+    fill_based_trading_net_pnl,
+    period_economic_pnl,
+    worst_case_gross_exposure_ratio,
+)
 from .errors import CanonicalizationError, PolicyError
 from .evidence import artifact_self_hash
 
@@ -142,6 +150,11 @@ _CALLABLES: Mapping[
     "approved_production_capital": _approved_production_capital,
     "finite_break_even_root": _finite_break_even_root,
     "decimal_capital_comparison": _decimal_capital_comparison,
+    "fill_based_trading_net_pnl": fill_based_trading_net_pnl,
+    "period_economic_pnl": period_economic_pnl,
+    "cash_flow_adjusted_daily_loss": cash_flow_adjusted_daily_loss,
+    "cash_flow_adjusted_max_drawdown": cash_flow_adjusted_max_drawdown,
+    "worst_case_gross_exposure_ratio": worst_case_gross_exposure_ratio,
 }
 
 
@@ -154,10 +167,12 @@ class EstimatorRegistry:
         registry: Mapping[str, Any],
         golden_vectors: Mapping[str, Any],
         catalog: Mapping[str, Any],
+        economic_snapshot_schema: Mapping[str, Any],
     ) -> None:
         self.registry = registry
         self.golden_vectors = golden_vectors
         self.catalog = catalog
+        self.economic_snapshot_schema = economic_snapshot_schema
         self.registry_hash = registry["registry_hash"]
         self.golden_bundle_hash = golden_vectors["bundle_hash"]
         self._implementations = {
@@ -179,8 +194,12 @@ class EstimatorRegistry:
         golden_schema = _load_json_strict(
             config_dir / "estimator-golden-vectors-v1.schema.json"
         )
+        economic_snapshot_schema = _load_json_strict(
+            config_dir / "economic-ledger-snapshot-v1.schema.json"
+        )
         Draft202012Validator.check_schema(registry_schema)
         Draft202012Validator.check_schema(golden_schema)
+        Draft202012Validator.check_schema(economic_snapshot_schema)
         registry = _load_json_strict(config_dir / "estimator-registry-v1.json")
         golden = _load_json_strict(
             config_dir / "estimator-golden-vectors-v1.json"
@@ -226,6 +245,22 @@ class EstimatorRegistry:
         vector_ids = [item["vector_id"] for item in golden["vectors"]]
         if len(vector_ids) != len(set(vector_ids)):
             raise PolicyError("duplicate estimator golden vector ID")
+        fixture_ids = set(golden["fixtures"])
+        for vector in golden["vectors"]:
+            unknown_fixtures = sorted(
+                set(vector["fixture_bindings"].values()) - fixture_ids
+            )
+            if unknown_fixtures:
+                raise PolicyError(
+                    "golden vector references unknown fixtures: "
+                    + vector["vector_id"]
+                )
+            overlap = set(vector["inputs"]) & set(vector["fixture_bindings"])
+            if overlap:
+                raise PolicyError(
+                    "golden vector input and fixture binding overlap: "
+                    + vector["vector_id"]
+                )
         vectors_by_estimator: Dict[str, set] = {}
         for vector in golden["vectors"]:
             vectors_by_estimator.setdefault(vector["estimator_id"], set()).add(
@@ -243,6 +278,7 @@ class EstimatorRegistry:
             registry=registry,
             golden_vectors=golden,
             catalog=catalog,
+            economic_snapshot_schema=economic_snapshot_schema,
         )
         report = instance.run_golden_vectors()
         if not report.passed:
@@ -296,6 +332,20 @@ class EstimatorRegistry:
                 None,
                 tuple(reasons),
             )
+        if "economic_ledger_snapshot" in required_fields:
+            errors = list(
+                Draft202012Validator(
+                    self.economic_snapshot_schema
+                ).iter_errors(inputs["economic_ledger_snapshot"])
+            )
+            if errors:
+                return self._execution(
+                    estimator_id,
+                    implementation,
+                    "FAIL",
+                    None,
+                    ("ECONOMIC_SNAPSHOT_SCHEMA_INVALID",),
+                )
         status, value, reasons = _CALLABLES[implementation["callable_id"]](inputs)
         return self._execution(
             estimator_id,
@@ -343,7 +393,12 @@ class EstimatorRegistry:
     def run_golden_vectors(self) -> GoldenVectorReport:
         failed = []
         for vector in self.golden_vectors["vectors"]:
-            execution = self.execute(vector["estimator_id"], vector["inputs"])
+            inputs = deepcopy(vector["inputs"])
+            for field, fixture_id in vector["fixture_bindings"].items():
+                inputs[field] = deepcopy(
+                    self.golden_vectors["fixtures"][fixture_id]
+                )
+            execution = self.execute(vector["estimator_id"], inputs)
             actual = {
                 "status": execution.status,
                 "value": execution.value,

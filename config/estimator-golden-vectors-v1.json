@@ -4,7 +4,146 @@
   "bundle_id": "estimator-golden-vectors-v1",
   "bundle_version": "1.0.0",
   "estimator_registry_id": "estimator-registry-v1",
-  "estimator_registry_hash": "f71b5e4a27e51cbc519c7a8f44ceccb1c5543be75ee84394ff8d2232c0f9f410",
+  "estimator_registry_hash": "7ec8db77714e6d90679ff8c3551f2e99e4a2ceec52f0769bc74c53baff18cdff",
+  "fixtures": {
+    "economic-snapshot-valid": {
+      "$schema": "./economic-ledger-snapshot-v1.schema.json",
+      "schema_version": "1.0.0",
+      "snapshot_id": "economic-golden-1",
+      "snapshot_hash": "f48b6f5e8f57b70f9ef96b062231ecf2414974612c29dc2337f24ebf8dac9d22",
+      "hash_algorithm": "SHA-256",
+      "canonicalization": "RFC8785_JCS",
+      "source_ledger_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_projection_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "accounting_policy_id": "accounting-v1",
+      "accounting_policy_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "cost_allocation_policy_id": "cost-allocation-v1",
+      "cost_allocation_policy_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "scope": {
+        "account_id": "account-1",
+      "evaluation_ledger": "AI_LEDGER",
+      "release_route": "AI_ENHANCED",
+        "direction": "LONG",
+        "venue": "BINANCE_SPOT",
+        "recipe_release_id": "recipe-1",
+        "recipe_release_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "deployment_line_id": "line-1",
+        "deployment_line_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "evaluation_window_start": "2026-01-01T00:00:00Z",
+        "evaluation_window_end": "2026-01-01T23:59:59Z"
+      },
+      "reporting_asset": "USDT",
+      "window_event_convention": "START_EXCLUSIVE_END_INCLUSIVE",
+      "starting_liquidation_equity_usdt": "1000",
+      "ending_liquidation_equity_usdt": "1069",
+      "opening_positions": [],
+      "fills": [
+        {
+          "fill_id": "fill-1",
+          "instrument_id": "ETHUSDT",
+          "side": "BUY",
+          "quantity": "2",
+          "price": "100",
+          "contract_multiplier": "1",
+          "fee_value_usdt": "1",
+          "implementation_shortfall_usdt": "0.5",
+          "exchange_event_time": "2026-01-01T10:00:00Z"
+        },
+        {
+          "fill_id": "fill-2",
+          "instrument_id": "ETHUSDT",
+          "side": "SELL",
+          "quantity": "2",
+          "price": "110",
+          "contract_multiplier": "1",
+          "fee_value_usdt": "1",
+          "implementation_shortfall_usdt": "0.5",
+          "exchange_event_time": "2026-01-01T11:00:00Z"
+        }
+      ],
+      "funding_cashflows": [
+        {
+          "funding_id": "funding-1",
+          "instrument_id": "ETHUSDT",
+          "signed_amount_usdt": "1",
+          "position_quantity": "2",
+          "funding_rate": "0.005",
+          "mark_price": "100",
+          "settled_at": "2026-01-01T12:00:00Z"
+        }
+      ],
+      "external_cash_flows": [
+        {
+          "flow_id": "flow-1",
+          "flow_type": "DEPOSIT",
+          "signed_amount_usdt": "50",
+          "occurred_at": "2026-01-01T09:00:00Z"
+        }
+      ],
+      "allocated_costs": [
+        {
+          "cost_id": "cost-1",
+          "category": "INFRASTRUCTURE",
+          "amount_usdt": "3",
+          "allocation_scope": "SHARED",
+          "occurred_at": "2026-01-01T18:00:00Z"
+        },
+        {
+          "cost_id": "cost-2",
+          "category": "AI_INFERENCE",
+          "amount_usdt": "2",
+          "allocation_scope": "AI_ENHANCED",
+          "occurred_at": "2026-01-01T20:00:00Z"
+        }
+      ],
+      "equity_points": [
+        {
+          "equity_snapshot_id": "equity-1",
+          "as_of": "2026-01-01T00:00:00Z",
+          "marked_equity_usdt": "1000",
+          "liquidation_equity_usdt": "1000",
+          "spot_notional_usdt": "0",
+          "perp_notional_usdt": "0",
+          "active_order_risk_increasing_notional_usdt": "0",
+          "active_order_unknown_notional_usdt": "0",
+          "expected_exit_fee_accrued_usdt": "0",
+          "conservative_close_verified": true,
+          "is_utc_day_start": true,
+          "position_cost_bases": []
+        },
+        {
+          "equity_snapshot_id": "equity-2",
+          "as_of": "2026-01-01T12:00:00Z",
+          "marked_equity_usdt": "1075",
+          "liquidation_equity_usdt": "1075",
+          "spot_notional_usdt": "200",
+          "perp_notional_usdt": "100",
+          "active_order_risk_increasing_notional_usdt": "50",
+          "active_order_unknown_notional_usdt": "25",
+          "expected_exit_fee_accrued_usdt": "1",
+          "conservative_close_verified": true,
+          "is_utc_day_start": false,
+          "position_cost_bases": []
+        },
+        {
+          "equity_snapshot_id": "equity-3",
+          "as_of": "2026-01-01T23:59:59Z",
+          "marked_equity_usdt": "1069",
+          "liquidation_equity_usdt": "1069",
+          "spot_notional_usdt": "0",
+          "perp_notional_usdt": "0",
+          "active_order_risk_increasing_notional_usdt": "0",
+          "active_order_unknown_notional_usdt": "0",
+          "expected_exit_fee_accrued_usdt": "0",
+          "conservative_close_verified": true,
+          "is_utc_day_start": false,
+          "position_cost_bases": []
+        }
+      ],
+      "generated_at": "2026-01-02T00:00:00Z",
+      "replay_verified": true
+    }
+  },
   "vectors": [
     {
       "vector_id": "actual-capital-canonical",
@@ -13,6 +152,7 @@
         "actual_deployable_capital_usdt": "1000.00",
         "snapshot_verified": true
       },
+      "fixture_bindings": {},
       "expected_status": "COMPUTED",
       "expected_value": "1000",
       "expected_reason_codes": []
@@ -24,6 +164,7 @@
         "actual_deployable_capital_usdt": "1000",
         "snapshot_verified": false
       },
+      "fixture_bindings": {},
       "expected_status": "FAIL",
       "expected_value": null,
       "expected_reason_codes": [
@@ -37,6 +178,7 @@
         "approved_production_capital_usdt": "500.00",
         "scope_verified": true
       },
+      "fixture_bindings": {},
       "expected_status": "COMPUTED",
       "expected_value": "500",
       "expected_reason_codes": []
@@ -48,6 +190,7 @@
         "approved_production_capital_usdt": "500",
         "scope_verified": false
       },
+      "fixture_bindings": {},
       "expected_status": "FAIL",
       "expected_value": null,
       "expected_reason_codes": [
@@ -61,6 +204,7 @@
         "break_even_capital_lcb_root_usdt": "800",
         "capital_grid_replay_verified": true
       },
+      "fixture_bindings": {},
       "expected_status": "COMPUTED",
       "expected_value": true,
       "expected_reason_codes": []
@@ -72,6 +216,7 @@
         "break_even_capital_lcb_root_usdt": null,
         "capital_grid_replay_verified": true
       },
+      "fixture_bindings": {},
       "expected_status": "COMPUTED",
       "expected_value": false,
       "expected_reason_codes": []
@@ -83,6 +228,7 @@
         "break_even_capital_lcb_root_usdt": "0",
         "capital_grid_replay_verified": true
       },
+      "fixture_bindings": {},
       "expected_status": "COMPUTED",
       "expected_value": false,
       "expected_reason_codes": []
@@ -94,6 +240,7 @@
         "break_even_capital_lcb_root_usdt": "800",
         "capital_grid_replay_verified": false
       },
+      "fixture_bindings": {},
       "expected_status": "FAIL",
       "expected_value": null,
       "expected_reason_codes": [
@@ -110,6 +257,7 @@
         "comparison": "APPROVED",
         "scope_verified": true
       },
+      "fixture_bindings": {},
       "expected_status": "COMPUTED",
       "expected_value": true,
       "expected_reason_codes": []
@@ -124,6 +272,7 @@
         "comparison": "APPROVED",
         "scope_verified": true
       },
+      "fixture_bindings": {},
       "expected_status": "COMPUTED",
       "expected_value": false,
       "expected_reason_codes": []
@@ -138,6 +287,7 @@
         "comparison": "BREAK_EVEN",
         "scope_verified": true
       },
+      "fixture_bindings": {},
       "expected_status": "COMPUTED",
       "expected_value": true,
       "expected_reason_codes": []
@@ -152,10 +302,66 @@
         "comparison": "BREAK_EVEN",
         "scope_verified": true
       },
+      "fixture_bindings": {},
       "expected_status": "COMPUTED",
       "expected_value": false,
       "expected_reason_codes": []
+    },
+    {
+      "vector_id": "economic-fill-net-pnl",
+      "estimator_id": "FILL_BASED_GROSS_MINUS_FEES_PLUS_SIGNED_FUNDING_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "economic_ledger_snapshot": "economic-snapshot-valid"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "19",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "economic-period-pnl",
+      "estimator_id": "CASH_FLOW_ADJUSTED_LIQUIDATION_EQUITY_MINUS_ALLOCATED_COSTS_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "economic_ledger_snapshot": "economic-snapshot-valid"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "14",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "economic-daily-loss",
+      "estimator_id": "CASH_FLOW_ADJUSTED_DAILY_LOSS_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "economic_ledger_snapshot": "economic-snapshot-valid"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "0.019",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "economic-max-drawdown",
+      "estimator_id": "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "economic_ledger_snapshot": "economic-snapshot-valid"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "0.01073170731707317073170731707",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "economic-worst-gross-exposure",
+      "estimator_id": "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "economic_ledger_snapshot": "economic-snapshot-valid"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "0.3488372093023255813953488372",
+      "expected_reason_codes": []
     }
   ],
-  "bundle_hash": "a8c65d362a6ef802817df765e796e643b21fa37543e30521cdc05822061c855b"
+  "bundle_hash": "5d98b332380a77f58302d25f7c6288d3e3e29a422cfe04bd346521e42713116b"
 }

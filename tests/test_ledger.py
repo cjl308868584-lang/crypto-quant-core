@@ -39,7 +39,12 @@ class LedgerTests(unittest.TestCase):
 
     def test_append_is_idempotent_and_projections_are_exactly_once(self) -> None:
         cost = {"category": "DATA", "amount_usdt": Decimal("3.50")}
-        cash = {"flow_type": "DEPOSIT", "signed_amount_usdt": Decimal("500")}
+        cash = {
+            "flow_id": "flow-1",
+            "account_id": "account-1",
+            "flow_type": "DEPOSIT",
+            "signed_amount_usdt": Decimal("500"),
+        }
         with EventLedger(self.path) as ledger:
             first = ledger.append(
                 "OperatingCostRecorded",

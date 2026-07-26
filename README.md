@@ -31,6 +31,7 @@
 23. [ExperimentManifest Schema](config/experiment-manifest-v1.1.schema.json)
 24. [DeploymentLine Schema](config/deployment-line-v1.1.schema.json)
 25. [Supporting Observation Bundle Schema](config/supporting-observation-bundle-v1.schema.json)
+26. [Economic Ledger Snapshot Schema](config/economic-ledger-snapshot-v1.schema.json)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -45,9 +46,9 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.8.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata与提交前安全舍入、核心决策链首版、SQLite WAL追加账本与Outbox、v1.1列明的账本投影和Checkpoint首版、Golden Replay、RiskLock与部署档位风控、Target/Intent/Attempt顺序约束、订单UNKNOWN对账状态机、PositionExecutor首版、八类未审批治理模板，以及支持完整GateEvidence、Recipe/Experiment/DeploymentLine/Model/Fallback信任链、受信Supporting Observation、Estimator Registry和Evaluator Build Manifest的Fail-Closed Release Evaluator。
+Git中的设计基线已冻结，当前代码版本为 `0.9.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata与提交前安全舍入、核心决策链首版、SQLite WAL追加账本与Outbox、v1.1列明的账本投影和Checkpoint首版、Golden Replay、RiskLock与部署档位风控、Target/Intent/Attempt顺序约束、订单UNKNOWN对账状态机、PositionExecutor首版、八类未审批治理模板、完整发布Artifact信任链，以及可重放的经济账本快照和全成本收益/日损/回撤/毛暴露点估计。
 
-当前57个Catalog算法中只有4个资本Estimator可执行，其余53个明确Fail-Closed；这避免把尚未实现的统计或AI方法包装成盈利证据。自由supporting metric映射也已禁止参与正式求值。当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度和未完成项见[实施追踪 v0.8.0](docs/implementation-status-v0.8.0.md)，Artifact lineage决策见[ADR-0008](docs/adr/0008-release-artifact-lineage-and-supporting-observations.md)。
+当前57个Catalog算法中有9个Estimator可执行，其余48个明确Fail-Closed。新增经济Estimator可以防止充值、漏费、滑点重复扣除、成本转嫁和毛暴露净额抵消制造虚假盈利，但尚未实现跨月Bootstrap下置信界或AI配对增量，因此不能声称策略已经证明赚钱。当前没有Broker、交易所Adapter、API密钥读取或真实下单能力。详细完成度和未完成项见[实施追踪 v0.9.0](docs/implementation-status-v0.9.0.md)，经济核算决策见[ADR-0009](docs/adr/0009-replayable-economic-accounting.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：

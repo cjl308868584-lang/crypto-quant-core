@@ -368,6 +368,9 @@
         },
         "evaluator_build": {
           "$ref": "#/$defs/freezeProof"
+        },
+        "economic_ledger_snapshot": {
+          "$ref": "#/$defs/freezeProof"
         }
       },
       "additionalProperties": false

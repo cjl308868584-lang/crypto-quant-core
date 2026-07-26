@@ -17,6 +17,7 @@ from .evidence import artifact_self_hash
 _FROZEN_CONFIG_PATHS = (
     "config/approved-fallback-registry-v1.1.schema.json",
     "config/deployment-line-v1.1.schema.json",
+    "config/economic-ledger-snapshot-v1.schema.json",
     "config/estimator-golden-vectors-v1.json",
     "config/estimator-golden-vectors-v1.schema.json",
     "config/estimator-registry-v1.json",
