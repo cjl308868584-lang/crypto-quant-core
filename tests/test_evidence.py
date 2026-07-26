@@ -17,6 +17,16 @@ from crypto_quant.release_artifacts import (
     supporting_observation_bundle_hash,
     supporting_observation_hash,
 )
+from crypto_quant.statistical_decision import (
+    build_statistical_decision_snapshot,
+    statistical_decision_snapshot_hash,
+    statistical_trial_registry_hash,
+)
+from crypto_quant.statistics import statistical_series_hash
+from tests.factories import (
+    make_statistical_decision_snapshot,
+    statistical_decision_inputs,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -795,6 +805,658 @@ class GateEvidenceTests(unittest.TestCase):
         scope = bundle.evidence_scope_snapshot(envelopes[0])
         return bundle, envelopes, scope, trust
 
+    def statistical_reference_fixture(self):
+        snapshot = make_statistical_decision_snapshot()
+        current = next(
+            item
+            for item in snapshot["trial_registry"]
+            if item["candidate_id"] == snapshot["current_candidate_id"]
+        )
+        scope = snapshot["scope"]
+        required_hashes = [
+            snapshot["snapshot_hash"],
+            snapshot["trial_registry_hash"],
+            *[
+                item["source_series_hash"]
+                for item in snapshot["trial_registry"]
+                if item["candidate_status"] == "EVALUATED"
+            ],
+        ]
+        evidence = {
+            "release_route": scope["release_route"],
+            "evaluation_ledger": scope["evaluation_ledger"],
+            "direction": scope["direction"],
+            "venue": scope["venue"],
+            "recipe_release_id": current["recipe_release_id"],
+            "recipe_release_hash": current["recipe_release_hash"],
+            "deployment_line_id": scope["deployment_line_id"],
+            "deployment_line_hash": scope["deployment_line_hash"],
+            "evaluation_window_start": scope["evaluation_window_start"],
+            "evaluation_window_end": scope["evaluation_window_end"],
+            "approved_production_capital_usdt": scope[
+                "approved_production_capital_usdt"
+            ],
+            "ai_endpoint": None,
+            "experiment_manifest_id": snapshot["experiment_manifest_id"],
+            "experiment_manifest_hash": snapshot["experiment_manifest_hash"],
+            "policy_binding_hashes": {
+                "statistical_design_policy_id": snapshot[
+                    "statistical_design_policy_hash"
+                ],
+            },
+            "frozen_release_inputs": {
+                "statistical_decision_snapshot": {
+                    "artifact_id": snapshot["snapshot_id"],
+                    "artifact_hash": snapshot["snapshot_hash"],
+                }
+            },
+            "sample_status": {
+                "raw_event_count": 6,
+                "effective_event_count": 2,
+                "sufficient": True,
+            },
+            "artifact_hashes": required_hashes,
+        }
+        experiment = {
+            "experiment_id": snapshot["experiment_manifest_id"],
+            "experiment_manifest_hash": snapshot["experiment_manifest_hash"],
+            "economics": {
+                "trial_family_id": snapshot["trial_family_id"],
+                "minimum_economic_effect": snapshot["design"][
+                    "minimum_economic_effect"
+                ],
+                "multiplicity_method": "HOLM",
+                "family_wise_alpha": "0.05",
+            },
+            "search_budget": {
+                "actual_total_trials": len(snapshot["trial_registry"]),
+                "trial_registry_hash": snapshot["trial_registry_hash"],
+            },
+        }
+        trust = EvidenceTrustContext(
+            policy_bundle_hash="",
+            binding_ids={},
+            binding_hashes={},
+            artifact_hashes={
+                "statistical_decision_snapshot": snapshot["snapshot_hash"],
+            },
+            capital_values={},
+            artifact_documents={
+                "statistical_decision_snapshot": snapshot,
+                "experiment_manifest": experiment,
+            },
+        )
+        return snapshot, evidence, trust
+
+    def complete_statistical_gate_fixture(self):
+        bundle, envelopes, _, trust = self.fixture()
+        evidence = deepcopy(envelopes[0])
+        recipe = deepcopy(trust.artifact_documents["recipe_release"])
+        experiment = deepcopy(
+            trust.artifact_documents["experiment_manifest"]
+        )
+        deployment = deepcopy(
+            trust.artifact_documents["deployment_line"]
+        )
+        inputs = statistical_decision_inputs()
+        current = next(
+            item
+            for item in inputs["trial_registry"]
+            if item["candidate_id"] == "candidate-current"
+        )
+        current["recipe_release_id"] = recipe["recipe_release_id"]
+        current["source_series_snapshot"]["scope"][
+            "recipe_release_id"
+        ] = recipe["recipe_release_id"]
+        inputs["expected_trial_registry_hash"] = (
+            statistical_trial_registry_hash(inputs["trial_registry"])
+        )
+
+        experiment["economics"].update(
+            {
+                "approved_production_capital_usdt": "500",
+                "evaluation_window_start": inputs["scope"][
+                    "evaluation_window_start"
+                ],
+                "evaluation_window_end": inputs["scope"][
+                    "evaluation_window_end"
+                ],
+                "minimum_economic_effect": inputs["design"][
+                    "minimum_economic_effect"
+                ],
+                "maximum_ci_width": "25",
+                "trial_family_id": inputs["trial_family_id"],
+            }
+        )
+        experiment["search_budget"].update(
+            {
+                "actual_total_trials": len(inputs["trial_registry"]),
+                "aborted_trials": 1,
+                "failed_trials": 0,
+                "invalid_trials": 0,
+                "trial_registry_hash": inputs[
+                    "expected_trial_registry_hash"
+                ],
+            }
+        )
+        experiment_hash = experiment_manifest_hash(experiment)
+        experiment["experiment_manifest_hash"] = experiment_hash
+
+        recipe["experiment_manifest_hash"] = experiment_hash
+        recipe["recipe_release_hash"] = artifact_self_hash(
+            recipe,
+            "recipe_release_hash",
+            "freeze_attestation",
+        )
+        experiment["recipe_binding"]["recipe_release_hash"] = recipe[
+            "recipe_release_hash"
+        ]
+        experiment["recipe_binding"]["recipe_binding_hash"] = (
+            experiment_recipe_binding_hash(experiment)
+        )
+
+        deployment["experiment_manifest_hash"] = experiment_hash
+        deployment["recipe_release_hash"] = recipe["recipe_release_hash"]
+        deployment["current_stage"] = "RECIPE_CANDIDATE"
+        deployment["stage_history"] = [
+            {
+                "stage": "RECIPE_CANDIDATE",
+                "entered_at": "2025-01-01T00:00:00Z",
+                "exited_at": None,
+                "result": "IN_PROGRESS",
+                "evidence_hash": None,
+            }
+        ]
+        deployment["deployment_line_hash"] = deployment_line_hash(deployment)
+
+        current["recipe_release_hash"] = recipe["recipe_release_hash"]
+        current["source_series_snapshot"]["scope"][
+            "recipe_release_hash"
+        ] = recipe["recipe_release_hash"]
+        for item in inputs["trial_registry"]:
+            source = item["source_series_snapshot"]
+            if source is None:
+                continue
+            source["experiment_manifest_id"] = experiment["experiment_id"]
+            source["experiment_manifest_hash"] = experiment_hash
+            source["statistical_design_policy_id"] = (
+                "approved:statistical_design_policy_id"
+            )
+            source["statistical_design_policy_hash"] = evidence[
+                "policy_binding_hashes"
+            ]["statistical_design_policy_id"]
+            source["scope"]["deployment_line_id"] = deployment[
+                "deployment_line_id"
+            ]
+            source["scope"]["deployment_line_hash"] = deployment[
+                "deployment_line_hash"
+            ]
+            source["approved_production_capital_usdt"] = "500"
+            source["series_hash"] = statistical_series_hash(source)
+            item["source_series_hash"] = source["series_hash"]
+
+        inputs["scope"].update(
+            {
+                "deployment_line_id": deployment["deployment_line_id"],
+                "deployment_line_hash": deployment["deployment_line_hash"],
+                "approved_production_capital_usdt": "500",
+            }
+        )
+        snapshot = build_statistical_decision_snapshot(
+            snapshot_id="statistical-decision-complete-evidence",
+            release_gate_policy_id=bundle.policy["policy_id"],
+            release_gate_policy_version=bundle.policy["policy_version"],
+            metric_catalog_id=bundle.catalog["catalog_id"],
+            metric_catalog_version=bundle.catalog["catalog_version"],
+            statistical_design_policy_id=(
+                "approved:statistical_design_policy_id"
+            ),
+            statistical_design_policy_hash=evidence[
+                "policy_binding_hashes"
+            ]["statistical_design_policy_id"],
+            experiment_manifest_id=experiment["experiment_id"],
+            experiment_manifest_hash=experiment_hash,
+            generated_at=inputs["scope"]["evaluation_window_end"],
+            **inputs,
+        )
+
+        gate = next(
+            item
+            for item in bundle.policy["gates"]["SAMPLE"]
+            if item["gate_id"] == "HOLM_ADJUSTED_PRIMARY_PASS"
+        )
+        definition = bundle.metrics.resolve(gate["metric_id"])
+        evidence.update(
+            {
+                "evidence_id": "evidence-holm-adjusted-primary-pass",
+                "gate_group_id": "SAMPLE",
+                "gate_id": gate["gate_id"],
+                "metric_id": gate["metric_id"],
+                "estimator_id": definition["estimator_id"],
+                "metric_unit": definition["unit"],
+                "evaluation_ledger": inputs["scope"]["evaluation_ledger"],
+                "recipe_release_id": recipe["recipe_release_id"],
+                "recipe_release_hash": recipe["recipe_release_hash"],
+                "experiment_manifest_id": experiment["experiment_id"],
+                "experiment_manifest_hash": experiment_hash,
+                "deployment_line_id": deployment["deployment_line_id"],
+                "deployment_line_hash": deployment["deployment_line_hash"],
+                "stage": "OFFLINE_OOS",
+                "evaluation_window_start": inputs["scope"][
+                    "evaluation_window_start"
+                ],
+                "evaluation_window_end": inputs["scope"][
+                    "evaluation_window_end"
+                ],
+                "approved_production_capital_usdt": "500",
+                "metric_value": True,
+                "comparator": "EQ",
+                "threshold_snapshot": True,
+                "result": "PASS",
+                "sample_status": {
+                    "raw_event_count": 6,
+                    "effective_event_count": 2,
+                    "sufficient": True,
+                },
+                "artifact_hashes": [
+                    evidence["frozen_release_inputs"][
+                        "approved_capital_and_break_even_plan"
+                    ]["artifact_hash"],
+                    snapshot["snapshot_hash"],
+                    snapshot["trial_registry_hash"],
+                    *[
+                        item["source_series_hash"]
+                        for item in snapshot["trial_registry"]
+                        if item["candidate_status"] == "EVALUATED"
+                    ],
+                ],
+            }
+        )
+        for name, document, artifact_id, artifact_hash in (
+            (
+                "recipe_release",
+                recipe,
+                recipe["recipe_release_id"],
+                recipe["recipe_release_hash"],
+            ),
+            (
+                "experiment_manifest",
+                experiment,
+                experiment["experiment_id"],
+                experiment_hash,
+            ),
+        ):
+            proof = evidence["frozen_release_inputs"][name]
+            proof["artifact_id"] = artifact_id
+            proof["artifact_hash"] = artifact_hash
+        decision_freeze_hash = digest("freeze:statistical-decision")
+        decision_signature_hash = digest(
+            "signature:statistical-decision"
+        )
+        evidence["frozen_release_inputs"][
+            "statistical_decision_snapshot"
+        ] = {
+            "schema_id": "statistical-decision-snapshot-v1.schema.json",
+            "artifact_id": snapshot["snapshot_id"],
+            "artifact_hash": snapshot["snapshot_hash"],
+            "frozen_at": "2025-12-31T23:59:58Z",
+            "freeze_evidence_hash": decision_freeze_hash,
+            "signer_id": "release-authority",
+            "signature_hash": decision_signature_hash,
+        }
+        evidence["evidence_hash"] = gate_evidence_hash(evidence)
+
+        artifact_hashes = {
+            **trust.artifact_hashes,
+            "recipe_release": recipe["recipe_release_hash"],
+            "experiment_manifest": experiment_hash,
+            "statistical_decision_snapshot": snapshot["snapshot_hash"],
+        }
+        freeze_evidence = dict(trust.verified_freeze_evidence)
+        for name in ("recipe_release", "experiment_manifest"):
+            proof = evidence["frozen_release_inputs"][name]
+            freeze_evidence[proof["freeze_evidence_hash"]] = proof[
+                "artifact_hash"
+            ]
+        freeze_evidence[decision_freeze_hash] = snapshot["snapshot_hash"]
+        signatures = dict(trust.verified_signatures)
+        signatures[decision_signature_hash] = decision_freeze_hash
+        attestations = dict(trust.verified_artifact_attestations)
+        attestations[
+            recipe["freeze_attestation"]["attestation_hash"]
+        ] = recipe["recipe_release_hash"]
+        attestations[
+            experiment["manifest_attestation"]["signature_base64"]
+        ] = experiment["recipe_binding"]["recipe_binding_hash"]
+        attestations[
+            deployment["line_attestation"]["signature_base64"]
+        ] = deployment["deployment_line_hash"]
+        trust = replace(
+            trust,
+            artifact_hashes=artifact_hashes,
+            verified_signatures=signatures,
+            verified_freeze_evidence=freeze_evidence,
+            verified_artifact_attestations=attestations,
+            artifact_documents={
+                **trust.artifact_documents,
+                "recipe_release": recipe,
+                "experiment_manifest": experiment,
+                "deployment_line": deployment,
+                "statistical_decision_snapshot": snapshot,
+            },
+        )
+        scope = bundle.evidence_scope_snapshot(evidence)
+        return bundle, evidence, scope, trust, snapshot
+
+    def test_complete_statistical_decision_gate_evidence_validates(self):
+        bundle, evidence, scope, trust, _ = (
+            self.complete_statistical_gate_fixture()
+        )
+
+        result = bundle.validate_gate_evidence(
+            "SAMPLE",
+            evidence,
+            expected_scope=scope,
+            trust=trust,
+        )
+
+        self.assertTrue(result.valid, result.reason_codes)
+        self.assertEqual(result.computed_gate_result, "PASS")
+
+        missing_freeze = deepcopy(evidence)
+        del missing_freeze["frozen_release_inputs"][
+            "statistical_decision_snapshot"
+        ]
+        self.assertTrue(bundle.evidence_schema_errors(missing_freeze))
+
+    def test_supporting_observation_requires_complete_statistical_family_sources(
+        self,
+    ):
+        bundle, evidence, scope, trust, snapshot = (
+            self.complete_statistical_gate_fixture()
+        )
+        definition = bundle.metrics.resolve(evidence["metric_id"])
+        inputs = {"statistical_decision_snapshot": snapshot}
+        execution = bundle.estimators.execute(
+            definition["estimator_id"],
+            inputs,
+        )
+        observation = {
+            "observation_id": "supporting-statistical-decision",
+            "observation_hash": "0" * 64,
+            "metric_id": evidence["metric_id"],
+            "metric_unit": definition["unit"],
+            "estimator_id": definition["estimator_id"],
+            "implementation_id": execution.implementation_id,
+            "implementation_version": execution.implementation_version,
+            "estimator_inputs": inputs,
+            "status": execution.status,
+            "value": execution.value,
+            "reason_codes": list(execution.reason_codes),
+            "estimator_execution_hash": execution.execution_hash,
+            "source_artifact_hashes": [
+                snapshot["snapshot_hash"],
+                snapshot["trial_registry_hash"],
+                *[
+                    item["source_series_hash"]
+                    for item in snapshot["trial_registry"]
+                    if item["candidate_status"] == "EVALUATED"
+                ],
+            ],
+        }
+        observation["observation_hash"] = supporting_observation_hash(
+            observation
+        )
+        signature = "F" * 86 + "=="
+        supporting = {
+            "$schema": "./supporting-observation-bundle-v1.schema.json",
+            "schema_version": "1.0.0",
+            "bundle_id": "supporting-statistical-decision-bundle",
+            "bundle_hash": "0" * 64,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "scope_hash": business_hash(scope),
+            "policy_bundle_hash": evidence["policy_bundle_hash"],
+            "evaluator_build_hash": bundle.evaluator_build.build_hash,
+            "computed_at": "2026-01-01T00:00:01Z",
+            "observations": [observation],
+            "bundle_attestation": {
+                "algorithm": "ED25519",
+                "key_id": "observation-authority",
+                "signed_at": "2026-01-01T00:00:02Z",
+                "signature_base64": signature,
+            },
+        }
+        supporting["bundle_hash"] = supporting_observation_bundle_hash(
+            supporting
+        )
+        evidence["supporting_observation_bundle_schema_id"] = (
+            "supporting-observation-bundle-v1.schema.json"
+        )
+        evidence["supporting_observation_bundle_id"] = supporting[
+            "bundle_id"
+        ]
+        evidence["supporting_observation_bundle_hash"] = supporting[
+            "bundle_hash"
+        ]
+        evidence["evidence_hash"] = gate_evidence_hash(evidence)
+        trust = replace(
+            trust,
+            verified_artifact_attestations={
+                **trust.verified_artifact_attestations,
+                signature: supporting["bundle_hash"],
+            },
+        )
+
+        valid = bundle.validate_gate_evidence(
+            "SAMPLE",
+            evidence,
+            expected_scope=scope,
+            trust=trust,
+            supporting_observation_bundle=supporting,
+        )
+        self.assertTrue(valid.valid, valid.reason_codes)
+
+        tampered = deepcopy(supporting)
+        tampered_observation = tampered["observations"][0]
+        tampered_observation["source_artifact_hashes"].remove(
+            next(
+                item["source_series_hash"]
+                for item in snapshot["trial_registry"]
+                if item["candidate_id"] == "candidate-current"
+            )
+        )
+        tampered_observation["observation_hash"] = (
+            supporting_observation_hash(tampered_observation)
+        )
+        tampered["bundle_hash"] = supporting_observation_bundle_hash(
+            tampered
+        )
+        tampered_evidence = deepcopy(evidence)
+        tampered_evidence["supporting_observation_bundle_hash"] = tampered[
+            "bundle_hash"
+        ]
+        tampered_evidence["evidence_hash"] = gate_evidence_hash(
+            tampered_evidence
+        )
+        tampered_trust = replace(
+            trust,
+            verified_artifact_attestations={
+                **trust.verified_artifact_attestations,
+                signature: tampered["bundle_hash"],
+            },
+        )
+        rejected = bundle.validate_gate_evidence(
+            "SAMPLE",
+            tampered_evidence,
+            expected_scope=scope,
+            trust=tampered_trust,
+            supporting_observation_bundle=tampered,
+        )
+
+        self.assertIn(
+            "SUPPORTING_STATISTICAL_DECISION_SOURCE_MISSING:"
+            "primary_endpoint_holm_adjusted_pass",
+            rejected.reason_codes,
+        )
+
+    def test_statistical_decision_estimator_route_uses_trusted_snapshot(self):
+        snapshot, evidence, _ = self.statistical_reference_fixture()
+        evidence["claimed_achieved_power"] = "1"
+
+        inputs = self.bundle._estimator_inputs(
+            "ACHIEVED_POWER_AT_MERE_V1",
+            "achieved_power_at_minimum_economic_effect",
+            evidence,
+            scope_verified=True,
+            trust_verified=True,
+            statistical_decision_snapshot=snapshot,
+        )
+        execution = self.bundle.estimators.execute(
+            "ACHIEVED_POWER_AT_MERE_V1",
+            inputs,
+        )
+
+        self.assertEqual(
+            inputs,
+            {"statistical_decision_snapshot": snapshot},
+        )
+        self.assertEqual(execution.status, "COMPUTED")
+        self.assertEqual(execution.value, "0.031")
+
+    def test_statistical_decision_reference_binds_all_sources_and_sample(self):
+        snapshot, evidence, trust = self.statistical_reference_fixture()
+
+        self.assertEqual(
+            self.bundle._statistical_decision_reference_reasons(
+                evidence,
+                trust,
+            ),
+            (),
+        )
+
+        cases = []
+        missing_document = replace(
+            trust,
+            artifact_documents={
+                "experiment_manifest": trust.artifact_documents[
+                    "experiment_manifest"
+                ]
+            },
+        )
+        cases.append(
+            (
+                evidence,
+                missing_document,
+                "STATISTICAL_DECISION_DOCUMENT_MISSING",
+            )
+        )
+        wrong_freeze = deepcopy(evidence)
+        wrong_freeze["frozen_release_inputs"][
+            "statistical_decision_snapshot"
+        ]["artifact_id"] = "other-snapshot"
+        cases.append(
+            (
+                wrong_freeze,
+                trust,
+                "STATISTICAL_DECISION_FREEZE_ID_MISMATCH",
+            )
+        )
+        wrong_scope = deepcopy(evidence)
+        wrong_scope["evaluation_window_end"] = "2025-01-06T00:00:00Z"
+        cases.append(
+            (
+                wrong_scope,
+                trust,
+                "STATISTICAL_DECISION_SCOPE_MISMATCH:"
+                "evaluation_window_end",
+            )
+        )
+        wrong_recipe = deepcopy(evidence)
+        wrong_recipe["recipe_release_hash"] = "f" * 64
+        cases.append(
+            (
+                wrong_recipe,
+                trust,
+                "STATISTICAL_DECISION_RECIPE_MISMATCH",
+            )
+        )
+        wrong_manifest = deepcopy(
+            trust.artifact_documents["experiment_manifest"]
+        )
+        wrong_manifest["search_budget"]["actual_total_trials"] = 2
+        cases.append(
+            (
+                evidence,
+                replace(
+                    trust,
+                    artifact_documents={
+                        **trust.artifact_documents,
+                        "experiment_manifest": wrong_manifest,
+                    },
+                ),
+                "STATISTICAL_DECISION_TRIAL_COUNT_MISMATCH",
+            )
+        )
+        missing_source = deepcopy(evidence)
+        missing_source["artifact_hashes"].remove(
+            next(
+                item["source_series_hash"]
+                for item in snapshot["trial_registry"]
+                if item["candidate_id"] == "candidate-current"
+            )
+        )
+        cases.append(
+            (
+                missing_source,
+                trust,
+                "STATISTICAL_DECISION_SOURCE_HASH_MISSING:"
+                "candidate-current",
+            )
+        )
+        wrong_sample = deepcopy(evidence)
+        wrong_sample["sample_status"]["effective_event_count"] = 3
+        cases.append(
+            (
+                wrong_sample,
+                trust,
+                "STATISTICAL_DECISION_SAMPLE_ESS_MISMATCH",
+            )
+        )
+        wrong_policy = deepcopy(snapshot)
+        wrong_policy["release_gate_policy_version"] = "9.9.9"
+        wrong_policy["snapshot_hash"] = statistical_decision_snapshot_hash(
+            wrong_policy
+        )
+        cases.append(
+            (
+                evidence,
+                replace(
+                    trust,
+                    artifact_hashes={
+                        "statistical_decision_snapshot": wrong_policy[
+                            "snapshot_hash"
+                        ]
+                    },
+                    artifact_documents={
+                        **trust.artifact_documents,
+                        "statistical_decision_snapshot": wrong_policy,
+                    },
+                ),
+                "STATISTICAL_DECISION_POLICY_IDENTITY_MISMATCH",
+            )
+        )
+
+        for candidate_evidence, candidate_trust, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertIn(
+                    expected,
+                    self.bundle._statistical_decision_reference_reasons(
+                        candidate_evidence,
+                        candidate_trust,
+                    ),
+                )
+
     def test_complete_capital_gate_envelopes_validate(self):
         bundle, envelopes, scope, trust = self.fixture()
         validations = [
@@ -1219,7 +1881,7 @@ class GateEvidenceTests(unittest.TestCase):
         catalog = deepcopy(bundle.catalog)
         metric_id = envelopes[1]["metric_id"]
         catalog["exact_overrides"][metric_id]["estimator_id"] = (
-            "ACHIEVED_POWER_AT_MERE_V1"
+            "DEFLATED_SHARPE_CONFIDENCE_V1"
         )
         unavailable_bundle = PolicyBundle(
             root=bundle.root,
@@ -1230,7 +1892,7 @@ class GateEvidenceTests(unittest.TestCase):
             evaluator_build=bundle.evaluator_build,
         )
         evidence = deepcopy(envelopes[1])
-        evidence["estimator_id"] = "ACHIEVED_POWER_AT_MERE_V1"
+        evidence["estimator_id"] = "DEFLATED_SHARPE_CONFIDENCE_V1"
         evidence["evidence_hash"] = gate_evidence_hash(evidence)
         expected_scope = unavailable_bundle.evidence_scope_snapshot(evidence)
 

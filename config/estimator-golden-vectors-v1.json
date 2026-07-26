@@ -2530,7 +2530,7 @@
       "$schema": "./statistical-decision-snapshot-v1.schema.json",
       "schema_version": "1.0.0",
       "snapshot_id": "statistical-decision-fixture",
-      "snapshot_hash": "af1e006c90bc23004a25a6d2c5f489365a08d588cf0e2c90916390f1c8e220ec",
+      "snapshot_hash": "4682ae4b6b1ba8cf4ae8a545f3c3b8e76d53a601410362cc891a19529bd90b29",
       "hash_algorithm": "SHA-256",
       "canonicalization": "RFC8785_JCS",
       "trial_family_id": "trial-family-statistical-decision",
@@ -2823,7 +2823,7 @@
           "source_series_hash": "126a94fec3e1e546673b85e9c0a878d97c2ce6263dcde090c41030a4fc33f5bd"
         }
       ],
-      "trial_registry_hash": "3746b95649f5a81e9318e2ca11843e4864bc0c280848c1618e863fe10f0eff27",
+      "trial_registry_hash": "ea56a9a990e31820bd3a9f04da5c155b7a32b6f68b3c8e8b43324a645f6a9c46",
       "analysis_status": "COMPUTED",
       "analysis_reason_codes": [],
       "family_results": [
@@ -2873,7 +2873,7 @@
       "$schema": "./statistical-decision-snapshot-v1.schema.json",
       "schema_version": "1.0.0",
       "snapshot_id": "statistical-decision-fixture",
-      "snapshot_hash": "84197632d3a279b8277a585edd6df92bc55f69d328f09e1b95d8e7236fe744f4",
+      "snapshot_hash": "b01b3fff48c6b96569a7890fde880f6bec98cc90fed000636a817342e9606c33",
       "hash_algorithm": "SHA-256",
       "canonicalization": "RFC8785_JCS",
       "trial_family_id": "trial-family-statistical-decision",
@@ -3136,7 +3136,7 @@
           "source_series_hash": "d4d9bbd1678ac758299af3b858be5bed92c3492da824d2d87bce30972343a614"
         }
       ],
-      "trial_registry_hash": "20762a3763decde90622e30b90e61e52e2f89f0b0f780ba52ea349831c920d9e",
+      "trial_registry_hash": "ea56a9a990e31820bd3a9f04da5c155b7a32b6f68b3c8e8b43324a645f6a9c46",
       "analysis_status": "INCONCLUSIVE",
       "analysis_reason_codes": [
         "STATISTICAL_DECISION_INSUFFICIENT_BLOCKS:candidate-current"
@@ -3658,5 +3658,5 @@
       ]
     }
   ],
-  "bundle_hash": "b811eb1ce1dd34f1c54d8788f3ffa108e790409843da6d620d15bb212588fa8a"
+  "bundle_hash": "4ed220315e83a074603d734e5eac1912360338a4d1527a6d72d39ff60921d6fb"
 }

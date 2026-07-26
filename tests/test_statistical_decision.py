@@ -40,6 +40,25 @@ def build_snapshot(**fixture_overrides):
 
 
 class StatisticalDecisionTests(unittest.TestCase):
+    def test_trial_registry_identity_hash_avoids_manifest_content_cycles(
+        self,
+    ):
+        registry = statistical_decision_inputs()["trial_registry"]
+        original = statistical_trial_registry_hash(registry)
+        after_outcome = deepcopy(registry)
+        current = next(
+            item
+            for item in after_outcome
+            if item["candidate_id"] == "candidate-current"
+        )
+        current["source_series_hash"] = "f" * 64
+        current["recipe_release_hash"] = "e" * 64
+
+        self.assertEqual(
+            statistical_trial_registry_hash(after_outcome),
+            original,
+        )
+
     def test_schema_accepts_computed_and_inconclusive_but_rejects_extra_fields(
         self,
     ):

@@ -211,8 +211,8 @@ class EstimatorRegistryTests(unittest.TestCase):
         self.assertEqual(
             {report.report_hash for report in reports},
             {
-                "6b1a3df50ed7512bf3a81ceed655fe70"
-                "e6c75768df3912660b01b8a33f997714"
+                "2c02a9cfd888efd18f348e2583ac0dc"
+                "12746f612dbb8cd0b820a80802b11f34e"
             },
         )
 

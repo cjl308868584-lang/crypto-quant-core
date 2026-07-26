@@ -30,6 +30,9 @@ from .release_artifacts import (
     validate_supporting_observation_bundle,
 )
 from .trade_replay import trade_replay_snapshot_reasons
+from .statistical_decision import (
+    statistical_decision_snapshot_reasons,
+)
 
 _ECONOMIC_SNAPSHOT_ESTIMATOR_IDS = frozenset(
     {
@@ -61,6 +64,13 @@ _ENDPOINT_REEVALUATION_ESTIMATOR_IDS = frozenset(
 )
 _TRADE_REPLAY_ESTIMATOR_IDS = frozenset(
     {"LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1"}
+)
+_STATISTICAL_DECISION_ESTIMATOR_IDS = frozenset(
+    {
+        "ACHIEVED_POWER_AT_MERE_V1",
+        "PRIMARY_ENDPOINT_CI_WIDTH_V1",
+        "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1",
+    }
 )
 
 
@@ -250,6 +260,7 @@ class PolicyBundle:
         "supporting-observation-bundle-v1.schema.json",
         "endpoint-reevaluation-snapshot-v1.schema.json",
         "trade-replay-snapshot-v1.schema.json",
+        "statistical-decision-snapshot-v1.schema.json",
         "model-bundle-v1.1.schema.json",
         "approved-fallback-registry-v1.1.schema.json",
     )
@@ -1181,6 +1192,9 @@ class PolicyBundle:
             Mapping[str, Any]
         ] = None,
         trade_replay_snapshot: Optional[Mapping[str, Any]] = None,
+        statistical_decision_snapshot: Optional[
+            Mapping[str, Any]
+        ] = None,
     ) -> Mapping[str, Any]:
         if estimator_id == "ACTUAL_DEPLOYABLE_CAPITAL_V1":
             return {
@@ -1229,6 +1243,12 @@ class PolicyBundle:
         if estimator_id in _STATISTICAL_SERIES_ESTIMATOR_IDS:
             return {
                 "statistical_series_snapshot": statistical_series_snapshot,
+            }
+        if estimator_id in _STATISTICAL_DECISION_ESTIMATOR_IDS:
+            return {
+                "statistical_decision_snapshot": (
+                    statistical_decision_snapshot
+                ),
             }
         if estimator_id in _TRADE_REPLAY_ESTIMATOR_IDS:
             return {
@@ -1707,6 +1727,221 @@ class PolicyBundle:
             reasons.append("TRADE_REPLAY_SOURCE_HASH_MISSING")
         return tuple(sorted(set(reasons)))
 
+    def _statistical_decision_reference_reasons(
+        self,
+        evidence: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+    ) -> Tuple[str, ...]:
+        snapshot = trust.artifact_documents.get(
+            "statistical_decision_snapshot"
+        )
+        if not isinstance(snapshot, Mapping):
+            return ("STATISTICAL_DECISION_DOCUMENT_MISSING",)
+        reasons: List[str] = list(
+            self._artifact_schema_reasons(
+                "statistical-decision-snapshot-v1.schema.json",
+                snapshot,
+                "STATISTICAL_DECISION",
+            )
+        )
+        reasons.extend(statistical_decision_snapshot_reasons(snapshot))
+
+        frozen = evidence.get("frozen_release_inputs")
+        proof = (
+            frozen.get("statistical_decision_snapshot")
+            if isinstance(frozen, Mapping)
+            else None
+        )
+        if not isinstance(proof, Mapping):
+            reasons.append(
+                "STATISTICAL_DECISION_FREEZE_PROOF_MISSING"
+            )
+        else:
+            if proof.get("artifact_id") != snapshot.get("snapshot_id"):
+                reasons.append(
+                    "STATISTICAL_DECISION_FREEZE_ID_MISMATCH"
+                )
+            if proof.get("artifact_hash") != snapshot.get(
+                "snapshot_hash"
+            ):
+                reasons.append(
+                    "STATISTICAL_DECISION_FREEZE_HASH_MISMATCH"
+                )
+        if trust.artifact_hashes.get(
+            "statistical_decision_snapshot"
+        ) != snapshot.get("snapshot_hash"):
+            reasons.append("STATISTICAL_DECISION_TRUST_HASH_MISMATCH")
+
+        if (
+            snapshot.get("release_gate_policy_id")
+            != self.policy["policy_id"]
+            or snapshot.get("release_gate_policy_version")
+            != self.policy["policy_version"]
+            or snapshot.get("metric_catalog_id")
+            != self.catalog["catalog_id"]
+            or snapshot.get("metric_catalog_version")
+            != self.catalog["catalog_version"]
+        ):
+            reasons.append(
+                "STATISTICAL_DECISION_POLICY_IDENTITY_MISMATCH"
+            )
+        claimed_bindings = evidence.get("policy_binding_hashes")
+        if not isinstance(claimed_bindings, Mapping):
+            claimed_bindings = {}
+        if snapshot.get(
+            "statistical_design_policy_hash"
+        ) != claimed_bindings.get("statistical_design_policy_id"):
+            reasons.append(
+                "STATISTICAL_DECISION_STATISTICAL_POLICY_MISMATCH"
+            )
+
+        experiment = trust.artifact_documents.get("experiment_manifest")
+        if not isinstance(experiment, Mapping):
+            reasons.append(
+                "STATISTICAL_DECISION_EXPERIMENT_DOCUMENT_MISSING"
+            )
+            experiment = {}
+        if (
+            snapshot.get("experiment_manifest_id")
+            != experiment.get("experiment_id")
+            or snapshot.get("experiment_manifest_hash")
+            != experiment.get("experiment_manifest_hash")
+            or snapshot.get("experiment_manifest_id")
+            != evidence.get("experiment_manifest_id")
+            or snapshot.get("experiment_manifest_hash")
+            != evidence.get("experiment_manifest_hash")
+        ):
+            reasons.append("STATISTICAL_DECISION_EXPERIMENT_MISMATCH")
+        economics = experiment.get("economics")
+        if not isinstance(economics, Mapping):
+            reasons.append(
+                "STATISTICAL_DECISION_EXPERIMENT_DESIGN_MISSING"
+            )
+            economics = {}
+        design = snapshot.get("design")
+        if not isinstance(design, Mapping):
+            design = {}
+        if (
+            economics.get("trial_family_id")
+            != snapshot.get("trial_family_id")
+            or not self._same_business_value(
+                economics.get("minimum_economic_effect"),
+                design.get("minimum_economic_effect"),
+            )
+            or economics.get("multiplicity_method") != "HOLM"
+            or not self._same_business_value(
+                economics.get("family_wise_alpha"),
+                design.get("family_wise_alpha"),
+            )
+        ):
+            reasons.append(
+                "STATISTICAL_DECISION_EXPERIMENT_DESIGN_MISMATCH"
+            )
+        search = experiment.get("search_budget")
+        if not isinstance(search, Mapping):
+            reasons.append(
+                "STATISTICAL_DECISION_EXPERIMENT_SEARCH_MISSING"
+            )
+            search = {}
+        if search.get("actual_total_trials") != snapshot.get(
+            "actual_total_trials"
+        ):
+            reasons.append("STATISTICAL_DECISION_TRIAL_COUNT_MISMATCH")
+        if search.get("trial_registry_hash") != snapshot.get(
+            "trial_registry_hash"
+        ):
+            reasons.append(
+                "STATISTICAL_DECISION_TRIAL_REGISTRY_HASH_MISMATCH"
+            )
+
+        scope = snapshot.get("scope")
+        if not isinstance(scope, Mapping):
+            scope = {}
+        for name in (
+            "evaluation_ledger",
+            "release_route",
+            "direction",
+            "venue",
+            "deployment_line_id",
+            "deployment_line_hash",
+            "evaluation_window_start",
+            "evaluation_window_end",
+            "approved_production_capital_usdt",
+        ):
+            if not self._same_business_value(
+                scope.get(name),
+                evidence.get(name),
+            ):
+                reasons.append(
+                    f"STATISTICAL_DECISION_SCOPE_MISMATCH:{name}"
+                )
+        registry = snapshot.get("trial_registry")
+        current = None
+        if isinstance(registry, list):
+            current = next(
+                (
+                    item
+                    for item in registry
+                    if isinstance(item, Mapping)
+                    and item.get("candidate_id")
+                    == snapshot.get("current_candidate_id")
+                ),
+                None,
+            )
+        if (
+            not isinstance(current, Mapping)
+            or current.get("recipe_release_id")
+            != evidence.get("recipe_release_id")
+            or current.get("recipe_release_hash")
+            != evidence.get("recipe_release_hash")
+        ):
+            reasons.append("STATISTICAL_DECISION_RECIPE_MISMATCH")
+
+        artifact_hashes = evidence.get("artifact_hashes")
+        artifact_set = (
+            set(artifact_hashes)
+            if isinstance(artifact_hashes, list)
+            else set()
+        )
+        for value, label in (
+            (snapshot.get("snapshot_hash"), "snapshot"),
+            (snapshot.get("trial_registry_hash"), "trial-registry"),
+        ):
+            if value not in artifact_set:
+                reasons.append(
+                    f"STATISTICAL_DECISION_SOURCE_HASH_MISSING:{label}"
+                )
+        if isinstance(registry, list):
+            for item in registry:
+                if (
+                    isinstance(item, Mapping)
+                    and item.get("candidate_status") == "EVALUATED"
+                    and item.get("source_series_hash") not in artifact_set
+                ):
+                    reasons.append(
+                        "STATISTICAL_DECISION_SOURCE_HASH_MISSING:"
+                        f"{item.get('candidate_id')}"
+                    )
+        sample = evidence.get("sample_status")
+        current_results = snapshot.get("current_candidate_results")
+        expected_ess = (
+            current_results.get("effective_event_count")
+            if isinstance(current_results, Mapping)
+            else None
+        )
+        actual_ess = (
+            sample.get("effective_event_count")
+            if isinstance(sample, Mapping)
+            else None
+        )
+        if (
+            isinstance(actual_ess, bool)
+            or not isinstance(actual_ess, int)
+            or actual_ess != expected_ess
+        ):
+            reasons.append("STATISTICAL_DECISION_SAMPLE_ESS_MISMATCH")
+        return tuple(sorted(set(reasons)))
+
     def _endpoint_reevaluation_reference_reasons(
         self,
         evidence: Mapping[str, Any],
@@ -2070,6 +2305,9 @@ class PolicyBundle:
                 trade_replay = trust.artifact_documents.get(
                     "trade_replay_snapshot"
                 )
+                statistical_decision = trust.artifact_documents.get(
+                    "statistical_decision_snapshot"
+                )
                 if definition["estimator_id"] in (
                     _ECONOMIC_SNAPSHOT_ESTIMATOR_IDS
                 ):
@@ -2107,6 +2345,15 @@ class PolicyBundle:
                             trust,
                         )
                     )
+                if definition["estimator_id"] in (
+                    _STATISTICAL_DECISION_ESTIMATOR_IDS
+                ):
+                    reasons.extend(
+                        self._statistical_decision_reference_reasons(
+                            evidence,
+                            trust,
+                        )
+                    )
                 estimator_inputs = self._estimator_inputs(
                     definition["estimator_id"],
                     gate["metric_id"],
@@ -2136,6 +2383,11 @@ class PolicyBundle:
                     trade_replay_snapshot=(
                         trade_replay
                         if isinstance(trade_replay, Mapping)
+                        else None
+                    ),
+                    statistical_decision_snapshot=(
+                        statistical_decision
+                        if isinstance(statistical_decision, Mapping)
                         else None
                     ),
                 )

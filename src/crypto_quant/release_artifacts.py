@@ -23,6 +23,14 @@ _STAGE_ORDER = (
     "CHAMPION",
 )
 
+_STATISTICAL_DECISION_ESTIMATOR_IDS = frozenset(
+    {
+        "ACHIEVED_POWER_AT_MERE_V1",
+        "PRIMARY_ENDPOINT_CI_WIDTH_V1",
+        "HOLM_FAMILY_ADJUSTED_PRIMARY_PASS_V1",
+    }
+)
+
 _RECIPE_DESIGN_FIELDS = (
     "strategy_proposal_hash",
     "feature_schema_hash",
@@ -84,6 +92,10 @@ def load_release_artifact_schemas(
         ),
         "trade_replay_snapshot": _load_json_strict(
             Path(config_dir) / "trade-replay-snapshot-v1.schema.json"
+        ),
+        "statistical_decision_snapshot": _load_json_strict(
+            Path(config_dir)
+            / "statistical-decision-snapshot-v1.schema.json"
         ),
     }
     for schema in schemas.values():
@@ -629,6 +641,41 @@ def validate_supporting_observation_bundle(
             allowed_source_hashes
         ):
             reasons.append(f"SUPPORTING_SOURCE_UNVERIFIED:{metric_id}")
+        if item.get("estimator_id") in (
+            _STATISTICAL_DECISION_ESTIMATOR_IDS
+        ):
+            decision = (
+                inputs.get("statistical_decision_snapshot")
+                if isinstance(inputs, Mapping)
+                else None
+            )
+            required_decision_sources: Set[Any] = set()
+            if isinstance(decision, Mapping):
+                required_decision_sources.update(
+                    {
+                        decision.get("snapshot_hash"),
+                        decision.get("trial_registry_hash"),
+                    }
+                )
+                registry = decision.get("trial_registry")
+                if isinstance(registry, list):
+                    required_decision_sources.update(
+                        member.get("source_series_hash")
+                        for member in registry
+                        if isinstance(member, Mapping)
+                        and member.get("candidate_status") == "EVALUATED"
+                    )
+            if (
+                not isinstance(source_hashes, list)
+                or not required_decision_sources
+                or not required_decision_sources.issubset(
+                    set(source_hashes)
+                )
+            ):
+                reasons.append(
+                    "SUPPORTING_STATISTICAL_DECISION_SOURCE_MISSING:"
+                    f"{metric_id}"
+                )
         economic_snapshot = (
             inputs.get("economic_ledger_snapshot")
             if isinstance(inputs, Mapping)

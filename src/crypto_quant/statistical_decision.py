@@ -91,8 +91,6 @@ def statistical_trial_registry_hash(
             "candidate_id": item.get("candidate_id"),
             "candidate_status": item.get("candidate_status"),
             "recipe_release_id": item.get("recipe_release_id"),
-            "recipe_release_hash": item.get("recipe_release_hash"),
-            "source_series_hash": item.get("source_series_hash"),
         }
         for item in sorted(
             trial_registry,

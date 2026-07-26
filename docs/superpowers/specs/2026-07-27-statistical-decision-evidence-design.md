@@ -175,7 +175,9 @@ source_series_hash_or_null
 
 - `candidate_id` 全局唯一，`current_candidate_id` 必须存在且状态为 `EVALUATED`；
 - `len(trial_registry)` 必须等于 ExperimentManifest `actual_total_trials`；
-- 规范化 Registry 的业务哈希必须等于 Manifest `trial_registry_hash`；
+- 规范化 Registry 身份投影的业务哈希必须等于 Manifest
+  `trial_registry_hash`；该投影只包含 candidate ID、status 和 recipe
+  ID，不包含 Recipe hash 或结果揭晓后才产生的 source series hash；
 - `trial_family_id` 必须等于 Manifest 中冻结的家族 ID；
 - 改模型名称、特征、seed、超参数、阈值、端点实现或 recipe 不能重置 family；
 - `EVALUATED` 必须嵌入完整且自哈希有效的 `StatisticalSeriesSnapshot`；
@@ -183,6 +185,14 @@ source_series_hash_or_null
 - family 为空、当前候选缺失或 Trial 数量/哈希不一致时返回 `FAIL`。
 
 该设计保守地防止删除失败尝试来降低多重检验惩罚。未来如果 Trial Registry 独立成为一等 Artifact，可在不改变统计语义的前提下改为外部引用。
+
+Trial Registry 身份哈希不得包含 `recipe_release_hash` 或
+`source_series_hash`：Recipe 和来源序列本身都绑定 ExperimentManifest
+hash，如果 Manifest 再通过 Trial Registry hash 反向包含它们，会形成不可
+构造的密码学循环。Registry 仍通过 candidate ID、status 和 recipe ID
+禁止删除或改名；全部 Recipe/source hash 则由 Snapshot 自哈希、
+GateEvidence `artifact_hashes` 和 Supporting Observation 完整集合承诺，
+不能被替换或遗漏。
 
 ## 5. 可重放统计方法
 

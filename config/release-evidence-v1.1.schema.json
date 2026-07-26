@@ -380,6 +380,9 @@
         },
         "trade_replay_snapshot": {
           "$ref": "#/$defs/freezeProof"
+        },
+        "statistical_decision_snapshot": {
+          "$ref": "#/$defs/freezeProof"
         }
       },
       "additionalProperties": false
@@ -589,6 +592,34 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "required": [
+          "metric_id"
+        ],
+        "properties": {
+          "metric_id": {
+            "enum": [
+              "primary_endpoint_holm_adjusted_pass",
+              "audit_primary_endpoint_holm_adjusted_pass",
+              "achieved_power_at_minimum_economic_effect",
+              "audit_achieved_power_at_minimum_economic_effect",
+              "actual_primary_endpoint_ci_width",
+              "audit_actual_primary_endpoint_ci_width"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "frozen_release_inputs": {
+            "required": [
+              "statistical_decision_snapshot"
+            ]
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {

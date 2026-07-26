@@ -602,8 +602,6 @@ def statistical_decision_inputs(
             "candidate_id": item["candidate_id"],
             "candidate_status": item["candidate_status"],
             "recipe_release_id": item["recipe_release_id"],
-            "recipe_release_hash": item["recipe_release_hash"],
-            "source_series_hash": item["source_series_hash"],
         }
         for item in registry
     ]

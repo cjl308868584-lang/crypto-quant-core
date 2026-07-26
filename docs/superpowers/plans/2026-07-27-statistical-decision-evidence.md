@@ -97,7 +97,7 @@ def holm_family_adjusted_primary_pass(
 ) -> Tuple[str, Any, Tuple[str, ...]]
 ```
 
-- `statistical_trial_registry_hash` hashes only each member's candidate/status/recipe identity and source series hash, not the embedded source document:
+- `statistical_trial_registry_hash` hashes only each member's pre-outcome candidate/status/recipe ID, not Recipe hash, result-time source series hash, or the embedded source document:
 
 ```python
 [
@@ -105,8 +105,6 @@ def holm_family_adjusted_primary_pass(
         "candidate_id": item["candidate_id"],
         "candidate_status": item["candidate_status"],
         "recipe_release_id": item["recipe_release_id"],
-        "recipe_release_hash": item["recipe_release_hash"],
-        "source_series_hash": item["source_series_hash"],
     }
     for item in sorted(trial_registry, key=lambda value: value["candidate_id"])
 ]
@@ -174,7 +172,7 @@ design = {
 }
 ```
 
-Use candidate IDs `candidate-current`, `candidate-competitor`, and optional `candidate-aborted`; recipes have matching IDs and distinct repeated-character hashes. The aborted member has both source fields `None`. Compute and return `expected_trial_registry_hash` by applying `business_hash` to the exact projection shown in Interfaces. Implement `make_statistical_decision_snapshot` by calling `statistical_decision_inputs(**fixture_overrides)` and passing every returned field into `build_statistical_decision_snapshot` with these fixed identities:
+Use candidate IDs `candidate-current`, `candidate-competitor`, and optional `candidate-aborted`; recipes have matching IDs and distinct repeated-character hashes. The aborted member has both source fields `None`. Compute and return `expected_trial_registry_hash` by applying `business_hash` to the exact identity projection shown in Interfaces. Recipe/source hashes remain bound by the outer Snapshot and Evidence, but are excluded here to avoid the cycles `Manifest hash -> Recipe hash -> TrialRegistry hash -> Manifest hash` and `Manifest hash -> SourceSeries hash -> TrialRegistry hash -> Manifest hash`. Implement `make_statistical_decision_snapshot` by calling `statistical_decision_inputs(**fixture_overrides)` and passing every returned field into `build_statistical_decision_snapshot` with these fixed identities:
 
 ```python
 snapshot_id="statistical-decision-fixture"

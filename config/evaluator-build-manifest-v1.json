@@ -14,8 +14,8 @@
   "estimator_registry_id": "estimator-registry-v1",
   "estimator_registry_hash": "95fba10fd37bca9d3c86b63037cc984d0b2a6e85a143a5f7f424db0d65b11f3f",
   "golden_bundle_id": "estimator-golden-vectors-v1",
-  "golden_bundle_hash": "b811eb1ce1dd34f1c54d8788f3ffa108e790409843da6d620d15bb212588fa8a",
-  "golden_report_hash": "6b1a3df50ed7512bf3a81ceed655fe70e6c75768df3912660b01b8a33f997714",
+  "golden_bundle_hash": "4ed220315e83a074603d734e5eac1912360338a4d1527a6d72d39ff60921d6fb",
+  "golden_report_hash": "2c02a9cfd888efd18f348e2583ac0dc12746f612dbb8cd0b820a80802b11f34e",
   "golden_vector_count": 39,
   "executable_estimator_count": 24,
   "unavailable_estimator_count": 34,
@@ -25,7 +25,7 @@
     "config/deployment-line-v1.1.schema.json": "a3d5b4df5c5fe953fe93dcea1616c37997aef06415b2fbc073d8c4a4c7b5a2fc",
     "config/economic-ledger-snapshot-v1.schema.json": "e5e18a552ba90e5eec5227d94d4ec4387e98f170b6bd3481e9991b99b465a3bc",
     "config/endpoint-reevaluation-snapshot-v1.schema.json": "b15fc67e28704b68b8d6f42b99232ecc5208c5e769686fcc75bd10882eb77403",
-    "config/estimator-golden-vectors-v1.json": "9034c57631bd213ecc7d0bb65180f1a2f8f10649d72d8d198324c202d867ddac",
+    "config/estimator-golden-vectors-v1.json": "9e4a371e4e0b2fecc4ae8c0d0d46c0ec7846ef8084397f53723adf98ae0eb28d",
     "config/estimator-golden-vectors-v1.schema.json": "98e6015b1c29c3aab95f01ad83c38a79e08fad78c81126b695309e1ad19e8b20",
     "config/estimator-registry-v1.json": "2c677a8cd014750852b3175c9f134d750d81d3f3c97a6df7b782d91df4fbc486",
     "config/estimator-registry-v1.schema.json": "3e90449792347105b28f0c34ede56f10e9cd8c88c27ceac37098f3c53532a7b9",
@@ -33,7 +33,7 @@
     "config/experiment-manifest-v1.1.schema.json": "3a8a6e26a9f87cd88d00f2e930f76e4a12c4af0391a25ab79fbebe575d1efc1d",
     "config/model-bundle-v1.1.schema.json": "050693ddedfed27ab03eb549836812e2bc57b9af58350f7b4dac314d7eae3048",
     "config/recipe-release-v1.1.schema.json": "944364ec51f3773b27dc46fe2664c2ef45e310b78b61af13f181d1d49e8be741",
-    "config/release-evidence-v1.1.schema.json": "e1ca124ef0ea9add787fd7a304be5f30dfd984f0c5343de28932e73569f3a23b",
+    "config/release-evidence-v1.1.schema.json": "25d9443133d8028f7e4ade375275a07070dcd30777e485cff945f0736aac4f79",
     "config/release-gates-v1.1.json": "9fd54182b78fceeffd55564952bf8cb524e89e2073861183ad2d3ff25eb514d2",
     "config/release-gates-v1.1.schema.json": "fea7d4420895b27fe669aa9764152391d865c09f1e99d4fa3a691a3bbe95390a",
     "config/release-metrics-v1.1.json": "302852df94e4e593f7c26a326d2601cbb042c72e5f1177d483d62355c4a24f7b",
@@ -59,14 +59,14 @@
     "src/crypto_quant/ledger.py": "4c4939d0b8a6a0ad9d139fdf5e06bbe6a49d53d93966b576b8435018bb6c379c",
     "src/crypto_quant/orders.py": "654f33d9bb09a6ad9eca475a43db5589489556c70959162ee60dae3af2998816",
     "src/crypto_quant/reevaluation.py": "853b567437b787f9ce823ea42b87c2e6730787f332a1564b78f8bd7b26f41b83",
-    "src/crypto_quant/release.py": "4e196dbf72ea3122ba2420055af4fbff9a920caf9007ade65ac523bdfe9929d9",
-    "src/crypto_quant/release_artifacts.py": "0033aae9b515ab7db319b0def3d26f2a81e4c92de4da8f6221c673bd8448e806",
+    "src/crypto_quant/release.py": "3a20078dc6567bccb36bd5a6578def9d3fbd5f3e3a88532f5b0e672efc829032",
+    "src/crypto_quant/release_artifacts.py": "ad467fbbd667c49e630632fa9069c9caa6911f6f0b31cf117f1cf641d38197e1",
     "src/crypto_quant/risk.py": "a26de087433963dd348ae223618e2d789f0d45c224eb6db2efe28f01e4b5aef7",
-    "src/crypto_quant/statistical_decision.py": "8e73634316784fb2ff808e70ec4527bbca70913478a44b8ef645b91d68993239",
+    "src/crypto_quant/statistical_decision.py": "1800c79b79adb0f538ca6966d80cf57778f20eb93528c42dc852e177346f12aa",
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335"
   },
-  "build_input_tree_hash": "4c5f5d1032bdadae1da1da1e6625d03fa8f07a37355d1eeab43b44e38e2068ab",
+  "build_input_tree_hash": "ea330d1c5b3f3393d7612a6802f01b94d31a195df640004a054b4dd9d1172d83",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -74,5 +74,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "643514c545b298153e6b7baf76801457af1395de92d1cacac3c4d1e42872d2a1"
+  "manifest_hash": "3fb4e932d97141dcfe24d494aabb8e800db6e0592d9f336785430539d69cb580"
 }
