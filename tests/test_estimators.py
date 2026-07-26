@@ -2,12 +2,19 @@ import json
 import shutil
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 from crypto_quant.build import EvaluatorBuild
 from crypto_quant.errors import PolicyError
 from crypto_quant.estimators import EstimatorRegistry
 from crypto_quant.release import load_json_strict
+from crypto_quant.trade_replay import (
+    build_trade_replay_snapshot,
+    trade_replay_snapshot_hash,
+)
+
+from tests.factories import complete_trade_replay_inputs
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,8 +36,8 @@ class EstimatorRegistryTests(unittest.TestCase):
         self.assertEqual(all_ids, executable | unavailable)
         self.assertFalse(executable & unavailable)
         self.assertEqual(len(all_ids), 57)
-        self.assertEqual(len(executable), 20)
-        self.assertEqual(len(unavailable), 37)
+        self.assertEqual(len(executable), 21)
+        self.assertEqual(len(unavailable), 36)
 
         unavailable_result = self.registry.execute(
             "ACHIEVED_POWER_AT_MERE_V1",
@@ -102,15 +109,72 @@ class EstimatorRegistryTests(unittest.TestCase):
         self.assertEqual(exact_boundary.status, "COMPUTED")
         self.assertIs(exact_boundary.value, True)
 
+    def test_complete_trade_replay_estimator_is_executable(self):
+        source, snapshots, valuations = complete_trade_replay_inputs()
+        replay = build_trade_replay_snapshot(
+            replay_id="registry-trade-replay",
+            source_series_snapshot=source,
+            economic_snapshots=snapshots,
+            valuation_checkpoints=valuations,
+            generated_at=source["generated_at"],
+        )
+
+        self.assertTrue(
+            self.registry.is_executable(
+                "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1"
+            )
+        )
+        execution = self.registry.execute(
+            "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+            {"trade_replay_snapshot": replay},
+        )
+        self.assertEqual(execution.status, "COMPUTED")
+        self.assertEqual(execution.value, "0")
+        self.assertEqual(execution.reason_codes, ())
+
+        missing = self.registry.execute(
+            "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+            {},
+        )
+        self.assertEqual(
+            missing.reason_codes,
+            ("ESTIMATOR_INPUT_MISSING:trade_replay_snapshot",),
+        )
+
+        schema_invalid = deepcopy(replay)
+        schema_invalid.pop("source_series_hash")
+        rejected = self.registry.execute(
+            "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+            {"trade_replay_snapshot": schema_invalid},
+        )
+        self.assertEqual(
+            rejected.reason_codes,
+            ("TRADE_REPLAY_SCHEMA_INVALID",),
+        )
+
+        semantic_tamper = deepcopy(replay)
+        semantic_tamper["selected_trade_ids"] = []
+        semantic_tamper["replay_hash"] = trade_replay_snapshot_hash(
+            semantic_tamper
+        )
+        rejected = self.registry.execute(
+            "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+            {"trade_replay_snapshot": semantic_tamper},
+        )
+        self.assertEqual(
+            rejected.reason_codes,
+            ("TRADE_REPLAY_SELECTION_MISMATCH",),
+        )
+
     def test_golden_vectors_are_deterministic(self):
         reports = [self.registry.run_golden_vectors() for _ in range(100)]
         self.assertTrue(all(report.passed for report in reports))
-        self.assertEqual({report.vector_count for report in reports}, {29})
+        self.assertEqual({report.vector_count for report in reports}, {33})
         self.assertEqual(
             {report.report_hash for report in reports},
             {
-                "aa56c07dac0c5a84e8ffaa46dbc65c46e"
-                "7a53905a3816a70a8b1da29355cb806"
+                "589a82cd39bce26e9b39d249a3f24e9f"
+                "54cb35602c9582425239186bd1a7da90"
             },
         )
 

@@ -2,9 +2,9 @@
   "$schema": "./estimator-registry-v1.schema.json",
   "schema_version": "1.0.0",
   "registry_id": "estimator-registry-v1",
-  "registry_version": "1.4.0",
+  "registry_version": "1.5.0",
   "metric_catalog_id": "release-metrics-v1.1",
-  "metric_catalog_version": "1.1.3",
+  "metric_catalog_version": "1.1.4",
   "status": "BUILD_CANDIDATE",
   "coverage_mode": "CATALOG_COMPLEMENT",
   "unlisted_estimator_policy": {
@@ -334,7 +334,25 @@
       "golden_vector_ids": [
         "endpoint-leave-max-delta-event-reevaluation"
       ]
+    },
+    {
+      "estimator_id": "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+      "implementation_id": "trade_replay.leave-top-5-positive-trades-out-mbb-lcb95",
+      "implementation_version": "1.0.0",
+      "callable_id": "leave_top_5_positive_trades_out_mbb_lcb95",
+      "input_fields": [
+        "trade_replay_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "trade-replay-top5-computed",
+        "trade-replay-top5-no-positive",
+        "trade-replay-top5-inconclusive",
+        "trade-replay-top5-funding-mismatch"
+      ]
     }
   ],
-  "registry_hash": "3fe783f9d2e82adc1dd71955a419460abae60cd41a0142c3073da4c701ab55ad"
+  "registry_hash": "8c408b5d565158dcb89983e8491a849763f200dab82e5571e971e1e1b1fa2d58"
 }

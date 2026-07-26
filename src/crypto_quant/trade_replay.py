@@ -4,7 +4,18 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_EVEN, localcontext
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from functools import wraps
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+)
 
 from .canonical import business_hash, canonical_decimal
 from .economics import economic_snapshot_reasons
@@ -28,6 +39,20 @@ _SCOPE_FIELDS = (
     "deployment_line_id",
     "deployment_line_hash",
 )
+_Result = TypeVar("_Result")
+
+
+def _fixed_decimal_context(
+    function: Callable[..., _Result],
+) -> Callable[..., _Result]:
+    @wraps(function)
+    def wrapped(*args: Any, **kwargs: Any) -> _Result:
+        with localcontext() as context:
+            context.prec = 50
+            context.rounding = ROUND_HALF_EVEN
+            return function(*args, **kwargs)
+
+    return wrapped
 
 
 @dataclass(frozen=True)
@@ -1068,6 +1093,7 @@ def _canonical_valuation_order(
     )
 
 
+@_fixed_decimal_context
 def _expected_trade_replay(
     *,
     replay_id: str,

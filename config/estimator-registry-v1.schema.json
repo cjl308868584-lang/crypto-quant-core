@@ -126,7 +126,8 @@
             "complete_utc_calendar_month_count",
             "cash_flow_adjusted_economic_log_growth",
             "leave_max_positive_delta_fold_out_endpoint_reevaluation",
-            "leave_max_positive_delta_event_out_endpoint_reevaluation"
+            "leave_max_positive_delta_event_out_endpoint_reevaluation",
+            "leave_top_5_positive_trades_out_mbb_lcb95"
           ]
         },
         "input_fields": {

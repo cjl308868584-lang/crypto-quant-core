@@ -2,9 +2,9 @@
   "$schema": "./estimator-golden-vectors-v1.schema.json",
   "schema_version": "1.0.0",
   "bundle_id": "estimator-golden-vectors-v1",
-  "bundle_version": "1.1.0",
+  "bundle_version": "1.2.0",
   "estimator_registry_id": "estimator-registry-v1",
-  "estimator_registry_hash": "3fe783f9d2e82adc1dd71955a419460abae60cd41a0142c3073da4c701ab55ad",
+  "estimator_registry_hash": "8c408b5d565158dcb89983e8491a849763f200dab82e5571e971e1e1b1fa2d58",
   "fixtures": {
     "economic-snapshot-valid": {
       "$schema": "./economic-ledger-snapshot-v1.schema.json",
@@ -21,8 +21,8 @@
       "cost_allocation_policy_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "scope": {
         "account_id": "account-1",
-      "evaluation_ledger": "AI_LEDGER",
-      "release_route": "AI_ENHANCED",
+        "evaluation_ledger": "AI_LEDGER",
+        "release_route": "AI_ENHANCED",
         "direction": "LONG",
         "venue": "BINANCE_SPOT",
         "recipe_release_id": "recipe-1",
@@ -877,6 +877,1654 @@
       "gate_results": [],
       "result": "INCONCLUSIVE",
       "generated_at": "2026-07-27T00:00:00Z"
+    },
+    "trade-replay-top5-computed": {
+      "$schema": "./trade-replay-snapshot-v1.schema.json",
+      "schema_version": "1.0.0",
+      "replay_id": "golden-computed",
+      "replay_hash": "3f73e220d29f5747842b7173c88a61b528a0c9cda52bef439422062cb3f644e8",
+      "hash_algorithm": "SHA-256",
+      "canonicalization": "RFC8785_JCS",
+      "source_series_snapshot": {
+        "$schema": "./statistical-series-snapshot-v1.schema.json",
+        "schema_version": "1.0.0",
+        "series_id": "series-complete-trades",
+        "series_hash": "dc13182d9dd5e9c207455b411b52f58bb6178170d28677fce95b0c032f322884",
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_economic_snapshot_hashes": [
+          "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a"
+        ],
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "scope": {
+          "account_id": "account-replay",
+          "evaluation_ledger": "BASELINE_LEDGER",
+          "release_route": "BASELINE_ONLY",
+          "direction": "LONG",
+          "venue": "BINANCE_SPOT",
+          "recipe_release_id": "recipe-replay",
+          "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "deployment_line_id": "line-replay",
+          "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+          "evaluation_window_end": "2026-01-03T00:00:00.000Z"
+        },
+        "approved_production_capital_usdt": "1000",
+        "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+        "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+        "aggregation": "SUM",
+        "observations": [
+          {
+            "observation_id": "observation-1",
+            "period_start": "2026-01-01T00:00:00.000Z",
+            "period_end": "2026-01-02T00:00:00.000Z",
+            "value": "0.0099503308531680828482153575442607416886796099400588",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+            "fold_id": "fold-1"
+          },
+          {
+            "observation_id": "observation-2",
+            "period_start": "2026-01-02T00:00:00.000Z",
+            "period_end": "2026-01-03T00:00:00.000Z",
+            "value": "0.0088714233874196785872762455613221223997905938998191",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+            "fold_id": "fold-2"
+          }
+        ],
+        "bootstrap_design": {
+          "block_length": 1,
+          "minimum_block_count": 2,
+          "resample_count": 1000,
+          "seed": 19,
+          "confidence_level": "0.95",
+          "confidence_side": "LOWER_ONE_SIDED",
+          "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+          "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+        },
+        "generated_at": "2026-01-03T00:00:00.000Z",
+        "replay_verified": true
+      },
+      "source_series_hash": "dc13182d9dd5e9c207455b411b52f58bb6178170d28677fce95b0c032f322884",
+      "source_economic_snapshots": [
+        {
+          "$schema": "./economic-ledger-snapshot-v1.schema.json",
+          "schema_version": "1.1.0",
+          "snapshot_id": "economic-replay-1",
+          "snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "hash_algorithm": "SHA-256",
+          "canonicalization": "RFC8785_JCS",
+          "source_ledger_hash": "3e0b0d28d3ffa833faff6e8daa9227a6d39f47ad0b3c918c3193d0d597a477b4",
+          "source_projection_hash": "71a9fe3d59c62f50eec601f32221e839ac6f5e988d38553aa37ff89f2956c611",
+          "accounting_policy_id": "accounting-replay",
+          "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+          "cost_allocation_policy_id": "cost-replay",
+          "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+          "scope": {
+            "account_id": "account-replay",
+            "evaluation_ledger": "BASELINE_LEDGER",
+            "release_route": "BASELINE_ONLY",
+            "direction": "LONG",
+            "venue": "BINANCE_SPOT",
+            "recipe_release_id": "recipe-replay",
+            "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+            "deployment_line_id": "line-replay",
+            "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+            "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+          },
+          "reporting_asset": "USDT",
+          "window_event_convention": "START_EXCLUSIVE_END_INCLUSIVE",
+          "starting_liquidation_equity_usdt": "1000",
+          "ending_liquidation_equity_usdt": "1010",
+          "opening_positions": [],
+          "fills": [
+            {
+              "fill_id": "fill-1-open",
+              "exchange_trade_id": "exchange-1-open",
+              "local_order_id": "order-1-open",
+              "venue_order_id": "venue-1-open",
+              "source_event_sequence": 2,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "BUY",
+              "quantity": "1",
+              "price": "100",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-01T06:00:00.000Z"
+            },
+            {
+              "fill_id": "fill-1-close",
+              "exchange_trade_id": "exchange-1-close",
+              "local_order_id": "order-1-close",
+              "venue_order_id": "venue-1-close",
+              "source_event_sequence": 3,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "SELL",
+              "quantity": "1",
+              "price": "110",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-01T18:00:00.000Z"
+            }
+          ],
+          "funding_cashflows": [],
+          "external_cash_flows": [],
+          "allocated_costs": [],
+          "equity_points": [
+            {
+              "equity_snapshot_id": "equity-1-start",
+              "source_event_sequence": 1,
+              "as_of": "2026-01-01T00:00:00.000Z",
+              "marked_equity_usdt": "1000",
+              "liquidation_equity_usdt": "1000",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            },
+            {
+              "equity_snapshot_id": "equity-1-end",
+              "source_event_sequence": 4,
+              "as_of": "2026-01-02T00:00:00.000Z",
+              "marked_equity_usdt": "1010",
+              "liquidation_equity_usdt": "1010",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            }
+          ],
+          "generated_at": "2026-01-02T00:00:00.000Z",
+          "replay_verified": true
+        },
+        {
+          "$schema": "./economic-ledger-snapshot-v1.schema.json",
+          "schema_version": "1.1.0",
+          "snapshot_id": "economic-replay-2",
+          "snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "hash_algorithm": "SHA-256",
+          "canonicalization": "RFC8785_JCS",
+          "source_ledger_hash": "1c7b77ba739fbfa43183d5394822c7a62f98fe833054f0cba22faffcf3615339",
+          "source_projection_hash": "163366c4b0e38b5be6bd7eb7562e6f67e50a3aeee42b2fce1b990f3e14838077",
+          "accounting_policy_id": "accounting-replay",
+          "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+          "cost_allocation_policy_id": "cost-replay",
+          "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+          "scope": {
+            "account_id": "account-replay",
+            "evaluation_ledger": "BASELINE_LEDGER",
+            "release_route": "BASELINE_ONLY",
+            "direction": "LONG",
+            "venue": "BINANCE_SPOT",
+            "recipe_release_id": "recipe-replay",
+            "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+            "deployment_line_id": "line-replay",
+            "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "evaluation_window_start": "2026-01-02T00:00:00.000Z",
+            "evaluation_window_end": "2026-01-03T00:00:00.000Z"
+          },
+          "reporting_asset": "USDT",
+          "window_event_convention": "START_EXCLUSIVE_END_INCLUSIVE",
+          "starting_liquidation_equity_usdt": "1010",
+          "ending_liquidation_equity_usdt": "1019",
+          "opening_positions": [],
+          "fills": [
+            {
+              "fill_id": "fill-2-open",
+              "exchange_trade_id": "exchange-2-open",
+              "local_order_id": "order-2-open",
+              "venue_order_id": "venue-2-open",
+              "source_event_sequence": 2,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "BUY",
+              "quantity": "1",
+              "price": "100",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-02T06:00:00.000Z"
+            },
+            {
+              "fill_id": "fill-2-close",
+              "exchange_trade_id": "exchange-2-close",
+              "local_order_id": "order-2-close",
+              "venue_order_id": "venue-2-close",
+              "source_event_sequence": 3,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "SELL",
+              "quantity": "1",
+              "price": "109",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-02T18:00:00.000Z"
+            }
+          ],
+          "funding_cashflows": [],
+          "external_cash_flows": [],
+          "allocated_costs": [],
+          "equity_points": [
+            {
+              "equity_snapshot_id": "equity-2-start",
+              "source_event_sequence": 1,
+              "as_of": "2026-01-02T00:00:00.000Z",
+              "marked_equity_usdt": "1010",
+              "liquidation_equity_usdt": "1010",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            },
+            {
+              "equity_snapshot_id": "equity-2-end",
+              "source_event_sequence": 4,
+              "as_of": "2026-01-03T00:00:00.000Z",
+              "marked_equity_usdt": "1019",
+              "liquidation_equity_usdt": "1019",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            }
+          ],
+          "generated_at": "2026-01-03T00:00:00.000Z",
+          "replay_verified": true
+        }
+      ],
+      "source_economic_snapshot_hashes": [
+        "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+        "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a"
+      ],
+      "scope": {
+        "account_id": "account-replay",
+        "evaluation_ledger": "BASELINE_LEDGER",
+        "release_route": "BASELINE_ONLY",
+        "direction": "LONG",
+        "venue": "BINANCE_SPOT",
+        "recipe_release_id": "recipe-replay",
+        "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "deployment_line_id": "line-replay",
+        "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+        "evaluation_window_end": "2026-01-03T00:00:00.000Z"
+      },
+      "policy_bindings": {
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "approved_production_capital_usdt": "1000",
+      "bootstrap_design": {
+        "block_length": 1,
+        "minimum_block_count": 2,
+        "resample_count": 1000,
+        "seed": 19,
+        "confidence_level": "0.95",
+        "confidence_side": "LOWER_ONE_SIDED",
+        "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+        "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+      },
+      "valuation_checkpoints": [
+        {
+          "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "equity_snapshot_id": "equity-1-start",
+          "as_of": "2026-01-01T00:00:00.000Z",
+          "instruments": []
+        },
+        {
+          "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "equity_snapshot_id": "equity-1-end",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "instruments": []
+        },
+        {
+          "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "equity_snapshot_id": "equity-2-start",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "instruments": []
+        },
+        {
+          "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "equity_snapshot_id": "equity-2-end",
+          "as_of": "2026-01-03T00:00:00.000Z",
+          "instruments": []
+        }
+      ],
+      "original_replay": [
+        {
+          "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "equity_snapshot_id": "equity-1-start",
+          "as_of": "2026-01-01T00:00:00.000Z",
+          "liquidation_equity_usdt": "1000",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        },
+        {
+          "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "equity_snapshot_id": "equity-1-end",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "liquidation_equity_usdt": "1010",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        },
+        {
+          "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "equity_snapshot_id": "equity-2-start",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "liquidation_equity_usdt": "1010",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        },
+        {
+          "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+          "equity_snapshot_id": "equity-2-end",
+          "as_of": "2026-01-03T00:00:00.000Z",
+          "liquidation_equity_usdt": "1019",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        }
+      ],
+      "completed_trades": [
+        {
+          "trade_id": "trd:c1cdc7e7d60fc72769ef8f2cd231b9164449f000b96fb21c417c6f8ac7d66c6c",
+          "instrument_id": "BINANCE:SPOT:BTCUSDT",
+          "fill_ids": [
+            "fill-1-open",
+            "fill-1-close"
+          ],
+          "funding_ids": [],
+          "economic_contribution_usdt": "10",
+          "opened_at": "2026-01-01T06:00:00.000Z",
+          "closed_at": "2026-01-01T18:00:00.000Z",
+          "eligible": true
+        },
+        {
+          "trade_id": "trd:ec856b66c6744f8c6a7edfb9fdcbe62fd57c4c8b1be7e4e3a613ea090d5d3e1f",
+          "instrument_id": "BINANCE:SPOT:BTCUSDT",
+          "fill_ids": [
+            "fill-2-open",
+            "fill-2-close"
+          ],
+          "funding_ids": [],
+          "economic_contribution_usdt": "9",
+          "opened_at": "2026-01-02T06:00:00.000Z",
+          "closed_at": "2026-01-02T18:00:00.000Z",
+          "eligible": true
+        }
+      ],
+      "selected_trade_ids": [
+        "trd:c1cdc7e7d60fc72769ef8f2cd231b9164449f000b96fb21c417c6f8ac7d66c6c",
+        "trd:ec856b66c6744f8c6a7edfb9fdcbe62fd57c4c8b1be7e4e3a613ea090d5d3e1f"
+      ],
+      "counterfactual_series": {
+        "$schema": "./statistical-series-snapshot-v1.schema.json",
+        "schema_version": "1.2.0",
+        "series_id": "cf:ee58cb32d2f61e9cc8fd8d03f09ec45f",
+        "series_hash": "55f217a119f5cc858133018a4854872b7852755e328de91db1c1d70450d68746",
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_economic_snapshot_hashes": [
+          "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a"
+        ],
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "scope": {
+          "account_id": "account-replay",
+          "evaluation_ledger": "BASELINE_LEDGER",
+          "release_route": "BASELINE_ONLY",
+          "direction": "LONG",
+          "venue": "BINANCE_SPOT",
+          "recipe_release_id": "recipe-replay",
+          "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "deployment_line_id": "line-replay",
+          "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+          "evaluation_window_end": "2026-01-03T00:00:00.000Z"
+        },
+        "approved_production_capital_usdt": "1000",
+        "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+        "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+        "aggregation": "SUM",
+        "observations": [
+          {
+            "observation_id": "observation-1",
+            "period_start": "2026-01-01T00:00:00.000Z",
+            "period_end": "2026-01-02T00:00:00.000Z",
+            "value": "0",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+            "fold_id": "fold-1",
+            "counterfactual_replay_period_hash": "fa71b619b68e79cc80407490703608bc27827c7213d0f739d9795ed01e6500ee"
+          },
+          {
+            "observation_id": "observation-2",
+            "period_start": "2026-01-02T00:00:00.000Z",
+            "period_end": "2026-01-03T00:00:00.000Z",
+            "value": "0",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "8d2bbc3df19bbc8888116479196b1bac1486d7c2599e2bb1623b789cb838905a",
+            "fold_id": "fold-2",
+            "counterfactual_replay_period_hash": "3549fece56d81afaf0f0921854d084a0767bb4f876cb49e0d5e5e9433e2b8d85"
+          }
+        ],
+        "bootstrap_design": {
+          "block_length": 1,
+          "minimum_block_count": 2,
+          "resample_count": 1000,
+          "seed": 19,
+          "confidence_level": "0.95",
+          "confidence_side": "LOWER_ONE_SIDED",
+          "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+          "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+        },
+        "generated_at": "2026-01-03T00:00:00.000Z",
+        "replay_verified": true,
+        "counterfactual_replay_id": "golden-computed"
+      },
+      "generated_at": "2026-01-03T00:00:00.000Z",
+      "replay_verified": true
+    },
+    "trade-replay-top5-no-positive": {
+      "$schema": "./trade-replay-snapshot-v1.schema.json",
+      "schema_version": "1.0.0",
+      "replay_id": "golden-no-positive",
+      "replay_hash": "d7a55166bc371127346f5b2a1483a4fca70e5bdc4420b3d48256631a425aa733",
+      "hash_algorithm": "SHA-256",
+      "canonicalization": "RFC8785_JCS",
+      "source_series_snapshot": {
+        "$schema": "./statistical-series-snapshot-v1.schema.json",
+        "schema_version": "1.0.0",
+        "series_id": "series-complete-trades",
+        "series_hash": "fc6e30d3718d5988ab906cd69433b40f38cca1720e72afb5d49e42003b6872ff",
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_economic_snapshot_hashes": [
+          "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+          "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e"
+        ],
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "scope": {
+          "account_id": "account-replay",
+          "evaluation_ledger": "BASELINE_LEDGER",
+          "release_route": "BASELINE_ONLY",
+          "direction": "LONG",
+          "venue": "BINANCE_SPOT",
+          "recipe_release_id": "recipe-replay",
+          "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "deployment_line_id": "line-replay",
+          "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+          "evaluation_window_end": "2026-01-03T00:00:00.000Z"
+        },
+        "approved_production_capital_usdt": "1000",
+        "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+        "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+        "aggregation": "SUM",
+        "observations": [
+          {
+            "observation_id": "observation-1",
+            "period_start": "2026-01-01T00:00:00.000Z",
+            "period_end": "2026-01-02T00:00:00.000Z",
+            "value": "0",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+            "fold_id": "fold-1"
+          },
+          {
+            "observation_id": "observation-2",
+            "period_start": "2026-01-02T00:00:00.000Z",
+            "period_end": "2026-01-03T00:00:00.000Z",
+            "value": "-0.0010005003335835335001429822540683449607552052504344",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+            "fold_id": "fold-2"
+          }
+        ],
+        "bootstrap_design": {
+          "block_length": 1,
+          "minimum_block_count": 2,
+          "resample_count": 1000,
+          "seed": 19,
+          "confidence_level": "0.95",
+          "confidence_side": "LOWER_ONE_SIDED",
+          "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+          "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+        },
+        "generated_at": "2026-01-03T00:00:00.000Z",
+        "replay_verified": true
+      },
+      "source_series_hash": "fc6e30d3718d5988ab906cd69433b40f38cca1720e72afb5d49e42003b6872ff",
+      "source_economic_snapshots": [
+        {
+          "$schema": "./economic-ledger-snapshot-v1.schema.json",
+          "schema_version": "1.1.0",
+          "snapshot_id": "economic-replay-1",
+          "snapshot_hash": "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+          "hash_algorithm": "SHA-256",
+          "canonicalization": "RFC8785_JCS",
+          "source_ledger_hash": "3e0b0d28d3ffa833faff6e8daa9227a6d39f47ad0b3c918c3193d0d597a477b4",
+          "source_projection_hash": "71a9fe3d59c62f50eec601f32221e839ac6f5e988d38553aa37ff89f2956c611",
+          "accounting_policy_id": "accounting-replay",
+          "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+          "cost_allocation_policy_id": "cost-replay",
+          "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+          "scope": {
+            "account_id": "account-replay",
+            "evaluation_ledger": "BASELINE_LEDGER",
+            "release_route": "BASELINE_ONLY",
+            "direction": "LONG",
+            "venue": "BINANCE_SPOT",
+            "recipe_release_id": "recipe-replay",
+            "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+            "deployment_line_id": "line-replay",
+            "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+            "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+          },
+          "reporting_asset": "USDT",
+          "window_event_convention": "START_EXCLUSIVE_END_INCLUSIVE",
+          "starting_liquidation_equity_usdt": "1000",
+          "ending_liquidation_equity_usdt": "1000",
+          "opening_positions": [],
+          "fills": [
+            {
+              "fill_id": "fill-1-open",
+              "exchange_trade_id": "exchange-1-open",
+              "local_order_id": "order-1-open",
+              "venue_order_id": "venue-1-open",
+              "source_event_sequence": 2,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "BUY",
+              "quantity": "1",
+              "price": "100",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-01T06:00:00.000Z"
+            },
+            {
+              "fill_id": "fill-1-close",
+              "exchange_trade_id": "exchange-1-close",
+              "local_order_id": "order-1-close",
+              "venue_order_id": "venue-1-close",
+              "source_event_sequence": 3,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "SELL",
+              "quantity": "1",
+              "price": "100",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-01T18:00:00.000Z"
+            }
+          ],
+          "funding_cashflows": [],
+          "external_cash_flows": [],
+          "allocated_costs": [],
+          "equity_points": [
+            {
+              "equity_snapshot_id": "equity-1-start",
+              "source_event_sequence": 1,
+              "as_of": "2026-01-01T00:00:00.000Z",
+              "marked_equity_usdt": "1000",
+              "liquidation_equity_usdt": "1000",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            },
+            {
+              "equity_snapshot_id": "equity-1-end",
+              "source_event_sequence": 4,
+              "as_of": "2026-01-02T00:00:00.000Z",
+              "marked_equity_usdt": "1000",
+              "liquidation_equity_usdt": "1000",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            }
+          ],
+          "generated_at": "2026-01-02T00:00:00.000Z",
+          "replay_verified": true
+        },
+        {
+          "$schema": "./economic-ledger-snapshot-v1.schema.json",
+          "schema_version": "1.1.0",
+          "snapshot_id": "economic-replay-2",
+          "snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "hash_algorithm": "SHA-256",
+          "canonicalization": "RFC8785_JCS",
+          "source_ledger_hash": "1c7b77ba739fbfa43183d5394822c7a62f98fe833054f0cba22faffcf3615339",
+          "source_projection_hash": "163366c4b0e38b5be6bd7eb7562e6f67e50a3aeee42b2fce1b990f3e14838077",
+          "accounting_policy_id": "accounting-replay",
+          "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+          "cost_allocation_policy_id": "cost-replay",
+          "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+          "scope": {
+            "account_id": "account-replay",
+            "evaluation_ledger": "BASELINE_LEDGER",
+            "release_route": "BASELINE_ONLY",
+            "direction": "LONG",
+            "venue": "BINANCE_SPOT",
+            "recipe_release_id": "recipe-replay",
+            "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+            "deployment_line_id": "line-replay",
+            "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "evaluation_window_start": "2026-01-02T00:00:00.000Z",
+            "evaluation_window_end": "2026-01-03T00:00:00.000Z"
+          },
+          "reporting_asset": "USDT",
+          "window_event_convention": "START_EXCLUSIVE_END_INCLUSIVE",
+          "starting_liquidation_equity_usdt": "1000",
+          "ending_liquidation_equity_usdt": "999",
+          "opening_positions": [],
+          "fills": [
+            {
+              "fill_id": "fill-2-open",
+              "exchange_trade_id": "exchange-2-open",
+              "local_order_id": "order-2-open",
+              "venue_order_id": "venue-2-open",
+              "source_event_sequence": 2,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "BUY",
+              "quantity": "1",
+              "price": "100",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-02T06:00:00.000Z"
+            },
+            {
+              "fill_id": "fill-2-close",
+              "exchange_trade_id": "exchange-2-close",
+              "local_order_id": "order-2-close",
+              "venue_order_id": "venue-2-close",
+              "source_event_sequence": 3,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "SELL",
+              "quantity": "1",
+              "price": "99",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-02T18:00:00.000Z"
+            }
+          ],
+          "funding_cashflows": [],
+          "external_cash_flows": [],
+          "allocated_costs": [],
+          "equity_points": [
+            {
+              "equity_snapshot_id": "equity-2-start",
+              "source_event_sequence": 1,
+              "as_of": "2026-01-02T00:00:00.000Z",
+              "marked_equity_usdt": "1000",
+              "liquidation_equity_usdt": "1000",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            },
+            {
+              "equity_snapshot_id": "equity-2-end",
+              "source_event_sequence": 4,
+              "as_of": "2026-01-03T00:00:00.000Z",
+              "marked_equity_usdt": "999",
+              "liquidation_equity_usdt": "999",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            }
+          ],
+          "generated_at": "2026-01-03T00:00:00.000Z",
+          "replay_verified": true
+        }
+      ],
+      "source_economic_snapshot_hashes": [
+        "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+        "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e"
+      ],
+      "scope": {
+        "account_id": "account-replay",
+        "evaluation_ledger": "BASELINE_LEDGER",
+        "release_route": "BASELINE_ONLY",
+        "direction": "LONG",
+        "venue": "BINANCE_SPOT",
+        "recipe_release_id": "recipe-replay",
+        "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "deployment_line_id": "line-replay",
+        "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+        "evaluation_window_end": "2026-01-03T00:00:00.000Z"
+      },
+      "policy_bindings": {
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "approved_production_capital_usdt": "1000",
+      "bootstrap_design": {
+        "block_length": 1,
+        "minimum_block_count": 2,
+        "resample_count": 1000,
+        "seed": 19,
+        "confidence_level": "0.95",
+        "confidence_side": "LOWER_ONE_SIDED",
+        "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+        "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+      },
+      "valuation_checkpoints": [
+        {
+          "source_economic_snapshot_hash": "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+          "equity_snapshot_id": "equity-1-start",
+          "as_of": "2026-01-01T00:00:00.000Z",
+          "instruments": []
+        },
+        {
+          "source_economic_snapshot_hash": "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+          "equity_snapshot_id": "equity-1-end",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "instruments": []
+        },
+        {
+          "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "equity_snapshot_id": "equity-2-start",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "instruments": []
+        },
+        {
+          "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "equity_snapshot_id": "equity-2-end",
+          "as_of": "2026-01-03T00:00:00.000Z",
+          "instruments": []
+        }
+      ],
+      "original_replay": [
+        {
+          "source_economic_snapshot_hash": "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+          "equity_snapshot_id": "equity-1-start",
+          "as_of": "2026-01-01T00:00:00.000Z",
+          "liquidation_equity_usdt": "1000",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        },
+        {
+          "source_economic_snapshot_hash": "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+          "equity_snapshot_id": "equity-1-end",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "liquidation_equity_usdt": "1000",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        },
+        {
+          "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "equity_snapshot_id": "equity-2-start",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "liquidation_equity_usdt": "1000",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        },
+        {
+          "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+          "equity_snapshot_id": "equity-2-end",
+          "as_of": "2026-01-03T00:00:00.000Z",
+          "liquidation_equity_usdt": "999",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        }
+      ],
+      "completed_trades": [
+        {
+          "trade_id": "trd:c1cdc7e7d60fc72769ef8f2cd231b9164449f000b96fb21c417c6f8ac7d66c6c",
+          "instrument_id": "BINANCE:SPOT:BTCUSDT",
+          "fill_ids": [
+            "fill-1-open",
+            "fill-1-close"
+          ],
+          "funding_ids": [],
+          "economic_contribution_usdt": "0",
+          "opened_at": "2026-01-01T06:00:00.000Z",
+          "closed_at": "2026-01-01T18:00:00.000Z",
+          "eligible": true
+        },
+        {
+          "trade_id": "trd:ec856b66c6744f8c6a7edfb9fdcbe62fd57c4c8b1be7e4e3a613ea090d5d3e1f",
+          "instrument_id": "BINANCE:SPOT:BTCUSDT",
+          "fill_ids": [
+            "fill-2-open",
+            "fill-2-close"
+          ],
+          "funding_ids": [],
+          "economic_contribution_usdt": "-1",
+          "opened_at": "2026-01-02T06:00:00.000Z",
+          "closed_at": "2026-01-02T18:00:00.000Z",
+          "eligible": true
+        }
+      ],
+      "selected_trade_ids": [],
+      "counterfactual_series": {
+        "$schema": "./statistical-series-snapshot-v1.schema.json",
+        "schema_version": "1.2.0",
+        "series_id": "cf:5aff6647d59f79cf8f66d9c4eefea49b",
+        "series_hash": "56545d390dd1f51b7f28de2c32c90e1efeefd32e77215e6cbf16c204666a09e1",
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_economic_snapshot_hashes": [
+          "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+          "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e"
+        ],
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "scope": {
+          "account_id": "account-replay",
+          "evaluation_ledger": "BASELINE_LEDGER",
+          "release_route": "BASELINE_ONLY",
+          "direction": "LONG",
+          "venue": "BINANCE_SPOT",
+          "recipe_release_id": "recipe-replay",
+          "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "deployment_line_id": "line-replay",
+          "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+          "evaluation_window_end": "2026-01-03T00:00:00.000Z"
+        },
+        "approved_production_capital_usdt": "1000",
+        "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+        "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+        "aggregation": "SUM",
+        "observations": [
+          {
+            "observation_id": "observation-1",
+            "period_start": "2026-01-01T00:00:00.000Z",
+            "period_end": "2026-01-02T00:00:00.000Z",
+            "value": "0",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "2c78f85671c9631eb3cdc37ee7c95c37f5dc629c49d1dbf82351abfaf247b451",
+            "fold_id": "fold-1",
+            "counterfactual_replay_period_hash": "44732f51cedba3143d33052aad914ab066045cd56206510dc42097ce7279c0d8"
+          },
+          {
+            "observation_id": "observation-2",
+            "period_start": "2026-01-02T00:00:00.000Z",
+            "period_end": "2026-01-03T00:00:00.000Z",
+            "value": "-0.0010005003335835335001429822540683449607552052504344",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "59a1636cb0e3c08c11e9825a2f9dec6bca1e9e953bceb5f6addd4c8839ce477e",
+            "fold_id": "fold-2",
+            "counterfactual_replay_period_hash": "4ff91aeb9cbfc3f2876564271fa5936ba21aa6a4e09009a08f4109812c6a0351"
+          }
+        ],
+        "bootstrap_design": {
+          "block_length": 1,
+          "minimum_block_count": 2,
+          "resample_count": 1000,
+          "seed": 19,
+          "confidence_level": "0.95",
+          "confidence_side": "LOWER_ONE_SIDED",
+          "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+          "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+        },
+        "generated_at": "2026-01-03T00:00:00.000Z",
+        "replay_verified": true,
+        "counterfactual_replay_id": "golden-no-positive"
+      },
+      "generated_at": "2026-01-03T00:00:00.000Z",
+      "replay_verified": true
+    },
+    "trade-replay-top5-inconclusive": {
+      "$schema": "./trade-replay-snapshot-v1.schema.json",
+      "schema_version": "1.0.0",
+      "replay_id": "golden-inconclusive",
+      "replay_hash": "a9d1d4248923330b473e4b0b31ce09e6da4cc27b7d688792661a6407029b4206",
+      "hash_algorithm": "SHA-256",
+      "canonicalization": "RFC8785_JCS",
+      "source_series_snapshot": {
+        "$schema": "./statistical-series-snapshot-v1.schema.json",
+        "schema_version": "1.0.0",
+        "series_id": "series-complete-trades",
+        "series_hash": "652daabcddc1dba6019de48bcaf4575d15813ae77a2c2a8aa1b376319f50f0af",
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_economic_snapshot_hashes": [
+          "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947"
+        ],
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "scope": {
+          "account_id": "account-replay",
+          "evaluation_ledger": "BASELINE_LEDGER",
+          "release_route": "BASELINE_ONLY",
+          "direction": "LONG",
+          "venue": "BINANCE_SPOT",
+          "recipe_release_id": "recipe-replay",
+          "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "deployment_line_id": "line-replay",
+          "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+          "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+        },
+        "approved_production_capital_usdt": "1000",
+        "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+        "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+        "aggregation": "SUM",
+        "observations": [
+          {
+            "observation_id": "observation-1",
+            "period_start": "2026-01-01T00:00:00.000Z",
+            "period_end": "2026-01-02T00:00:00.000Z",
+            "value": "0.0099503308531680828482153575442607416886796099400588",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+            "fold_id": "fold-1"
+          }
+        ],
+        "bootstrap_design": {
+          "block_length": 1,
+          "minimum_block_count": 2,
+          "resample_count": 1000,
+          "seed": 19,
+          "confidence_level": "0.95",
+          "confidence_side": "LOWER_ONE_SIDED",
+          "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+          "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+        },
+        "generated_at": "2026-01-02T00:00:00.000Z",
+        "replay_verified": true
+      },
+      "source_series_hash": "652daabcddc1dba6019de48bcaf4575d15813ae77a2c2a8aa1b376319f50f0af",
+      "source_economic_snapshots": [
+        {
+          "$schema": "./economic-ledger-snapshot-v1.schema.json",
+          "schema_version": "1.1.0",
+          "snapshot_id": "economic-replay-1",
+          "snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "hash_algorithm": "SHA-256",
+          "canonicalization": "RFC8785_JCS",
+          "source_ledger_hash": "3e0b0d28d3ffa833faff6e8daa9227a6d39f47ad0b3c918c3193d0d597a477b4",
+          "source_projection_hash": "71a9fe3d59c62f50eec601f32221e839ac6f5e988d38553aa37ff89f2956c611",
+          "accounting_policy_id": "accounting-replay",
+          "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+          "cost_allocation_policy_id": "cost-replay",
+          "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+          "scope": {
+            "account_id": "account-replay",
+            "evaluation_ledger": "BASELINE_LEDGER",
+            "release_route": "BASELINE_ONLY",
+            "direction": "LONG",
+            "venue": "BINANCE_SPOT",
+            "recipe_release_id": "recipe-replay",
+            "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+            "deployment_line_id": "line-replay",
+            "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+            "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+          },
+          "reporting_asset": "USDT",
+          "window_event_convention": "START_EXCLUSIVE_END_INCLUSIVE",
+          "starting_liquidation_equity_usdt": "1000",
+          "ending_liquidation_equity_usdt": "1010",
+          "opening_positions": [],
+          "fills": [
+            {
+              "fill_id": "fill-1-open",
+              "exchange_trade_id": "exchange-1-open",
+              "local_order_id": "order-1-open",
+              "venue_order_id": "venue-1-open",
+              "source_event_sequence": 2,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "BUY",
+              "quantity": "1",
+              "price": "100",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-01T06:00:00.000Z"
+            },
+            {
+              "fill_id": "fill-1-close",
+              "exchange_trade_id": "exchange-1-close",
+              "local_order_id": "order-1-close",
+              "venue_order_id": "venue-1-close",
+              "source_event_sequence": 3,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "SELL",
+              "quantity": "1",
+              "price": "110",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-01T18:00:00.000Z"
+            }
+          ],
+          "funding_cashflows": [],
+          "external_cash_flows": [],
+          "allocated_costs": [],
+          "equity_points": [
+            {
+              "equity_snapshot_id": "equity-1-start",
+              "source_event_sequence": 1,
+              "as_of": "2026-01-01T00:00:00.000Z",
+              "marked_equity_usdt": "1000",
+              "liquidation_equity_usdt": "1000",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            },
+            {
+              "equity_snapshot_id": "equity-1-end",
+              "source_event_sequence": 4,
+              "as_of": "2026-01-02T00:00:00.000Z",
+              "marked_equity_usdt": "1010",
+              "liquidation_equity_usdt": "1010",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            }
+          ],
+          "generated_at": "2026-01-02T00:00:00.000Z",
+          "replay_verified": true
+        }
+      ],
+      "source_economic_snapshot_hashes": [
+        "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947"
+      ],
+      "scope": {
+        "account_id": "account-replay",
+        "evaluation_ledger": "BASELINE_LEDGER",
+        "release_route": "BASELINE_ONLY",
+        "direction": "LONG",
+        "venue": "BINANCE_SPOT",
+        "recipe_release_id": "recipe-replay",
+        "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "deployment_line_id": "line-replay",
+        "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+        "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+      },
+      "policy_bindings": {
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "approved_production_capital_usdt": "1000",
+      "bootstrap_design": {
+        "block_length": 1,
+        "minimum_block_count": 2,
+        "resample_count": 1000,
+        "seed": 19,
+        "confidence_level": "0.95",
+        "confidence_side": "LOWER_ONE_SIDED",
+        "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+        "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+      },
+      "valuation_checkpoints": [
+        {
+          "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "equity_snapshot_id": "equity-1-start",
+          "as_of": "2026-01-01T00:00:00.000Z",
+          "instruments": []
+        },
+        {
+          "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "equity_snapshot_id": "equity-1-end",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "instruments": []
+        }
+      ],
+      "original_replay": [
+        {
+          "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "equity_snapshot_id": "equity-1-start",
+          "as_of": "2026-01-01T00:00:00.000Z",
+          "liquidation_equity_usdt": "1000",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        },
+        {
+          "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+          "equity_snapshot_id": "equity-1-end",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "liquidation_equity_usdt": "1010",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        }
+      ],
+      "completed_trades": [
+        {
+          "trade_id": "trd:ab29083599dcffce5ff2f7966f5d6a53d49d2970ba054a37ea0a81f69467a53c",
+          "instrument_id": "BINANCE:SPOT:BTCUSDT",
+          "fill_ids": [
+            "fill-1-open",
+            "fill-1-close"
+          ],
+          "funding_ids": [],
+          "economic_contribution_usdt": "10",
+          "opened_at": "2026-01-01T06:00:00.000Z",
+          "closed_at": "2026-01-01T18:00:00.000Z",
+          "eligible": true
+        }
+      ],
+      "selected_trade_ids": [
+        "trd:ab29083599dcffce5ff2f7966f5d6a53d49d2970ba054a37ea0a81f69467a53c"
+      ],
+      "counterfactual_series": {
+        "$schema": "./statistical-series-snapshot-v1.schema.json",
+        "schema_version": "1.2.0",
+        "series_id": "cf:315e31964a95328db96f1622de3077ac",
+        "series_hash": "e16fb774bd06a0b52b81e16bea8864421a56f860cc1c1ba93d473d513753be67",
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_economic_snapshot_hashes": [
+          "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947"
+        ],
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "scope": {
+          "account_id": "account-replay",
+          "evaluation_ledger": "BASELINE_LEDGER",
+          "release_route": "BASELINE_ONLY",
+          "direction": "LONG",
+          "venue": "BINANCE_SPOT",
+          "recipe_release_id": "recipe-replay",
+          "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "deployment_line_id": "line-replay",
+          "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+          "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+        },
+        "approved_production_capital_usdt": "1000",
+        "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+        "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+        "aggregation": "SUM",
+        "observations": [
+          {
+            "observation_id": "observation-1",
+            "period_start": "2026-01-01T00:00:00.000Z",
+            "period_end": "2026-01-02T00:00:00.000Z",
+            "value": "0",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "7037e07372d53492242ac9c56b9e74428f954149db6b0546f906865366e7f947",
+            "fold_id": "fold-1",
+            "counterfactual_replay_period_hash": "5b11a68bbd7f24c75455a4d73b3042f562e01c2a540688399528b2a6e01a4ed0"
+          }
+        ],
+        "bootstrap_design": {
+          "block_length": 1,
+          "minimum_block_count": 2,
+          "resample_count": 1000,
+          "seed": 19,
+          "confidence_level": "0.95",
+          "confidence_side": "LOWER_ONE_SIDED",
+          "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+          "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+        },
+        "generated_at": "2026-01-02T00:00:00.000Z",
+        "replay_verified": true,
+        "counterfactual_replay_id": "golden-inconclusive"
+      },
+      "generated_at": "2026-01-02T00:00:00.000Z",
+      "replay_verified": true
+    },
+    "trade-replay-top5-funding-mismatch": {
+      "$schema": "./trade-replay-snapshot-v1.schema.json",
+      "schema_version": "1.0.0",
+      "replay_id": "golden-funding",
+      "replay_hash": "6a9f41c4bb35093b50a372095c4efb6995143d4c3f8db10aa935a66b2310a3ae",
+      "hash_algorithm": "SHA-256",
+      "canonicalization": "RFC8785_JCS",
+      "source_series_snapshot": {
+        "$schema": "./statistical-series-snapshot-v1.schema.json",
+        "schema_version": "1.0.0",
+        "series_id": "series-complete-trades",
+        "series_hash": "f78a082e1bac8b47b7172247656bffa66803bddaee19aba82ae812226cc5eee9",
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_economic_snapshot_hashes": [
+          "39f6bf8787c8407fcfe863847906186b9b81ffd55e5f155981b5ea2f61d1d750"
+        ],
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "scope": {
+          "account_id": "account-replay",
+          "evaluation_ledger": "BASELINE_LEDGER",
+          "release_route": "BASELINE_ONLY",
+          "direction": "LONG",
+          "venue": "BINANCE_SPOT",
+          "recipe_release_id": "recipe-replay",
+          "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "deployment_line_id": "line-replay",
+          "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+          "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+        },
+        "approved_production_capital_usdt": "1000",
+        "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+        "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+        "aggregation": "SUM",
+        "observations": [
+          {
+            "observation_id": "observation-1",
+            "period_start": "2026-01-01T00:00:00.000Z",
+            "period_end": "2026-01-02T00:00:00.000Z",
+            "value": "0.011928570865273801649186288638585931611782971612044",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "39f6bf8787c8407fcfe863847906186b9b81ffd55e5f155981b5ea2f61d1d750",
+            "fold_id": "fold-1"
+          }
+        ],
+        "bootstrap_design": {
+          "block_length": 1,
+          "minimum_block_count": 2,
+          "resample_count": 1000,
+          "seed": 19,
+          "confidence_level": "0.95",
+          "confidence_side": "LOWER_ONE_SIDED",
+          "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+          "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+        },
+        "generated_at": "2026-01-02T00:00:00.000Z",
+        "replay_verified": true
+      },
+      "source_series_hash": "f78a082e1bac8b47b7172247656bffa66803bddaee19aba82ae812226cc5eee9",
+      "source_economic_snapshots": [
+        {
+          "$schema": "./economic-ledger-snapshot-v1.schema.json",
+          "schema_version": "1.1.0",
+          "snapshot_id": "economic-replay-1",
+          "snapshot_hash": "39f6bf8787c8407fcfe863847906186b9b81ffd55e5f155981b5ea2f61d1d750",
+          "hash_algorithm": "SHA-256",
+          "canonicalization": "RFC8785_JCS",
+          "source_ledger_hash": "3e0b0d28d3ffa833faff6e8daa9227a6d39f47ad0b3c918c3193d0d597a477b4",
+          "source_projection_hash": "71a9fe3d59c62f50eec601f32221e839ac6f5e988d38553aa37ff89f2956c611",
+          "accounting_policy_id": "accounting-replay",
+          "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+          "cost_allocation_policy_id": "cost-replay",
+          "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+          "scope": {
+            "account_id": "account-replay",
+            "evaluation_ledger": "BASELINE_LEDGER",
+            "release_route": "BASELINE_ONLY",
+            "direction": "LONG",
+            "venue": "BINANCE_SPOT",
+            "recipe_release_id": "recipe-replay",
+            "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+            "deployment_line_id": "line-replay",
+            "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+            "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+          },
+          "reporting_asset": "USDT",
+          "window_event_convention": "START_EXCLUSIVE_END_INCLUSIVE",
+          "starting_liquidation_equity_usdt": "1000",
+          "ending_liquidation_equity_usdt": "1012",
+          "opening_positions": [],
+          "fills": [
+            {
+              "fill_id": "fill-1-open",
+              "exchange_trade_id": "exchange-1-open",
+              "local_order_id": "order-1-open",
+              "venue_order_id": "venue-1-open",
+              "source_event_sequence": 2,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "BUY",
+              "quantity": "1",
+              "price": "100",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-01T06:00:00.000Z"
+            },
+            {
+              "fill_id": "fill-1-close",
+              "exchange_trade_id": "exchange-1-close",
+              "local_order_id": "order-1-close",
+              "venue_order_id": "venue-1-close",
+              "source_event_sequence": 4,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "side": "SELL",
+              "quantity": "1",
+              "price": "110",
+              "contract_multiplier": "1",
+              "fee_value_usdt": "0",
+              "implementation_shortfall_usdt": "0",
+              "exchange_event_time": "2026-01-01T18:00:00.000Z"
+            }
+          ],
+          "funding_cashflows": [
+            {
+              "funding_id": "funding-golden",
+              "source_event_sequence": 3,
+              "instrument_id": "BINANCE:SPOT:BTCUSDT",
+              "signed_amount_usdt": "2",
+              "position_quantity": "2",
+              "funding_rate": "0.02",
+              "mark_price": "100",
+              "settled_at": "2026-01-01T12:00:00.000Z"
+            }
+          ],
+          "external_cash_flows": [],
+          "allocated_costs": [],
+          "equity_points": [
+            {
+              "equity_snapshot_id": "equity-1-start",
+              "source_event_sequence": 1,
+              "as_of": "2026-01-01T00:00:00.000Z",
+              "marked_equity_usdt": "1000",
+              "liquidation_equity_usdt": "1000",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            },
+            {
+              "equity_snapshot_id": "equity-1-end",
+              "source_event_sequence": 5,
+              "as_of": "2026-01-02T00:00:00.000Z",
+              "marked_equity_usdt": "1012",
+              "liquidation_equity_usdt": "1012",
+              "spot_notional_usdt": "0",
+              "perp_notional_usdt": "0",
+              "active_order_risk_increasing_notional_usdt": "0",
+              "active_order_unknown_notional_usdt": "0",
+              "expected_exit_fee_accrued_usdt": "0",
+              "conservative_close_verified": true,
+              "is_utc_day_start": true,
+              "position_cost_bases": []
+            }
+          ],
+          "generated_at": "2026-01-02T00:00:00.000Z",
+          "replay_verified": true
+        }
+      ],
+      "source_economic_snapshot_hashes": [
+        "39f6bf8787c8407fcfe863847906186b9b81ffd55e5f155981b5ea2f61d1d750"
+      ],
+      "scope": {
+        "account_id": "account-replay",
+        "evaluation_ledger": "BASELINE_LEDGER",
+        "release_route": "BASELINE_ONLY",
+        "direction": "LONG",
+        "venue": "BINANCE_SPOT",
+        "recipe_release_id": "recipe-replay",
+        "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "deployment_line_id": "line-replay",
+        "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+        "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+      },
+      "policy_bindings": {
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "approved_production_capital_usdt": "1000",
+      "bootstrap_design": {
+        "block_length": 1,
+        "minimum_block_count": 2,
+        "resample_count": 1000,
+        "seed": 19,
+        "confidence_level": "0.95",
+        "confidence_side": "LOWER_ONE_SIDED",
+        "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+        "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+      },
+      "valuation_checkpoints": [
+        {
+          "source_economic_snapshot_hash": "39f6bf8787c8407fcfe863847906186b9b81ffd55e5f155981b5ea2f61d1d750",
+          "equity_snapshot_id": "equity-1-start",
+          "as_of": "2026-01-01T00:00:00.000Z",
+          "instruments": []
+        },
+        {
+          "source_economic_snapshot_hash": "39f6bf8787c8407fcfe863847906186b9b81ffd55e5f155981b5ea2f61d1d750",
+          "equity_snapshot_id": "equity-1-end",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "instruments": []
+        }
+      ],
+      "original_replay": [
+        {
+          "source_economic_snapshot_hash": "cfd33f1477a8f15abf7d70a5545b996ea57608cfaef1f419a224b1814eaab306",
+          "equity_snapshot_id": "equity-1-start",
+          "as_of": "2026-01-01T00:00:00.000Z",
+          "liquidation_equity_usdt": "1000",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        },
+        {
+          "source_economic_snapshot_hash": "cfd33f1477a8f15abf7d70a5545b996ea57608cfaef1f419a224b1814eaab306",
+          "equity_snapshot_id": "equity-1-end",
+          "as_of": "2026-01-02T00:00:00.000Z",
+          "liquidation_equity_usdt": "1012",
+          "position_cost_bases": [],
+          "expected_exit_fee_accrued_usdt": "0"
+        }
+      ],
+      "completed_trades": [
+        {
+          "trade_id": "trd:ab29083599dcffce5ff2f7966f5d6a53d49d2970ba054a37ea0a81f69467a53c",
+          "instrument_id": "BINANCE:SPOT:BTCUSDT",
+          "fill_ids": [
+            "fill-1-open",
+            "fill-1-close"
+          ],
+          "funding_ids": [
+            "funding-golden"
+          ],
+          "economic_contribution_usdt": "12",
+          "opened_at": "2026-01-01T06:00:00.000Z",
+          "closed_at": "2026-01-01T18:00:00.000Z",
+          "eligible": true
+        }
+      ],
+      "selected_trade_ids": [
+        "trd:ab29083599dcffce5ff2f7966f5d6a53d49d2970ba054a37ea0a81f69467a53c"
+      ],
+      "counterfactual_series": {
+        "$schema": "./statistical-series-snapshot-v1.schema.json",
+        "schema_version": "1.2.0",
+        "series_id": "cf:d1a5299608c6bbcd96dae63333542595",
+        "series_hash": "8c9c46d6d419e2892f883cc6279d79a00a882ed8b83a2073f1436e02852b3d18",
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_economic_snapshot_hashes": [
+          "cfd33f1477a8f15abf7d70a5545b996ea57608cfaef1f419a224b1814eaab306"
+        ],
+        "accounting_policy_id": "accounting-replay",
+        "accounting_policy_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "cost_allocation_policy_id": "cost-replay",
+        "cost_allocation_policy_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split_policy_id": "split-replay",
+        "split_policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "statistical_design_policy_id": "statistics-replay",
+        "statistical_design_policy_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "experiment_manifest_id": "experiment-replay",
+        "experiment_manifest_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "scope": {
+          "account_id": "account-replay",
+          "evaluation_ledger": "BASELINE_LEDGER",
+          "release_route": "BASELINE_ONLY",
+          "direction": "LONG",
+          "venue": "BINANCE_SPOT",
+          "recipe_release_id": "recipe-replay",
+          "recipe_release_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "deployment_line_id": "line-replay",
+          "deployment_line_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "evaluation_window_start": "2026-01-01T00:00:00.000Z",
+          "evaluation_window_end": "2026-01-02T00:00:00.000Z"
+        },
+        "approved_production_capital_usdt": "1000",
+        "capital_normalization": "APPROVED_CAPITAL_EVALUATION_WINDOW",
+        "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+        "aggregation": "SUM",
+        "observations": [
+          {
+            "observation_id": "observation-1",
+            "period_start": "2026-01-01T00:00:00.000Z",
+            "period_end": "2026-01-02T00:00:00.000Z",
+            "value": "0",
+            "calendar_month_complete": false,
+            "source_economic_snapshot_hash": "cfd33f1477a8f15abf7d70a5545b996ea57608cfaef1f419a224b1814eaab306",
+            "fold_id": "fold-1",
+            "counterfactual_replay_period_hash": "22a15e36b1d838ed4e841c91d562a193262314e06228d049b993524691ea5e6b"
+          }
+        ],
+        "bootstrap_design": {
+          "block_length": 1,
+          "minimum_block_count": 2,
+          "resample_count": 1000,
+          "seed": 19,
+          "confidence_level": "0.95",
+          "confidence_side": "LOWER_ONE_SIDED",
+          "sampling_rule": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N",
+          "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1"
+        },
+        "generated_at": "2026-01-02T00:00:00.000Z",
+        "replay_verified": true,
+        "counterfactual_replay_id": "golden-funding"
+      },
+      "generated_at": "2026-01-02T00:00:00.000Z",
+      "replay_verified": true
     }
   },
   "vectors": [
@@ -1268,7 +2916,55 @@
       "expected_status": "COMPUTED",
       "expected_value": "0.014407341930198021706023035344030901114934212593181",
       "expected_reason_codes": []
+    },
+    {
+      "vector_id": "trade-replay-top5-computed",
+      "estimator_id": "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "trade_replay_snapshot": "trade-replay-top5-computed"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "0",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "trade-replay-top5-no-positive",
+      "estimator_id": "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "trade_replay_snapshot": "trade-replay-top5-no-positive"
+      },
+      "expected_status": "COMPUTED",
+      "expected_value": "-0.0020010006671670670002859645081366899215104105008688",
+      "expected_reason_codes": []
+    },
+    {
+      "vector_id": "trade-replay-top5-inconclusive",
+      "estimator_id": "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "trade_replay_snapshot": "trade-replay-top5-inconclusive"
+      },
+      "expected_status": "INCONCLUSIVE",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "STATISTICAL_SERIES_INSUFFICIENT_BLOCKS"
+      ]
+    },
+    {
+      "vector_id": "trade-replay-top5-funding-mismatch",
+      "estimator_id": "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1",
+      "inputs": {},
+      "fixture_bindings": {
+        "trade_replay_snapshot": "trade-replay-top5-funding-mismatch"
+      },
+      "expected_status": "FAIL",
+      "expected_value": null,
+      "expected_reason_codes": [
+        "TRADE_REPLAY_FUNDING_POSITION_MISMATCH"
+      ]
     }
   ],
-  "bundle_hash": "85f2a2c8de9e8cf7fc92236ff30a4adc3d51f8682850052dd2656e741540f81c"
+  "bundle_hash": "ee92a5d02edcf3b03bd36a2bd95bea14991ad9386a8028d69d3892124d11fda6"
 }

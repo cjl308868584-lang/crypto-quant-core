@@ -661,6 +661,29 @@ class CompleteTradeCounterfactualTests(unittest.TestCase):
             getcontext().prec = original_precision
         self.assertEqual(len(hashes), 1)
 
+    def test_semantic_revalidation_ignores_global_decimal_context(self):
+        artifact = self.build()
+        original_precision = getcontext().prec
+        try:
+            for precision in (9, 18, 28, 60):
+                getcontext().prec = precision
+                self.assertEqual(
+                    trade_replay_snapshot_reasons(artifact),
+                    (),
+                )
+                status, value, reasons = (
+                    leave_top_5_positive_trades_out_mbb_lcb95(
+                        {"trade_replay_snapshot": artifact}
+                    )
+                )
+                self.assertEqual((status, value, reasons), (
+                    "COMPUTED",
+                    "0",
+                    (),
+                ))
+        finally:
+            getcontext().prec = original_precision
+
     def test_insufficient_blocks_is_inconclusive(self):
         artifact = self.build(
             trade_pnls=("10",),
