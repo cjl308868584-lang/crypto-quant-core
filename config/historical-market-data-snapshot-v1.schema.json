@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "historical-market-data-snapshot-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "snapshot_id", "snapshot_hash", "hash_algorithm", "canonicalization", "point_in_time_policy", "request", "source_receipt", "quality_report", "facts", "ingested_at", "recorded_at"],
+  "properties": {
+    "$schema": {"const": "./historical-market-data-snapshot-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "snapshot_id": {"$ref": "#/$defs/id"},
+    "snapshot_hash": {"$ref": "#/$defs/hash"},
+    "hash_algorithm": {"const": "SHA-256"},
+    "canonicalization": {"const": "RFC8785_JCS"},
+    "point_in_time_policy": {"const": "ARCHIVE_REPLAY_ONLY"},
+    "request": {"$ref": "#/$defs/request"},
+    "source_receipt": {"$ref": "#/$defs/receipt"},
+    "quality_report": {"$ref": "#/$defs/report"},
+    "facts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fact"}},
+    "ingested_at": {"$ref": "#/$defs/time"},
+    "recorded_at": {"$ref": "#/$defs/time"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "time": {"type": "string", "pattern": "^.+Z$"},
+    "decimal": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "provider", "market", "data_family", "symbol", "interval_or_null", "period_kind", "period"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"}, "provider": {"const": "BINANCE_PUBLIC_DATA"},
+        "market": {"enum": ["SPOT", "USD_M"]}, "data_family": {"enum": ["KLINES", "AGG_TRADES", "MARK_PRICE_KLINES", "FUNDING_RATE"]},
+        "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]}, "interval_or_null": {"type": ["string", "null"]},
+        "period_kind": {"enum": ["DAILY", "MONTHLY"]}, "period": {"type": "string"}
+      }
+    },
+    "receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["provider", "archive_sha256", "checksum_sha256", "available_at", "ingested_at", "receipt_hash"],
+      "properties": {"provider": {"const": "BINANCE_PUBLIC_DATA"}, "archive_sha256": {"$ref": "#/$defs/hash"}, "checksum_sha256": {"$ref": "#/$defs/hash"}, "available_at": {"$ref": "#/$defs/time"}, "ingested_at": {"$ref": "#/$defs/time"}, "receipt_hash": {"$ref": "#/$defs/hash"}}
+    },
+    "report": {
+      "type": "object", "additionalProperties": false,
+      "required": ["blocking_findings", "warning_findings", "report_hash"],
+      "properties": {"blocking_findings": {"type": "array", "items": {"type": "string"}}, "warning_findings": {"type": "array", "items": {"type": "string"}}, "report_hash": {"$ref": "#/$defs/hash"}}
+    },
+    "fact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fact_id", "fact_type", "provider", "market", "data_family", "symbol", "business_key", "source_row_number", "event_time", "available_at"],
+      "properties": {
+        "fact_id": {"$ref": "#/$defs/id"}, "fact_type": {"enum": ["KLINE", "AGG_TRADE", "MARK_PRICE_KLINE", "FUNDING_RATE"]}, "provider": {"const": "BINANCE_PUBLIC_DATA"}, "market": {"enum": ["SPOT", "USD_M"]}, "data_family": {"enum": ["KLINES", "AGG_TRADES", "MARK_PRICE_KLINES", "FUNDING_RATE"]}, "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]}, "business_key": {"type": "string", "minLength": 1}, "source_row_number": {"type": "integer", "minimum": 1}, "event_time": {"$ref": "#/$defs/time"}, "available_at": {"$ref": "#/$defs/time"},
+        "open": {"$ref": "#/$defs/decimal"}, "high": {"$ref": "#/$defs/decimal"}, "low": {"$ref": "#/$defs/decimal"}, "close": {"$ref": "#/$defs/decimal"}, "aggregate_trade_id": {"type": "integer", "minimum": 1}, "price": {"$ref": "#/$defs/decimal"}, "quantity": {"$ref": "#/$defs/decimal"}, "first_trade_id": {"type": "integer", "minimum": 1}, "last_trade_id": {"type": "integer", "minimum": 1}, "is_buyer_maker": {"type": "boolean"}, "is_best_match": {"type": "boolean"}, "funding_interval_hours": {"const": 8}, "funding_rate": {"$ref": "#/$defs/decimal"}
+      }
+    }
+  }
+}

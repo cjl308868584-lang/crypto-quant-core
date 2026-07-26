@@ -1,13 +1,22 @@
 import hashlib
 import io
+import json
 import struct
 import unittest
 import zipfile
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from crypto_quant.market_data import (
     HistoricalArchiveRequest,
     MarketDataError,
+    build_historical_market_data_snapshot,
     extract_expected_csv,
+    fee_schedule_snapshot_hash,
+    fee_schedule_snapshot_reasons,
+    historical_market_data_snapshot_hash,
+    historical_market_data_snapshot_reasons,
+    parse_market_facts,
     verify_official_checksum,
 )
 
@@ -336,3 +345,282 @@ class ArchiveIntegrityTests(unittest.TestCase):
             self.request,
             self.verified_archive(b"not-a-zip"),
         )
+
+
+class SpotParserTests(unittest.TestCase):
+    def request(self, family="KLINES", period="2024-01-02"):
+        return HistoricalArchiveRequest.create(
+            market="SPOT",
+            data_family=family,
+            symbol="ETHUSDT",
+            interval_or_null="1m" if family == "KLINES" else None,
+            period_kind="DAILY",
+            period=period,
+        )
+
+    def test_spot_kline_timestamp_unit_changes_at_2025_boundary(self):
+        before = parse_market_facts(
+            self.request(period="2024-12-31"),
+            b"1735689540000,100.00,102.0,99.0,101.500,12,1735689599999,0,1,0,0,0\n",
+            "2026-07-27T00:00:00Z",
+        )
+        after = parse_market_facts(
+            self.request(period="2025-01-01"),
+            b"open time,open,high,low,close,volume,close time,quote asset volume,number of trades,taker buy base asset volume,taker buy quote asset volume,ignore\n"
+            b"1735689600123456,100.00,102.0,99.0,101.500,12,1735689660123455,0,1,0,0,0\n",
+            "2026-07-27T00:00:00Z",
+        )
+
+        self.assertEqual(before[0]["event_time"], "2024-12-31T23:59:00.000Z")
+        self.assertEqual(after[0]["event_time"], "2025-01-01T00:00:00.123456Z")
+        self.assertEqual(after[0]["open"], "100")
+        self.assertEqual(after[0]["close"], "101.5")
+        self.assertEqual(after[0]["available_at"], "2026-07-27T00:00:00Z")
+
+    def test_spot_aggtrade_normalizes_exact_decimal_and_business_id(self):
+        facts = parse_market_facts(
+            self.request("AGG_TRADES"),
+            b"aggregate tradeId,price,quantity,first tradeId,last tradeId,transact time,is buyer maker,is best match\n"
+            b"17,00001.2300,2.5000,100,102,1704153600123,true,false\n",
+            "2026-07-27T00:00:00Z",
+        )
+
+        self.assertEqual(facts[0]["price"], "1.23")
+        self.assertEqual(facts[0]["quantity"], "2.5")
+        self.assertEqual(facts[0]["business_key"], "ETHUSDT:17")
+        self.assertTrue(facts[0]["is_buyer_maker"])
+        self.assertFalse(facts[0]["is_best_match"])
+        self.assertTrue(facts[0]["fact_id"].startswith("mdf_"))
+
+    def test_spot_aggtrade_uses_microseconds_from_2025(self):
+        facts = parse_market_facts(
+            self.request("AGG_TRADES", period="2025-01-01"),
+            b"18,1.23,2.5,103,104,1735689600123456,false,true\n",
+            "2026-07-27T00:00:00Z",
+        )
+        self.assertEqual(facts[0]["event_time"], "2025-01-01T00:00:00.123456Z")
+
+    def test_spot_parsers_reject_malformed_business_values(self):
+        cases = (
+            (self.request(), b"1,2,3\n"),
+            (self.request(), b"wrong,header\n1,2\n"),
+            (self.request("AGG_TRADES"), b"1,1,1,3,2,1704153600123,true,false\n"),
+            (self.request("AGG_TRADES"), b"1,nope,1,1,1,1704153600123,true,false\n"),
+            (self.request("AGG_TRADES"), b"1,1,1,1,1,1735689600123456,true,false\n"),
+            (self.request(), b"1704153600000,3,2,1,4,1,1704153659999,0,1,0,0,0\n"),
+            (self.request("AGG_TRADES"), b"1,1,1,1,1,1704153600123,yes,false\n"),
+        )
+        for request, csv_bytes in cases:
+            with self.subTest(csv_bytes=csv_bytes):
+                with self.assertRaises(MarketDataError) as raised:
+                    parse_market_facts(request, csv_bytes, "2026-07-27T00:00:00Z")
+                self.assertEqual(raised.exception.reason_code, "MARKET_FACT_INVALID")
+
+    def test_spot_rejects_microseconds_before_2025_boundary(self):
+        with self.assertRaises(MarketDataError) as raised:
+            parse_market_facts(
+                self.request(period="2024-01-02"),
+                b"1704153600000000,100,101,99,100.5,1,1704153659999999,0,1,0,0,0\n",
+                "2026-07-27T00:00:00Z",
+            )
+        self.assertEqual(raised.exception.reason_code, "MARKET_FACT_INVALID")
+
+
+class UsdMParserTests(unittest.TestCase):
+    def request(self, family="MARK_PRICE_KLINES"):
+        return HistoricalArchiveRequest.create(
+            market="USD_M",
+            data_family=family,
+            symbol="BTCUSDT",
+            interval_or_null="1m" if family == "MARK_PRICE_KLINES" else None,
+            period_kind="DAILY" if family == "MARK_PRICE_KLINES" else "MONTHLY",
+            period="2024-01-02" if family == "MARK_PRICE_KLINES" else "2024-01",
+        )
+
+    def test_usdm_mark_kline_enforces_millisecond_time_and_ohlc_rules(self):
+        facts = parse_market_facts(
+            self.request(),
+            b"1704153600000,40000.00,40100,39900,40050.500,0,1704153659999,0,0,0,0,0\n",
+            "2026-07-27T00:00:00Z",
+        )
+        self.assertEqual(facts[0]["event_time"], "2024-01-02T00:00:00.000Z")
+        self.assertEqual(facts[0]["high"], "40100")
+
+        with self.assertRaises(MarketDataError) as raised:
+            parse_market_facts(
+                self.request(),
+                b"1704153600000000,4,5,3,4,0,1704153659999,0,0,0,0,0\n",
+                "2026-07-27T00:00:00Z",
+            )
+        self.assertEqual(raised.exception.reason_code, "MARKET_FACT_INVALID")
+
+    def test_usdm_funding_preserves_signed_rate_and_validates_symbol_columns(self):
+        facts = parse_market_facts(
+            self.request("FUNDING_RATE"),
+            b"calc_time,funding_interval_hours,last_funding_rate\n1704153600000,8,-0.00010000\n"
+            b"1704182400000,8,+0.00020000\n",
+            "2026-07-27T00:00:00Z",
+        )
+        self.assertEqual(facts[0]["funding_rate"], "-0.0001")
+        self.assertEqual(facts[1]["funding_rate"], "0.0002")
+        self.assertEqual(facts[0]["fact_type"], "FUNDING_RATE")
+        with self.assertRaises(MarketDataError) as raised:
+            parse_market_facts(
+                self.request("FUNDING_RATE"),
+                b"BTCUSDT,1704153600000,8,0.1\n",
+                "2026-07-27T00:00:00Z",
+            )
+        self.assertEqual(raised.exception.reason_code, "MARKET_FACT_INVALID")
+
+
+class MarketDataArtifactTests(unittest.TestCase):
+    def setUp(self):
+        self.request = HistoricalArchiveRequest.create(
+            market="SPOT", data_family="KLINES", symbol="ETHUSDT",
+            interval_or_null="1m", period_kind="DAILY", period="2024-01-02",
+        )
+        start = 1704153600000
+        rows = []
+        for index in range(1440):
+            opened = start + index * 60_000
+            rows.append(f"{opened},100,101,99,100.5,1,{opened + 59999},0,1,0,0,0")
+        self.facts = parse_market_facts(
+            self.request, ("\n".join(rows) + "\n").encode("ascii"),
+            "2026-07-27T00:00:00Z",
+        )
+
+    def build(self, facts=None, **overrides):
+        fields = {
+            "snapshot_id": "historical-ethusdt-20240102",
+            "request": self.request,
+            "facts": self.facts if facts is None else facts,
+            "archive_sha256": "a" * 64,
+            "checksum_sha256": "b" * 64,
+            "ingested_at": "2026-07-27T00:00:00Z",
+            "recorded_at": "2026-07-27T00:00:01Z",
+        }
+        fields.update(overrides)
+        return build_historical_market_data_snapshot(**fields)
+
+    def test_artifact_has_hashed_receipt_report_snapshot_and_deterministic_replay(self):
+        snapshot = self.build()
+        self.assertEqual(snapshot["snapshot_hash"], historical_market_data_snapshot_hash(snapshot))
+        self.assertEqual(snapshot["source_receipt"]["receipt_hash"], hashlib.sha256(
+            json.dumps(
+                {key: value for key, value in snapshot["source_receipt"].items() if key != "receipt_hash"},
+                sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest())
+        self.assertEqual(snapshot["quality_report"]["report_hash"], hashlib.sha256(
+            json.dumps(
+                {key: value for key, value in snapshot["quality_report"].items() if key != "report_hash"},
+                sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest())
+        self.assertEqual(snapshot["point_in_time_policy"], "ARCHIVE_REPLAY_ONLY")
+        self.assertEqual(historical_market_data_snapshot_reasons(snapshot), ())
+        self.assertEqual(snapshot, self.build())
+
+    def test_artifact_rejects_source_order_duplicates_gaps_and_time_order(self):
+        duplicate = list(self.facts)
+        duplicate[1] = dict(duplicate[1], fact_id=duplicate[0]["fact_id"])
+        out_of_order = list(self.facts)
+        out_of_order[1] = dict(out_of_order[1], source_row_number=out_of_order[0]["source_row_number"])
+        gap = tuple(self.facts[:10]) + tuple(self.facts[11:])
+        time_invalid = list(self.facts)
+        time_invalid[0] = dict(time_invalid[0], available_at="2026-07-28T00:00:00Z")
+        for facts in (duplicate, out_of_order, gap, time_invalid):
+            with self.subTest(facts=facts[:2]):
+                with self.assertRaises(MarketDataError) as raised:
+                    self.build(facts)
+                self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
+        with self.assertRaises(MarketDataError) as raised:
+            self.build(recorded_at="2026-07-26T23:59:59Z")
+        self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
+
+    def test_artifact_hash_and_schema_reject_mutation_and_unknown_business_field(self):
+        from jsonschema import Draft202012Validator
+
+        snapshot = self.build()
+        mutated = json.loads(json.dumps(snapshot))
+        mutated["facts"][0]["close"] = "999"
+        self.assertIn("SNAPSHOT_HASH_MISMATCH", historical_market_data_snapshot_reasons(mutated))
+        schema = json.loads((
+            __import__("pathlib").Path(__file__).parents[1] / "config" /
+            "historical-market-data-snapshot-v1.schema.json"
+        ).read_text())
+        validator = Draft202012Validator(schema)
+        self.assertFalse(list(validator.iter_errors(snapshot)))
+        unknown = json.loads(json.dumps(snapshot))
+        unknown["facts"][0]["unapproved_business_field"] = "no"
+        self.assertTrue(list(validator.iter_errors(unknown)))
+
+
+class FeeScheduleContractTests(unittest.TestCase):
+    def schedule(self, *, environment="RESEARCH", second_start="2024-02-01T00:00:00Z"):
+        snapshot = {
+            "$schema": "./fee-schedule-snapshot-v1.schema.json",
+            "schema_version": "1.0.0",
+            "fee_schedule_id": "binance-usdm-standard",
+            "fee_schedule_hash": "0" * 64,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "usage_environment": environment,
+            "schedules": [
+                {
+                    "fee_id": "maker-jan", "market": "USD_M", "symbol": "BTCUSDT",
+                    "effective_at": "2024-01-01T00:00:00Z", "expires_at": second_start,
+                    "maker_rate": "0.0002", "taker_rate": "0.0005",
+                    "lifecycle": "APPROVED",
+                    "approval": {"approved_by": "risk", "approved_at": "2023-12-31T00:00:00Z"},
+                },
+                {
+                    "fee_id": "maker-feb", "market": "USD_M", "symbol": "BTCUSDT",
+                    "effective_at": second_start, "expires_at": None,
+                    "maker_rate": "0.0001", "taker_rate": "0.0004",
+                    "lifecycle": "APPROVED",
+                    "approval": {"approved_by": "risk", "approved_at": "2024-01-31T00:00:00Z"},
+                },
+            ],
+        }
+        snapshot["fee_schedule_hash"] = fee_schedule_snapshot_hash(snapshot)
+        return snapshot
+
+    def test_fee_schedule_is_independent_hashed_contract_with_approval_gates(self):
+        schedule = self.schedule()
+        self.assertEqual(fee_schedule_snapshot_reasons(schedule), ())
+        self.assertEqual(schedule["fee_schedule_hash"], fee_schedule_snapshot_hash(schedule))
+        missing_lifecycle_approval = self.schedule()
+        missing_lifecycle_approval["schedules"][0]["approval"] = {"approved_by": "risk"}
+        missing_lifecycle_approval["fee_schedule_hash"] = fee_schedule_snapshot_hash(missing_lifecycle_approval)
+        self.assertIn("FEE_SCHEDULE_APPROVAL_INVALID", fee_schedule_snapshot_reasons(missing_lifecycle_approval))
+        production = self.schedule(environment="PRODUCTION")
+        self.assertIn("FEE_SCHEDULE_PRODUCTION_UNAPPROVED", fee_schedule_snapshot_reasons(production))
+        production["production_approval"] = {"approved_by": "risk"}
+        production["fee_schedule_hash"] = fee_schedule_snapshot_hash(production)
+        self.assertIn("FEE_SCHEDULE_PRODUCTION_UNAPPROVED", fee_schedule_snapshot_reasons(production))
+        production["production_approval"] = {
+            "approved_by": "risk", "approved_at": "2024-01-01T00:00:00Z",
+        }
+        production["fee_schedule_hash"] = fee_schedule_snapshot_hash(production)
+        self.assertEqual(fee_schedule_snapshot_reasons(production), ())
+
+    def test_fee_schedule_rejects_overlaps_invalid_rates_and_unknown_schema_fields(self):
+        from jsonschema import Draft202012Validator
+
+        overlap = self.schedule()
+        overlap["schedules"][1]["effective_at"] = "2024-01-15T00:00:00Z"
+        overlap["fee_schedule_hash"] = fee_schedule_snapshot_hash(overlap)
+        self.assertIn("FEE_SCHEDULE_EFFECTIVE_INTERVAL_OVERLAP", fee_schedule_snapshot_reasons(overlap))
+        invalid_rate = self.schedule()
+        invalid_rate["schedules"][0]["maker_rate"] = "NaN"
+        self.assertIn("FEE_SCHEDULE_INVALID_DECIMAL", fee_schedule_snapshot_reasons(invalid_rate))
+        schema = json.loads((
+            __import__("pathlib").Path(__file__).parents[1] / "config" /
+            "fee-schedule-snapshot-v1.schema.json"
+        ).read_text())
+        validator = Draft202012Validator(schema)
+        self.assertFalse(list(validator.iter_errors(self.schedule())))
+        unknown = self.schedule()
+        unknown["schedules"][0]["rebate"] = "0"
+        self.assertTrue(list(validator.iter_errors(unknown)))
