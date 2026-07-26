@@ -260,7 +260,10 @@ class ArchiveIntegrityTests(unittest.TestCase):
 
         self.assertIsNotNone(verified_archive)
         self.assertEqual(
-            extract_expected_csv(self.request, verified_archive),
+            extract_expected_csv(
+                self.request,
+                verified_archive=verified_archive,
+            ),
             self.csv_bytes,
         )
 

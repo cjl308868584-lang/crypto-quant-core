@@ -49,8 +49,8 @@
 - `HistoricalArchiveRequest.create(...)`
 - `HistoricalArchiveRequest.archive_url`
 - `HistoricalArchiveRequest.checksum_url`
-- `verify_official_checksum(request, archive_bytes, checksum_bytes)`
-- `extract_expected_csv(request, archive_bytes)`
+- `verify_official_checksum(request, archive_bytes, checksum_bytes) -> VerifiedArchive`
+- `extract_expected_csv(request, verified_archive)`
 
 - [ ] **Step 1: Write failing request/locator tests**
 
@@ -111,7 +111,7 @@ Expected: missing validation functions.
 
 - [ ] **Step 7: Implement minimal checksum and ZIP validation**
 
-Parse exactly one ASCII checksum record, compare the expected filename and use `hmac.compare_digest` on lowercase SHA-256 values. Inspect all ZIP metadata before reading the single expected CSV. Enforce both declared and actual byte limits.
+Parse exactly one ASCII checksum record, compare the expected filename and use `hmac.compare_digest` on lowercase SHA-256 values. On success, return an opaque `VerifiedArchive` capability bound to the validated request and archive bytes. `extract_expected_csv` accepts only that capability, never raw archive bytes. Inspect all ZIP metadata before reading the single expected CSV. Enforce both declared and actual byte limits.
 
 - [ ] **Step 8: Verify GREEN and commit**
 
