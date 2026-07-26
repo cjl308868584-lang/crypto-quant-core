@@ -1,3 +1,4 @@
+import hashlib
 import io
 import struct
 import unittest
@@ -116,6 +117,46 @@ class HistoricalArchiveRequestTests(unittest.TestCase):
                     HistoricalArchiveRequest.create(**params)
                 self.assertEqual(raised.exception.reason_code, "REQUEST_INVALID")
 
+    def test_request_cannot_be_constructed_without_allowlist_validation(self):
+        direct_requests = (
+            {
+                "schema_version": "1.0.0",
+                "provider": "BINANCE_PUBLIC_DATA",
+                "market": "SPOT",
+                "data_family": "KLINES",
+                "symbol": "SOLUSDT",
+                "interval_or_null": "1m",
+                "period_kind": "DAILY",
+                "period": "2024-01-02",
+            },
+            {
+                "schema_version": "1.0.0",
+                "provider": "BINANCE_PUBLIC_DATA",
+                "market": "SPOT",
+                "data_family": "KLINES",
+                "symbol": "ETHUSDT",
+                "interval_or_null": "../1m",
+                "period_kind": "DAILY",
+                "period": "2024-01-02",
+            },
+        )
+
+        for fields in direct_requests:
+            with self.subTest(fields=fields):
+                with self.assertRaises(TypeError):
+                    HistoricalArchiveRequest(**fields)
+
+    def test_request_private_constructor_requires_internal_token(self):
+        with self.assertRaises(TypeError):
+            HistoricalArchiveRequest._from_validated(
+                market="SPOT",
+                data_family="KLINES",
+                symbol="SOLUSDT",
+                interval_or_null="1m",
+                period_kind="DAILY",
+                period="2024-01-02",
+            )
+
 
 def archive_request():
     return HistoricalArchiveRequest.create(
@@ -165,6 +206,19 @@ class ArchiveIntegrityTests(unittest.TestCase):
             callable_object(*args)
         self.assertEqual(raised.exception.reason_code, expected)
 
+    def checksum_for(self, archive_bytes):
+        return (
+            f"{hashlib.sha256(archive_bytes).hexdigest()}"
+            f"  {self.request.archive_filename}\n"
+        ).encode("ascii")
+
+    def verified_archive(self, archive_bytes):
+        return verify_official_checksum(
+            self.request,
+            archive_bytes,
+            self.checksum_for(archive_bytes),
+        )
+
     def test_checksum_accepts_exact_single_official_record(self):
         verify_official_checksum(
             self.request,
@@ -202,10 +256,24 @@ class ArchiveIntegrityTests(unittest.TestCase):
         archive = zip_bytes(
             (self.request.expected_csv_name, self.csv_bytes),
         )
+        verified_archive = self.verified_archive(archive)
 
+        self.assertIsNotNone(verified_archive)
         self.assertEqual(
-            extract_expected_csv(self.request, archive),
+            extract_expected_csv(self.request, verified_archive),
             self.csv_bytes,
+        )
+
+    def test_zip_extraction_rejects_unverified_archive_bytes(self):
+        archive = zip_bytes(
+            (self.request.expected_csv_name, self.csv_bytes),
+        )
+
+        self.assert_reason(
+            "ARCHIVE_UNVERIFIED",
+            extract_expected_csv,
+            self.request,
+            archive,
         )
 
     def test_zip_rejects_member_count_and_name_violations(self):
@@ -228,7 +296,7 @@ class ArchiveIntegrityTests(unittest.TestCase):
                     reason_code,
                     extract_expected_csv,
                     self.request,
-                    archive,
+                    self.verified_archive(archive),
                 )
 
     def test_zip_rejects_encryption_and_declared_size_bombs(self):
@@ -255,7 +323,7 @@ class ArchiveIntegrityTests(unittest.TestCase):
                     reason_code,
                     extract_expected_csv,
                     self.request,
-                    archive,
+                    self.verified_archive(archive),
                 )
 
     def test_zip_rejects_malformed_archive(self):
@@ -263,5 +331,5 @@ class ArchiveIntegrityTests(unittest.TestCase):
             "ZIP_MALFORMED",
             extract_expected_csv,
             self.request,
-            b"not-a-zip",
+            self.verified_archive(b"not-a-zip"),
         )

@@ -20,6 +20,8 @@ _MAX_CSV_BYTES = 256 * 1024 * 1024
 _MAX_CHECKSUM_BYTES = 4 * 1024
 _MAX_COMPRESSION_RATIO = 100
 _READ_CHUNK_BYTES = 64 * 1024
+_REQUEST_CONSTRUCTION_TOKEN = object()
+_VERIFIED_ARCHIVE_TOKEN = object()
 _FAMILY_SPECS = {
     ("SPOT", "KLINES"): ("spot", "daily", "klines", True),
     ("SPOT", "AGG_TRADES"): ("spot", "daily", "aggTrades", False),
@@ -46,7 +48,7 @@ class MarketDataError(ValueError):
         self.reason_code = reason_code
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class HistoricalArchiveRequest:
     """An allowlisted, canonical public archive request."""
 
@@ -58,6 +60,9 @@ class HistoricalArchiveRequest:
     interval_or_null: Optional[str]
     period_kind: str
     period: str
+
+    def __init__(self, *args, **kwargs):
+        raise TypeError("HistoricalArchiveRequest must be created with create")
 
     @classmethod
     def create(
@@ -82,9 +87,8 @@ class HistoricalArchiveRequest:
         elif interval_or_null is not None:
             raise MarketDataError("REQUEST_INVALID")
         _validate_period(period, period_kind)
-        return cls(
-            schema_version="1.0.0",
-            provider="BINANCE_PUBLIC_DATA",
+        return cls._from_validated(
+            _REQUEST_CONSTRUCTION_TOKEN,
             market=market,
             data_family=data_family,
             symbol=symbol,
@@ -92,6 +96,31 @@ class HistoricalArchiveRequest:
             period_kind=period_kind,
             period=period,
         )
+
+    @classmethod
+    def _from_validated(
+        cls,
+        token: object,
+        *,
+        market: str,
+        data_family: str,
+        symbol: str,
+        interval_or_null: Optional[str],
+        period_kind: str,
+        period: str,
+    ) -> "HistoricalArchiveRequest":
+        if token is not _REQUEST_CONSTRUCTION_TOKEN:
+            raise TypeError("HistoricalArchiveRequest must be created with create")
+        request = object.__new__(cls)
+        object.__setattr__(request, "schema_version", "1.0.0")
+        object.__setattr__(request, "provider", "BINANCE_PUBLIC_DATA")
+        object.__setattr__(request, "market", market)
+        object.__setattr__(request, "data_family", data_family)
+        object.__setattr__(request, "symbol", symbol)
+        object.__setattr__(request, "interval_or_null", interval_or_null)
+        object.__setattr__(request, "period_kind", period_kind)
+        object.__setattr__(request, "period", period)
+        return request
 
     @property
     def archive_filename(self) -> str:
@@ -138,11 +167,36 @@ def _validate_period(period: str, period_kind: str) -> None:
         raise MarketDataError("REQUEST_INVALID")
 
 
+@dataclass(frozen=True, init=False)
+class _VerifiedArchive:
+    """Opaque result proving one request's bytes passed checksum validation."""
+
+    _request: HistoricalArchiveRequest
+    _archive_bytes: bytes
+
+    def __init__(self, *args, **kwargs):
+        raise TypeError("verified archives are issued by checksum validation")
+
+    @classmethod
+    def _issue(
+        cls,
+        token: object,
+        request: HistoricalArchiveRequest,
+        archive_bytes: bytes,
+    ) -> "_VerifiedArchive":
+        if token is not _VERIFIED_ARCHIVE_TOKEN:
+            raise TypeError("verified archives are issued by checksum validation")
+        verified = object.__new__(cls)
+        object.__setattr__(verified, "_request", request)
+        object.__setattr__(verified, "_archive_bytes", archive_bytes)
+        return verified
+
+
 def verify_official_checksum(
     request: HistoricalArchiveRequest,
     archive_bytes: bytes,
     checksum_bytes: bytes,
-) -> None:
+) -> _VerifiedArchive:
     """Require the single official SHA-256 record to match the archive."""
 
     if len(checksum_bytes) > _MAX_CHECKSUM_BYTES:
@@ -163,14 +217,25 @@ def verify_official_checksum(
     actual_digest = hashlib.sha256(archive_bytes).hexdigest()
     if not hmac.compare_digest(expected_digest.lower(), actual_digest.lower()):
         raise MarketDataError("CHECKSUM_DIGEST_MISMATCH")
+    return _VerifiedArchive._issue(
+        _VERIFIED_ARCHIVE_TOKEN,
+        request,
+        archive_bytes,
+    )
 
 
 def extract_expected_csv(
     request: HistoricalArchiveRequest,
-    archive_bytes: bytes,
+    verified_archive: _VerifiedArchive,
 ) -> bytes:
     """Read one validated CSV member without extracting it to disk."""
 
+    if (
+        not isinstance(verified_archive, _VerifiedArchive)
+        or verified_archive._request != request
+    ):
+        raise MarketDataError("ARCHIVE_UNVERIFIED")
+    archive_bytes = verified_archive._archive_bytes
     if len(archive_bytes) > _MAX_ARCHIVE_BYTES:
         raise MarketDataError("ZIP_ARCHIVE_TOO_LARGE")
     try:
