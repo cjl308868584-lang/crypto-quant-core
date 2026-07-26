@@ -91,8 +91,10 @@ scope
 design
 trial_registry
 trial_registry_hash
+analysis_status = COMPUTED | INCONCLUSIVE
+analysis_reason_codes
 family_results
-current_candidate_results
+current_candidate_results_or_null
 generated_at
 replay_verified = true
 ```
@@ -294,6 +296,7 @@ Artifact 还必须用现有 `GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1` 重算当�
 
 ## 6. 派生结果与防篡改
 
+当 `analysis_status = COMPUTED` 时，`analysis_reason_codes` 必须为空，
 `family_results` 为按 Holm 排名保存的完整列表：
 
 ```text
@@ -321,6 +324,17 @@ achieved_power
 ```
 
 这些字段是可审计缓存，不是可信输入。`statistical_decision_snapshot_reasons` 必须从来源序列重算并逐字段精确比较；只重算自哈希而不重算派生结果不能使篡改通过。
+
+当来源和绑定均合法，但区块、方差或重采样分辨率不足时：
+
+```text
+analysis_status = INCONCLUSIVE
+analysis_reason_codes = sorted unique fixed reason codes
+family_results = []
+current_candidate_results = null
+```
+
+Validator 必须重放出相同的 `INCONCLUSIVE` 状态和原因；上传方不能自行把一个本应 `COMPUTED` 的结果降级隐藏，也不能把不确定结果填写成数值。结构、哈希、Scope、family 或绑定错误仍直接返回 `FAIL`，不得写进 `analysis_reason_codes` 冒充样本不足。
 
 ## 7. Estimator 与 Gate
 
@@ -389,7 +403,8 @@ Schema 必须：
 - `additionalProperties: false`；
 - 限制版本、枚举、ID、SHA-256、日期时间和 Decimal；
 - 对 EVALUATED/非可评估 Trial 使用条件 Schema；
-- 要求 family 和结果列表至少一项；
+- 要求 Trial Registry 至少一项，并根据 `analysis_status` 条件约束结果：
+  `COMPUTED` 必须有完整 family/current 结果，`INCONCLUSIVE` 必须使用空列表和 `null`；
 - 要求 Snapshot 所有设计字段显式存在。
 
 Golden Vector 至少覆盖：
@@ -400,7 +415,7 @@ Golden Vector 至少覆盖：
 4. CI 宽度的确定性 Decimal 结果；
 5. MERE 功效的确定性 Decimal 结果；
 6. family 缺员、Trial Registry hash 不匹配、来源序列篡改和派生值篡改的 `FAIL`；
-7. 区块不足和零方差的 `INCONCLUSIVE`；
+7. 区块不足、零方差和分辨率不足 Artifact 的确定性 `INCONCLUSIVE`；
 8. Decimal 全局 Context 改变不影响结果/hash。
 
 Evaluator Build Manifest 必须包含新 Schema、源码、Registry、Golden Vector、Metric Catalog 和 Gate Policy 哈希。发布前重新生成构建哈希和 Golden report，禁止手工填写。
@@ -424,6 +439,7 @@ Evaluator Build Manifest 必须包含新 Schema、源码、Registry、Golden Vec
   `1 / (B + 1) > adjusted_alpha`。
 
 最后一条防止 family 很大但重采样次数太少时产生虚假的“最小 p 值已足够”。`FAIL` 和 `INCONCLUSIVE` 均不能转成通过。
+三个 Estimator 读取合法的 `INCONCLUSIVE` Snapshot 时必须返回同一状态和原因，不得返回 `null` 的 `COMPUTED`。
 
 ## 11. 非目标
 
