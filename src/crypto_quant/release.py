@@ -1851,6 +1851,13 @@ class PolicyBundle:
 
         reference = snapshot.get("reference_arm")
         comparison = snapshot.get("comparison_role")
+        expected_comparison = (
+            "MINOR_CANDIDATE_VS_ACTIVE_BUNDLE"
+            if evidence.get("release_kind") == "MINOR_BUNDLE"
+            else "AI_VS_RECIPE_BASELINE"
+        )
+        if comparison != expected_comparison:
+            reasons.append("PAIRED_RISK_COMPARISON_ROLE_MISMATCH")
         experiment = trust.artifact_documents.get("experiment_manifest")
         if comparison == "AI_VS_RECIPE_BASELINE":
             if not isinstance(reference, Mapping) or not isinstance(

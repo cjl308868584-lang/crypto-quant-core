@@ -5,6 +5,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
+import crypto_quant
 from crypto_quant.build import EvaluatorBuild
 from crypto_quant.errors import PolicyError
 from crypto_quant.estimators import EstimatorRegistry
@@ -308,7 +309,8 @@ class EvaluatorBuildTests(unittest.TestCase):
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
         self.assertEqual(manifest["manifest_version"], "1.8.0")
-        self.assertEqual(manifest["package_version"], "0.14.0")
+        self.assertEqual(manifest["package_version"], "0.15.0")
+        self.assertEqual(crypto_quant.__version__, "0.15.0")
         self.assertEqual(manifest["metric_catalog_version"], "1.1.6")
         self.assertEqual(manifest["golden_vector_count"], 41)
         self.assertEqual(build.executable_estimator_count, 26)

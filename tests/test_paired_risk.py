@@ -674,6 +674,72 @@ class PairedRiskRegistryTests(PairedRiskEstimatorTests):
             ("PAIRED_RISK_SNAPSHOT_SCHEMA_INVALID",),
         )
 
+    def test_registry_rejects_schema_invalid_nested_risk_series(self):
+        from crypto_quant.paired_risk import (
+            paired_risk_evaluation_snapshot_hash,
+        )
+
+        snapshot = self.constant_risk_snapshot()
+        reference = snapshot["reference_arm"][
+            "statistical_series_snapshot"
+        ]
+        reference["unknown_nested_claim"] = "trusted"
+        reference["series_hash"] = statistical_series_hash(reference)
+        for segment in snapshot["paired_segments"]:
+            segment["reference_series_hash"] = reference["series_hash"]
+        snapshot["snapshot_hash"] = paired_risk_evaluation_snapshot_hash(
+            snapshot
+        )
+        result = self.registry.execute(
+            "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1",
+            {"paired_risk_evaluation_snapshot": snapshot},
+        )
+        self.assertEqual(result.status, "FAIL")
+        self.assertEqual(
+            result.reason_codes,
+            ("PAIRED_RISK_SOURCE_SERIES_SCHEMA_INVALID",),
+        )
+
+    def test_economic_source_scope_must_match_owning_arm(self):
+        from crypto_quant.paired_risk import (
+            paired_risk_evaluation_snapshot_hash,
+            paired_risk_evaluation_snapshot_reasons,
+        )
+
+        snapshot = self.constant_risk_snapshot()
+        source = snapshot["economic_snapshots"][0]
+        old_hash = source["snapshot_hash"]
+        source["scope"]["recipe_release_id"] = "wrong-recipe-v1"
+        source["scope"]["recipe_release_hash"] = "9" * 64
+        source["snapshot_hash"] = economic_snapshot_hash(source)
+        new_hash = source["snapshot_hash"]
+        reference = snapshot["reference_arm"][
+            "statistical_series_snapshot"
+        ]
+        reference["source_economic_snapshot_hashes"][0] = new_hash
+        reference["observations"][0][
+            "source_economic_snapshot_hash"
+        ] = new_hash
+        reference["series_hash"] = statistical_series_hash(reference)
+        snapshot["source_economic_snapshot_hashes"][0] = new_hash
+        for segment in snapshot["paired_segments"]:
+            segment["reference_series_hash"] = reference["series_hash"]
+            if (
+                segment["reference_source_economic_snapshot_hash"]
+                == old_hash
+            ):
+                segment[
+                    "reference_source_economic_snapshot_hash"
+                ] = new_hash
+        snapshot["snapshot_hash"] = paired_risk_evaluation_snapshot_hash(
+            snapshot
+        )
+        self.assertIn(
+            "PAIRED_RISK_ECONOMIC_SCOPE_MISMATCH:"
+            "reference:recipe_release_id",
+            paired_risk_evaluation_snapshot_reasons(snapshot),
+        )
+
     def test_registry_executes_exact_risk_values(self):
         snapshot = self.constant_risk_snapshot()
         expected = {

@@ -557,9 +557,10 @@ class EstimatorRegistry:
                     ),
                 )
         if "paired_risk_evaluation_snapshot" in required_fields:
+            paired_risk = inputs["paired_risk_evaluation_snapshot"]
             errors = list(
                 Draft202012Validator(self.paired_risk_schema).iter_errors(
-                    inputs["paired_risk_evaluation_snapshot"]
+                    paired_risk
                 )
             )
             if errors:
@@ -569,6 +570,40 @@ class EstimatorRegistry:
                     "FAIL",
                     None,
                     ("PAIRED_RISK_SNAPSHOT_SCHEMA_INVALID",),
+                )
+            for arm_name in ("reference_arm", "candidate_arm"):
+                arm = paired_risk.get(arm_name)
+                source_series = (
+                    arm.get("statistical_series_snapshot")
+                    if isinstance(arm, Mapping)
+                    else None
+                )
+                if list(
+                    Draft202012Validator(
+                        self.statistical_series_schema
+                    ).iter_errors(source_series)
+                ):
+                    return self._execution(
+                        estimator_id,
+                        implementation,
+                        "FAIL",
+                        None,
+                        ("PAIRED_RISK_SOURCE_SERIES_SCHEMA_INVALID",),
+                    )
+            if any(
+                list(
+                    Draft202012Validator(
+                        self.economic_snapshot_schema
+                    ).iter_errors(source)
+                )
+                for source in paired_risk.get("economic_snapshots", ())
+            ):
+                return self._execution(
+                    estimator_id,
+                    implementation,
+                    "FAIL",
+                    None,
+                    ("PAIRED_RISK_ECONOMIC_SOURCE_SCHEMA_INVALID",),
                 )
         status, value, reasons = _CALLABLES[implementation["callable_id"]](inputs)
         return self._execution(

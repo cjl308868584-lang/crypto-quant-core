@@ -329,6 +329,70 @@ def paired_risk_evaluation_snapshot_reasons(
         reasons.append("PAIRED_RISK_SOURCE_SEQUENCE_MISMATCH")
     if len(series) == 2:
         reference_series, candidate_series = series
+        for label, arm_series in (
+            ("reference", reference_series),
+            ("candidate", candidate_series),
+        ):
+            arm_scope = arm_series["scope"]
+            for observation in arm_series["observations"]:
+                source = economic_by_hash.get(
+                    observation["source_economic_snapshot_hash"]
+                )
+                if not isinstance(source, Mapping):
+                    continue
+                source_scope = source.get("scope")
+                if not isinstance(source_scope, Mapping):
+                    continue
+                expected_scope = {
+                    "account_id": arm_scope.get("account_id"),
+                    "evaluation_ledger": arm_scope.get(
+                        "evaluation_ledger"
+                    ),
+                    "release_route": arm_scope.get("release_route"),
+                    "direction": arm_scope.get("direction"),
+                    "venue": arm_scope.get("venue"),
+                    "recipe_release_id": arm_scope.get(
+                        "recipe_release_id"
+                    ),
+                    "recipe_release_hash": arm_scope.get(
+                        "recipe_release_hash"
+                    ),
+                    "deployment_line_id": arm_scope.get(
+                        "deployment_line_id"
+                    ),
+                    "deployment_line_hash": arm_scope.get(
+                        "deployment_line_hash"
+                    ),
+                    "evaluation_window_start": observation.get(
+                        "period_start"
+                    ),
+                    "evaluation_window_end": observation.get("period_end"),
+                }
+                for field, expected in expected_scope.items():
+                    if source_scope.get(field) != expected:
+                        reasons.append(
+                            "PAIRED_RISK_ECONOMIC_SCOPE_MISMATCH:"
+                            f"{label}:{field}"
+                        )
+                for source_field, series_field in (
+                    ("accounting_policy_id", "accounting_policy_id"),
+                    ("accounting_policy_hash", "accounting_policy_hash"),
+                    (
+                        "cost_allocation_policy_id",
+                        "cost_allocation_policy_id",
+                    ),
+                    (
+                        "cost_allocation_policy_hash",
+                        "cost_allocation_policy_hash",
+                    ),
+                ):
+                    if source.get(source_field) != arm_series.get(
+                        series_field
+                    ):
+                        reasons.append(
+                            "PAIRED_RISK_ECONOMIC_POLICY_MISMATCH:"
+                            f"{label}:{source_field}"
+                        )
         common_fields = (
             "accounting_policy_id",
             "accounting_policy_hash",
