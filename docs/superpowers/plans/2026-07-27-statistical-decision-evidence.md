@@ -17,6 +17,7 @@
 - Holm order is `(raw_p_value ASC, candidate_id ASC)` and stops after the first failed comparison.
 - All business arithmetic uses canonical `Decimal`; binary float is forbidden.
 - Bootstrap sampling exactly reuses `MBB_V1`, overlapping non-circular blocks, truncation to `n`, and the frozen seed.
+- Source series retain `confidence_side=LOWER_ONE_SIDED`; the decision artifact uses `TWO_SIDED` for precision, so validators compare every shared bootstrap field except `confidence_side`.
 - A structurally valid sample limitation is `INCONCLUSIVE`; any hash, binding, family, scope, design, or cached-result mismatch is `FAIL`.
 - Production remains disabled; no Broker, exchange adapter, API key, or real-order capability is added.
 - The final package version is `0.14.0`.
@@ -204,6 +205,7 @@ test_cached_family_result_tampering_fails_after_outer_rehash
 test_cached_ci_or_power_tampering_fails_after_outer_rehash
 test_current_candidate_must_be_evaluated_and_match_scope
 test_candidate_bootstrap_design_must_match_frozen_design
+test_source_one_sided_lcb_and_decision_two_sided_ci_are_compatible
 test_insufficient_blocks_builds_replayable_inconclusive_snapshot
 test_zero_variance_builds_replayable_inconclusive_snapshot
 test_bootstrap_resolution_below_holm_alpha_is_inconclusive

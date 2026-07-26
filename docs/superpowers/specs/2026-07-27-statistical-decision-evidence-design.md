@@ -147,7 +147,12 @@ quantile_rule = CONSERVATIVE_NEAREST_RANK_V1
 
 这些值必须同时满足：
 
-- 与当前和全部可评估候选的来源 `bootstrap_design` 精确一致；
+- block length、minimum block count、resample count、seed、confidence
+  level、sampling rule 和 quantile rule 与当前及全部可评估候选的来源
+  `bootstrap_design` 精确一致；
+- 来源序列继续使用既有 `confidence_side = LOWER_ONE_SIDED` 表达其正式
+  LCB 用途；本 Artifact 的 `confidence_side = TWO_SIDED` 只表达新增精度
+  区间用途，两者不得因为 side 不同而被判为设计冲突；
 - 与 ExperimentManifest 的 MERE、target power、trial family、Holm 和 FWER alpha 精确一致；
 - Artifact 中的 StatisticalDesignPolicy ID/hash 与 Release Evidence 冻结绑定一致；
 - 生成时间不早于评估窗口结束，冻结政策和 Manifest 的时间必须早于首次结果揭晓。
