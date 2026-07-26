@@ -6,7 +6,7 @@
   "status": "BUILD_CANDIDATE",
   "evaluator_id": "release-gate-evaluator-v1",
   "package_name": "crypto-quant-core",
-  "package_version": "0.13.0",
+  "package_version": "0.14.0",
   "python_requires": ">=3.9",
   "metric_catalog_id": "release-metrics-v1.1",
   "metric_catalog_version": "1.1.5",
@@ -42,7 +42,7 @@
     "config/statistical-series-snapshot-v1.schema.json": "3ef36d8465aa4978b178a3b07ffb5f5c877e5921af1d4e4f17ef2bac6260caff",
     "config/supporting-observation-bundle-v1.schema.json": "559b92cf5545b40035c8f30db95c8df7351a2e320f87b7d2572a0e47e830eec0",
     "config/trade-replay-snapshot-v1.schema.json": "d45dfaaf86f2dbdcd83109fd3b329aca6f455812df0022652129079555b8546f",
-    "pyproject.toml": "911410d8d97a476e045f260a138a2dff0134613d116382e32a09add87bddd855",
+    "pyproject.toml": "34fc4d74131d127b6a8aa0a008e173cc7bb0167e9f310d54ac87ab660d4e77bd",
     "requirements.lock": "71aa777f1717f056886f3de1fb2e1013a5dec5210d681ed30943056edf7ccbed",
     "src/crypto_quant/__init__.py": "a749f13007b241bd5f22516376d314210576177fa9f3296f798db8f83fcb28c9",
     "src/crypto_quant/build.py": "9bcd455ae9892e64840f06134c744dcc335128db3a582a61f7ca4062073da7cf",
@@ -66,7 +66,7 @@
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335"
   },
-  "build_input_tree_hash": "ea330d1c5b3f3393d7612a6802f01b94d31a195df640004a054b4dd9d1172d83",
+  "build_input_tree_hash": "33fa8a30376d25686f261408d5507ec43118428e9a373a363b6a2599ebe2b973",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -74,5 +74,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "3fb4e932d97141dcfe24d494aabb8e800db6e0592d9f336785430539d69cb580"
+  "manifest_hash": "74ff520f3c880242146ea285f181ea34532d3c14cc163539658c997f36eb74ec"
 }

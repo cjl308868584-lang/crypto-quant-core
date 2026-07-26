@@ -269,7 +269,7 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
         self.assertEqual(manifest["manifest_version"], "1.7.0")
-        self.assertEqual(manifest["package_version"], "0.13.0")
+        self.assertEqual(manifest["package_version"], "0.14.0")
         self.assertEqual(manifest["metric_catalog_version"], "1.1.5")
         self.assertEqual(manifest["golden_vector_count"], 39)
         self.assertEqual(build.executable_estimator_count, 24)
