@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "model-bundle-v1.1.schema.json",
+  "title": "ModelBundle v1.1",
+  "description": "Immutable deployable AI model bundle. BASELINE_ONLY uses a versioned NO_AI_BASE artifact rather than this schema.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "model_bundle_id",
+    "model_bundle_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "recipe_release_id",
+    "recipe_release_hash",
+    "deployment_line_id",
+    "release_route",
+    "ai_endpoint",
+    "direction",
+    "venue",
+    "model_family",
+    "training_mode",
+    "training_data_start",
+    "training_data_cutoff",
+    "trained_at",
+    "weights_hash",
+    "preprocessor_hash",
+    "calibrator_hash",
+    "ood_detector_hash",
+    "quantile_models_hash",
+    "feature_schema_hash",
+    "ordered_feature_names_hash",
+    "training_data_snapshot_hash",
+    "code_artifact_hash",
+    "environment_hash",
+    "interface_compatibility_hash",
+    "output_quantization_hash",
+    "evidence_hashes",
+    "status",
+    "created_at",
+    "activated_at",
+    "retired_at",
+    "bundle_signature"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1.0"
+    },
+    "model_bundle_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "model_bundle_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "recipe_release_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "recipe_release_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "deployment_line_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "release_route": {
+      "const": "AI_ENHANCED"
+    },
+    "ai_endpoint": {
+      "enum": [
+        "GROWTH",
+        "RISK_EFFICIENCY"
+      ]
+    },
+    "direction": {
+      "enum": [
+        "LONG",
+        "SHORT"
+      ]
+    },
+    "venue": {
+      "$ref": "#/$defs/identifier"
+    },
+    "model_family": {
+      "enum": [
+        "LOGISTIC_REGRESSION",
+        "XGBOOST"
+      ]
+    },
+    "training_mode": {
+      "const": "FROM_SCRATCH"
+    },
+    "training_data_start": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "training_data_cutoff": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "trained_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "weights_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "preprocessor_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "calibrator_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "ood_detector_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "quantile_models_hash": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "feature_schema_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "ordered_feature_names_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "training_data_snapshot_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "code_artifact_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "environment_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "interface_compatibility_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "output_quantization_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "evidence_hashes": {
+      "type": "object",
+      "required": [
+        "experiment_manifest_hash",
+        "training_evidence_hash",
+        "oos_evidence_hash",
+        "golden_snapshot_evidence_hash",
+        "current_status_evidence_hash"
+      ],
+      "properties": {
+        "experiment_manifest_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "training_evidence_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "oos_evidence_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "golden_snapshot_evidence_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "current_status_evidence_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "enum": [
+        "CANDIDATE",
+        "SHADOW",
+        "PAPER",
+        "CANARY_25",
+        "CANARY_50",
+        "CANARY_75",
+        "CHAMPION",
+        "LAST_KNOWN_GOOD",
+        "RETIRED",
+        "INVALIDATED"
+      ]
+    },
+    "created_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "activated_at": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/dateTime"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "retired_at": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/dateTime"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "bundle_signature": {
+      "$ref": "#/$defs/signature"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "PAPER",
+              "CANARY_25",
+              "CANARY_50",
+              "CANARY_75",
+              "CHAMPION",
+              "LAST_KNOWN_GOOD"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "activated_at": {
+            "$ref": "#/$defs/dateTime"
+          },
+          "retired_at": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "RETIRED",
+              "INVALIDATED"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retired_at": {
+            "$ref": "#/$defs/dateTime"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signature": {
+      "type": "object",
+      "required": [
+        "algorithm",
+        "key_id",
+        "signed_at",
+        "signature_base64"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "ED25519"
+        },
+        "key_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "signed_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "signature_base64": {
+          "type": "string",
+          "minLength": 80,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

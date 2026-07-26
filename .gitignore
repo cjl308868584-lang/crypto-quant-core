@@ -1,0 +1,32 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+build/
+dist/
+
+# Local runtime state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+data/
+logs/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*secret*
+*credentials*
+*.pem
+*.key
+
+.DS_Store

@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "recipe-release-v1.1.schema.json",
+  "title": "RecipeRelease v1.1",
+  "description": "Immutable economic recipe identity. The recipe_release_hash is the SHA-256 digest of the RFC 8785 canonical form defined by the release evaluator, excluding signatures and the hash field itself.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "recipe_release_id",
+    "recipe_release_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "release_kind",
+    "release_route",
+    "ai_endpoint",
+    "baseline_recipe_release_id",
+    "baseline_recipe_release_hash",
+    "model_family",
+    "directions",
+    "venues",
+    "experiment_manifest_hash",
+    "strategy_proposal_hash",
+    "feature_schema_hash",
+    "label_definition_hash",
+    "model_family_hash",
+    "hyperparameter_search_space_hash",
+    "calibration_method_hash",
+    "decision_thresholds_hash",
+    "position_policy_hash",
+    "risk_policy_hash",
+    "execution_fill_model_hash",
+    "data_source_policy_hash",
+    "cost_definition_hash",
+    "accounting_policy_hash",
+    "interface_compatibility_hash",
+    "data_quality_policy_hash",
+    "split_policy_hash",
+    "statistical_design_policy_hash",
+    "cost_allocation_policy_hash",
+    "forward_control_policy_hash",
+    "release_gate_policy_hash",
+    "policy_bundle_hash",
+    "created_at",
+    "frozen_at",
+    "first_outcome_available_at",
+    "freeze_attestation",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1.0"
+    },
+    "recipe_release_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "recipe_release_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "release_kind": {
+      "enum": [
+        "INITIAL",
+        "MAJOR"
+      ]
+    },
+    "release_route": {
+      "enum": [
+        "BASELINE_ONLY",
+        "AI_ENHANCED"
+      ]
+    },
+    "ai_endpoint": {
+      "enum": [
+        "GROWTH",
+        "RISK_EFFICIENCY",
+        null
+      ]
+    },
+    "baseline_recipe_release_id": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/identifier"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "baseline_recipe_release_hash": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "model_family": {
+      "enum": [
+        "NO_AI_BASE",
+        "LOGISTIC_REGRESSION",
+        "XGBOOST"
+      ]
+    },
+    "directions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "LONG",
+          "SHORT"
+        ]
+      }
+    },
+    "venues": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      }
+    },
+    "experiment_manifest_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "strategy_proposal_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "feature_schema_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "label_definition_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "model_family_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hyperparameter_search_space_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "calibration_method_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "decision_thresholds_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "position_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "risk_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "execution_fill_model_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "data_source_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "cost_definition_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "accounting_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "interface_compatibility_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "data_quality_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "split_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "statistical_design_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "cost_allocation_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "forward_control_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "release_gate_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "policy_bundle_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "created_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "frozen_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "first_outcome_available_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "freeze_attestation": {
+      "type": "object",
+      "required": [
+        "frozen_before_any_outcome",
+        "attestation_hash",
+        "signer_id",
+        "signed_at"
+      ],
+      "properties": {
+        "frozen_before_any_outcome": {
+          "const": true
+        },
+        "attestation_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "signer_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "signed_at": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "enum": [
+        "FROZEN",
+        "RETIRED",
+        "INVALIDATED"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "release_route"
+        ],
+        "properties": {
+          "release_route": {
+            "const": "BASELINE_ONLY"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ai_endpoint": {
+            "const": null
+          },
+          "baseline_recipe_release_id": {
+            "const": null
+          },
+          "baseline_recipe_release_hash": {
+            "const": null
+          },
+          "model_family": {
+            "const": "NO_AI_BASE"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "release_route"
+        ],
+        "properties": {
+          "release_route": {
+            "const": "AI_ENHANCED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ai_endpoint": {
+            "enum": [
+              "GROWTH",
+              "RISK_EFFICIENCY"
+            ]
+          },
+          "baseline_recipe_release_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "baseline_recipe_release_hash": {
+            "$ref": "#/$defs/sha256"
+          },
+          "model_family": {
+            "enum": [
+              "LOGISTIC_REGRESSION",
+              "XGBOOST"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

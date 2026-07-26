@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "release-metrics-v1.1.schema.json",
+  "title": "Release Metric Catalog v1.1",
+  "type": "object",
+  "required": [
+    "catalog_id",
+    "catalog_version",
+    "status",
+    "algorithm_execution",
+    "metric_resolution",
+    "exact_overrides",
+    "metric_families",
+    "algorithms"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "catalog_id": {
+      "const": "release-metrics-v1.1"
+    },
+    "catalog_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "status": {
+      "enum": [
+        "DESIGN_BASELINE",
+        "ACTIVE",
+        "RETIRED"
+      ]
+    },
+    "algorithm_execution": {
+      "type": "object",
+      "required": [
+        "descriptive_formula_strings_are_not_evaluated",
+        "estimator_id_resolves_to_versioned_function_registry",
+        "function_registry_is_bound_by_evaluator_build_hash",
+        "golden_test_vectors_required",
+        "unknown_or_hash_mismatch"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "descriptive_formula_strings_are_not_evaluated": {
+          "const": true
+        },
+        "estimator_id_resolves_to_versioned_function_registry": {
+          "const": true
+        },
+        "function_registry_is_bound_by_evaluator_build_hash": {
+          "const": true
+        },
+        "golden_test_vectors_required": {
+          "const": true
+        },
+        "unknown_or_hash_mismatch": {
+          "const": "FAIL"
+        }
+      }
+    },
+    "metric_resolution": {
+      "type": "object",
+      "required": [
+        "order",
+        "regex_dialect",
+        "multiple_family_match",
+        "unmatched_metric",
+        "unknown_estimator",
+        "unit_mismatch"
+      ],
+      "properties": {
+        "order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "regex_dialect": {
+          "type": "string"
+        },
+        "multiple_family_match": {
+          "type": "string"
+        },
+        "unmatched_metric": {
+          "const": "FAIL"
+        },
+        "unknown_estimator": {
+          "const": "FAIL"
+        },
+        "unit_mismatch": {
+          "const": "FAIL"
+        }
+      },
+      "additionalProperties": false
+    },
+    "exact_overrides": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/metricDefinition"
+      }
+    },
+    "metric_families": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "family_id",
+          "pattern",
+          "value_type",
+          "unit",
+          "estimator_id"
+        ],
+        "properties": {
+          "family_id": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_]+$"
+          },
+          "pattern": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value_type": {
+            "enum": [
+              "integer",
+              "decimal",
+              "boolean"
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "estimator_id": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_]+$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "algorithms": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "minProperties": 1
+      }
+    }
+  },
+  "$defs": {
+    "metricDefinition": {
+      "type": "object",
+      "required": [
+        "value_type",
+        "unit",
+        "estimator_id"
+      ],
+      "properties": {
+        "value_type": {
+          "enum": [
+            "integer",
+            "decimal",
+            "boolean"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "estimator_id": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

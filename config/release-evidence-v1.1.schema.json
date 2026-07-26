@@ -1,0 +1,831 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "release-evidence-v1.1",
+  "title": "Release Gate Evidence Envelope v1.1",
+  "type": "object",
+  "required": [
+    "evidence_id",
+    "gate_group_id",
+    "gate_id",
+    "metric_id",
+    "metric_catalog_id",
+    "estimator_id",
+    "release_gate_policy_id",
+    "release_gate_policy_version",
+    "release_route",
+    "release_kind",
+    "evaluation_ledger",
+    "fallback_activation_requested",
+    "ai_endpoint",
+    "recipe_release_schema_id",
+    "recipe_release_id",
+    "recipe_release_hash",
+    "deployment_line_id",
+    "model_bundle_id",
+    "model_bundle_schema_id",
+    "model_bundle_hash",
+    "direction",
+    "venue",
+    "stage",
+    "evaluation_window_start",
+    "evaluation_window_end",
+    "first_result_revealed_at",
+    "first_result_reveal_event_id",
+    "first_result_reveal_evidence_hash",
+    "approved_production_capital_usdt",
+    "actual_deployable_capital_usdt",
+    "break_even_capital_lcb_root_usdt",
+    "policy_bundle_hash",
+    "policy_binding_hashes",
+    "frozen_release_inputs",
+    "metric_value",
+    "metric_unit",
+    "comparator",
+    "threshold_snapshot",
+    "result",
+    "sample_status",
+    "artifact_hashes",
+    "computed_at",
+    "evidence_hash"
+  ],
+  "properties": {
+    "evidence_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "gate_group_id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*(?:\\.[A-Z0-9_]+)?$"
+    },
+    "gate_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_]+$"
+    },
+    "metric_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "metric_catalog_id": {
+      "const": "release-metrics-v1.1"
+    },
+    "estimator_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release_gate_policy_id": {
+      "const": "release-gates-v1.1"
+    },
+    "release_gate_policy_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "release_route": {
+      "enum": [
+        "BASELINE_ONLY",
+        "AI_ENHANCED"
+      ]
+    },
+    "release_kind": {
+      "enum": [
+        "INITIAL",
+        "MAJOR",
+        "MINOR_BUNDLE"
+      ]
+    },
+    "evaluation_ledger": {
+      "enum": [
+        "BASELINE_LEDGER",
+        "AI_LEDGER",
+        "PAIRED_COMPARISON",
+        "ROUTE_RUNTIME"
+      ]
+    },
+    "fallback_activation_requested": {
+      "type": "boolean"
+    },
+    "ai_endpoint": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "GROWTH",
+        "RISK_EFFICIENCY",
+        null
+      ]
+    },
+    "recipe_release_schema_id": {
+      "const": "recipe-release-v1.1.schema.json"
+    },
+    "recipe_release_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recipe_release_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "deployment_line_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_bundle_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model_bundle_schema_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "model_bundle_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "direction": {
+      "enum": [
+        "LONG",
+        "SHORT"
+      ]
+    },
+    "venue": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage": {
+      "enum": [
+        "OFFLINE_OOS",
+        "RELEASE_AUDIT",
+        "SHADOW",
+        "PAPER",
+        "CANARY_25",
+        "CANARY_50",
+        "CANARY_75",
+        "CHAMPION",
+        "MINOR_REFRESH"
+      ]
+    },
+    "canary_block_number": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 3
+    },
+    "evaluation_window_start": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evaluation_window_end": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "first_result_revealed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "first_result_reveal_event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "first_result_reveal_evidence_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "approved_production_capital_usdt": {
+      "$ref": "#/$defs/nonnegativeDecimal"
+    },
+    "actual_deployable_capital_usdt": {
+      "$ref": "#/$defs/nonnegativeDecimal"
+    },
+    "break_even_capital_lcb_root_usdt": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policy_bundle_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "policy_binding_hashes": {
+      "type": "object",
+      "required": [
+        "metric_catalog_id",
+        "evidence_schema_id",
+        "recipe_release_schema_id",
+        "risk_policy_id",
+        "data_quality_policy_id",
+        "split_policy_id",
+        "statistical_design_policy_id",
+        "accounting_policy_id",
+        "cost_allocation_policy_id",
+        "forward_control_policy_id",
+        "compliance_attestation_id",
+        "evaluator_build_hash"
+      ],
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "frozen_release_inputs": {
+      "type": "object",
+      "required": [
+        "recipe_release",
+        "recipe_release_schema",
+        "experiment_manifest",
+        "metric_catalog",
+        "evidence_schema",
+        "release_gate_policy",
+        "risk_policy",
+        "data_quality_policy",
+        "split_policy",
+        "statistical_design_policy",
+        "accounting_policy",
+        "cost_allocation_policy",
+        "approved_capital_and_break_even_plan",
+        "forward_control_policy",
+        "compliance_attestation",
+        "evaluator_build"
+      ],
+      "properties": {
+        "recipe_release": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "recipe_release_schema": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "model_bundle": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "model_bundle_schema": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "approved_fallback_registry_schema": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "experiment_manifest": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "metric_catalog": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "evidence_schema": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "release_gate_policy": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "risk_policy": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "data_quality_policy": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "split_policy": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "statistical_design_policy": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "accounting_policy": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "cost_allocation_policy": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "approved_capital_and_break_even_plan": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "forward_control_policy": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "compliance_attestation": {
+          "$ref": "#/$defs/freezeProof"
+        },
+        "evaluator_build": {
+          "$ref": "#/$defs/freezeProof"
+        }
+      },
+      "additionalProperties": false
+    },
+    "approved_fallback_registry_record_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "approved_fallback_registry_schema_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "approved_fallback_registry_record_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "approved_fallback_registry_evidence_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "approved_fallback_registry_status": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "APPROVED",
+        "SUSPENDED",
+        "EXPIRED",
+        "REVOKED",
+        null
+      ]
+    },
+    "approved_fallback_registry_expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "approved_fallback_registry_signer_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "approved_fallback_registry_signature_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "condition_snapshot": {
+      "type": "object"
+    },
+    "metric_value": {
+      "$ref": "#/$defs/scalar"
+    },
+    "metric_unit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "comparator": {
+      "enum": [
+        "EQ",
+        "NEQ",
+        "GT",
+        "GTE",
+        "LT",
+        "LTE"
+      ]
+    },
+    "threshold_snapshot": {
+      "$ref": "#/$defs/scalar"
+    },
+    "result": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INCONCLUSIVE",
+        "NOT_APPLICABLE"
+      ]
+    },
+    "result_reason": {
+      "type": "string"
+    },
+    "sample_status": {
+      "type": "object",
+      "required": [
+        "raw_event_count",
+        "effective_event_count",
+        "sufficient"
+      ],
+      "properties": {
+        "raw_event_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "effective_event_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sufficient": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifact_hashes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "computed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidence_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "$defs": {
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "nonnegativeDecimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "freezeProof": {
+      "type": "object",
+      "required": [
+        "schema_id",
+        "artifact_id",
+        "artifact_hash",
+        "frozen_at",
+        "freeze_evidence_hash",
+        "signer_id",
+        "signature_hash"
+      ],
+      "properties": {
+        "schema_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "frozen_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "freeze_evidence_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "signer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signature_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "scalar": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "$ref": "#/$defs/decimal"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "release_route": {
+            "const": "AI_ENHANCED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "ai_endpoint",
+          "model_bundle_id",
+          "model_bundle_schema_id",
+          "model_bundle_hash"
+        ],
+        "properties": {
+          "ai_endpoint": {
+            "enum": [
+              "GROWTH",
+              "RISK_EFFICIENCY"
+            ]
+          },
+          "model_bundle_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model_bundle_schema_id": {
+            "const": "model-bundle-v1.1.schema.json"
+          },
+          "model_bundle_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "frozen_release_inputs": {
+            "required": [
+              "model_bundle",
+              "model_bundle_schema"
+            ]
+          },
+          "policy_binding_hashes": {
+            "required": [
+              "model_bundle_schema_id"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "ai_endpoint": {
+            "const": null
+          },
+          "model_bundle_id": {
+            "const": null
+          },
+          "model_bundle_schema_id": {
+            "const": null
+          },
+          "model_bundle_hash": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "enum": [
+              "CANARY_25",
+              "CANARY_50",
+              "CANARY_75"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "canary_block_number"
+        ],
+        "properties": {
+          "canary_block_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "release_route"
+        ],
+        "properties": {
+          "release_route": {
+            "const": "BASELINE_ONLY"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evaluation_ledger": {
+            "enum": [
+              "BASELINE_LEDGER",
+              "ROUTE_RUNTIME"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "gate_group_id"
+        ],
+        "properties": {
+          "gate_group_id": {
+            "const": "AUDIT_BASE_ARM"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evaluation_ledger": {
+            "const": "BASELINE_LEDGER"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "gate_group_id"
+        ],
+        "properties": {
+          "gate_group_id": {
+            "const": "AUDIT_AI_ARM"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evaluation_ledger": {
+            "const": "AI_LEDGER"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "gate_group_id"
+        ],
+        "properties": {
+          "gate_group_id": {
+            "pattern": "^(AUDIT_AI_PAIRED_COMMON|AUDIT_AI_ENDPOINT\\.)"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evaluation_ledger": {
+            "const": "PAIRED_COMPARISON"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "metric_id"
+        ],
+        "properties": {
+          "metric_id": {
+            "pattern": "^(baseline_|audit_base_)"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evaluation_ledger": {
+            "const": "BASELINE_LEDGER"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "metric_id"
+        ],
+        "properties": {
+          "metric_id": {
+            "pattern": "^(ai_|audit_ai_).*(paired|delta|relative_improvement)|^(model_oos|xgboost_).*_minus_|^(paper_ai_|canary_ai_).*(delta|benefit)|^minor_.*(candidate_(minus|and)_active|risk_efficiency_candidate_minus_active|shadow_unexplained_decision_difference)"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evaluation_ledger": {
+            "const": "PAIRED_COMPARISON"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "fallback_activation_requested"
+        ],
+        "properties": {
+          "fallback_activation_requested": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "approved_fallback_registry_record_id",
+          "approved_fallback_registry_schema_id",
+          "approved_fallback_registry_record_hash",
+          "approved_fallback_registry_evidence_hash",
+          "approved_fallback_registry_status",
+          "approved_fallback_registry_expires_at",
+          "approved_fallback_registry_signer_id",
+          "approved_fallback_registry_signature_hash"
+        ],
+        "properties": {
+          "approved_fallback_registry_record_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approved_fallback_registry_schema_id": {
+            "const": "approved-fallback-registry-v1.1.schema.json"
+          },
+          "approved_fallback_registry_record_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "approved_fallback_registry_evidence_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "approved_fallback_registry_status": {
+            "const": "APPROVED"
+          },
+          "approved_fallback_registry_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "approved_fallback_registry_signer_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approved_fallback_registry_signature_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "frozen_release_inputs": {
+            "required": [
+              "approved_fallback_registry_schema"
+            ]
+          },
+          "policy_binding_hashes": {
+            "required": [
+              "approved_fallback_registry_schema_id"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "approved_fallback_registry_record_id": {
+            "const": null
+          },
+          "approved_fallback_registry_schema_id": {
+            "const": null
+          },
+          "approved_fallback_registry_record_hash": {
+            "const": null
+          },
+          "approved_fallback_registry_evidence_hash": {
+            "const": null
+          },
+          "approved_fallback_registry_status": {
+            "const": null
+          },
+          "approved_fallback_registry_expires_at": {
+            "const": null
+          },
+          "approved_fallback_registry_signer_id": {
+            "const": null
+          },
+          "approved_fallback_registry_signature_hash": {
+            "const": null
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

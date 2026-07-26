@@ -1,0 +1,877 @@
+{
+  "$schema": "./release-metrics-v1.1.schema.json",
+  "catalog_id": "release-metrics-v1.1",
+  "catalog_version": "1.1.1",
+  "status": "DESIGN_BASELINE",
+  "algorithm_execution": {
+    "descriptive_formula_strings_are_not_evaluated": true,
+    "estimator_id_resolves_to_versioned_function_registry": true,
+    "function_registry_is_bound_by_evaluator_build_hash": true,
+    "golden_test_vectors_required": true,
+    "unknown_or_hash_mismatch": "FAIL"
+  },
+  "metric_resolution": {
+    "order": [
+      "exact_overrides",
+      "first_matching_family"
+    ],
+    "regex_dialect": "ECMASCRIPT_2024",
+    "multiple_family_match": "USE_FIRST_MATCH",
+    "unmatched_metric": "FAIL",
+    "unknown_estimator": "FAIL",
+    "unit_mismatch": "FAIL"
+  },
+  "exact_overrides": {
+    "statistical_design_frozen_before_outcomes": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "SIGNED_BOOLEAN_EVIDENCE_V1"
+    },
+    "all_release_inputs_frozen_before_first_result_reveal": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "RELEASE_INPUT_FREEZE_ORDER_VALIDATION_V1"
+    },
+    "frozen_binding_hashes_exact_match": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FROZEN_BINDING_HASH_EXACT_MATCH_V1"
+    },
+    "recipe_release_schema_validation_pass": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "ARTIFACT_SCHEMA_VALIDATION_V1"
+    },
+    "model_bundle_schema_validation_pass": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "ARTIFACT_SCHEMA_VALIDATION_V1"
+    },
+    "approved_fallback_registry_schema_validation_pass": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "ARTIFACT_SCHEMA_VALIDATION_V1"
+    },
+    "jurisdiction_terms_and_derivatives_eligibility_confirmed": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "SIGNED_BOOLEAN_EVIDENCE_V1"
+    },
+    "q10_q50_q90_coverage_ci_contains_targets": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "QUANTILE_COVERAGE_INTERVAL_CHECK_V1"
+    },
+    "final_feature_count": {
+      "value_type": "integer",
+      "unit": "features",
+      "estimator_id": "FINAL_MODEL_FEATURE_COUNT_V1"
+    },
+    "deflated_sharpe_confidence": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "DEFLATED_SHARPE_CONFIDENCE_V1"
+    },
+    "probability_of_backtest_overfitting": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "CSCV_PBO_V1"
+    },
+    "expected_calibration_error": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "FIXED_BIN_ECE_V1"
+    },
+    "audit_expected_calibration_error": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "FIXED_BIN_ECE_V1"
+    },
+    "minor_candidate_expected_calibration_error": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "FIXED_BIN_ECE_V1"
+    },
+    "model_oos_brier_minus_constant_oos_brier": {
+      "value_type": "decimal",
+      "unit": "brier_score_difference",
+      "estimator_id": "PAIRED_BRIER_DIFFERENCE_V1"
+    },
+    "xgboost_oos_brier_minus_logistic_oos_brier": {
+      "value_type": "decimal",
+      "unit": "brier_score_difference",
+      "estimator_id": "PAIRED_BRIER_DIFFERENCE_V1"
+    },
+    "xgboost_delta_growth_lcb_minus_logistic_delta_growth_lcb": {
+      "value_type": "decimal",
+      "unit": "paired_log_return_delta_per_evaluation_window",
+      "estimator_id": "LCB_DIFFERENCE_V1"
+    },
+    "minor_candidate_minus_active_expected_calibration_error": {
+      "value_type": "decimal",
+      "unit": "ece_difference",
+      "estimator_id": "PAIRED_METRIC_DIFFERENCE_V1"
+    },
+    "minor_candidate_minus_active_max_drawdown": {
+      "value_type": "decimal",
+      "unit": "drawdown_ratio_difference",
+      "estimator_id": "PAIRED_METRIC_DIFFERENCE_V1"
+    },
+    "paper_cost_ci95_upper_minus_offline_stress_budget": {
+      "value_type": "decimal",
+      "unit": "implementation_shortfall_bps",
+      "estimator_id": "COST_CI95_UPPER_MINUS_BUDGET_V1"
+    },
+    "canary_cost_ci95_upper_minus_offline_stress_budget": {
+      "value_type": "decimal",
+      "unit": "implementation_shortfall_bps",
+      "estimator_id": "COST_CI95_UPPER_MINUS_BUDGET_V1"
+    },
+    "effective_event_count": {
+      "value_type": "integer",
+      "unit": "effective_events",
+      "estimator_id": "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1"
+    },
+    "audit_effective_event_count": {
+      "value_type": "integer",
+      "unit": "effective_events",
+      "estimator_id": "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1"
+    },
+    "achieved_power_at_minimum_economic_effect": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "ACHIEVED_POWER_AT_MERE_V1"
+    },
+    "audit_achieved_power_at_minimum_economic_effect": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "ACHIEVED_POWER_AT_MERE_V1"
+    },
+    "actual_primary_endpoint_ci_width": {
+      "value_type": "decimal",
+      "unit": "endpoint_unit",
+      "estimator_id": "PRIMARY_ENDPOINT_CI_WIDTH_V1"
+    },
+    "audit_actual_primary_endpoint_ci_width": {
+      "value_type": "decimal",
+      "unit": "endpoint_unit",
+      "estimator_id": "PRIMARY_ENDPOINT_CI_WIDTH_V1"
+    },
+    "baseline_variable_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1"
+    },
+    "baseline_leave_max_positive_fold_out_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "LEAVE_MAX_POSITIVE_FOLD_OUT_MBB_LCB95_V1"
+    },
+    "baseline_leave_top_5_positive_trades_out_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "LEAVE_TOP_5_POSITIVE_EVENTS_OUT_MBB_LCB95_V1"
+    },
+    "baseline_full_risk_monthly_economic_pnl_usdt_lcb95": {
+      "value_type": "decimal",
+      "unit": "USDT_per_month",
+      "estimator_id": "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1"
+    },
+    "ai_variable_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1"
+    },
+    "ai_full_risk_monthly_economic_pnl_usdt_lcb95": {
+      "value_type": "decimal",
+      "unit": "USDT_per_month",
+      "estimator_id": "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1"
+    },
+    "ai_paired_delta_economic_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "paired_log_return_delta_per_evaluation_window",
+      "estimator_id": "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1"
+    },
+    "ai_max_drawdown_relative_improvement_lcb95": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1"
+    },
+    "ai_es95_loss_relative_improvement_lcb95": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1"
+    },
+    "audit_base_absolute_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1"
+    },
+    "audit_base_leave_largest_positive_fold_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "LEAVE_MAX_POSITIVE_FOLD_OUT_MBB_LCB95_V1"
+    },
+    "audit_base_leave_top5_positive_trades_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1"
+    },
+    "audit_base_full_risk_monthly_economic_pnl_lcb95": {
+      "value_type": "decimal",
+      "unit": "USDT_per_month",
+      "estimator_id": "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1"
+    },
+    "audit_ai_absolute_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1"
+    },
+    "audit_ai_leave_largest_positive_fold_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "LEAVE_MAX_POSITIVE_FOLD_OUT_MBB_LCB95_V1"
+    },
+    "audit_ai_leave_top5_positive_trades_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1"
+    },
+    "audit_ai_full_risk_monthly_economic_pnl_lcb95": {
+      "value_type": "decimal",
+      "unit": "USDT_per_month",
+      "estimator_id": "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1"
+    },
+    "audit_base_normal_cost_max_drawdown": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1"
+    },
+    "audit_base_stress_1_5x_net_log_growth": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "STRESS_1_5X_ECONOMIC_LOG_GROWTH_V1"
+    },
+    "audit_base_stress_2x_adverse_funding_max_drawdown": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "STRESS_2X_ADVERSE_FUNDING_MAX_DRAWDOWN_V1"
+    },
+    "audit_ai_normal_cost_max_drawdown": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1"
+    },
+    "audit_ai_stress_1_5x_net_log_growth": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "STRESS_1_5X_ECONOMIC_LOG_GROWTH_V1"
+    },
+    "audit_ai_stress_2x_adverse_funding_max_drawdown": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "STRESS_2X_ADVERSE_FUNDING_MAX_DRAWDOWN_V1"
+    },
+    "audit_absolute_variable_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1"
+    },
+    "audit_leave_max_positive_event_out_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "LEAVE_MAX_POSITIVE_EVENT_OUT_MBB_LCB95_V1"
+    },
+    "audit_full_risk_monthly_economic_pnl_usdt_lcb95": {
+      "value_type": "decimal",
+      "unit": "USDT_per_month",
+      "estimator_id": "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1"
+    },
+    "audit_ai_paired_delta_economic_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "paired_log_return_delta_per_evaluation_window",
+      "estimator_id": "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1"
+    },
+    "audit_ai_max_drawdown_relative_improvement_lcb95": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1"
+    },
+    "audit_ai_es95_loss_relative_improvement_lcb95": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1"
+    },
+    "paper_updated_full_risk_monthly_economic_pnl_usdt_lcb95": {
+      "value_type": "decimal",
+      "unit": "USDT_per_month",
+      "estimator_id": "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1"
+    },
+    "canary_updated_full_risk_monthly_economic_pnl_usdt_lcb95": {
+      "value_type": "decimal",
+      "unit": "USDT_per_month",
+      "estimator_id": "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1"
+    },
+    "maximum_worst_case_effective_leverage": {
+      "value_type": "decimal",
+      "unit": "gross_notional_over_marked_equity",
+      "estimator_id": "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1"
+    },
+    "minor_candidate_minus_active_economic_net_log_growth_lcb95": {
+      "value_type": "decimal",
+      "unit": "paired_log_return_delta_per_evaluation_window",
+      "estimator_id": "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1"
+    },
+    "minor_risk_efficiency_candidate_minus_active_mdd_improvement_lcb95": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1"
+    },
+    "minor_risk_efficiency_candidate_minus_active_es95_improvement_lcb95": {
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1"
+    },
+    "minor_candidate_and_active_bundle_same_approved_capital": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "MINOR_CANDIDATE_ACTIVE_SCOPE_EXACT_MATCH_V1"
+    },
+    "minor_candidate_and_active_bundle_same_policy_bundle": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "MINOR_CANDIDATE_ACTIVE_SCOPE_EXACT_MATCH_V1"
+    },
+    "actual_deployable_capital_usdt": {
+      "value_type": "decimal",
+      "unit": "USDT",
+      "estimator_id": "ACTUAL_DEPLOYABLE_CAPITAL_V1"
+    },
+    "approved_production_capital_usdt": {
+      "value_type": "decimal",
+      "unit": "USDT",
+      "estimator_id": "APPROVED_PRODUCTION_CAPITAL_FROM_EVIDENCE_V1"
+    },
+    "break_even_capital_lcb_root_usdt": {
+      "value_type": "decimal",
+      "unit": "USDT",
+      "estimator_id": "CAPITAL_GRID_REPLAY_AND_MINIMUM_POSITIVE_ECONOMIC_PNL_LCB_ROOT_V1"
+    },
+    "break_even_root_is_finite": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FINITE_BREAK_EVEN_ROOT_CHECK_V1"
+    },
+    "actual_deployable_capital_gte_approved_production_capital": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "DECIMAL_CAPITAL_COMPARISON_V1"
+    },
+    "actual_deployable_capital_gte_finite_break_even_root": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "DECIMAL_CAPITAL_COMPARISON_V1"
+    },
+    "fallback_registry_record_qualified": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FALLBACK_REGISTRY_RECORD_QUALIFICATION_V1"
+    },
+    "fallback_registry_signature_valid": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "SIGNED_FALLBACK_REGISTRY_VALIDATION_V1"
+    },
+    "fallback_registry_signature_hash_exact_match": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FALLBACK_REGISTRY_FIELD_EXACT_MATCH_V1"
+    },
+    "fallback_registry_record_hash_exact_match": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "HASH_EXACT_MATCH_V1"
+    },
+    "fallback_registry_evidence_hash_exact_match": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "HASH_EXACT_MATCH_V1"
+    },
+    "fallback_registry_status_approved": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FALLBACK_REGISTRY_STATUS_APPROVED_V1"
+    },
+    "fallback_registry_status_exact_match": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FALLBACK_REGISTRY_FIELD_EXACT_MATCH_V1"
+    },
+    "fallback_registry_not_expired": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FALLBACK_REGISTRY_EXPIRY_CHECK_V1"
+    },
+    "fallback_registry_expiry_exact_match": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FALLBACK_REGISTRY_FIELD_EXACT_MATCH_V1"
+    },
+    "fallback_registry_scope_exact_match": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FALLBACK_REGISTRY_SCOPE_EXACT_MATCH_V1"
+    },
+    "protective_replacement_deadline_breach_count": {
+      "value_type": "integer",
+      "unit": "count",
+      "estimator_id": "PROTECTIVE_REPLACEMENT_DEADLINE_BREACH_COUNT_V1"
+    },
+    "xgboost_risk_efficiency_pareto_dominates_logistic": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "RISK_EFFICIENCY_PARETO_DOMINANCE_V1"
+    },
+    "discrete_bucket_mapping_selected_endpoint_dominates_raw_linear": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "SELECTED_ENDPOINT_DOMINANCE_V1"
+    },
+    "ai_leave_max_positive_delta_fold_out_selected_endpoint_pass": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "LEAVE_MAX_POSITIVE_DELTA_FOLD_OUT_ENDPOINT_REEVALUATION_V1"
+    },
+    "audit_ai_leave_max_positive_delta_event_out_selected_endpoint_pass": {
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "LEAVE_MAX_POSITIVE_DELTA_EVENT_OUT_ENDPOINT_REEVALUATION_V1"
+    }
+  },
+  "metric_families": [
+    {
+      "family_id": "CONTROL_BOUNDARY_BOOLEAN",
+      "pattern": ".*_(breached)$",
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "FORWARD_CONTROL_BOUNDARY_EVALUATION_V1"
+    },
+    {
+      "family_id": "BOOLEAN_FACT",
+      "pattern": ".*_(pass|exists|enabled|reused|advanced|changed|match|same_oos_window)$",
+      "value_type": "boolean",
+      "unit": "boolean",
+      "estimator_id": "SIGNED_BOOLEAN_EVIDENCE_V1"
+    },
+    {
+      "family_id": "CALENDAR_DAY_COUNT",
+      "pattern": ".*_calendar_day_count$",
+      "value_type": "integer",
+      "unit": "calendar_days",
+      "estimator_id": "COMPLETE_UTC_CALENDAR_DAY_COUNT_V1"
+    },
+    {
+      "family_id": "CALENDAR_MONTH_COUNT",
+      "pattern": ".*_calendar_month_count$",
+      "value_type": "integer",
+      "unit": "calendar_months",
+      "estimator_id": "COMPLETE_UTC_CALENDAR_MONTH_COUNT_V1"
+    },
+    {
+      "family_id": "COUNT",
+      "pattern": ".*_count$",
+      "value_type": "integer",
+      "unit": "count",
+      "estimator_id": "FILTERED_EVENT_COUNT_V1"
+    },
+    {
+      "family_id": "RATE",
+      "pattern": ".*_rate$",
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "ELIGIBLE_NUMERATOR_OVER_DENOMINATOR_V1"
+    },
+    {
+      "family_id": "MAX_DRAWDOWN",
+      "pattern": ".*max_drawdown$",
+      "value_type": "decimal",
+      "unit": "ratio",
+      "estimator_id": "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1"
+    },
+    {
+      "family_id": "NET_LOG_GROWTH",
+      "pattern": ".*net_log_growth$",
+      "value_type": "decimal",
+      "unit": "log_return_per_evaluation_window",
+      "estimator_id": "CASH_FLOW_ADJUSTED_ECONOMIC_LOG_GROWTH_V1"
+    },
+    {
+      "family_id": "SCORE_DIFFERENCE",
+      "pattern": ".*_(minus|difference).*",
+      "value_type": "decimal",
+      "unit": "metric_specific_difference",
+      "estimator_id": "PAIRED_METRIC_DIFFERENCE_V1"
+    },
+    {
+      "family_id": "FEATURE_COUNT",
+      "pattern": "^final_feature_count$",
+      "value_type": "integer",
+      "unit": "features",
+      "estimator_id": "FINAL_MODEL_FEATURE_COUNT_V1"
+    },
+    {
+      "family_id": "CANARY_BLOCK",
+      "pattern": "^canary_block_number$",
+      "value_type": "integer",
+      "unit": "block_index",
+      "estimator_id": "CANARY_BLOCK_INDEX_V1"
+    }
+  ],
+  "algorithms": {
+    "FILL_BASED_GROSS_MINUS_FEES_PLUS_SIGNED_FUNDING_V1": {
+      "gross_formula": "side_sign * (exit_fill_price - entry_fill_price) * filled_quantity * contract_multiplier",
+      "net_formula": "fill_based_gross_pnl - fee_value_usdt + signed_funding_cashflow",
+      "funding_sign": "positive_received_negative_paid",
+      "spread_and_slippage": "already_present_in_fill_prices"
+    },
+    "CASH_FLOW_ADJUSTED_LIQUIDATION_EQUITY_MINUS_ALLOCATED_COSTS_V1": {
+      "trading_formula": "ending_liquidation_equity - starting_liquidation_equity - net_external_cash_flow",
+      "economic_formula": "period_trading_pnl_usdt - allocated_infrastructure_data_alerting_cost - allocated_ai_inference_cost - allocated_model_training_cost - allocated_monitoring_and_audit_cost",
+      "open_position_mark": "long_executable_bid_or_short_executable_ask_minus_expected_exit_fee",
+      "accounting_policy_required": true,
+      "cost_allocation_policy_required": true
+    },
+    "CAPITAL_GRID_REPLAY_AND_MINIMUM_POSITIVE_ECONOMIC_PNL_LCB_ROOT_V1": {
+      "grid_source": "AccountingPolicy approved capital search grid",
+      "per_grid_point": "rerun min-notional, discrete buckets, fee tiers, no-trade decisions, fill model and cost allocation",
+      "root": "minimum capital where monthly economic pnl one-sided 95% lower bound is greater than zero",
+      "no_positive_grid_point": "NO_PROVEN_FINITE_BREAK_EVEN_CAPITAL",
+      "interpolation": "FORBIDDEN_UNLESS_PREDECLARED_AND_MONOTONICITY_PROVEN"
+    },
+    "FINITE_BREAK_EVEN_ROOT_CHECK_V1": {
+      "input": "GateEvidence break_even_capital_lcb_root_usdt",
+      "true_when": "the capital-grid replay produces a finite nonnegative canonical Decimal root inside the frozen approved search grid",
+      "null_or_no_positive_grid_point": false,
+      "noncanonical_or_nonfinite": "FAIL"
+    },
+    "ACTUAL_DEPLOYABLE_CAPITAL_V1": {
+      "source": "signed cash-flow-adjusted production account equity snapshot at GateEvidence computed_at",
+      "deductions": "unsettled withdrawals, reserved liabilities, locked collateral and unavailable balances",
+      "output": "nonnegative canonical Decimal USDT",
+      "missing_or_stale_snapshot": "FAIL"
+    },
+    "APPROVED_PRODUCTION_CAPITAL_FROM_EVIDENCE_V1": {
+      "source": "GateEvidence approved_production_capital_usdt",
+      "binding": "exact RecipeRelease, direction, venue, stage, evaluation window and policy bundle",
+      "output": "nonnegative canonical Decimal USDT",
+      "scope_mismatch": "FAIL"
+    },
+    "DECIMAL_CAPITAL_COMPARISON_V1": {
+      "comparison": "exact arbitrary-precision Decimal comparison without binary floating point",
+      "approved_capital_rule": "actual_deployable_capital_usdt >= approved_production_capital_usdt",
+      "break_even_rule": "break_even_root_is_finite and actual_deployable_capital_usdt >= break_even_capital_lcb_root_usdt",
+      "null_root": false,
+      "unit_mismatch": "FAIL"
+    },
+    "CASH_FLOW_ADJUSTED_DAILY_LOSS_V1": {
+      "formula": "(current_marked_equity - start_of_utc_day_equity - net_external_cash_flow) / start_of_utc_day_equity",
+      "nonpositive_denominator": "FAIL"
+    },
+    "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1": {
+      "input": "time_ordered_primary_endpoint_contribution_series",
+      "rules": [
+        "For AI delta, first retain only paired timestamps where AI changed the base action or absolute exposure.",
+        "Estimate autocorrelations on the retained ordered series.",
+        "Sum adjacent autocorrelation pairs until the first non-positive pair, using the initial positive sequence.",
+        "tau = max(1, 1 + 2 * sum(retained_autocorrelations)).",
+        "effective_event_count = floor(raw_eligible_event_count / tau).",
+        "Zero variance, unstable autocorrelation, or too few blocks returns INCONCLUSIVE."
+      ]
+    },
+    "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1": {
+      "confidence_level": "0.95",
+      "sidedness": "LOWER_ONE_SIDED",
+      "ledger_source": "exact GateEvidence evaluation_ledger; BASELINE_LEDGER and AI_LEDGER are never pooled or substituted",
+      "block_length_source": "SplitPolicy",
+      "seed_source": "ExperimentManifest",
+      "resample_count_source": "StatisticalDesignPolicy",
+      "insufficient_blocks": "INCONCLUSIVE"
+    },
+    "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1": {
+      "confidence_level": "0.95",
+      "sidedness": "LOWER_ONE_SIDED",
+      "required_evaluation_ledger": "PAIRED_COMPARISON",
+      "arms": "AI_LEDGER minus BASELINE_LEDGER from the same frozen scope",
+      "pair_key": "proposal_id_plus_decision_time",
+      "block_length_source": "SplitPolicy",
+      "seed_source": "ExperimentManifest",
+      "resample_count_source": "StatisticalDesignPolicy",
+      "unpaired_observation": "EXCLUDE_AND_REPORT",
+      "insufficient_blocks": "INCONCLUSIVE"
+    },
+    "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1": {
+      "source_projection": "AccountingPolicy period_economic_pnl_usdt",
+      "ledger_source": "exact GateEvidence evaluation_ledger; arm-specific absolute gates must use BASELINE_LEDGER or AI_LEDGER, never PAIRED_COMPARISON",
+      "capital_source": "GateEvidence approved_production_capital_usdt",
+      "normalization": "COMPLETE_UTC_MONTH",
+      "partial_month": "EXCLUDE",
+      "interval": "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1"
+    },
+    "CASH_FLOW_ADJUSTED_ECONOMIC_LOG_GROWTH_V1": {
+      "equity_source": "AccountingPolicy economic_equity_projection",
+      "external_cash_flow_treatment": "REMOVE_BEFORE_RETURN",
+      "nonpositive_equity": "FAIL",
+      "aggregation": "SUM_LOG_ONE_PLUS_PERIOD_RETURN"
+    },
+    "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1": {
+      "equity_source": "AccountingPolicy economic_equity_projection",
+      "external_cash_flow_treatment": "REMOVE_BEFORE_HIGH_WATERMARK",
+      "formula": "max((prior_high_watermark - current_equity) / prior_high_watermark)"
+    },
+    "STRESS_1_5X_ECONOMIC_LOG_GROWTH_V1": {
+      "source_ledger": "the GateEvidence evaluation_ledger with identical actions, fills and frozen AccountingPolicy",
+      "stress_multiplier": "1.5",
+      "stressed_components": "fees and slippage relative to the frozen normal-cost assumptions",
+      "economic_growth": "CASH_FLOW_ADJUSTED_ECONOMIC_LOG_GROWTH_V1 after the stress replay",
+      "unreplayable_component": "INCONCLUSIVE"
+    },
+    "STRESS_2X_ADVERSE_FUNDING_MAX_DRAWDOWN_V1": {
+      "source_ledger": "the GateEvidence evaluation_ledger with identical actions and frozen AccountingPolicy",
+      "cost_multiplier": "2",
+      "funding_scenario": "predeclared adverse Funding path from StatisticalDesignPolicy",
+      "drawdown": "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1 after the stress replay",
+      "missing_predeclared_scenario": "FAIL"
+    },
+    "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1": {
+      "numerator": "absolute_spot_notional + absolute_perp_notional + all_risk_increasing_active_order_max_fill_notional",
+      "denominator": "marked_equity",
+      "opposing_positions_are_netted": false,
+      "unknown_order_role": "RISK_INCREASING",
+      "nonpositive_equity": "FAIL"
+    },
+    "PAIRED_MAX_DRAWDOWN_RELATIVE_IMPROVEMENT_LCB95_V1": {
+      "point_formula": "(baseline_max_drawdown - ai_max_drawdown) / baseline_max_drawdown",
+      "interval": "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1",
+      "zero_baseline_loss": "INCONCLUSIVE"
+    },
+    "PAIRED_ES95_RELATIVE_IMPROVEMENT_LCB95_V1": {
+      "loss_convention": "ES95_is_positive_loss_magnitude",
+      "point_formula": "(baseline_es95_loss - ai_es95_loss) / baseline_es95_loss",
+      "interval": "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1",
+      "zero_baseline_loss": "INCONCLUSIVE"
+    },
+    "RISK_EFFICIENCY_PARETO_DOMINANCE_V1": {
+      "all_required": [
+        "xgb_return_noninferiority_lcb >= logistic_return_noninferiority_lcb",
+        "xgb_drawdown_improvement_lcb >= logistic_drawdown_improvement_lcb",
+        "xgb_es95_improvement_lcb >= logistic_es95_improvement_lcb"
+      ],
+      "strict_requirement": "at_least_one_comparison_is_strict",
+      "otherwise": false
+    },
+    "SELECTED_ENDPOINT_DOMINANCE_V1": {
+      "GROWTH": "candidate_delta_growth_lcb > raw_linear_delta_growth_lcb",
+      "RISK_EFFICIENCY": "candidate forms RISK_EFFICIENCY_PARETO_DOMINANCE_V1 over raw linear mapping"
+    },
+    "ACHIEVED_POWER_AT_MERE_V1": {
+      "minimum_effect_source": "StatisticalDesignPolicy",
+      "alpha_source": "ReleaseGatePolicy familywise_alpha after adjustment",
+      "sample_source": "effective_event_count",
+      "method_source": "StatisticalDesignPolicy",
+      "missing_design": "FAIL"
+    },
+    "PRIMARY_ENDPOINT_CI_WIDTH_V1": {
+      "formula": "upper_confidence_bound - lower_confidence_bound",
+      "endpoint_and_unit_source": "StatisticalDesignPolicy"
+    },
+    "RELEASE_INPUT_FREEZE_ORDER_VALIDATION_V1": {
+      "inputs": "GateEvidence first_result_revealed_at, every frozen_release_inputs freezeProof, and the signed approved_capital_and_break_even_plan payload containing the exact capital-grid specification plus approved_production_capital_usdt, actual_deployable_capital_usdt and break_even_capital_lcb_root_usdt",
+      "required_order": "every frozen_at is earlier than or equal to first_result_revealed_at, and an equal timestamp requires the signed append-only event sequence to place the freeze before the reveal",
+      "first_reveal_source": "signed sealed-audit access log or prequential outcome-reveal log bound by first_result_reveal_event_id and first_result_reveal_evidence_hash",
+      "freeze_proof_validation": "verify every freeze_evidence_hash and signature_hash against its signer_id and artifact_hash",
+      "all_required_inputs": true,
+      "missing_invalid_or_nonprior_freeze_event": "FAIL"
+    },
+    "FROZEN_BINDING_HASH_EXACT_MATCH_V1": {
+      "left": "GateEvidence policy_binding_hashes, recipe_release_hash, conditional model_bundle_hash, and canonical hashes of approved_production_capital_usdt, actual_deployable_capital_usdt and break_even_capital_lcb_root_usdt",
+      "right": "canonical artifact_hash values in GateEvidence frozen_release_inputs and the evaluator-resolved PolicyBundle",
+      "comparison": "byte-for-byte lowercase SHA-256 equality for the complete required key set; no subset matching",
+      "unknown_extra_or_missing_binding": "FAIL"
+    },
+    "ARTIFACT_SCHEMA_VALIDATION_V1": {
+      "schema_resolution": "resolve the declared schema_id through the frozen policy bundle and verify its frozen schema artifact hash",
+      "artifact_resolution": "load the artifact whose canonical-content SHA-256 equals the bound artifact hash",
+      "validation": "Draft 2020-12 or the version explicitly named by schema_id",
+      "unknown_schema_invalid_artifact_or_hash_mismatch": false
+    },
+    "FORWARD_CONTROL_BOUNDARY_EVALUATION_V1": {
+      "boundary_source": "ForwardControlPolicy",
+      "evaluation_times": "FIXED_PREDECLARED_CHECKPOINTS",
+      "early_evaluation": "SAFETY_OR_HARM_STOP_ONLY",
+      "missing_boundary": "FAIL"
+    },
+    "SIGNED_BOOLEAN_EVIDENCE_V1": {
+      "input": "versioned signed audit artifact",
+      "true_false_mapping": "literal boolean only",
+      "missing_or_unsigned": "FAIL"
+    },
+    "FILTERED_EVENT_COUNT_V1": {
+      "input": "deduplicated event IDs in the exact GateEvidence scope",
+      "aggregation": "COUNT",
+      "cross_scope_events_allowed": false
+    },
+    "COMPLETE_UTC_CALENDAR_DAY_COUNT_V1": {
+      "boundary": "00:00:00Z to next 00:00:00Z",
+      "partial_period": "EXCLUDE"
+    },
+    "COMPLETE_UTC_CALENDAR_MONTH_COUNT_V1": {
+      "boundary": "UTC calendar month",
+      "partial_period": "EXCLUDE"
+    },
+    "ELIGIBLE_NUMERATOR_OVER_DENOMINATOR_V1": {
+      "formula": "eligible_numerator_count / predeclared_denominator_count",
+      "zero_denominator": "INCONCLUSIVE",
+      "scope": "exact GateEvidence scope"
+    },
+    "FINAL_MODEL_FEATURE_COUNT_V1": {
+      "input": "ordered production feature schema after all selection",
+      "aggregation": "COUNT_UNIQUE_ORDERED_FEATURE_ENTRIES"
+    },
+    "CANARY_BLOCK_INDEX_V1": {
+      "allowed_values": [
+        1,
+        2,
+        3
+      ],
+      "source": "Deployment Registry"
+    },
+    "DEFLATED_SHARPE_CONFIDENCE_V1": {
+      "trial_family_source": "ExperimentManifest cumulative trial family",
+      "return_frequency_source": "StatisticalDesignPolicy",
+      "implementation_version_required": true
+    },
+    "CSCV_PBO_V1": {
+      "method": "COMBINATORIALLY_SYMMETRIC_CROSS_VALIDATION",
+      "trial_family_source": "ExperimentManifest cumulative trial family",
+      "partition_source": "StatisticalDesignPolicy",
+      "implementation_version_required": true
+    },
+    "FIXED_BIN_ECE_V1": {
+      "bin_edges_source": "StatisticalDesignPolicy",
+      "empty_bin_rule_source": "StatisticalDesignPolicy",
+      "confidence_interval_required": true
+    },
+    "PAIRED_BRIER_DIFFERENCE_V1": {
+      "pair_key": "proposal_id_plus_decision_time",
+      "formula": "mean(candidate_brier - comparator_brier)",
+      "missing_pair": "EXCLUDE_AND_REPORT"
+    },
+    "LCB_DIFFERENCE_V1": {
+      "formula": "candidate_lcb - comparator_lcb",
+      "same_window_and_bootstrap_draws_required": true
+    },
+    "PAIRED_METRIC_DIFFERENCE_V1": {
+      "formula": "candidate_metric - comparator_metric",
+      "same_scope_required": true
+    },
+    "MINOR_CANDIDATE_ACTIVE_SCOPE_EXACT_MATCH_V1": {
+      "inputs": "candidate and active ModelBundle evidence",
+      "approved_capital_check": "canonical Decimal equality of approved_production_capital_usdt",
+      "policy_bundle_check": "byte-for-byte equality of policy_bundle_hash and every policy_binding_hash",
+      "same_recipe_route_endpoint_direction_venue_and_window_required": true,
+      "missing_or_mismatch": false
+    },
+    "COST_CI95_UPPER_MINUS_BUDGET_V1": {
+      "cost_metric": "implementation_shortfall_bps including fees and execution deviation without double-counting fill spread",
+      "formula": "one_sided_95_cost_upper_bound - frozen_offline_stress_budget",
+      "budget_source": "ForwardControlPolicy"
+    },
+    "QUANTILE_COVERAGE_INTERVAL_CHECK_V1": {
+      "targets": [
+        "0.10",
+        "0.50",
+        "0.90"
+      ],
+      "interval_method_source": "StatisticalDesignPolicy",
+      "pass": "every target lies inside its corresponding achieved coverage confidence interval"
+    },
+    "LEAVE_MAX_POSITIVE_FOLD_OUT_MBB_LCB95_V1": {
+      "procedure": "Remove the OOS fold with the largest positive contribution, then run ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1."
+    },
+    "LEAVE_TOP_5_POSITIVE_EVENTS_OUT_MBB_LCB95_V1": {
+      "procedure": "Remove the five eligible events with the largest positive contribution, then run ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1."
+    },
+    "LEAVE_TOP_5_POSITIVE_TRADES_OUT_MBB_LCB95_V1": {
+      "ranking_key": "per-trade variable-cost net economic contribution with stable trade_id tie-break",
+      "procedure": "Remove exactly the five eligible completed trades with the largest positive contributions, then rerun the ledger and ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1.",
+      "fewer_than_five_positive_trades": "Remove every positive eligible completed trade.",
+      "trade_id_or_ledger_mismatch": "FAIL"
+    },
+    "LEAVE_MAX_POSITIVE_EVENT_OUT_MBB_LCB95_V1": {
+      "procedure": "Remove the audit event with the largest positive contribution, then run ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1."
+    },
+    "LEAVE_MAX_POSITIVE_DELTA_FOLD_OUT_ENDPOINT_REEVALUATION_V1": {
+      "procedure": "Remove the OOS fold with largest positive paired delta contribution and rerun every gate for the selected AI endpoint."
+    },
+    "LEAVE_MAX_POSITIVE_DELTA_EVENT_OUT_ENDPOINT_REEVALUATION_V1": {
+      "procedure": "Remove the audit event with largest positive paired delta contribution and rerun every gate for the selected AI endpoint."
+    },
+    "SIGNED_FALLBACK_REGISTRY_VALIDATION_V1": {
+      "record_source": "approved fallback registry artifact bound by GateEvidence approved_fallback_registry_record_hash",
+      "signature_source": "approved_fallback_registry_signature_hash and signer_id",
+      "key_source": "frozen trusted signer registry",
+      "canonical_payload_required": true,
+      "unknown_revoked_or_invalid_signature": false
+    },
+    "HASH_EXACT_MATCH_V1": {
+      "comparison": "byte-for-byte lowercase SHA-256 equality",
+      "canonical_artifact_rehash_required": true,
+      "missing_malformed_or_mismatch": false
+    },
+    "FALLBACK_REGISTRY_FIELD_EXACT_MATCH_V1": {
+      "left": "the applicable GateEvidence approved_fallback_registry field",
+      "right": "the corresponding field in the canonical hash-verified and signature-verified registry record",
+      "covered_fields": "signature_hash, status and expires_at",
+      "comparison": "type-aware exact equality; RFC 3339 timestamps compare as their canonical UTC instant and stored canonical representation",
+      "missing_or_mismatch": false
+    },
+    "FALLBACK_REGISTRY_STATUS_APPROVED_V1": {
+      "input": "approved_fallback_registry_status from the hash-verified registry record",
+      "true_only_for": "APPROVED",
+      "revoked_retired_unknown_or_missing": false
+    },
+    "FALLBACK_REGISTRY_EXPIRY_CHECK_V1": {
+      "comparison": "GateEvidence computed_at < approved_fallback_registry_expires_at",
+      "time_standard": "UTC RFC 3339 date-time",
+      "equal_expired_missing_or_invalid": false
+    },
+    "FALLBACK_REGISTRY_SCOPE_EXACT_MATCH_V1": {
+      "source_fields": "source.release_route, source.recipe_release_id/hash, source.deployment_line_id, source.model_bundle_id or source.no_ai_base_version",
+      "target_fields": "fallback.release_route, fallback.recipe_release_id/hash, fallback.deployment_line_id, fallback.model_bundle_id or fallback.no_ai_base_version, fallback_qualification",
+      "common_fields": "direction, venue, maximum approved stage, policy_bundle_hash and every policy_binding_hash",
+      "comparison": "exact match against the hash-verified registry record; target stage may not exceed its registry approval",
+      "missing_wildcard_or_mismatch": false
+    },
+    "FALLBACK_REGISTRY_RECORD_QUALIFICATION_V1": {
+      "raw_inputs": "canonical registry record, qualification evidence, signatures, current DeploymentLine scope and GateEvidence computed_at",
+      "atomic_checks": [
+        "validate the record against approved_fallback_registry_schema_id",
+        "rehash the canonical record and qualification evidence and require exact hash matches",
+        "verify signer authorization and signature against the canonical payload",
+        "require the Evidence snapshots of signature hash, status and expiry to exactly match the signed record",
+        "require signed record status APPROVED and computed_at strictly before expires_at",
+        "require fallback_qualification CHAMPION or LAST_KNOWN_GOOD, a completed full release path, and candidate_status_excluded=true",
+        "require exact source, fallback target, direction, venue, maximum stage and policy-hash scope"
+      ],
+      "component_results_retained_in_signed_estimator_artifact": true,
+      "missing_or_any_false": false
+    },
+    "PROTECTIVE_REPLACEMENT_DEADLINE_BREACH_COUNT_V1": {
+      "input": "ordered protective-order lifecycle and replacement events in the exact GateEvidence scope",
+      "deadline_source": "frozen RiskPolicy",
+      "breach": "a required protective replacement was not exchange-acknowledged by its deterministic deadline",
+      "aggregation": "COUNT_DISTINCT_POSITION_DEADLINE_BREACHES",
+      "missing_lifecycle_or_clock_discontinuity": "FAIL"
+    }
+  }
+}

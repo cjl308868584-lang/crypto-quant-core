@@ -1,0 +1,1102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "release-gates-v1.1.schema.json",
+  "title": "ReleaseGatePolicy v1.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "policy_id",
+    "policy_version",
+    "metric_catalog_id",
+    "evidence_schema_id",
+    "artifact_schemas",
+    "status",
+    "production_activation",
+    "evaluation_contract",
+    "evidence_scope",
+    "required_policy_bindings",
+    "release_routes",
+    "gates",
+    "release_audit_matrix",
+    "minor_bundle_refresh_workflow",
+    "forward_gate_matrix",
+    "deployment_state_machine",
+    "exposure_formulas",
+    "risk_thresholds",
+    "fallback_policy",
+    "economic_accounting",
+    "change_control"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "policy_id": {
+      "const": "release-gates-v1.1"
+    },
+    "policy_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "metric_catalog_id": {
+      "const": "release-metrics-v1.1"
+    },
+    "evidence_schema_id": {
+      "const": "release-evidence-v1.1"
+    },
+    "artifact_schemas": {
+      "type": "object",
+      "required": [
+        "recipe_release",
+        "model_bundle",
+        "approved_fallback_registry",
+        "canonicalization",
+        "hash_algorithm"
+      ],
+      "properties": {
+        "recipe_release": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/artifactSchemaRef"
+            },
+            {
+              "properties": {
+                "schema_id": {
+                  "const": "recipe-release-v1.1.schema.json"
+                },
+                "schema_path": {
+                  "const": "./recipe-release-v1.1.schema.json"
+                }
+              }
+            }
+          ]
+        },
+        "model_bundle": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/artifactSchemaRef"
+            },
+            {
+              "properties": {
+                "schema_id": {
+                  "const": "model-bundle-v1.1.schema.json"
+                },
+                "schema_path": {
+                  "const": "./model-bundle-v1.1.schema.json"
+                }
+              }
+            }
+          ]
+        },
+        "approved_fallback_registry": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/artifactSchemaRef"
+            },
+            {
+              "properties": {
+                "schema_id": {
+                  "const": "approved-fallback-registry-v1.1.schema.json"
+                },
+                "schema_path": {
+                  "const": "./approved-fallback-registry-v1.1.schema.json"
+                }
+              }
+            }
+          ]
+        },
+        "canonicalization": {
+          "const": "RFC8785_JCS"
+        },
+        "hash_algorithm": {
+          "const": "SHA-256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "enum": [
+        "DESIGN_BASELINE",
+        "ACTIVE",
+        "RETIRED"
+      ]
+    },
+    "as_of_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "production_activation": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "reason",
+        "activation_requires_new_policy_version"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "activation_requires_new_policy_version": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "required_policy_bindings": {
+      "type": "array",
+      "minItems": 1,
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "binding": {
+                "const": "recipe_release_schema_id"
+              },
+              "value": {
+                "const": "recipe-release-v1.1.schema.json"
+              }
+            },
+            "required": [
+              "binding",
+              "value"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "binding": {
+                "const": "model_bundle_schema_id"
+              },
+              "value": {
+                "const": "model-bundle-v1.1.schema.json"
+              }
+            },
+            "required": [
+              "binding",
+              "value"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "binding": {
+                "const": "approved_fallback_registry_schema_id"
+              },
+              "value": {
+                "const": "approved-fallback-registry-v1.1.schema.json"
+              }
+            },
+            "required": [
+              "binding",
+              "value"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ],
+      "items": {
+        "type": "object",
+        "required": [
+          "binding",
+          "value",
+          "required_before",
+          "missing_result"
+        ],
+        "properties": {
+          "binding": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required_before": {
+            "type": "string",
+            "minLength": 1
+          },
+          "missing_result": {
+            "const": "FAIL"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evaluation_contract": {
+      "type": "object"
+    },
+    "evidence_scope": {
+      "type": "object"
+    },
+    "release_routes": {
+      "type": "object"
+    },
+    "sample_policy": {
+      "type": "object"
+    },
+    "statistical_methods": {
+      "type": "object"
+    },
+    "gates": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/gate"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/gate"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "release_audit_matrix": {
+      "type": "object",
+      "required": [
+        "INITIAL",
+        "MAJOR"
+      ],
+      "properties": {
+        "INITIAL": {
+          "$ref": "#/$defs/auditKind"
+        },
+        "MAJOR": {
+          "$ref": "#/$defs/auditKind"
+        }
+      },
+      "additionalProperties": false
+    },
+    "minor_bundle_refresh_workflow": {
+      "$ref": "#/$defs/minorBundleRefresh"
+    },
+    "forward_gate_matrix": {
+      "$ref": "#/$defs/forwardGateMatrix"
+    },
+    "deployment_state_machine": {
+      "$ref": "#/$defs/deploymentStateMachine"
+    },
+    "forward_evaluation": {
+      "type": "object"
+    },
+    "deployment_stages": {
+      "type": "array"
+    },
+    "exposure_formulas": {
+      "type": "object"
+    },
+    "risk_thresholds": {
+      "type": "object"
+    },
+    "model_lifecycle": {
+      "type": "object"
+    },
+    "fallback_policy": {
+      "$ref": "#/$defs/fallbackPolicy"
+    },
+    "economic_accounting": {
+      "type": "object"
+    },
+    "advisory_metrics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "change_control": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "artifactSchemaRef": {
+      "type": "object",
+      "required": [
+        "schema_id",
+        "schema_path"
+      ],
+      "properties": {
+        "schema_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9.-]+\\.schema\\.json$"
+        },
+        "schema_path": {
+          "type": "string",
+          "pattern": "^\\./[a-z0-9.-]+\\.schema\\.json$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "gateGroupName": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*(?:\\.\\{?[A-Z_a-z0-9]+\\}?|\\.[A-Z0-9_]+)?$"
+    },
+    "gateGroupArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/gateGroupName"
+      }
+    },
+    "auditEvaluation": {
+      "type": "object",
+      "required": [
+        "gate_group",
+        "evaluation_ledger"
+      ],
+      "properties": {
+        "gate_group": {
+          "$ref": "#/$defs/gateGroupName"
+        },
+        "evaluation_ledger": {
+          "enum": [
+            "BASELINE_LEDGER",
+            "AI_LEDGER",
+            "PAIRED_COMPARISON",
+            "ROUTE_RUNTIME"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditEvaluationArray": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/auditEvaluation"
+      }
+    },
+    "baselineAuditEvaluationArray": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/auditEvaluationArray"
+        },
+        {
+          "contains": {
+            "properties": {
+              "gate_group": {
+                "const": "AUDIT_BASE_ARM"
+              },
+              "evaluation_ledger": {
+                "const": "BASELINE_LEDGER"
+              }
+            },
+            "required": [
+              "gate_group",
+              "evaluation_ledger"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    },
+    "aiAuditEvaluationArray": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/auditEvaluationArray"
+        },
+        {
+          "contains": {
+            "properties": {
+              "gate_group": {
+                "const": "AUDIT_BASE_ARM"
+              },
+              "evaluation_ledger": {
+                "const": "BASELINE_LEDGER"
+              }
+            },
+            "required": [
+              "gate_group",
+              "evaluation_ledger"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "gate_group": {
+                "const": "AUDIT_AI_ARM"
+              },
+              "evaluation_ledger": {
+                "const": "AI_LEDGER"
+              }
+            },
+            "required": [
+              "gate_group",
+              "evaluation_ledger"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "gate_group": {
+                "const": "AUDIT_AI_PAIRED_COMMON"
+              },
+              "evaluation_ledger": {
+                "const": "PAIRED_COMPARISON"
+              }
+            },
+            "required": [
+              "gate_group",
+              "evaluation_ledger"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "gate_group": {
+                "pattern": "^AUDIT_AI_ENDPOINT\\."
+              },
+              "evaluation_ledger": {
+                "const": "PAIRED_COMPARISON"
+              }
+            },
+            "required": [
+              "gate_group",
+              "evaluation_ledger"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    },
+    "growthAuditEvaluationArray": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/aiAuditEvaluationArray"
+        },
+        {
+          "contains": {
+            "properties": {
+              "gate_group": {
+                "const": "AUDIT_AI_ENDPOINT.GROWTH"
+              },
+              "evaluation_ledger": {
+                "const": "PAIRED_COMPARISON"
+              }
+            },
+            "required": [
+              "gate_group",
+              "evaluation_ledger"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    },
+    "riskEfficiencyAuditEvaluationArray": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/aiAuditEvaluationArray"
+        },
+        {
+          "contains": {
+            "properties": {
+              "gate_group": {
+                "const": "AUDIT_AI_ENDPOINT.RISK_EFFICIENCY"
+              },
+              "evaluation_ledger": {
+                "const": "PAIRED_COMPARISON"
+              }
+            },
+            "required": [
+              "gate_group",
+              "evaluation_ledger"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    },
+    "auditKind": {
+      "type": "object",
+      "required": [
+        "evidence_source",
+        "BASELINE_ONLY",
+        "AI_ENHANCED"
+      ],
+      "properties": {
+        "evidence_source": {
+          "enum": [
+            "SEALED_12_MONTH_HISTORY",
+            "PRECOMMITTED_PREQUENTIAL_FORWARD"
+          ]
+        },
+        "minimum_calendar_days": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "calendar_days_alone_can_pass": {
+          "type": "boolean"
+        },
+        "BASELINE_ONLY": {
+          "$ref": "#/$defs/baselineAuditEvaluationArray"
+        },
+        "AI_ENHANCED": {
+          "type": "object",
+          "required": [
+            "GROWTH",
+            "RISK_EFFICIENCY"
+          ],
+          "properties": {
+            "GROWTH": {
+              "$ref": "#/$defs/growthAuditEvaluationArray"
+            },
+            "RISK_EFFICIENCY": {
+              "$ref": "#/$defs/riskEfficiencyAuditEvaluationArray"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "minorBundleRefresh": {
+      "type": "object",
+      "required": [
+        "applies_to_route",
+        "required_gate_groups",
+        "required_gate_evaluations",
+        "baseline_and_ai_evidence_must_share_window_capital_and_policy",
+        "required_endpoint_gate_group_template",
+        "sealed_audit_reopened",
+        "deployment_stage_reset",
+        "evidence_must_be_segmented_by_bundle",
+        "inherited_evidence",
+        "not_inherited_evidence",
+        "failure_action"
+      ],
+      "properties": {
+        "applies_to_route": {
+          "const": "AI_ENHANCED"
+        },
+        "required_gate_groups": {
+          "$ref": "#/$defs/gateGroupArray"
+        },
+        "required_gate_evaluations": {
+          "$ref": "#/$defs/auditEvaluationArray"
+        },
+        "baseline_and_ai_evidence_must_share_window_capital_and_policy": {
+          "const": true
+        },
+        "required_endpoint_gate_group_template": {
+          "const": "AI_ENDPOINT.{ai_endpoint}"
+        },
+        "sealed_audit_reopened": {
+          "const": false
+        },
+        "deployment_stage_reset": {
+          "const": false
+        },
+        "evidence_must_be_segmented_by_bundle": {
+          "const": true
+        },
+        "inherited_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "not_inherited_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "failure_action": {
+          "const": "KEEP_ACTIVE_BUNDLE_UNTIL_EXPIRY_OR_FREEZE_INCREASES"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stageGateMap": {
+      "type": "object",
+      "required": [
+        "SHADOW",
+        "PAPER",
+        "CANARY_25",
+        "CANARY_50",
+        "CANARY_75",
+        "CHAMPION"
+      ],
+      "properties": {
+        "SHADOW": {
+          "$ref": "#/$defs/gateGroupArray"
+        },
+        "PAPER": {
+          "$ref": "#/$defs/gateGroupArray"
+        },
+        "CANARY_25": {
+          "$ref": "#/$defs/gateGroupArray"
+        },
+        "CANARY_50": {
+          "$ref": "#/$defs/gateGroupArray"
+        },
+        "CANARY_75": {
+          "$ref": "#/$defs/gateGroupArray"
+        },
+        "CHAMPION": {
+          "$ref": "#/$defs/gateGroupArray"
+        }
+      },
+      "additionalProperties": false
+    },
+    "forwardGateMatrix": {
+      "type": "object",
+      "required": [
+        "BASELINE_ONLY",
+        "AI_ENHANCED"
+      ],
+      "properties": {
+        "BASELINE_ONLY": {
+          "$ref": "#/$defs/stageGateMap"
+        },
+        "AI_ENHANCED": {
+          "$ref": "#/$defs/stageGateMap"
+        }
+      },
+      "additionalProperties": false
+    },
+    "deploymentTransition": {
+      "type": "object",
+      "required": [
+        "release_route",
+        "from",
+        "to",
+        "required_gate_groups"
+      ],
+      "properties": {
+        "release_route": {
+          "enum": [
+            "BASELINE_ONLY",
+            "AI_ENHANCED"
+          ]
+        },
+        "from": {
+          "enum": [
+            "RECIPE_CANDIDATE",
+            "SHADOW",
+            "PAPER",
+            "CANARY_25",
+            "CANARY_50",
+            "CANARY_75"
+          ]
+        },
+        "to": {
+          "enum": [
+            "SHADOW",
+            "PAPER",
+            "CANARY_25",
+            "CANARY_50",
+            "CANARY_75",
+            "CHAMPION"
+          ]
+        },
+        "required_gate_groups": {
+          "$ref": "#/$defs/gateGroupArray"
+        },
+        "required_release_audit_matrix_entry": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "deploymentStateMachine": {
+      "type": "object",
+      "required": [
+        "allowed_forward_transitions",
+        "retire_from_any_state",
+        "skip_transition_allowed",
+        "stage_evidence_reuse_allowed",
+        "minor_refresh_preserves_current_state_only_after_refresh_pass"
+      ],
+      "properties": {
+        "allowed_forward_transitions": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/deploymentTransition"
+          }
+        },
+        "retire_from_any_state": {
+          "const": true
+        },
+        "skip_transition_allowed": {
+          "const": false
+        },
+        "stage_evidence_reuse_allowed": {
+          "const": false
+        },
+        "minor_refresh_preserves_current_state_only_after_refresh_pass": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "fallbackPolicy": {
+      "type": "object",
+      "required": [
+        "registry",
+        "lookup_key_fields",
+        "fallback_target_fields",
+        "no_ai_requires_independent_baseline_deployment_line",
+        "logistic_candidate_is_eligible_for_live_fallback",
+        "fallback_requires_released_champion_or_unexpired_lkg",
+        "record_schema_binding",
+        "runtime_qualification_gate_id",
+        "fallback_stage_may_exceed_registry_approval",
+        "missing_qualified_fallback_action"
+      ],
+      "properties": {
+        "registry": {
+          "const": "APPROVED_FALLBACK_REGISTRY"
+        },
+        "lookup_key_fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "fallback_target_fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "no_ai_requires_independent_baseline_deployment_line": {
+          "const": true
+        },
+        "logistic_candidate_is_eligible_for_live_fallback": {
+          "const": false
+        },
+        "fallback_requires_released_champion_or_unexpired_lkg": {
+          "const": true
+        },
+        "record_schema_binding": {
+          "const": "approved_fallback_registry_schema_id"
+        },
+        "runtime_qualification_gate_id": {
+          "const": "FALLBACK_RECORD_QUALIFIED"
+        },
+        "fallback_stage_may_exceed_registry_approval": {
+          "const": false
+        },
+        "missing_qualified_fallback_action": {
+          "const": "FREEZE_INCREASES_UNLESS_HARD_RISK_REQUIRES_FLATTEN"
+        }
+      },
+      "additionalProperties": false
+    },
+    "canonicalDecimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "threshold": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "$ref": "#/$defs/canonicalDecimal"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "condition": {
+      "type": "object",
+      "required": [
+        "attribute",
+        "comparator",
+        "value"
+      ],
+      "properties": {
+        "attribute": {
+          "type": "string",
+          "minLength": 1
+        },
+        "comparator": {
+          "enum": [
+            "EQ",
+            "NEQ",
+            "IN",
+            "NOT_IN"
+          ]
+        },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "conditions": {
+      "type": "object",
+      "required": [
+        "all"
+      ],
+      "properties": {
+        "all": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/condition"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "expression": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "literal"
+          ],
+          "properties": {
+            "literal": {
+              "$ref": "#/$defs/threshold"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "metric_ref"
+          ],
+          "properties": {
+            "metric_ref": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "attribute_ref"
+          ],
+          "properties": {
+            "attribute_ref": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "expression_ref"
+          ],
+          "properties": {
+            "expression_ref": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "op",
+            "args"
+          ],
+          "properties": {
+            "op": {
+              "enum": [
+                "ADD",
+                "SUBTRACT",
+                "MULTIPLY",
+                "DIVIDE",
+                "ABS",
+                "MIN",
+                "MAX",
+                "FLOOR"
+              ]
+            },
+            "args": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/expression"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "thresholdReference": {
+      "type": "object",
+      "required": [
+        "binding",
+        "json_pointer_template"
+      ],
+      "properties": {
+        "binding": {
+          "type": "string",
+          "minLength": 1
+        },
+        "json_pointer_template": {
+          "type": "string",
+          "pattern": "^/"
+        }
+      },
+      "additionalProperties": false
+    },
+    "boundaryReference": {
+      "type": "object",
+      "required": [
+        "binding",
+        "boundary_id"
+      ],
+      "properties": {
+        "binding": {
+          "type": "string",
+          "minLength": 1
+        },
+        "boundary_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "required": [
+        "gate_id",
+        "required",
+        "metric_id",
+        "comparator"
+      ],
+      "properties": {
+        "gate_id": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "applies_when": {
+          "$ref": "#/$defs/conditions"
+        },
+        "metric_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "comparator": {
+          "enum": [
+            "EQ",
+            "NEQ",
+            "GT",
+            "GTE",
+            "LT",
+            "LTE"
+          ]
+        },
+        "threshold": {
+          "$ref": "#/$defs/threshold"
+        },
+        "threshold_ast": {
+          "$ref": "#/$defs/expression"
+        },
+        "threshold_ast_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "threshold_reference": {
+          "$ref": "#/$defs/thresholdReference"
+        },
+        "boundary_reference": {
+          "$ref": "#/$defs/boundaryReference"
+        },
+        "metric_denominator": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "failure_disposition": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "threshold"
+          ]
+        },
+        {
+          "required": [
+            "threshold_ast"
+          ]
+        },
+        {
+          "required": [
+            "threshold_ast_ref"
+          ]
+        },
+        {
+          "required": [
+            "threshold_reference"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

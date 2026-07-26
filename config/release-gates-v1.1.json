@@ -1,0 +1,2505 @@
+{
+  "$schema": "./release-gates-v1.1.schema.json",
+  "schema_version": "1.0.0",
+  "policy_id": "release-gates-v1.1",
+  "policy_version": "1.1.2",
+  "metric_catalog_id": "release-metrics-v1.1",
+  "evidence_schema_id": "release-evidence-v1.1",
+  "artifact_schemas": {
+    "recipe_release": {
+      "schema_id": "recipe-release-v1.1.schema.json",
+      "schema_path": "./recipe-release-v1.1.schema.json"
+    },
+    "model_bundle": {
+      "schema_id": "model-bundle-v1.1.schema.json",
+      "schema_path": "./model-bundle-v1.1.schema.json"
+    },
+    "approved_fallback_registry": {
+      "schema_id": "approved-fallback-registry-v1.1.schema.json",
+      "schema_path": "./approved-fallback-registry-v1.1.schema.json"
+    },
+    "canonicalization": "RFC8785_JCS",
+    "hash_algorithm": "SHA-256"
+  },
+  "status": "DESIGN_BASELINE",
+  "as_of_date": "2026-07-26",
+  "production_activation": {
+    "enabled": false,
+    "reason": "Release-specific policies and the deterministic evaluator are intentionally unbound during design.",
+    "activation_requires_new_policy_version": true
+  },
+  "evaluation_contract": {
+    "evaluator_id": "release-gate-evaluator-v1",
+    "expression_language": "RELEASE_EXPR_AST_V1",
+    "free_form_expressions_allowed": false,
+    "decimal_encoding": "CANONICAL_DECIMAL_STRING",
+    "ratios_use_unit_interval": true,
+    "risk_bucket_storage": "INTEGER_PERCENT_0_25_50_75_100",
+    "calendar_timezone": "UTC",
+    "gate_result_values": [
+      "PASS",
+      "FAIL",
+      "INCONCLUSIVE",
+      "NOT_APPLICABLE"
+    ],
+    "required_gate_aggregation": "ALL_APPLICABLE_MUST_PASS",
+    "condition_false_result": "NOT_APPLICABLE",
+    "missing_required_evidence_result": "FAIL",
+    "insufficient_sample_result": "INCONCLUSIVE",
+    "inconclusive_allows_advance": false,
+    "unknown_metric_or_estimator_result": "FAIL",
+    "division_by_zero_result": "INCONCLUSIVE",
+    "nonpositive_equity_result": "FAIL"
+  },
+  "evidence_scope": {
+    "required_dimensions": [
+      "gate_group_id",
+      "release_route",
+      "release_kind",
+      "recipe_release_id",
+      "recipe_release_hash",
+      "deployment_line_id",
+      "direction",
+      "venue",
+      "stage",
+      "evaluation_window_start",
+      "evaluation_window_end",
+      "approved_production_capital_usdt",
+      "policy_bundle_hash",
+      "evaluation_ledger",
+      "fallback_activation_requested"
+    ],
+    "ai_dimensions": [
+      "ai_endpoint",
+      "model_bundle_id"
+    ],
+    "canary_dimensions": [
+      "canary_block_number"
+    ],
+    "allowed_evaluation_ledgers": [
+      "BASELINE_LEDGER",
+      "AI_LEDGER",
+      "PAIRED_COMPARISON",
+      "ROUTE_RUNTIME"
+    ],
+    "scope_reuse": "EXACT_MATCH_ONLY",
+    "directions_are_approved_independently": true
+  },
+  "required_policy_bindings": [
+    {
+      "binding": "metric_catalog_id",
+      "value": "release-metrics-v1.1",
+      "required_before": "PHASE_0_EXIT",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "evidence_schema_id",
+      "value": "release-evidence-v1.1",
+      "required_before": "PHASE_0_EXIT",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "recipe_release_schema_id",
+      "value": "recipe-release-v1.1.schema.json",
+      "required_before": "PHASE_0_EXIT",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "model_bundle_schema_id",
+      "value": "model-bundle-v1.1.schema.json",
+      "required_before": "ANY_AI_RELEASE_DECISION",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "approved_fallback_registry_schema_id",
+      "value": "approved-fallback-registry-v1.1.schema.json",
+      "required_before": "ANY_FALLBACK_ACTIVATION",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "risk_policy_id",
+      "value": "release-gates-v1.1#risk_thresholds",
+      "required_before": "PHASE_0_EXIT",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "data_quality_policy_id",
+      "value": null,
+      "required_before": "PHASE_1_EXIT",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "split_policy_id",
+      "value": null,
+      "required_before": "ANY_OFFLINE_RELEASE_DECISION",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "statistical_design_policy_id",
+      "value": null,
+      "required_before": "ANY_OFFLINE_RELEASE_DECISION",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "accounting_policy_id",
+      "value": null,
+      "required_before": "ANY_ECONOMIC_GATE",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "cost_allocation_policy_id",
+      "value": null,
+      "required_before": "ANY_ECONOMIC_GATE",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "forward_control_policy_id",
+      "value": null,
+      "required_before": "PAPER_START",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "compliance_attestation_id",
+      "value": null,
+      "required_before": "CANARY_25_START",
+      "missing_result": "FAIL"
+    },
+    {
+      "binding": "evaluator_build_hash",
+      "value": null,
+      "required_before": "PHASE_0_EXIT",
+      "missing_result": "FAIL"
+    }
+  ],
+  "release_routes": {
+    "BASELINE_ONLY": {
+      "required_offline_gate_groups": [
+        "STRUCTURAL",
+        "SAMPLE",
+        "BASELINE_OFFLINE"
+      ],
+      "forward_gate_matrix_ref": "forward_gate_matrix.BASELINE_ONLY",
+      "ai_gate_result": "NOT_APPLICABLE",
+      "required_meta_decision_source": "NO_AI_BASE"
+    },
+    "AI_ENHANCED": {
+      "required_offline_gate_groups": [
+        "STRUCTURAL",
+        "SAMPLE",
+        "BASELINE_OFFLINE",
+        "AI_COMMON_OFFLINE"
+      ],
+      "required_endpoint_gate_group_template": "AI_ENDPOINT.{ai_endpoint}",
+      "forward_gate_matrix_ref": "forward_gate_matrix.AI_ENHANCED",
+      "allowed_ai_endpoints": [
+        "GROWTH",
+        "RISK_EFFICIENCY"
+      ],
+      "endpoint_must_be_frozen_in_recipe_release": true
+    }
+  },
+  "sample_policy": {
+    "effective_sample_metric_id": "effective_event_count",
+    "effective_sample_estimator_id": "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1",
+    "ai_increment_event_filter": "AI_CHANGED_BASE_ACTION_OR_ABSOLUTE_EXPOSURE",
+    "final_feature_count_limit_ast": {
+      "op": "MIN",
+      "args": [
+        {
+          "literal": 50
+        },
+        {
+          "op": "FLOOR",
+          "args": [
+            {
+              "op": "DIVIDE",
+              "args": [
+                {
+                  "metric_ref": "effective_event_count"
+                },
+                {
+                  "literal": 20
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "complex_ai_min_effective_events_per_direction": 200,
+    "below_complex_min_allowed": [
+      "NO_AI_BASE",
+      "LOW_DIMENSIONAL_LOGISTIC_RESEARCH_ONLY"
+    ],
+    "below_complex_min_forbidden_as_hard_component": [
+      "XGBOOST",
+      "QUANTILE_MODEL",
+      "AI_CALIBRATED_BUCKET_MAPPING"
+    ],
+    "minimum_achieved_power": "0.80",
+    "actual_ci_width_limit_source": "StatisticalDesignPolicy",
+    "nominal_trade_count_alone_can_prove_edge": false
+  },
+  "statistical_methods": {
+    "net_growth_interval_estimator": "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1",
+    "paired_ai_interval_estimator": "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1",
+    "risk_improvement_interval_estimator": "ONE_SIDED_95_PAIRED_MOVING_BLOCK_BOOTSTRAP_V1",
+    "block_definition_source": "SplitPolicy",
+    "familywise_alpha": "0.05",
+    "simultaneous_release_adjustment": "HOLM_V1",
+    "oos_fold_count": 8,
+    "oos_fold_duration_months": 3,
+    "rolling_training_window_months": 18,
+    "sealed_initial_audit_months": 12
+  },
+  "gates": {
+    "STRUCTURAL": [
+      {
+        "gate_id": "NO_LOOKAHEAD",
+        "required": true,
+        "metric_id": "severe_lookahead_finding_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "NO_TRAIN_AUDIT_CONTAMINATION",
+        "required": true,
+        "metric_id": "severe_contamination_finding_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "PIT_AND_SPLIT_VALID",
+        "required": true,
+        "metric_id": "pit_and_split_check_pass",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "FEATURE_PARITY",
+        "required": true,
+        "metric_id": "offline_live_feature_parity_rate",
+        "comparator": "EQ",
+        "threshold": "1"
+      },
+      {
+        "gate_id": "DETERMINISTIC_REPLAY",
+        "required": true,
+        "metric_id": "business_object_hash_replay_match_rate",
+        "comparator": "EQ",
+        "threshold": "1"
+      },
+      {
+        "gate_id": "MANIFEST_AND_LINEAGE_COMPLETE",
+        "required": true,
+        "metric_id": "required_artifact_completeness_rate",
+        "comparator": "EQ",
+        "threshold": "1"
+      },
+      {
+        "gate_id": "ALL_TRIALS_REGISTERED",
+        "required": true,
+        "metric_id": "unregistered_trial_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "MULTIPLE_TESTING_ADJUSTED",
+        "required": true,
+        "metric_id": "simultaneous_release_multiple_testing_adjustment_pass",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "DIRECTION_REPORTS_SEPARATE",
+        "required": true,
+        "metric_id": "long_short_separate_report_exists",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "RISK_GATE_NON_BYPASSABLE",
+        "required": true,
+        "metric_id": "risk_bypass_test_failure_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "INDEPENDENT_BASELINE_REPLAY",
+        "required": true,
+        "metric_id": "independent_baseline_replay_unexplained_difference_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "RECIPE_RELEASE_SCHEMA_VALID",
+        "required": true,
+        "metric_id": "recipe_release_schema_validation_pass",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "MODEL_BUNDLE_SCHEMA_VALID",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "release_route",
+              "comparator": "EQ",
+              "value": "AI_ENHANCED"
+            }
+          ]
+        },
+        "metric_id": "model_bundle_schema_validation_pass",
+        "comparator": "EQ",
+        "threshold": true
+      }
+    ],
+    "SAMPLE": [
+      {
+        "gate_id": "STATISTICAL_DESIGN_FROZEN",
+        "required": true,
+        "metric_id": "statistical_design_frozen_before_outcomes",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "ACHIEVED_POWER",
+        "required": true,
+        "metric_id": "achieved_power_at_minimum_economic_effect",
+        "comparator": "GTE",
+        "threshold": "0.80"
+      },
+      {
+        "gate_id": "ACTUAL_CI_WIDTH",
+        "required": true,
+        "metric_id": "actual_primary_endpoint_ci_width",
+        "comparator": "LTE",
+        "threshold_reference": {
+          "binding": "statistical_design_policy_id",
+          "json_pointer_template": "/max_ci_width/{release_route}/{direction}/{ai_endpoint_or_baseline}"
+        }
+      },
+      {
+        "gate_id": "FEATURE_COMPLEXITY_LIMIT",
+        "required": true,
+        "metric_id": "final_feature_count",
+        "comparator": "LTE",
+        "threshold_ast_ref": "sample_policy.final_feature_count_limit_ast"
+      }
+    ],
+    "BASELINE_OFFLINE": [
+      {
+        "gate_id": "BASE_VARIABLE_NET_LOG_GROWTH_LCB",
+        "required": true,
+        "metric_id": "baseline_variable_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "BASE_NONNEGATIVE_OOS_FOLDS",
+        "required": true,
+        "metric_id": "baseline_nonnegative_oos_fold_count",
+        "comparator": "GTE",
+        "threshold": 6,
+        "metric_denominator": 8
+      },
+      {
+        "gate_id": "BASE_NORMAL_MAX_DRAWDOWN",
+        "required": true,
+        "metric_id": "baseline_normal_cost_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.10"
+      },
+      {
+        "gate_id": "BASE_STRESS_1_5X_NONNEGATIVE",
+        "required": true,
+        "metric_id": "baseline_stress_1_5x_net_log_growth",
+        "comparator": "GTE",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "BASE_STRESS_2X_DRAWDOWN",
+        "required": true,
+        "metric_id": "baseline_stress_2x_adverse_funding_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.15"
+      },
+      {
+        "gate_id": "BASE_LEAVE_MAX_FOLD_OUT",
+        "required": true,
+        "metric_id": "baseline_leave_max_positive_fold_out_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "BASE_LEAVE_TOP_5_TRADES_OUT",
+        "required": true,
+        "metric_id": "baseline_leave_top_5_positive_trades_out_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "BASE_FULL_RISK_ECONOMIC_LCB",
+        "required": true,
+        "metric_id": "baseline_full_risk_monthly_economic_pnl_usdt_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      }
+    ],
+    "AI_COMMON_OFFLINE": [
+      {
+        "gate_id": "AI_COMPLEX_SAMPLE_MINIMUM",
+        "required": true,
+        "metric_id": "effective_event_count",
+        "comparator": "GTE",
+        "threshold": 200
+      },
+      {
+        "gate_id": "AI_ABSOLUTE_VARIABLE_NET_GROWTH_LCB",
+        "required": true,
+        "metric_id": "ai_variable_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AI_FULL_RISK_ECONOMIC_LCB",
+        "required": true,
+        "metric_id": "ai_full_risk_monthly_economic_pnl_usdt_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AI_ABSOLUTE_NONNEGATIVE_OOS_FOLDS",
+        "required": true,
+        "metric_id": "ai_nonnegative_oos_fold_count",
+        "comparator": "GTE",
+        "threshold": 6,
+        "metric_denominator": 8
+      },
+      {
+        "gate_id": "AI_NONINFERIOR_OOS_FOLDS",
+        "required": true,
+        "metric_id": "ai_delta_nonnegative_oos_fold_count",
+        "comparator": "GTE",
+        "threshold": 6,
+        "metric_denominator": 8
+      },
+      {
+        "gate_id": "AI_NORMAL_MAX_DRAWDOWN",
+        "required": true,
+        "metric_id": "ai_normal_cost_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.10"
+      },
+      {
+        "gate_id": "AI_LEAVE_MAX_DELTA_FOLD_OUT",
+        "required": true,
+        "metric_id": "ai_leave_max_positive_delta_fold_out_selected_endpoint_pass",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "AI_DSR_CONFIDENCE",
+        "required": true,
+        "metric_id": "deflated_sharpe_confidence",
+        "comparator": "GTE",
+        "threshold": "0.95"
+      },
+      {
+        "gate_id": "AI_PBO",
+        "required": true,
+        "metric_id": "probability_of_backtest_overfitting",
+        "comparator": "LTE",
+        "threshold": "0.20"
+      },
+      {
+        "gate_id": "AI_ECE",
+        "required": true,
+        "metric_id": "expected_calibration_error",
+        "comparator": "LTE",
+        "threshold": "0.05"
+      },
+      {
+        "gate_id": "AI_MODEL_BRIER_BEATS_CONSTANT",
+        "required": true,
+        "metric_id": "model_oos_brier_minus_constant_oos_brier",
+        "comparator": "LT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AI_XGB_BRIER_BEATS_LOGISTIC",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "model_family",
+              "comparator": "EQ",
+              "value": "XGBOOST"
+            }
+          ]
+        },
+        "metric_id": "xgboost_oos_brier_minus_logistic_oos_brier",
+        "comparator": "LT",
+        "threshold": "0",
+        "failure_disposition": "NEW_LOGISTIC_CANDIDATE_OR_NO_AI_BASE_CANDIDATE"
+      },
+      {
+        "gate_id": "AI_XGB_GROWTH_BEATS_LOGISTIC",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "model_family",
+              "comparator": "EQ",
+              "value": "XGBOOST"
+            },
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "GROWTH"
+            }
+          ]
+        },
+        "metric_id": "xgboost_delta_growth_lcb_minus_logistic_delta_growth_lcb",
+        "comparator": "GT",
+        "threshold": "0",
+        "failure_disposition": "NEW_LOGISTIC_CANDIDATE_OR_NO_AI_BASE_CANDIDATE"
+      },
+      {
+        "gate_id": "AI_XGB_RISK_PARETO",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "model_family",
+              "comparator": "EQ",
+              "value": "XGBOOST"
+            },
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "RISK_EFFICIENCY"
+            }
+          ]
+        },
+        "metric_id": "xgboost_risk_efficiency_pareto_dominates_logistic",
+        "comparator": "EQ",
+        "threshold": true,
+        "failure_disposition": "NEW_LOGISTIC_CANDIDATE_OR_NO_AI_BASE_CANDIDATE"
+      },
+      {
+        "gate_id": "AI_QUANTILE_COVERAGE",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "quantile_output_affects_target",
+              "comparator": "EQ",
+              "value": true
+            }
+          ]
+        },
+        "metric_id": "q10_q50_q90_coverage_ci_contains_targets",
+        "comparator": "EQ",
+        "threshold": true,
+        "failure_disposition": "REMOVE_QUANTILE_FROM_HARD_POSITION_COMPONENT"
+      },
+      {
+        "gate_id": "AI_BUCKET_MAPPING_BEATS_RAW_LINEAR",
+        "required": true,
+        "metric_id": "discrete_bucket_mapping_selected_endpoint_dominates_raw_linear",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "AI_STRESS_1_5X_ABSOLUTE",
+        "required": true,
+        "metric_id": "ai_stress_1_5x_net_log_growth",
+        "comparator": "GTE",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AI_STRESS_1_5X_DELTA",
+        "required": true,
+        "metric_id": "ai_stress_1_5x_delta_net_log_growth",
+        "comparator": "GTE",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AI_STRESS_2X_DRAWDOWN",
+        "required": true,
+        "metric_id": "ai_stress_2x_adverse_funding_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.15"
+      }
+    ],
+    "AI_ENDPOINT": {
+      "GROWTH": [
+        {
+          "gate_id": "AI_GROWTH_PAIRED_DELTA_LCB",
+          "required": true,
+          "metric_id": "ai_paired_delta_economic_net_log_growth_lcb95",
+          "comparator": "GT",
+          "threshold": "0"
+        }
+      ],
+      "RISK_EFFICIENCY": [
+        {
+          "gate_id": "AI_RISK_RETURN_NONINFERIORITY",
+          "required": true,
+          "metric_id": "ai_paired_delta_economic_net_log_growth_lcb95",
+          "comparator": "GTE",
+          "threshold_ast": {
+            "op": "MULTIPLY",
+            "args": [
+              {
+                "literal": "-0.10"
+              },
+              {
+                "op": "ABS",
+                "args": [
+                  {
+                    "metric_ref": "baseline_economic_net_log_growth"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "gate_id": "AI_RISK_MAX_DRAWDOWN_IMPROVEMENT_LCB",
+          "required": true,
+          "metric_id": "ai_max_drawdown_relative_improvement_lcb95",
+          "comparator": "GTE",
+          "threshold": "0.20"
+        },
+        {
+          "gate_id": "AI_RISK_ES95_IMPROVEMENT_LCB",
+          "required": true,
+          "metric_id": "ai_es95_loss_relative_improvement_lcb95",
+          "comparator": "GTE",
+          "threshold": "0.20"
+        }
+      ]
+    },
+    "RELEASE_AUDIT_CONTROL": [
+      {
+        "gate_id": "INITIAL_SEALED_AUDIT_ACCESS_ONCE",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "release_kind",
+              "comparator": "EQ",
+              "value": "INITIAL"
+            }
+          ]
+        },
+        "metric_id": "sealed_audit_execution_count",
+        "comparator": "EQ",
+        "threshold": 1
+      },
+      {
+        "gate_id": "INITIAL_SEALED_AUDIT_LENGTH",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "release_kind",
+              "comparator": "EQ",
+              "value": "INITIAL"
+            }
+          ]
+        },
+        "metric_id": "sealed_audit_calendar_month_count",
+        "comparator": "EQ",
+        "threshold": 12
+      },
+      {
+        "gate_id": "MAJOR_PREQUENTIAL_EVIDENCE",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "release_kind",
+              "comparator": "EQ",
+              "value": "MAJOR"
+            }
+          ]
+        },
+        "metric_id": "prediction_committed_before_outcome_rate",
+        "comparator": "EQ",
+        "threshold": "1"
+      },
+      {
+        "gate_id": "EXPOSED_AUDIT_NOT_REUSED",
+        "required": true,
+        "metric_id": "previously_exposed_audit_window_reused",
+        "comparator": "EQ",
+        "threshold": false
+      },
+      {
+        "gate_id": "ALL_RELEASE_INPUTS_FROZEN_BEFORE_FIRST_RESULT",
+        "required": true,
+        "metric_id": "all_release_inputs_frozen_before_first_result_reveal",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "FROZEN_BINDING_HASHES_EXACT_MATCH",
+        "required": true,
+        "metric_id": "frozen_binding_hashes_exact_match",
+        "comparator": "EQ",
+        "threshold": true
+      }
+    ],
+    "AUDIT_BASE_ARM": [
+      {
+        "gate_id": "AUDIT_BASE_ACHIEVED_POWER",
+        "required": true,
+        "metric_id": "audit_achieved_power_at_minimum_economic_effect",
+        "comparator": "GTE",
+        "threshold": "0.80"
+      },
+      {
+        "gate_id": "AUDIT_BASE_ACTUAL_CI_WIDTH",
+        "required": true,
+        "metric_id": "audit_actual_primary_endpoint_ci_width",
+        "comparator": "LTE",
+        "threshold_reference": {
+          "binding": "statistical_design_policy_id",
+          "json_pointer_template": "/audit_max_ci_width/{release_route}/{direction}/{ai_endpoint_or_baseline}"
+        }
+      },
+      {
+        "gate_id": "AUDIT_BASE_ABSOLUTE_NET_GROWTH_LCB",
+        "required": true,
+        "metric_id": "audit_base_absolute_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_BASE_NORMAL_MAX_DRAWDOWN",
+        "required": true,
+        "metric_id": "audit_base_normal_cost_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.10"
+      },
+      {
+        "gate_id": "AUDIT_BASE_STRESS_1_5X_NONNEGATIVE",
+        "required": true,
+        "metric_id": "audit_base_stress_1_5x_net_log_growth",
+        "comparator": "GTE",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_BASE_STRESS_2X_DRAWDOWN",
+        "required": true,
+        "metric_id": "audit_base_stress_2x_adverse_funding_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.15"
+      },
+      {
+        "gate_id": "AUDIT_BASE_LEAVE_MAX_FOLD_OUT",
+        "required": true,
+        "metric_id": "audit_base_leave_largest_positive_fold_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_BASE_LEAVE_TOP_5_TRADES_OUT",
+        "required": true,
+        "metric_id": "audit_base_leave_top5_positive_trades_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_BASE_FULL_RISK_ECONOMIC_LCB",
+        "required": true,
+        "metric_id": "audit_base_full_risk_monthly_economic_pnl_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      }
+    ],
+    "AUDIT_AI_ARM": [
+      {
+        "gate_id": "AUDIT_AI_ABSOLUTE_NET_GROWTH_LCB",
+        "required": true,
+        "metric_id": "audit_ai_absolute_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_AI_NORMAL_MAX_DRAWDOWN",
+        "required": true,
+        "metric_id": "audit_ai_normal_cost_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.10"
+      },
+      {
+        "gate_id": "AUDIT_AI_STRESS_1_5X_NONNEGATIVE",
+        "required": true,
+        "metric_id": "audit_ai_stress_1_5x_net_log_growth",
+        "comparator": "GTE",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_AI_STRESS_2X_DRAWDOWN",
+        "required": true,
+        "metric_id": "audit_ai_stress_2x_adverse_funding_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.15"
+      },
+      {
+        "gate_id": "AUDIT_AI_LEAVE_MAX_FOLD_OUT",
+        "required": true,
+        "metric_id": "audit_ai_leave_largest_positive_fold_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_AI_LEAVE_TOP_5_TRADES_OUT",
+        "required": true,
+        "metric_id": "audit_ai_leave_top5_positive_trades_net_log_growth_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_AI_FULL_RISK_ECONOMIC_LCB",
+        "required": true,
+        "metric_id": "audit_ai_full_risk_monthly_economic_pnl_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_AI_EFFECTIVE_SAMPLE_MINIMUM",
+        "required": true,
+        "metric_id": "audit_effective_event_count",
+        "comparator": "GTE",
+        "threshold": 200
+      },
+      {
+        "gate_id": "AUDIT_AI_ECE",
+        "required": true,
+        "metric_id": "audit_expected_calibration_error",
+        "comparator": "LTE",
+        "threshold": "0.05"
+      },
+      {
+        "gate_id": "AUDIT_AI_BRIER_BEATS_CONSTANT",
+        "required": true,
+        "metric_id": "audit_model_brier_minus_constant_brier",
+        "comparator": "LT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_AI_XGB_BRIER_BEATS_LOGISTIC",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "model_family",
+              "comparator": "EQ",
+              "value": "XGBOOST"
+            }
+          ]
+        },
+        "metric_id": "audit_xgboost_brier_minus_logistic_brier",
+        "comparator": "LT",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "AUDIT_AI_QUANTILE_COVERAGE",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "quantile_output_affects_target",
+              "comparator": "EQ",
+              "value": true
+            }
+          ]
+        },
+        "metric_id": "audit_quantile_coverage_pass",
+        "comparator": "EQ",
+        "threshold": true
+      }
+    ],
+    "AUDIT_AI_PAIRED_COMMON": [
+      {
+        "gate_id": "AUDIT_AI_LEAVE_MAX_DELTA_EVENT_OUT",
+        "required": true,
+        "metric_id": "audit_ai_leave_max_positive_delta_event_out_selected_endpoint_pass",
+        "comparator": "EQ",
+        "threshold": true
+      }
+    ],
+    "AUDIT_AI_ENDPOINT": {
+      "GROWTH": [
+        {
+          "gate_id": "AUDIT_AI_GROWTH_DELTA_LCB",
+          "required": true,
+          "metric_id": "audit_ai_paired_delta_economic_net_log_growth_lcb95",
+          "comparator": "GT",
+          "threshold": "0"
+        }
+      ],
+      "RISK_EFFICIENCY": [
+        {
+          "gate_id": "AUDIT_AI_RISK_RETURN_NONINFERIORITY",
+          "required": true,
+          "metric_id": "audit_ai_paired_delta_economic_net_log_growth_lcb95",
+          "comparator": "GTE",
+          "threshold_ast": {
+            "op": "MULTIPLY",
+            "args": [
+              {
+                "literal": "-0.10"
+              },
+              {
+                "op": "ABS",
+                "args": [
+                  {
+                    "metric_ref": "audit_baseline_economic_net_log_growth"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "gate_id": "AUDIT_AI_RISK_DRAWDOWN_IMPROVEMENT_LCB",
+          "required": true,
+          "metric_id": "audit_ai_max_drawdown_relative_improvement_lcb95",
+          "comparator": "GTE",
+          "threshold": "0.20"
+        },
+        {
+          "gate_id": "AUDIT_AI_RISK_ES95_IMPROVEMENT_LCB",
+          "required": true,
+          "metric_id": "audit_ai_es95_loss_relative_improvement_lcb95",
+          "comparator": "GTE",
+          "threshold": "0.20"
+        }
+      ]
+    },
+    "SHADOW": [
+      {
+        "gate_id": "SHADOW_MIN_CALENDAR_DAYS",
+        "required": true,
+        "metric_id": "complete_shadow_calendar_day_count",
+        "comparator": "GTE",
+        "threshold": 7
+      },
+      {
+        "gate_id": "SHADOW_MIN_SETTLED_CYCLES",
+        "required": true,
+        "metric_id": "settled_24h_decision_cycle_count",
+        "comparator": "GTE",
+        "threshold": 12
+      },
+      {
+        "gate_id": "SHADOW_PARITY",
+        "required": true,
+        "metric_id": "shadow_offline_decision_hash_match_rate",
+        "comparator": "EQ",
+        "threshold": "1"
+      },
+      {
+        "gate_id": "SHADOW_CRITICAL_ERRORS",
+        "required": true,
+        "metric_id": "shadow_schema_order_nan_artifact_critical_error_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "SHADOW_MODEL_GOLDEN_SNAPSHOT",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "release_route",
+              "comparator": "EQ",
+              "value": "AI_ENHANCED"
+            }
+          ]
+        },
+        "metric_id": "model_golden_snapshot_mismatch_count",
+        "comparator": "EQ",
+        "threshold": 0
+      }
+    ],
+    "PAPER_COMMON": [
+      {
+        "gate_id": "PAPER_MIN_CALENDAR_DAYS",
+        "required": true,
+        "metric_id": "complete_paper_calendar_day_count",
+        "comparator": "GTE",
+        "threshold": 90
+      },
+      {
+        "gate_id": "PAPER_MAX_DRAWDOWN",
+        "required": true,
+        "metric_id": "paper_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.10"
+      },
+      {
+        "gate_id": "PAPER_ABSOLUTE_HARM_BOUNDARY",
+        "required": true,
+        "metric_id": "paper_absolute_pnl_lower_control_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "ABSOLUTE_PNL_LOWER_Q10"
+        }
+      },
+      {
+        "gate_id": "PAPER_COST_UPPER_BOUND",
+        "required": true,
+        "metric_id": "paper_cost_ci95_upper_minus_offline_stress_budget",
+        "comparator": "LTE",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "PAPER_FULL_RISK_ECONOMIC_LCB",
+        "required": true,
+        "metric_id": "paper_updated_full_risk_monthly_economic_pnl_usdt_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      }
+    ],
+    "PAPER_AI": [
+      {
+        "gate_id": "PAPER_AI_CALIBRATION_CONTROL",
+        "required": true,
+        "metric_id": "paper_calibration_control_band_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_CALIBRATION"
+        }
+      },
+      {
+        "gate_id": "PAPER_AI_QUANTILE_CONTROL",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "quantile_output_affects_target",
+              "comparator": "EQ",
+              "value": true
+            }
+          ]
+        },
+        "metric_id": "paper_quantile_coverage_control_band_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_QUANTILE_COVERAGE"
+        }
+      },
+      {
+        "gate_id": "PAPER_AI_GROWTH_DELTA_HARM",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "GROWTH"
+            }
+          ]
+        },
+        "metric_id": "paper_ai_delta_lower_control_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_GROWTH_DELTA_LOWER_Q10"
+        }
+      },
+      {
+        "gate_id": "PAPER_AI_RISK_RETURN_HARM",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "RISK_EFFICIENCY"
+            }
+          ]
+        },
+        "metric_id": "paper_ai_return_noninferiority_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_RISK_RETURN"
+        }
+      },
+      {
+        "gate_id": "PAPER_AI_RISK_DRAWDOWN_HARM",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "RISK_EFFICIENCY"
+            }
+          ]
+        },
+        "metric_id": "paper_ai_drawdown_benefit_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_RISK_DRAWDOWN_BENEFIT"
+        }
+      },
+      {
+        "gate_id": "PAPER_AI_RISK_ES95_HARM",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "RISK_EFFICIENCY"
+            }
+          ]
+        },
+        "metric_id": "paper_ai_es95_benefit_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_RISK_ES95_BENEFIT"
+        }
+      }
+    ],
+    "CANARY_COMMON": [
+      {
+        "gate_id": "CANARY_FIXED_BLOCK_COMPLETE",
+        "required": true,
+        "metric_id": "complete_current_canary_block_calendar_day_count",
+        "comparator": "EQ",
+        "threshold": 30
+      },
+      {
+        "gate_id": "CANARY_BLOCK_COUNT_LIMIT",
+        "required": true,
+        "metric_id": "canary_block_number",
+        "comparator": "LTE",
+        "threshold": 3
+      },
+      {
+        "gate_id": "CANARY_MAX_DRAWDOWN",
+        "required": true,
+        "metric_id": "current_canary_block_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.10"
+      },
+      {
+        "gate_id": "CANARY_DAILY_LOSS_NOT_TRIGGERED",
+        "required": true,
+        "metric_id": "current_canary_block_daily_loss_lock_trigger_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "CANARY_NO_S0_S1",
+        "required": true,
+        "metric_id": "current_canary_block_s0_s1_incident_count",
+        "comparator": "EQ",
+        "threshold": 0,
+        "failure_disposition": "FAIL_BLOCK_AND_RESTART_NEW_30_DAY_BLOCK_AFTER_INCIDENT_CLOSE"
+      },
+      {
+        "gate_id": "CANARY_RECONCILIATION",
+        "required": true,
+        "metric_id": "current_canary_block_unexplained_reconciliation_difference_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "CANARY_COST_UPPER_BOUND",
+        "required": true,
+        "metric_id": "canary_cost_ci95_upper_minus_offline_stress_budget",
+        "comparator": "LTE",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "CANARY_ABSOLUTE_HARM_BOUNDARY",
+        "required": true,
+        "metric_id": "canary_absolute_pnl_lower_control_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "ABSOLUTE_PNL_LOWER_Q10"
+        }
+      },
+      {
+        "gate_id": "CANARY_TRADABLE_OPPORTUNITY",
+        "required": true,
+        "metric_id": "canary_min_notional_adjusted_tradable_opportunity_rate",
+        "comparator": "GTE",
+        "threshold_reference": {
+          "binding": "forward_control_policy_id",
+          "json_pointer_template": "/minimum_tradable_opportunity_rate/{direction}/{stage}"
+        }
+      },
+      {
+        "gate_id": "CANARY_FULL_RISK_ECONOMIC_LCB",
+        "required": true,
+        "metric_id": "canary_updated_full_risk_monthly_economic_pnl_usdt_lcb95",
+        "comparator": "GT",
+        "threshold": "0"
+      }
+    ],
+    "CANARY_AI": [
+      {
+        "gate_id": "CANARY_AI_CALIBRATION_CONTROL",
+        "required": true,
+        "metric_id": "canary_calibration_control_band_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_CALIBRATION"
+        }
+      },
+      {
+        "gate_id": "CANARY_AI_QUANTILE_CONTROL",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "quantile_output_affects_target",
+              "comparator": "EQ",
+              "value": true
+            }
+          ]
+        },
+        "metric_id": "canary_quantile_coverage_control_band_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_QUANTILE_COVERAGE"
+        }
+      },
+      {
+        "gate_id": "CANARY_AI_GROWTH_DELTA_HARM",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "GROWTH"
+            }
+          ]
+        },
+        "metric_id": "canary_ai_delta_lower_control_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_GROWTH_DELTA_LOWER_Q10"
+        }
+      },
+      {
+        "gate_id": "CANARY_AI_RISK_RETURN_HARM",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "RISK_EFFICIENCY"
+            }
+          ]
+        },
+        "metric_id": "canary_ai_return_noninferiority_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_RISK_RETURN"
+        }
+      },
+      {
+        "gate_id": "CANARY_AI_RISK_DRAWDOWN_HARM",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "RISK_EFFICIENCY"
+            }
+          ]
+        },
+        "metric_id": "canary_ai_drawdown_benefit_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_RISK_DRAWDOWN_BENEFIT"
+        }
+      },
+      {
+        "gate_id": "CANARY_AI_RISK_ES95_HARM",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "RISK_EFFICIENCY"
+            }
+          ]
+        },
+        "metric_id": "canary_ai_es95_benefit_boundary_breached",
+        "comparator": "EQ",
+        "threshold": false,
+        "boundary_reference": {
+          "binding": "forward_control_policy_id",
+          "boundary_id": "AI_RISK_ES95_BENEFIT"
+        }
+      }
+    ],
+    "CAPITAL_READINESS": [
+      {
+        "gate_id": "BREAK_EVEN_ROOT_IS_FINITE",
+        "required": true,
+        "metric_id": "break_even_root_is_finite",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "ACTUAL_CAPITAL_AT_LEAST_APPROVED",
+        "required": true,
+        "metric_id": "actual_deployable_capital_usdt",
+        "comparator": "GTE",
+        "threshold_ast": {
+          "metric_ref": "approved_production_capital_usdt"
+        }
+      },
+      {
+        "gate_id": "ACTUAL_CAPITAL_AT_LEAST_BREAK_EVEN",
+        "required": true,
+        "metric_id": "actual_deployable_capital_usdt",
+        "comparator": "GTE",
+        "threshold_ast": {
+          "metric_ref": "break_even_capital_lcb_root_usdt"
+        }
+      }
+    ],
+    "RUNTIME": [
+      {
+        "gate_id": "DUPLICATE_ECONOMIC_ORDERS",
+        "required": true,
+        "metric_id": "duplicate_economic_order_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "UNRECORDED_FILLS",
+        "required": true,
+        "metric_id": "unrecorded_fill_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "HARD_RISK_VIOLATIONS",
+        "required": true,
+        "metric_id": "hard_risk_violation_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "NEW_RISK_DURING_RECONCILIATION",
+        "required": true,
+        "metric_id": "new_risk_during_unresolved_reconciliation_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "ORDER_TRACEABILITY",
+        "required": true,
+        "metric_id": "fully_traceable_order_rate",
+        "comparator": "EQ",
+        "threshold": "1"
+      },
+      {
+        "gate_id": "DECISION_REPLAY",
+        "required": true,
+        "metric_id": "formal_decision_replay_match_rate",
+        "comparator": "EQ",
+        "threshold": "1"
+      },
+      {
+        "gate_id": "UNEXPLAINED_TARGET_DIFFERENCES",
+        "required": true,
+        "metric_id": "unexplained_target_position_difference_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "UNKNOWN_BLIND_RESUBMIT",
+        "required": true,
+        "metric_id": "unknown_order_blind_resubmit_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "RESTART_RECONNECT_RECOVERY",
+        "required": true,
+        "metric_id": "restart_or_disconnect_recovery_failure_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "PROTECTIVE_ORDER_COVERAGE",
+        "required": true,
+        "metric_id": "unprotected_position_or_undercoverage_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "PROTECTIVE_REPLACEMENT_DEADLINE",
+        "required": true,
+        "metric_id": "protective_replacement_deadline_breach_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "LEVERAGE_LIMIT",
+        "required": true,
+        "metric_id": "maximum_worst_case_effective_leverage",
+        "comparator": "LTE",
+        "threshold": "1.00"
+      },
+      {
+        "gate_id": "LIVE_KEY_WITHDRAWAL_DISABLED",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "stage",
+              "comparator": "IN",
+              "value": [
+                "CANARY_25",
+                "CANARY_50",
+                "CANARY_75",
+                "CHAMPION"
+              ]
+            }
+          ]
+        },
+        "metric_id": "live_key_withdrawal_permission_enabled",
+        "comparator": "EQ",
+        "threshold": false
+      },
+      {
+        "gate_id": "COMPLIANCE_ELIGIBILITY_CONFIRMED",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "stage",
+              "comparator": "IN",
+              "value": [
+                "CANARY_25",
+                "CANARY_50",
+                "CANARY_75",
+                "CHAMPION"
+              ]
+            }
+          ]
+        },
+        "metric_id": "jurisdiction_terms_and_derivatives_eligibility_confirmed",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "FALLBACK_REGISTRY_SCHEMA_VALID",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "fallback_activation_requested",
+              "comparator": "EQ",
+              "value": true
+            }
+          ]
+        },
+        "metric_id": "approved_fallback_registry_schema_validation_pass",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "FALLBACK_RECORD_QUALIFIED",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "fallback_activation_requested",
+              "comparator": "EQ",
+              "value": true
+            }
+          ]
+        },
+        "metric_id": "fallback_registry_record_qualified",
+        "comparator": "EQ",
+        "threshold": true
+      }
+    ],
+    "MINOR_BUNDLE_REFRESH": [
+      {
+        "gate_id": "MINOR_RECIPE_HASH_IDENTICAL",
+        "required": true,
+        "metric_id": "minor_recipe_hash_exact_match",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "MINOR_ONLY_ALLOWED_FIELDS_CHANGED",
+        "required": true,
+        "metric_id": "minor_only_training_cutoff_and_derived_weights_changed",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "MINOR_INTERFACE_HASH_IDENTICAL",
+        "required": true,
+        "metric_id": "minor_interface_compatibility_hash_exact_match",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "MINOR_DATA_CUTOFF_ADVANCED",
+        "required": true,
+        "metric_id": "minor_training_data_cutoff_advanced",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "MINOR_GOLDEN_SNAPSHOT",
+        "required": true,
+        "metric_id": "minor_golden_snapshot_mismatch_count",
+        "comparator": "EQ",
+        "threshold": 0
+      },
+      {
+        "gate_id": "MINOR_SAME_OOS_WINDOW",
+        "required": true,
+        "metric_id": "minor_candidate_and_active_bundle_same_oos_window",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "MINOR_SAME_APPROVED_CAPITAL",
+        "required": true,
+        "metric_id": "minor_candidate_and_active_bundle_same_approved_capital",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "MINOR_SAME_POLICY_BUNDLE",
+        "required": true,
+        "metric_id": "minor_candidate_and_active_bundle_same_policy_bundle",
+        "comparator": "EQ",
+        "threshold": true
+      },
+      {
+        "gate_id": "MINOR_ECONOMIC_NONINFERIORITY",
+        "required": true,
+        "metric_id": "minor_candidate_minus_active_economic_net_log_growth_lcb95",
+        "comparator": "GTE",
+        "threshold_ast": {
+          "op": "MULTIPLY",
+          "args": [
+            {
+              "literal": "-0.05"
+            },
+            {
+              "op": "ABS",
+              "args": [
+                {
+                  "metric_ref": "active_bundle_economic_net_log_growth"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "gate_id": "MINOR_ABSOLUTE_DRAWDOWN",
+        "required": true,
+        "metric_id": "minor_candidate_normal_cost_max_drawdown",
+        "comparator": "LT",
+        "threshold": "0.10"
+      },
+      {
+        "gate_id": "MINOR_DRAWDOWN_DETERIORATION",
+        "required": true,
+        "metric_id": "minor_candidate_minus_active_max_drawdown",
+        "comparator": "LTE",
+        "threshold": "0.01"
+      },
+      {
+        "gate_id": "MINOR_RISK_EFFICIENCY_MDD_BENEFIT_NONINFERIOR",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "RISK_EFFICIENCY"
+            }
+          ]
+        },
+        "metric_id": "minor_risk_efficiency_candidate_minus_active_mdd_improvement_lcb95",
+        "comparator": "GTE",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "MINOR_RISK_EFFICIENCY_ES95_BENEFIT_NONINFERIOR",
+        "required": true,
+        "applies_when": {
+          "all": [
+            {
+              "attribute": "ai_endpoint",
+              "comparator": "EQ",
+              "value": "RISK_EFFICIENCY"
+            }
+          ]
+        },
+        "metric_id": "minor_risk_efficiency_candidate_minus_active_es95_improvement_lcb95",
+        "comparator": "GTE",
+        "threshold": "0"
+      },
+      {
+        "gate_id": "MINOR_ECE",
+        "required": true,
+        "metric_id": "minor_candidate_expected_calibration_error",
+        "comparator": "LTE",
+        "threshold": "0.05"
+      },
+      {
+        "gate_id": "MINOR_ECE_DETERIORATION",
+        "required": true,
+        "metric_id": "minor_candidate_minus_active_expected_calibration_error",
+        "comparator": "LTE",
+        "threshold": "0.01"
+      },
+      {
+        "gate_id": "MINOR_PARALLEL_SHADOW_DAYS",
+        "required": true,
+        "metric_id": "minor_parallel_shadow_calendar_day_count",
+        "comparator": "GTE",
+        "threshold": 7
+      },
+      {
+        "gate_id": "MINOR_PARALLEL_SHADOW_CYCLES",
+        "required": true,
+        "metric_id": "minor_parallel_shadow_settled_24h_cycle_count",
+        "comparator": "GTE",
+        "threshold": 12
+      },
+      {
+        "gate_id": "MINOR_SHADOW_UNEXPLAINED_DIFFERENCES",
+        "required": true,
+        "metric_id": "minor_shadow_unexplained_decision_difference_count",
+        "comparator": "EQ",
+        "threshold": 0
+      }
+    ]
+  },
+  "release_audit_matrix": {
+    "INITIAL": {
+      "evidence_source": "SEALED_12_MONTH_HISTORY",
+      "BASELINE_ONLY": [
+        {
+          "gate_group": "STRUCTURAL",
+          "evaluation_ledger": "ROUTE_RUNTIME"
+        },
+        {
+          "gate_group": "SAMPLE",
+          "evaluation_ledger": "BASELINE_LEDGER"
+        },
+        {
+          "gate_group": "RELEASE_AUDIT_CONTROL",
+          "evaluation_ledger": "ROUTE_RUNTIME"
+        },
+        {
+          "gate_group": "AUDIT_BASE_ARM",
+          "evaluation_ledger": "BASELINE_LEDGER"
+        }
+      ],
+      "AI_ENHANCED": {
+        "GROWTH": [
+          {
+            "gate_group": "STRUCTURAL",
+            "evaluation_ledger": "ROUTE_RUNTIME"
+          },
+          {
+            "gate_group": "SAMPLE",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          },
+          {
+            "gate_group": "RELEASE_AUDIT_CONTROL",
+            "evaluation_ledger": "ROUTE_RUNTIME"
+          },
+          {
+            "gate_group": "AUDIT_BASE_ARM",
+            "evaluation_ledger": "BASELINE_LEDGER"
+          },
+          {
+            "gate_group": "AUDIT_AI_ARM",
+            "evaluation_ledger": "AI_LEDGER"
+          },
+          {
+            "gate_group": "AUDIT_AI_PAIRED_COMMON",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          },
+          {
+            "gate_group": "AUDIT_AI_ENDPOINT.GROWTH",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          }
+        ],
+        "RISK_EFFICIENCY": [
+          {
+            "gate_group": "STRUCTURAL",
+            "evaluation_ledger": "ROUTE_RUNTIME"
+          },
+          {
+            "gate_group": "SAMPLE",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          },
+          {
+            "gate_group": "RELEASE_AUDIT_CONTROL",
+            "evaluation_ledger": "ROUTE_RUNTIME"
+          },
+          {
+            "gate_group": "AUDIT_BASE_ARM",
+            "evaluation_ledger": "BASELINE_LEDGER"
+          },
+          {
+            "gate_group": "AUDIT_AI_ARM",
+            "evaluation_ledger": "AI_LEDGER"
+          },
+          {
+            "gate_group": "AUDIT_AI_PAIRED_COMMON",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          },
+          {
+            "gate_group": "AUDIT_AI_ENDPOINT.RISK_EFFICIENCY",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          }
+        ]
+      }
+    },
+    "MAJOR": {
+      "evidence_source": "PRECOMMITTED_PREQUENTIAL_FORWARD",
+      "minimum_calendar_days": null,
+      "calendar_days_alone_can_pass": false,
+      "BASELINE_ONLY": [
+        {
+          "gate_group": "STRUCTURAL",
+          "evaluation_ledger": "ROUTE_RUNTIME"
+        },
+        {
+          "gate_group": "SAMPLE",
+          "evaluation_ledger": "BASELINE_LEDGER"
+        },
+        {
+          "gate_group": "RELEASE_AUDIT_CONTROL",
+          "evaluation_ledger": "ROUTE_RUNTIME"
+        },
+        {
+          "gate_group": "AUDIT_BASE_ARM",
+          "evaluation_ledger": "BASELINE_LEDGER"
+        }
+      ],
+      "AI_ENHANCED": {
+        "GROWTH": [
+          {
+            "gate_group": "STRUCTURAL",
+            "evaluation_ledger": "ROUTE_RUNTIME"
+          },
+          {
+            "gate_group": "SAMPLE",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          },
+          {
+            "gate_group": "RELEASE_AUDIT_CONTROL",
+            "evaluation_ledger": "ROUTE_RUNTIME"
+          },
+          {
+            "gate_group": "AUDIT_BASE_ARM",
+            "evaluation_ledger": "BASELINE_LEDGER"
+          },
+          {
+            "gate_group": "AUDIT_AI_ARM",
+            "evaluation_ledger": "AI_LEDGER"
+          },
+          {
+            "gate_group": "AUDIT_AI_PAIRED_COMMON",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          },
+          {
+            "gate_group": "AUDIT_AI_ENDPOINT.GROWTH",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          }
+        ],
+        "RISK_EFFICIENCY": [
+          {
+            "gate_group": "STRUCTURAL",
+            "evaluation_ledger": "ROUTE_RUNTIME"
+          },
+          {
+            "gate_group": "SAMPLE",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          },
+          {
+            "gate_group": "RELEASE_AUDIT_CONTROL",
+            "evaluation_ledger": "ROUTE_RUNTIME"
+          },
+          {
+            "gate_group": "AUDIT_BASE_ARM",
+            "evaluation_ledger": "BASELINE_LEDGER"
+          },
+          {
+            "gate_group": "AUDIT_AI_ARM",
+            "evaluation_ledger": "AI_LEDGER"
+          },
+          {
+            "gate_group": "AUDIT_AI_PAIRED_COMMON",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          },
+          {
+            "gate_group": "AUDIT_AI_ENDPOINT.RISK_EFFICIENCY",
+            "evaluation_ledger": "PAIRED_COMPARISON"
+          }
+        ]
+      }
+    }
+  },
+  "minor_bundle_refresh_workflow": {
+    "applies_to_route": "AI_ENHANCED",
+    "required_gate_groups": [
+      "STRUCTURAL",
+      "SAMPLE",
+      "BASELINE_OFFLINE",
+      "AI_COMMON_OFFLINE",
+      "MINOR_BUNDLE_REFRESH"
+    ],
+    "required_gate_evaluations": [
+      {
+        "gate_group": "STRUCTURAL",
+        "evaluation_ledger": "ROUTE_RUNTIME"
+      },
+      {
+        "gate_group": "SAMPLE",
+        "evaluation_ledger": "PAIRED_COMPARISON"
+      },
+      {
+        "gate_group": "BASELINE_OFFLINE",
+        "evaluation_ledger": "BASELINE_LEDGER"
+      },
+      {
+        "gate_group": "AI_COMMON_OFFLINE",
+        "evaluation_ledger": "AI_LEDGER"
+      },
+      {
+        "gate_group": "AI_ENDPOINT.{ai_endpoint}",
+        "evaluation_ledger": "PAIRED_COMPARISON"
+      },
+      {
+        "gate_group": "MINOR_BUNDLE_REFRESH",
+        "evaluation_ledger": "PAIRED_COMPARISON"
+      }
+    ],
+    "baseline_and_ai_evidence_must_share_window_capital_and_policy": true,
+    "required_endpoint_gate_group_template": "AI_ENDPOINT.{ai_endpoint}",
+    "sealed_audit_reopened": false,
+    "deployment_stage_reset": false,
+    "evidence_must_be_segmented_by_bundle": true,
+    "inherited_evidence": [
+      "RECIPE_RELEASE_AUDIT",
+      "COMPLETED_DEPLOYMENT_STAGE_CALENDAR"
+    ],
+    "not_inherited_evidence": [
+      "BUNDLE_AGE",
+      "BUNDLE_GOLDEN_SNAPSHOT",
+      "BUNDLE_SHADOW",
+      "BUNDLE_CALIBRATION",
+      "BUNDLE_OOS",
+      "BASELINE_ROLLING_OOS"
+    ],
+    "failure_action": "KEEP_ACTIVE_BUNDLE_UNTIL_EXPIRY_OR_FREEZE_INCREASES"
+  },
+  "forward_gate_matrix": {
+    "BASELINE_ONLY": {
+      "SHADOW": [
+        "STRUCTURAL",
+        "SHADOW",
+        "RUNTIME"
+      ],
+      "PAPER": [
+        "STRUCTURAL",
+        "PAPER_COMMON",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ],
+      "CANARY_25": [
+        "STRUCTURAL",
+        "CANARY_COMMON",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ],
+      "CANARY_50": [
+        "STRUCTURAL",
+        "CANARY_COMMON",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ],
+      "CANARY_75": [
+        "STRUCTURAL",
+        "CANARY_COMMON",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ],
+      "CHAMPION": [
+        "STRUCTURAL",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ]
+    },
+    "AI_ENHANCED": {
+      "SHADOW": [
+        "STRUCTURAL",
+        "SHADOW",
+        "RUNTIME"
+      ],
+      "PAPER": [
+        "STRUCTURAL",
+        "PAPER_COMMON",
+        "PAPER_AI",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ],
+      "CANARY_25": [
+        "STRUCTURAL",
+        "CANARY_COMMON",
+        "CANARY_AI",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ],
+      "CANARY_50": [
+        "STRUCTURAL",
+        "CANARY_COMMON",
+        "CANARY_AI",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ],
+      "CANARY_75": [
+        "STRUCTURAL",
+        "CANARY_COMMON",
+        "CANARY_AI",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ],
+      "CHAMPION": [
+        "STRUCTURAL",
+        "RUNTIME",
+        "CAPITAL_READINESS"
+      ]
+    }
+  },
+  "deployment_state_machine": {
+    "allowed_forward_transitions": [
+      {
+        "release_route": "BASELINE_ONLY",
+        "from": "RECIPE_CANDIDATE",
+        "to": "SHADOW",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "SAMPLE",
+          "BASELINE_OFFLINE",
+          "RELEASE_AUDIT_CONTROL",
+          "AUDIT_BASE_ARM"
+        ],
+        "required_release_audit_matrix_entry": "{release_kind}.BASELINE_ONLY"
+      },
+      {
+        "release_route": "AI_ENHANCED",
+        "from": "RECIPE_CANDIDATE",
+        "to": "SHADOW",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "SAMPLE",
+          "BASELINE_OFFLINE",
+          "AI_COMMON_OFFLINE",
+          "AI_ENDPOINT.{ai_endpoint}",
+          "RELEASE_AUDIT_CONTROL",
+          "AUDIT_BASE_ARM",
+          "AUDIT_AI_ARM",
+          "AUDIT_AI_PAIRED_COMMON",
+          "AUDIT_AI_ENDPOINT.{ai_endpoint}"
+        ],
+        "required_release_audit_matrix_entry": "{release_kind}.AI_ENHANCED.{ai_endpoint}"
+      },
+      {
+        "release_route": "BASELINE_ONLY",
+        "from": "SHADOW",
+        "to": "PAPER",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "SHADOW",
+          "RUNTIME"
+        ]
+      },
+      {
+        "release_route": "AI_ENHANCED",
+        "from": "SHADOW",
+        "to": "PAPER",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "SHADOW",
+          "RUNTIME"
+        ]
+      },
+      {
+        "release_route": "BASELINE_ONLY",
+        "from": "PAPER",
+        "to": "CANARY_25",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "PAPER_COMMON",
+          "RUNTIME",
+          "CAPITAL_READINESS"
+        ]
+      },
+      {
+        "release_route": "AI_ENHANCED",
+        "from": "PAPER",
+        "to": "CANARY_25",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "PAPER_COMMON",
+          "PAPER_AI",
+          "RUNTIME",
+          "CAPITAL_READINESS"
+        ]
+      },
+      {
+        "release_route": "BASELINE_ONLY",
+        "from": "CANARY_25",
+        "to": "CANARY_50",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "CANARY_COMMON",
+          "RUNTIME",
+          "CAPITAL_READINESS"
+        ]
+      },
+      {
+        "release_route": "AI_ENHANCED",
+        "from": "CANARY_25",
+        "to": "CANARY_50",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "CANARY_COMMON",
+          "CANARY_AI",
+          "RUNTIME",
+          "CAPITAL_READINESS"
+        ]
+      },
+      {
+        "release_route": "BASELINE_ONLY",
+        "from": "CANARY_50",
+        "to": "CANARY_75",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "CANARY_COMMON",
+          "RUNTIME",
+          "CAPITAL_READINESS"
+        ]
+      },
+      {
+        "release_route": "AI_ENHANCED",
+        "from": "CANARY_50",
+        "to": "CANARY_75",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "CANARY_COMMON",
+          "CANARY_AI",
+          "RUNTIME",
+          "CAPITAL_READINESS"
+        ]
+      },
+      {
+        "release_route": "BASELINE_ONLY",
+        "from": "CANARY_75",
+        "to": "CHAMPION",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "CANARY_COMMON",
+          "RUNTIME",
+          "CAPITAL_READINESS"
+        ]
+      },
+      {
+        "release_route": "AI_ENHANCED",
+        "from": "CANARY_75",
+        "to": "CHAMPION",
+        "required_gate_groups": [
+          "STRUCTURAL",
+          "CANARY_COMMON",
+          "CANARY_AI",
+          "RUNTIME",
+          "CAPITAL_READINESS"
+        ]
+      }
+    ],
+    "retire_from_any_state": true,
+    "skip_transition_allowed": false,
+    "stage_evidence_reuse_allowed": false,
+    "minor_refresh_preserves_current_state_only_after_refresh_pass": true
+  },
+  "forward_evaluation": {
+    "paper_and_canary_reprove_historical_edge": false,
+    "purpose": [
+      "RUNTIME_SAFETY",
+      "PIPELINE_CONSISTENCY",
+      "EXECUTION_COST_VALIDATION",
+      "HARM_DETECTION"
+    ],
+    "canary_stage_positive_pnl_required": false,
+    "short_direction_positive_pnl_required_in_small_canary": false,
+    "fixed_checkpoint_evaluation": true,
+    "early_stop_allowed_for": [
+      "SAFETY_BOUNDARY",
+      "PREDECLARED_HARM_BOUNDARY"
+    ],
+    "early_success_stop_allowed": false,
+    "canary_block_calendar_days": 30,
+    "maximum_blocks_per_stage": 3,
+    "evidence_insufficient_after_three_blocks": "RETURN_TO_PAPER_OR_APPROVED_FALLBACK"
+  },
+  "deployment_stages": [
+    {
+      "stage": "CANARY_25",
+      "authoritative_multiplier": "0.25"
+    },
+    {
+      "stage": "CANARY_50",
+      "authoritative_multiplier": "0.50"
+    },
+    {
+      "stage": "CANARY_75",
+      "authoritative_multiplier": "0.75"
+    },
+    {
+      "stage": "CHAMPION",
+      "authoritative_multiplier": "1.00"
+    }
+  ],
+  "exposure_formulas": {
+    "risk_bucket_to_ratio_ast": {
+      "op": "DIVIDE",
+      "args": [
+        {
+          "attribute_ref": "risk_bucket"
+        },
+        {
+          "literal": 100
+        }
+      ]
+    },
+    "model_suggested_abs_exposure_ast": {
+      "op": "MULTIPLY",
+      "args": [
+        {
+          "attribute_ref": "base_volatility_exposure"
+        },
+        {
+          "expression_ref": "exposure_formulas.risk_bucket_to_ratio_ast"
+        }
+      ]
+    },
+    "stage_capped_abs_exposure_ast": {
+      "op": "MULTIPLY",
+      "args": [
+        {
+          "expression_ref": "exposure_formulas.model_suggested_abs_exposure_ast"
+        },
+        {
+          "attribute_ref": "authoritative_stage_multiplier"
+        }
+      ]
+    },
+    "minimum_tradable_capital_ast": {
+      "op": "DIVIDE",
+      "args": [
+        {
+          "attribute_ref": "min_notional"
+        },
+        {
+          "expression_ref": "exposure_formulas.stage_capped_abs_exposure_ast"
+        }
+      ]
+    },
+    "risk_gate_must_recompute": true
+  },
+  "risk_thresholds": {
+    "target_annual_volatility": "0.12",
+    "maximum_effective_leverage": "1.00",
+    "effective_leverage_formula_id": "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1",
+    "opposing_spot_perp_netted_for_leverage": false,
+    "daily_loss": {
+      "formula_id": "CASH_FLOW_ADJUSTED_DAILY_LOSS_V1",
+      "trigger_comparator": "LTE",
+      "trigger": "-0.02",
+      "action": "FLATTEN_AND_LOCK",
+      "earliest_release": "NEXT_UTC_DAY_AFTER_CLEAN_RECONCILIATION",
+      "manual_release_if_incident_related": true
+    },
+    "drawdown": [
+      {
+        "lower_bound": "0.10",
+        "lower_inclusive": true,
+        "upper_bound": "0.12",
+        "upper_inclusive": false,
+        "state": "WARNING",
+        "action": "FREEZE_INCREASES",
+        "cap_rule_id": "MIN_CURRENT_AND_ORIGINAL_APPROVED",
+        "release_rule_id": "DD_BELOW_0_08_FOR_7D_AND_HEALTHY"
+      },
+      {
+        "lower_bound": "0.12",
+        "lower_inclusive": true,
+        "upper_bound": "0.15",
+        "upper_inclusive": false,
+        "state": "REDUCE",
+        "action": "REDUCE_ONLY",
+        "cap_rule_id": "MIN_CURRENT_AND_HALF_ORIGINAL_APPROVED",
+        "release_rule_id": "DD_BELOW_0_10_FOR_14D_AND_MANUAL_APPROVAL"
+      },
+      {
+        "lower_bound": "0.15",
+        "lower_inclusive": true,
+        "upper_bound": "0.20",
+        "upper_inclusive": false,
+        "state": "HALT",
+        "action": "FLATTEN",
+        "release_rule_id": "INCIDENT_REVIEW_AND_30D_PAPER_RESTART_MAX_CANARY_25"
+      },
+      {
+        "lower_bound": "0.20",
+        "lower_inclusive": true,
+        "upper_bound": null,
+        "upper_inclusive": false,
+        "state": "HARD_BOUNDARY",
+        "action": "FLATTEN_AND_DISABLE_AUTO_RESTART",
+        "release_rule_id": "MANUAL_REAPPROVAL_INCIDENT_REVIEW_AND_30D_PAPER_RESTART_MAX_CANARY_25"
+      }
+    ],
+    "cap_rule_definitions": {
+      "MIN_CURRENT_AND_ORIGINAL_APPROVED": {
+        "op": "MIN",
+        "args": [
+          {
+            "attribute_ref": "current_actual_abs_exposure"
+          },
+          {
+            "attribute_ref": "original_approved_abs_exposure"
+          }
+        ]
+      },
+      "MIN_CURRENT_AND_HALF_ORIGINAL_APPROVED": {
+        "op": "MIN",
+        "args": [
+          {
+            "attribute_ref": "current_actual_abs_exposure"
+          },
+          {
+            "op": "MULTIPLY",
+            "args": [
+              {
+                "attribute_ref": "original_approved_abs_exposure"
+              },
+              {
+                "literal": "0.50"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "release_rule_definitions": {
+      "DD_BELOW_0_08_FOR_7D_AND_HEALTHY": {
+        "drawdown_comparator": "LT",
+        "drawdown_threshold": "0.08",
+        "continuous_calendar_days": 7,
+        "requires_clean_reconciliation": true,
+        "requires_system_health": true,
+        "requires_manual_approval": false
+      },
+      "DD_BELOW_0_10_FOR_14D_AND_MANUAL_APPROVAL": {
+        "drawdown_comparator": "LT",
+        "drawdown_threshold": "0.10",
+        "continuous_calendar_days": 14,
+        "requires_clean_reconciliation": true,
+        "requires_system_health": true,
+        "requires_manual_approval": true
+      },
+      "INCIDENT_REVIEW_AND_30D_PAPER_RESTART_MAX_CANARY_25": {
+        "requires_incident_review": true,
+        "minimum_new_paper_calendar_days": 30,
+        "requires_manual_approval": true,
+        "maximum_restart_stage": "CANARY_25"
+      },
+      "MANUAL_REAPPROVAL_INCIDENT_REVIEW_AND_30D_PAPER_RESTART_MAX_CANARY_25": {
+        "requires_incident_review": true,
+        "minimum_new_paper_calendar_days": 30,
+        "requires_manual_reapproval": true,
+        "automatic_restart_allowed": false,
+        "maximum_restart_stage": "CANARY_25"
+      }
+    },
+    "protective_order_replacement": {
+      "maximum_unprotected_window_ms": 2000,
+      "clock_starts_at": "EARLIEST_OF_OLD_PROTECTION_FINAL_CANCEL_CONFIRMATION_OR_FIRST_RISK_EXPOSURE_EVENT",
+      "unknown_old_order_is_treated_as_cancelled": false,
+      "timeout_actions": [
+        "FREEZE_INCREASES",
+        "SUBMIT_EMERGENCY_MARKET_OR_VENUE_ALLOWED_PROTECTIVE_EXIT"
+      ],
+      "failure_escalation": "FLATTEN_AND_HALT",
+      "deadline_must_be_frozen_in_recipe_risk_policy": true
+    }
+  },
+  "model_lifecycle": {
+    "bundle_age_clock": "DAYS_SINCE_TRAINING_DATA_CUTOFF",
+    "warning_and_bucket_downgrade_after_days": 45,
+    "block_new_risk_after_days": 90,
+    "compatible_minor_bundle_refresh_target_days": 30,
+    "minor_bundle_min_parallel_shadow_days": 7,
+    "minor_bundle_resets_deployment_line_evidence": false,
+    "major_recipe_change_requires_new_deployment_line_and_full_path": true,
+    "major_or_immediate_invalidation_changes": [
+      "RELEASE_ROUTE",
+      "PRIMARY_ENDPOINT",
+      "STRATEGY_PROPOSAL",
+      "FEATURE_SCHEMA",
+      "LABEL",
+      "MODEL_FAMILY",
+      "HYPERPARAMETER_SEARCH_SPACE",
+      "CALIBRATION_METHOD",
+      "THRESHOLD",
+      "POSITION_POLICY",
+      "RISK_BUCKET_MAPPING",
+      "RISK_POLICY",
+      "EXECUTION_OR_FILL_MODEL",
+      "DATA_SOURCE",
+      "COST_OR_ACCOUNTING_DEFINITION",
+      "INTERFACE_HASH"
+    ]
+  },
+  "fallback_policy": {
+    "registry": "APPROVED_FALLBACK_REGISTRY",
+    "lookup_key_fields": [
+      "source.release_route",
+      "source.recipe_release_id",
+      "source.deployment_line_id",
+      "direction",
+      "venue",
+      "policy_hashes"
+    ],
+    "fallback_target_fields": [
+      "fallback.release_route",
+      "fallback.recipe_release_id",
+      "fallback.deployment_line_id",
+      "fallback.model_bundle_id",
+      "fallback.no_ai_base_version",
+      "fallback_qualification",
+      "maximum_approved_stage",
+      "status",
+      "approved_at",
+      "expires_at",
+      "last_known_good_evidence_hash",
+      "signature"
+    ],
+    "no_ai_requires_independent_baseline_deployment_line": true,
+    "logistic_candidate_is_eligible_for_live_fallback": false,
+    "fallback_requires_released_champion_or_unexpired_lkg": true,
+    "record_schema_binding": "approved_fallback_registry_schema_id",
+    "runtime_qualification_gate_id": "FALLBACK_RECORD_QUALIFIED",
+    "fallback_stage_may_exceed_registry_approval": false,
+    "missing_qualified_fallback_action": "FREEZE_INCREASES_UNLESS_HARD_RISK_REQUIRES_FLATTEN"
+  },
+  "economic_accounting": {
+    "reporting_asset": "USDT",
+    "accounting_policy_binding": "accounting_policy_id",
+    "cost_allocation_policy_binding": "cost_allocation_policy_id",
+    "approved_capital_is_evidence_scope_dimension": true,
+    "closed_trade_pnl_formula_id": "FILL_BASED_GROSS_MINUS_FEES_PLUS_SIGNED_FUNDING_V1",
+    "period_economic_pnl_formula_id": "CASH_FLOW_ADJUSTED_LIQUIDATION_EQUITY_MINUS_ALLOCATED_COSTS_V1",
+    "economic_log_growth_formula_id": "CASH_FLOW_ADJUSTED_ECONOMIC_LOG_GROWTH_V1",
+    "open_position_marking": "CONSERVATIVE_EXECUTABLE_CLOSE_PLUS_EXIT_FEE",
+    "spread_and_slippage_are_already_in_fill_prices": true,
+    "implementation_shortfall_is_diagnostic_not_extra_pnl_deduction": true,
+    "signed_funding_positive_means_received": true,
+    "required_cost_events": [
+      "OperatingCost",
+      "AIInferenceCost",
+      "ModelTrainingCost",
+      "MonitoringAndAuditCost"
+    ],
+    "required_external_cash_flow_events": [
+      "DEPOSIT",
+      "WITHDRAWAL",
+      "INTERNAL_TRANSFER"
+    ],
+    "break_even_capital_method": "CAPITAL_GRID_REPLAY_AND_MINIMUM_POSITIVE_ECONOMIC_PNL_LCB_ROOT_V1",
+    "linear_break_even_formula_is_advisory_only": true,
+    "nonpositive_root_result": "NO_PROVEN_FINITE_BREAK_EVEN_CAPITAL",
+    "canary_fixed_cost_may_be_preapproved_validation_expense": true,
+    "profitability_claim_requires_full_risk_monthly_economic_pnl_lcb_above_zero": true,
+    "profitability_claim_requires_capital_readiness_pass": true,
+    "capital_above_approved_does_not_auto_scale_risk": true
+  },
+  "advisory_metrics": [
+    "profit_factor",
+    "sortino_ratio",
+    "calibration_slope",
+    "turnover",
+    "drawdown_duration",
+    "cost_share_of_gross_profit",
+    "regime_breakdown",
+    "min_notional_rejection_rate",
+    "max_single_fold_share_of_positive_pnl",
+    "max_single_trade_share_of_positive_pnl",
+    "top_5_trades_share_of_positive_pnl"
+  ],
+  "change_control": {
+    "threshold_change_after_audit_results_seen": "FORBIDDEN_FOR_CURRENT_RELEASE",
+    "numeric_change_requires_new_policy_version": true,
+    "major_economic_change_requires_new_recipe_release": true,
+    "major_change_inherits_old_deployment_line_evidence": false,
+    "failed_or_exposed_audit_window_can_be_resealed": false
+  }
+}
