@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "paired-risk-evaluation-snapshot-v1.schema.json",
+  "title": "Paired Risk Evaluation Snapshot v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "snapshot_id",
+    "snapshot_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "comparison_role",
+    "ai_endpoint",
+    "reference_arm",
+    "candidate_arm",
+    "economic_snapshots",
+    "source_economic_snapshot_hashes",
+    "pairing_rule",
+    "pairing_report",
+    "paired_segments",
+    "accounting_policy_id",
+    "accounting_policy_hash",
+    "cost_allocation_policy_id",
+    "cost_allocation_policy_hash",
+    "split_policy_id",
+    "split_policy_hash",
+    "statistical_design_policy_id",
+    "statistical_design_policy_hash",
+    "experiment_manifest_id",
+    "experiment_manifest_hash",
+    "scope",
+    "approved_production_capital_usdt",
+    "bootstrap_design",
+    "generated_at",
+    "replay_verified"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./paired-risk-evaluation-snapshot-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "snapshot_id": {
+      "$ref": "#/$defs/id"
+    },
+    "snapshot_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "comparison_role": {
+      "enum": [
+        "AI_VS_RECIPE_BASELINE",
+        "MINOR_CANDIDATE_VS_ACTIVE_BUNDLE"
+      ]
+    },
+    "ai_endpoint": {
+      "const": "RISK_EFFICIENCY"
+    },
+    "reference_arm": {
+      "$ref": "#/$defs/arm"
+    },
+    "candidate_arm": {
+      "$ref": "#/$defs/arm"
+    },
+    "economic_snapshots": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object"
+      }
+    },
+    "source_economic_snapshot_hashes": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "pairing_rule": {
+      "const": "PROPOSAL_ID_PLUS_DECISION_TIME"
+    },
+    "pairing_report": {
+      "$ref": "#/$defs/pairingReport"
+    },
+    "paired_segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/pairedSegment"
+      }
+    },
+    "accounting_policy_id": {
+      "$ref": "#/$defs/id"
+    },
+    "accounting_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "cost_allocation_policy_id": {
+      "$ref": "#/$defs/id"
+    },
+    "cost_allocation_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "split_policy_id": {
+      "$ref": "#/$defs/id"
+    },
+    "split_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "statistical_design_policy_id": {
+      "$ref": "#/$defs/id"
+    },
+    "statistical_design_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "experiment_manifest_id": {
+      "$ref": "#/$defs/id"
+    },
+    "experiment_manifest_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "scope": {
+      "type": "object"
+    },
+    "approved_production_capital_usdt": {
+      "$ref": "#/$defs/positiveDecimal"
+    },
+    "bootstrap_design": {
+      "type": "object"
+    },
+    "generated_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "replay_verified": {
+      "const": true
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "positiveDecimal": {
+      "type": "string",
+      "pattern": "^(0\\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(\\.[0-9]+)?)$"
+    },
+    "subjectType": {
+      "enum": [
+        "RECIPE_RELEASE",
+        "MODEL_BUNDLE"
+      ]
+    },
+    "arm": {
+      "type": "object",
+      "required": [
+        "role",
+        "subject_type",
+        "subject_id",
+        "subject_hash",
+        "statistical_series_snapshot"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "RECIPE_BASELINE",
+            "AI_CANDIDATE",
+            "ACTIVE_BUNDLE",
+            "MINOR_CANDIDATE"
+          ]
+        },
+        "subject_type": {
+          "$ref": "#/$defs/subjectType"
+        },
+        "subject_id": {
+          "$ref": "#/$defs/id"
+        },
+        "subject_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "statistical_series_snapshot": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "unpaired": {
+      "type": "object",
+      "required": [
+        "observation_id",
+        "proposal_id",
+        "decision_time",
+        "source_economic_snapshot_hash"
+      ],
+      "properties": {
+        "observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/id"
+        },
+        "decision_time": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "source_economic_snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pairingReport": {
+      "type": "object",
+      "required": [
+        "reference_observation_count",
+        "candidate_observation_count",
+        "matched_pair_count",
+        "changed_pair_count",
+        "unchanged_pair_count",
+        "unpaired_reference_count",
+        "unpaired_candidate_count",
+        "unpaired_reference",
+        "unpaired_candidate"
+      ],
+      "properties": {
+        "reference_observation_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "candidate_observation_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "matched_pair_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "changed_pair_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unchanged_pair_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unpaired_reference_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unpaired_candidate_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unpaired_reference": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unpaired"
+          }
+        },
+        "unpaired_candidate": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unpaired"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "pairedSegment": {
+      "type": "object",
+      "required": [
+        "segment_id",
+        "proposal_id",
+        "decision_time",
+        "fold_id",
+        "period_start",
+        "period_end",
+        "reference_observation_id",
+        "candidate_observation_id",
+        "reference_series_hash",
+        "candidate_series_hash",
+        "reference_source_economic_snapshot_hash",
+        "candidate_source_economic_snapshot_hash",
+        "reference_log_returns",
+        "candidate_log_returns",
+        "action_changed",
+        "absolute_exposure_changed",
+        "changed"
+      ],
+      "properties": {
+        "segment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/id"
+        },
+        "decision_time": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "fold_id": {
+          "$ref": "#/$defs/id"
+        },
+        "period_start": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "period_end": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "reference_observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "candidate_observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "reference_series_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "candidate_series_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reference_source_economic_snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "candidate_source_economic_snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reference_log_returns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/decimal"
+          }
+        },
+        "candidate_log_returns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/decimal"
+          }
+        },
+        "action_changed": {
+          "type": "boolean"
+        },
+        "absolute_exposure_changed": {
+          "type": "boolean"
+        },
+        "changed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
