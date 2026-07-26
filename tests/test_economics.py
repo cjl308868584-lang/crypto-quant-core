@@ -7,7 +7,10 @@ from decimal import Decimal
 from pathlib import Path
 
 from crypto_quant.contracts import EventEnvelope
-from crypto_quant.economics import economic_snapshot_hash
+from crypto_quant.economics import (
+    economic_snapshot_hash,
+    economic_snapshot_reasons,
+)
 from crypto_quant.errors import LedgerIntegrityError
 from crypto_quant.estimators import EstimatorRegistry
 from crypto_quant.evidence import EvidenceTrustContext
@@ -437,6 +440,74 @@ class EconomicLedgerReplayTests(unittest.TestCase):
             cost_allocation_policy_id="cost-allocation-v1",
             cost_allocation_policy_hash=HASH_D,
             generated_at="2026-01-02T00:00:00.000Z",
+        )
+
+    def test_v11_snapshot_preserves_immutable_fact_identity_and_sequence(
+        self,
+    ):
+        with EventLedger(self.path) as ledger:
+            self.populate(ledger)
+            snapshot = self.snapshot(ledger)
+
+        self.assertEqual(snapshot["schema_version"], "1.1.0")
+        self.assertEqual(
+            [
+                (
+                    fill["fill_id"],
+                    fill["exchange_trade_id"],
+                    fill["local_order_id"],
+                    fill["venue_order_id"],
+                    fill["source_event_sequence"],
+                )
+                for fill in snapshot["fills"]
+            ],
+            [
+                ("fill-1", "trade-1", "order-1", "venue-order-1", 3),
+                ("fill-2", "trade-2", "order-2", "venue-order-2", 4),
+            ],
+        )
+        self.assertEqual(
+            [
+                point["source_event_sequence"]
+                for point in snapshot["equity_points"]
+            ],
+            [1, 6, 9],
+        )
+        self.assertEqual(
+            [
+                item["source_event_sequence"]
+                for item in snapshot["funding_cashflows"]
+            ],
+            [5],
+        )
+        self.assertEqual(
+            [
+                item["source_event_sequence"]
+                for item in snapshot["external_cash_flows"]
+            ],
+            [2],
+        )
+        self.assertEqual(
+            [
+                item["source_event_sequence"]
+                for item in snapshot["allocated_costs"]
+            ],
+            [7, 8],
+        )
+
+    def test_v11_sequence_tampering_fails_semantic_validation(self):
+        with EventLedger(self.path) as ledger:
+            self.populate(ledger)
+            snapshot = self.snapshot(ledger)
+
+        tampered = deepcopy(snapshot)
+        tampered["fills"][1]["source_event_sequence"] = tampered["fills"][0][
+            "source_event_sequence"
+        ]
+        tampered["snapshot_hash"] = economic_snapshot_hash(tampered)
+        self.assertIn(
+            "ECONOMIC_SNAPSHOT_SOURCE_SEQUENCE_DUPLICATE",
+            economic_snapshot_reasons(tampered),
         )
 
     def test_verified_snapshot_replays_to_identical_profit_and_risk(self):

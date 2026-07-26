@@ -2010,9 +2010,12 @@ class EventLedger:
         fills = []
         for row in self.connection.execute(
             """
-            SELECT payload_json FROM fills_projection
-            WHERE account_id = ?
-            ORDER BY exchange_event_time, fill_id
+            SELECT projection.payload_json, events.sequence
+            FROM fills_projection AS projection
+            JOIN events ON events.event_id = projection.source_event_id
+            WHERE projection.account_id = ?
+            ORDER BY projection.exchange_event_time, events.sequence,
+                     projection.fill_id
             """,
             (account_id,),
         ).fetchall():
@@ -2027,6 +2030,9 @@ class EventLedger:
                     name: payload[name]
                     for name in (
                         "fill_id",
+                        "exchange_trade_id",
+                        "local_order_id",
+                        "venue_order_id",
                         "instrument_id",
                         "side",
                         "quantity",
@@ -2038,13 +2044,17 @@ class EventLedger:
                     )
                 }
             )
+            fills[-1]["source_event_sequence"] = row["sequence"]
 
         funding = []
         for row in self.connection.execute(
             """
-            SELECT payload_json FROM funding_cashflows_projection
-            WHERE account_id = ?
-            ORDER BY settled_at, funding_id
+            SELECT projection.payload_json, events.sequence
+            FROM funding_cashflows_projection AS projection
+            JOIN events ON events.event_id = projection.source_event_id
+            WHERE projection.account_id = ?
+            ORDER BY projection.settled_at, events.sequence,
+                     projection.funding_id
             """,
             (account_id,),
         ).fetchall():
@@ -2068,6 +2078,7 @@ class EventLedger:
                     )
                 }
             )
+            funding[-1]["source_event_sequence"] = row["sequence"]
 
         cash_flows = [
             {
@@ -2075,13 +2086,18 @@ class EventLedger:
                 "flow_type": row["flow_type"],
                 "signed_amount_usdt": row["signed_amount_usdt"],
                 "occurred_at": row["occurred_at"],
+                "source_event_sequence": row["sequence"],
             }
             for row in self.connection.execute(
                 """
-                SELECT flow_id, flow_type, signed_amount_usdt, occurred_at
-                FROM external_cash_flows_projection
-                WHERE account_id = ?
-                ORDER BY occurred_at, flow_id
+                SELECT projection.flow_id, projection.flow_type,
+                       projection.signed_amount_usdt,
+                       projection.occurred_at, events.sequence
+                FROM external_cash_flows_projection AS projection
+                JOIN events ON events.event_id = projection.event_id
+                WHERE projection.account_id = ?
+                ORDER BY projection.occurred_at, events.sequence,
+                         projection.flow_id
                 """,
                 (account_id,),
             ).fetchall()
@@ -2091,10 +2107,14 @@ class EventLedger:
         allocated_costs = []
         for row in self.connection.execute(
             """
-            SELECT payload_json FROM allocated_costs_projection
-            WHERE account_id = ? AND evaluation_ledger = ?
-                  AND release_route = ?
-            ORDER BY occurred_at, cost_id
+            SELECT projection.payload_json, events.sequence
+            FROM allocated_costs_projection AS projection
+            JOIN events ON events.event_id = projection.source_event_id
+            WHERE projection.account_id = ?
+                  AND projection.evaluation_ledger = ?
+                  AND projection.release_route = ?
+            ORDER BY projection.occurred_at, events.sequence,
+                     projection.cost_id
             """,
             (account_id, evaluation_ledger, release_route),
         ).fetchall():
@@ -2123,14 +2143,19 @@ class EventLedger:
                     )
                 }
             )
+            allocated_costs[-1]["source_event_sequence"] = row["sequence"]
 
         equity_points = []
         for row in self.connection.execute(
             """
-            SELECT payload_json FROM equity_snapshots_projection
-            WHERE account_id = ? AND evaluation_ledger = ?
-                  AND release_route = ?
-            ORDER BY as_of, equity_snapshot_id
+            SELECT projection.payload_json, events.sequence
+            FROM equity_snapshots_projection AS projection
+            JOIN events ON events.event_id = projection.source_event_id
+            WHERE projection.account_id = ?
+                  AND projection.evaluation_ledger = ?
+                  AND projection.release_route = ?
+            ORDER BY projection.as_of, events.sequence,
+                     projection.equity_snapshot_id
             """,
             (account_id, evaluation_ledger, release_route),
         ).fetchall():
@@ -2159,6 +2184,7 @@ class EventLedger:
                     )
                 }
             )
+            equity_points[-1]["source_event_sequence"] = row["sequence"]
         if (
             len(equity_points) < 2
             or equity_points[0]["as_of"] != evaluation_window_start
@@ -2170,7 +2196,7 @@ class EventLedger:
 
         snapshot = {
             "$schema": "./economic-ledger-snapshot-v1.schema.json",
-            "schema_version": "1.0.0",
+            "schema_version": "1.1.0",
             "snapshot_id": snapshot_id,
             "snapshot_hash": "0" * 64,
             "hash_algorithm": "SHA-256",

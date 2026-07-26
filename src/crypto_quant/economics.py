@@ -61,6 +61,59 @@ def _ordered_unique_facts(
     return tuple(reasons)
 
 
+def _replay_trace_reasons(
+    snapshot: Mapping[str, Any],
+    fact_specs: Tuple[Tuple[str, str, str, bool], ...],
+) -> Tuple[str, ...]:
+    if snapshot.get("schema_version") != "1.1.0":
+        return ()
+    reasons = []
+    sequences = []
+    for field, id_field, time_field, _ in fact_specs:
+        facts = snapshot.get(field)
+        if not isinstance(facts, list):
+            continue
+        canonical_order = []
+        for fact in facts:
+            if not isinstance(fact, Mapping):
+                continue
+            sequence = fact.get("source_event_sequence")
+            if (
+                isinstance(sequence, bool)
+                or not isinstance(sequence, int)
+                or sequence < 1
+            ):
+                reasons.append(
+                    "ECONOMIC_SNAPSHOT_SOURCE_SEQUENCE_INVALID"
+                )
+                continue
+            sequences.append(sequence)
+            try:
+                canonical_order.append(
+                    (
+                        _timestamp(fact.get(time_field)),
+                        sequence,
+                        str(fact.get(id_field)),
+                    )
+                )
+            except (TypeError, ValueError):
+                pass
+            if field == "fills" and any(
+                not isinstance(fact.get(name), str) or not fact.get(name)
+                for name in (
+                    "exchange_trade_id",
+                    "local_order_id",
+                    "venue_order_id",
+                )
+            ):
+                reasons.append("ECONOMIC_SNAPSHOT_FILL_IDENTITY_INVALID")
+        if canonical_order != sorted(canonical_order):
+            reasons.append("ECONOMIC_SNAPSHOT_FACT_ORDER_INVALID")
+    if len(sequences) != len(set(sequences)):
+        reasons.append("ECONOMIC_SNAPSHOT_SOURCE_SEQUENCE_DUPLICATE")
+    return tuple(reasons)
+
+
 def economic_snapshot_reasons(
     snapshot: Mapping[str, Any],
 ) -> Tuple[str, ...]:
@@ -122,6 +175,7 @@ def economic_snapshot_reasons(
                 include_start=include_start,
             )
         )
+    reasons.extend(_replay_trace_reasons(snapshot, fact_specs))
 
     equity = snapshot.get("equity_points")
     if isinstance(equity, list) and equity:

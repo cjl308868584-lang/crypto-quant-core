@@ -35,7 +35,10 @@
       "const": "./economic-ledger-snapshot-v1.schema.json"
     },
     "schema_version": {
-      "const": "1.0.0"
+      "enum": [
+        "1.0.0",
+        "1.1.0"
+      ]
     },
     "snapshot_id": {
       "$ref": "#/$defs/id"
@@ -151,6 +154,10 @@
       "type": "string",
       "pattern": "^((0\\.[0-9]*[1-9][0-9]*)|([1-9][0-9]*(\\.[0-9]+)?))$"
     },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
     "scope": {
       "type": "object",
       "required": [
@@ -257,6 +264,18 @@
         "fill_id": {
           "$ref": "#/$defs/id"
         },
+        "exchange_trade_id": {
+          "$ref": "#/$defs/id"
+        },
+        "local_order_id": {
+          "$ref": "#/$defs/id"
+        },
+        "venue_order_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_event_sequence": {
+          "$ref": "#/$defs/positiveInteger"
+        },
         "instrument_id": {
           "$ref": "#/$defs/id"
         },
@@ -302,6 +321,9 @@
         "funding_id": {
           "$ref": "#/$defs/id"
         },
+        "source_event_sequence": {
+          "$ref": "#/$defs/positiveInteger"
+        },
         "instrument_id": {
           "$ref": "#/$defs/id"
         },
@@ -335,6 +357,9 @@
         "flow_id": {
           "$ref": "#/$defs/id"
         },
+        "source_event_sequence": {
+          "$ref": "#/$defs/positiveInteger"
+        },
         "flow_type": {
           "enum": [
             "DEPOSIT",
@@ -363,6 +388,9 @@
       "properties": {
         "cost_id": {
           "$ref": "#/$defs/id"
+        },
+        "source_event_sequence": {
+          "$ref": "#/$defs/positiveInteger"
         },
         "category": {
           "enum": [
@@ -410,6 +438,9 @@
         "equity_snapshot_id": {
           "$ref": "#/$defs/id"
         },
+        "source_event_sequence": {
+          "$ref": "#/$defs/positiveInteger"
+        },
         "as_of": {
           "$ref": "#/$defs/dateTime"
         },
@@ -450,5 +481,61 @@
       "additionalProperties": false
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "schema_version"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "1.1.0"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fills": {
+            "items": {
+              "required": [
+                "exchange_trade_id",
+                "local_order_id",
+                "venue_order_id",
+                "source_event_sequence"
+              ]
+            }
+          },
+          "funding_cashflows": {
+            "items": {
+              "required": [
+                "source_event_sequence"
+              ]
+            }
+          },
+          "external_cash_flows": {
+            "items": {
+              "required": [
+                "source_event_sequence"
+              ]
+            }
+          },
+          "allocated_costs": {
+            "items": {
+              "required": [
+                "source_event_sequence"
+              ]
+            }
+          },
+          "equity_points": {
+            "items": {
+              "required": [
+                "source_event_sequence"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
   "additionalProperties": false
 }
