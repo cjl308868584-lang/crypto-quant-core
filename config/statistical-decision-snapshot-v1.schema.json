@@ -1,0 +1,530 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "statistical-decision-snapshot-v1.schema.json",
+  "title": "Replayable Statistical Decision Snapshot v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "snapshot_id",
+    "snapshot_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "trial_family_id",
+    "current_candidate_id",
+    "release_gate_policy_id",
+    "release_gate_policy_version",
+    "metric_catalog_id",
+    "metric_catalog_version",
+    "statistical_design_policy_id",
+    "statistical_design_policy_hash",
+    "experiment_manifest_id",
+    "experiment_manifest_hash",
+    "scope",
+    "design",
+    "actual_total_trials",
+    "trial_registry",
+    "trial_registry_hash",
+    "analysis_status",
+    "analysis_reason_codes",
+    "family_results",
+    "current_candidate_results",
+    "generated_at",
+    "replay_verified"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./statistical-decision-snapshot-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "snapshot_id": {
+      "$ref": "#/$defs/id"
+    },
+    "snapshot_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "trial_family_id": {
+      "$ref": "#/$defs/id"
+    },
+    "current_candidate_id": {
+      "$ref": "#/$defs/id"
+    },
+    "release_gate_policy_id": {
+      "$ref": "#/$defs/id"
+    },
+    "release_gate_policy_version": {
+      "$ref": "#/$defs/version"
+    },
+    "metric_catalog_id": {
+      "$ref": "#/$defs/id"
+    },
+    "metric_catalog_version": {
+      "$ref": "#/$defs/version"
+    },
+    "statistical_design_policy_id": {
+      "$ref": "#/$defs/id"
+    },
+    "statistical_design_policy_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "experiment_manifest_id": {
+      "$ref": "#/$defs/id"
+    },
+    "experiment_manifest_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "design": {
+      "$ref": "#/$defs/design"
+    },
+    "actual_total_trials": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "trial_registry": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/trial"
+      }
+    },
+    "trial_registry_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "analysis_status": {
+      "enum": [
+        "COMPUTED",
+        "INCONCLUSIVE"
+      ]
+    },
+    "analysis_reason_codes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "family_results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/familyResult"
+      }
+    },
+    "current_candidate_results": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/currentResults"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "generated_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "replay_verified": {
+      "const": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "analysis_status": {
+            "const": "COMPUTED"
+          }
+        },
+        "required": [
+          "analysis_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "analysis_reason_codes": {
+            "maxItems": 0
+          },
+          "family_results": {
+            "minItems": 1
+          },
+          "current_candidate_results": {
+            "$ref": "#/$defs/currentResults"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "analysis_status": {
+            "const": "INCONCLUSIVE"
+          },
+          "analysis_reason_codes": {
+            "minItems": 1
+          },
+          "family_results": {
+            "maxItems": 0
+          },
+          "current_candidate_results": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "positiveDecimal": {
+      "type": "string",
+      "pattern": "^((0\\.[0-9]*[1-9][0-9]*)|([1-9][0-9]*(\\.[0-9]+)?))$"
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "account_id",
+        "evaluation_ledger",
+        "release_route",
+        "direction",
+        "venue",
+        "deployment_line_id",
+        "deployment_line_hash",
+        "evaluation_window_start",
+        "evaluation_window_end",
+        "approved_production_capital_usdt",
+        "endpoint_id",
+        "endpoint_unit",
+        "endpoint_direction"
+      ],
+      "properties": {
+        "account_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evaluation_ledger": {
+          "enum": [
+            "BASELINE_LEDGER",
+            "AI_LEDGER",
+            "PAIRED_COMPARISON"
+          ]
+        },
+        "release_route": {
+          "enum": [
+            "BASELINE_ONLY",
+            "AI_ENHANCED"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "LONG",
+            "SHORT"
+          ]
+        },
+        "venue": {
+          "enum": [
+            "BINANCE_SPOT",
+            "BINANCE_USDT_PERP"
+          ]
+        },
+        "deployment_line_id": {
+          "$ref": "#/$defs/id"
+        },
+        "deployment_line_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "evaluation_window_start": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "evaluation_window_end": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "approved_production_capital_usdt": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "endpoint_id": {
+          "$ref": "#/$defs/id"
+        },
+        "endpoint_unit": {
+          "$ref": "#/$defs/id"
+        },
+        "endpoint_direction": {
+          "const": "GREATER"
+        }
+      },
+      "additionalProperties": false
+    },
+    "design": {
+      "type": "object",
+      "required": [
+        "minimum_economic_effect",
+        "null_boundary",
+        "confidence_level",
+        "confidence_side",
+        "ci_method",
+        "raw_p_value_method",
+        "power_method",
+        "effective_sample_method",
+        "multiple_testing_method",
+        "family_wise_alpha",
+        "block_length",
+        "minimum_block_count",
+        "resample_count",
+        "seed",
+        "sampling_rule",
+        "quantile_rule"
+      ],
+      "properties": {
+        "minimum_economic_effect": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "null_boundary": {
+          "$ref": "#/$defs/decimal"
+        },
+        "confidence_level": {
+          "const": "0.95"
+        },
+        "confidence_side": {
+          "const": "TWO_SIDED"
+        },
+        "ci_method": {
+          "const": "PERCENTILE_MBB_V1"
+        },
+        "raw_p_value_method": {
+          "const": "CENTERED_MBB_GREATER_ADD_ONE_V1"
+        },
+        "power_method": {
+          "const": "SHIFTED_CENTERED_MBB_AT_MERE_V1"
+        },
+        "effective_sample_method": {
+          "const": "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1"
+        },
+        "multiple_testing_method": {
+          "const": "HOLM_V1"
+        },
+        "family_wise_alpha": {
+          "const": "0.05"
+        },
+        "block_length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minimum_block_count": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "resample_count": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 1000000
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sampling_rule": {
+          "const": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N"
+        },
+        "quantile_rule": {
+          "const": "CONSERVATIVE_NEAREST_RANK_V1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trial": {
+      "type": "object",
+      "required": [
+        "candidate_id",
+        "candidate_status",
+        "recipe_release_id",
+        "recipe_release_hash",
+        "source_series_snapshot",
+        "source_series_hash"
+      ],
+      "properties": {
+        "candidate_id": {
+          "$ref": "#/$defs/id"
+        },
+        "candidate_status": {
+          "enum": [
+            "EVALUATED",
+            "ABORTED",
+            "FAILED",
+            "INVALID"
+          ]
+        },
+        "recipe_release_id": {
+          "$ref": "#/$defs/id"
+        },
+        "recipe_release_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_series_snapshot": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "source_series_hash": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "candidate_status": {
+                "const": "EVALUATED"
+              }
+            },
+            "required": [
+              "candidate_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "source_series_snapshot": {
+                "type": "object"
+              },
+              "source_series_hash": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "source_series_snapshot": {
+                "type": "null"
+              },
+              "source_series_hash": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "familyResult": {
+      "type": "object",
+      "required": [
+        "candidate_id",
+        "candidate_status",
+        "raw_p_value",
+        "holm_rank",
+        "holm_threshold",
+        "step_reached",
+        "rejected"
+      ],
+      "properties": {
+        "candidate_id": {
+          "$ref": "#/$defs/id"
+        },
+        "candidate_status": {
+          "enum": [
+            "EVALUATED",
+            "ABORTED",
+            "FAILED",
+            "INVALID"
+          ]
+        },
+        "raw_p_value": {
+          "$ref": "#/$defs/decimal"
+        },
+        "holm_rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "holm_threshold": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "step_reached": {
+          "type": "boolean"
+        },
+        "rejected": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "currentResults": {
+      "type": "object",
+      "required": [
+        "observed_statistic",
+        "effective_event_count",
+        "ci_lower",
+        "ci_upper",
+        "ci_width",
+        "holm_adjusted_alpha",
+        "holm_rejected",
+        "minimum_economic_effect",
+        "achieved_power"
+      ],
+      "properties": {
+        "observed_statistic": {
+          "$ref": "#/$defs/decimal"
+        },
+        "effective_event_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ci_lower": {
+          "$ref": "#/$defs/decimal"
+        },
+        "ci_upper": {
+          "$ref": "#/$defs/decimal"
+        },
+        "ci_width": {
+          "$ref": "#/$defs/decimal"
+        },
+        "holm_adjusted_alpha": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "holm_rejected": {
+          "type": "boolean"
+        },
+        "minimum_economic_effect": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "achieved_power": {
+          "$ref": "#/$defs/decimal"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

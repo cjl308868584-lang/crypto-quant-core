@@ -432,3 +432,207 @@ def complete_trade_replay_inputs(
     }
     source_series["series_hash"] = statistical_series_hash(source_series)
     return source_series, economic_snapshots, valuation_checkpoints
+
+
+def statistical_decision_inputs(
+    *,
+    current_values=("4", "5", "6", "7", "8", "9"),
+    competitor_values=("1", "1", "2", "1", "2", "1"),
+    include_aborted=True,
+    block_length=2,
+    minimum_block_count=2,
+    resample_count=1000,
+    seed=29,
+):
+    """Return a deterministic cumulative family and frozen design."""
+
+    window_start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    window_end = datetime(2025, 1, 7, tzinfo=timezone.utc)
+    common_scope = {
+        "account_id": "account-statistical-decision",
+        "evaluation_ledger": "BASELINE_LEDGER",
+        "release_route": "BASELINE_ONLY",
+        "direction": "LONG",
+        "venue": "BINANCE_SPOT",
+        "deployment_line_id": "line-statistical-decision",
+        "deployment_line_hash": "a" * 64,
+        "evaluation_window_start": window_start.isoformat().replace(
+            "+00:00", "Z"
+        ),
+        "evaluation_window_end": window_end.isoformat().replace(
+            "+00:00", "Z"
+        ),
+    }
+    design = {
+        "minimum_economic_effect": "2",
+        "null_boundary": "0",
+        "confidence_level": "0.95",
+        "confidence_side": "TWO_SIDED",
+        "ci_method": "PERCENTILE_MBB_V1",
+        "raw_p_value_method": "CENTERED_MBB_GREATER_ADD_ONE_V1",
+        "power_method": "SHIFTED_CENTERED_MBB_AT_MERE_V1",
+        "effective_sample_method": (
+            "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1"
+        ),
+        "multiple_testing_method": "HOLM_V1",
+        "family_wise_alpha": "0.05",
+        "block_length": block_length,
+        "minimum_block_count": minimum_block_count,
+        "resample_count": resample_count,
+        "seed": seed,
+        "sampling_rule": (
+            "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N"
+        ),
+        "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1",
+    }
+
+    def series(candidate_id, recipe_hash, values):
+        period_seconds = int((window_end - window_start).total_seconds())
+        observations = []
+        source_hashes = []
+        for index, value in enumerate(values):
+            start = window_start + timedelta(
+                seconds=period_seconds * index // len(values)
+            )
+            end = window_start + timedelta(
+                seconds=period_seconds * (index + 1) // len(values)
+            )
+            source_hash = business_hash(
+                {"candidate_id": candidate_id, "index": index}
+            )
+            source_hashes.append(source_hash)
+            observations.append(
+                {
+                    "observation_id": f"{candidate_id}-observation-{index}",
+                    "period_start": start.isoformat().replace("+00:00", "Z"),
+                    "period_end": end.isoformat().replace("+00:00", "Z"),
+                    "value": canonical_decimal(value),
+                    "calendar_month_complete": False,
+                    "source_economic_snapshot_hash": source_hash,
+                    "fold_id": f"fold-{index}",
+                }
+            )
+        result = {
+            "$schema": "./statistical-series-snapshot-v1.schema.json",
+            "schema_version": "1.0.0",
+            "series_id": f"series-{candidate_id}",
+            "series_hash": "0" * 64,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "source_economic_snapshot_hashes": source_hashes,
+            "accounting_policy_id": "accounting-replay",
+            "accounting_policy_hash": "3" * 64,
+            "cost_allocation_policy_id": "cost-replay",
+            "cost_allocation_policy_hash": "4" * 64,
+            "split_policy_id": "split-replay",
+            "split_policy_hash": "5" * 64,
+            "statistical_design_policy_id": "statistics-replay",
+            "statistical_design_policy_hash": "6" * 64,
+            "experiment_manifest_id": "experiment-replay",
+            "experiment_manifest_hash": "7" * 64,
+            "scope": {
+                **common_scope,
+                "recipe_release_id": f"recipe-{candidate_id}",
+                "recipe_release_hash": recipe_hash,
+            },
+            "approved_production_capital_usdt": "1000",
+            "capital_normalization": (
+                "APPROVED_CAPITAL_EVALUATION_WINDOW"
+            ),
+            "series_kind": "PRIMARY_ENDPOINT_CONTRIBUTION",
+            "aggregation": "SUM",
+            "observations": observations,
+            "bootstrap_design": {
+                "block_length": block_length,
+                "minimum_block_count": minimum_block_count,
+                "resample_count": resample_count,
+                "seed": seed,
+                "confidence_level": "0.95",
+                "confidence_side": "LOWER_ONE_SIDED",
+                "sampling_rule": (
+                    "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N"
+                ),
+                "quantile_rule": "CONSERVATIVE_NEAREST_RANK_V1",
+            },
+            "generated_at": common_scope["evaluation_window_end"],
+            "replay_verified": True,
+        }
+        result["series_hash"] = statistical_series_hash(result)
+        return result
+
+    candidates = (
+        (
+            "candidate-current",
+            "b" * 64,
+            tuple(current_values),
+        ),
+        (
+            "candidate-competitor",
+            "c" * 64,
+            tuple(competitor_values),
+        ),
+    )
+    registry = []
+    for candidate_id, recipe_hash, values in candidates:
+        source = series(candidate_id, recipe_hash, values)
+        registry.append(
+            {
+                "candidate_id": candidate_id,
+                "candidate_status": "EVALUATED",
+                "recipe_release_id": f"recipe-{candidate_id}",
+                "recipe_release_hash": recipe_hash,
+                "source_series_snapshot": source,
+                "source_series_hash": source["series_hash"],
+            }
+        )
+    if include_aborted:
+        registry.append(
+            {
+                "candidate_id": "candidate-aborted",
+                "candidate_status": "ABORTED",
+                "recipe_release_id": "recipe-candidate-aborted",
+                "recipe_release_hash": "d" * 64,
+                "source_series_snapshot": None,
+                "source_series_hash": None,
+            }
+        )
+    registry.sort(key=lambda item: item["candidate_id"])
+    registry_projection = [
+        {
+            "candidate_id": item["candidate_id"],
+            "candidate_status": item["candidate_status"],
+            "recipe_release_id": item["recipe_release_id"],
+            "recipe_release_hash": item["recipe_release_hash"],
+            "source_series_hash": item["source_series_hash"],
+        }
+        for item in registry
+    ]
+    scope = {
+        **{
+            name: common_scope[name]
+            for name in (
+                "account_id",
+                "evaluation_ledger",
+                "release_route",
+                "direction",
+                "venue",
+                "deployment_line_id",
+                "deployment_line_hash",
+                "evaluation_window_start",
+                "evaluation_window_end",
+            )
+        },
+        "approved_production_capital_usdt": "1000",
+        "endpoint_id": "PRIMARY_NET_GROWTH",
+        "endpoint_unit": "log_growth",
+        "endpoint_direction": "GREATER",
+    }
+    return {
+        "scope": scope,
+        "design": design,
+        "trial_registry": registry,
+        "trial_family_id": "trial-family-statistical-decision",
+        "current_candidate_id": "candidate-current",
+        "expected_actual_total_trials": len(registry),
+        "expected_trial_registry_hash": business_hash(registry_projection),
+    }
