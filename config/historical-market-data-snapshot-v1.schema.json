@@ -22,23 +22,29 @@
   "$defs": {
     "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
     "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$", "format": "date-time"},
+    "time": {"type": "string", "pattern": "^(?:(?:[0-9]{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12][0-9]|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))|(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,6})?Z$", "format": "date-time"},
     "decimal": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
-    "request": {
-      "type": "object", "additionalProperties": false,
+    "requestBase": {
+      "type": "object",
       "required": ["schema_version", "provider", "market", "data_family", "symbol", "interval_or_null", "period_kind", "period"],
       "properties": {
         "schema_version": {"const": "1.0.0"}, "provider": {"const": "BINANCE_PUBLIC_DATA"},
         "market": {"enum": ["SPOT", "USD_M"]}, "data_family": {"enum": ["KLINES", "AGG_TRADES", "MARK_PRICE_KLINES", "FUNDING_RATE"]},
         "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]}, "interval_or_null": {"type": ["string", "null"]},
         "period_kind": {"enum": ["DAILY", "MONTHLY"]}, "period": {"type": "string"}, "funding_interval_hours": {"const": 8}
-      },
-      "oneOf": [
-        {"properties": {"market": {"const": "SPOT"}, "data_family": {"const": "KLINES"}, "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]}, "period_kind": {"const": "DAILY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}, "not": {"required": ["funding_interval_hours"]}},
-        {"properties": {"market": {"const": "SPOT"}, "data_family": {"const": "AGG_TRADES"}, "interval_or_null": {"type": "null"}, "period_kind": {"const": "DAILY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}, "not": {"required": ["funding_interval_hours"]}},
-        {"properties": {"market": {"const": "USD_M"}, "data_family": {"const": "MARK_PRICE_KLINES"}, "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]}, "period_kind": {"const": "DAILY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}, "not": {"required": ["funding_interval_hours"]}},
-        {"properties": {"market": {"const": "USD_M"}, "data_family": {"const": "FUNDING_RATE"}, "interval_or_null": {"type": "null"}, "period_kind": {"const": "MONTHLY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}$"}}, "required": ["funding_interval_hours"]}
-      ]
+      }
+    },
+    "request": {
+      "allOf": [
+        {"$ref": "#/$defs/requestBase"},
+        {"oneOf": [
+          {"properties": {"market": {"const": "SPOT"}, "data_family": {"const": "KLINES"}, "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]}, "period_kind": {"const": "DAILY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}, "not": {"required": ["funding_interval_hours"]}},
+          {"properties": {"market": {"const": "SPOT"}, "data_family": {"const": "AGG_TRADES"}, "interval_or_null": {"type": "null"}, "period_kind": {"const": "DAILY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}, "not": {"required": ["funding_interval_hours"]}},
+          {"properties": {"market": {"const": "USD_M"}, "data_family": {"const": "MARK_PRICE_KLINES"}, "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]}, "period_kind": {"const": "DAILY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}, "not": {"required": ["funding_interval_hours"]}},
+          {"properties": {"market": {"const": "USD_M"}, "data_family": {"const": "FUNDING_RATE"}, "interval_or_null": {"type": "null"}, "period_kind": {"const": "MONTHLY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}$"}}, "required": ["funding_interval_hours"]}
+        ]}
+      ],
+      "unevaluatedProperties": false
     },
     "receipt": {
       "type": "object", "additionalProperties": false,
@@ -50,19 +56,44 @@
       "required": ["blocking_findings", "warning_findings", "report_hash"],
       "properties": {"blocking_findings": {"type": "array", "items": {"type": "string"}}, "warning_findings": {"type": "array", "items": {"type": "string"}}, "report_hash": {"$ref": "#/$defs/hash"}}
     },
-    "fact": {
-      "type": "object", "additionalProperties": false,
+    "factBase": {
+      "type": "object",
       "required": ["fact_id", "source_row_fact_id", "fact_type", "provider", "market", "data_family", "symbol", "business_key", "source_row_number", "event_time", "available_at"],
       "properties": {
-        "fact_id": {"$ref": "#/$defs/id"}, "source_row_fact_id": {"$ref": "#/$defs/id"}, "fact_type": {"enum": ["KLINE", "AGG_TRADE", "MARK_PRICE_KLINE", "FUNDING_RATE"]}, "provider": {"const": "BINANCE_PUBLIC_DATA"}, "market": {"enum": ["SPOT", "USD_M"]}, "data_family": {"enum": ["KLINES", "AGG_TRADES", "MARK_PRICE_KLINES", "FUNDING_RATE"]}, "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]}, "business_key": {"type": "string", "minLength": 1}, "source_row_number": {"type": "integer", "minimum": 1}, "event_time": {"$ref": "#/$defs/time"}, "available_at": {"$ref": "#/$defs/time"},
-        "open": {"$ref": "#/$defs/decimal"}, "high": {"$ref": "#/$defs/decimal"}, "low": {"$ref": "#/$defs/decimal"}, "close": {"$ref": "#/$defs/decimal"}, "aggregate_trade_id": {"type": "integer", "minimum": 1}, "price": {"$ref": "#/$defs/decimal"}, "quantity": {"$ref": "#/$defs/decimal"}, "first_trade_id": {"type": "integer", "minimum": 1}, "last_trade_id": {"type": "integer", "minimum": 1}, "is_buyer_maker": {"type": "boolean"}, "is_best_match": {"type": "boolean"}, "funding_interval_hours": {"const": 8}, "funding_rate": {"$ref": "#/$defs/decimal"}
-      },
-      "oneOf": [
-        {"properties": {"fact_type": {"const": "KLINE"}, "market": {"const": "SPOT"}, "data_family": {"const": "KLINES"}}, "required": ["open", "high", "low", "close"], "not": {"anyOf": [{"required": ["aggregate_trade_id"]}, {"required": ["funding_rate"]}]}},
-        {"properties": {"fact_type": {"const": "MARK_PRICE_KLINE"}, "market": {"const": "USD_M"}, "data_family": {"const": "MARK_PRICE_KLINES"}}, "required": ["open", "high", "low", "close"], "not": {"anyOf": [{"required": ["aggregate_trade_id"]}, {"required": ["funding_rate"]}]}},
-        {"properties": {"fact_type": {"const": "AGG_TRADE"}, "market": {"const": "SPOT"}, "data_family": {"const": "AGG_TRADES"}}, "required": ["aggregate_trade_id", "price", "quantity", "first_trade_id", "last_trade_id", "is_buyer_maker", "is_best_match"], "not": {"anyOf": [{"required": ["open"]}, {"required": ["funding_rate"]}]}},
-        {"properties": {"fact_type": {"const": "FUNDING_RATE"}, "market": {"const": "USD_M"}, "data_family": {"const": "FUNDING_RATE"}}, "required": ["funding_interval_hours", "funding_rate"], "not": {"anyOf": [{"required": ["open"]}, {"required": ["aggregate_trade_id"]}]}}
-      ]
+        "fact_id": {"type": "string", "pattern": "^mdf_[a-f0-9]{64}$"}, "source_row_fact_id": {"type": "string", "pattern": "^mdf_[a-f0-9]{64}$"},
+        "fact_type": {"enum": ["KLINE", "AGG_TRADE", "MARK_PRICE_KLINE", "FUNDING_RATE"]}, "provider": {"const": "BINANCE_PUBLIC_DATA"},
+        "market": {"enum": ["SPOT", "USD_M"]}, "data_family": {"enum": ["KLINES", "AGG_TRADES", "MARK_PRICE_KLINES", "FUNDING_RATE"]},
+        "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]}, "business_key": {"type": "string", "minLength": 1},
+        "source_row_number": {"type": "integer", "minimum": 1}, "event_time": {"$ref": "#/$defs/time"}, "available_at": {"$ref": "#/$defs/time"}
+      }
+    },
+    "klineFields": {
+      "properties": {"fact_type": {"const": "KLINE"}, "market": {"const": "SPOT"}, "data_family": {"const": "KLINES"}, "open": {"$ref": "#/$defs/decimal"}, "high": {"$ref": "#/$defs/decimal"}, "low": {"$ref": "#/$defs/decimal"}, "close": {"$ref": "#/$defs/decimal"}},
+      "required": ["open", "high", "low", "close"]
+    },
+    "markKlineFields": {
+      "properties": {"fact_type": {"const": "MARK_PRICE_KLINE"}, "market": {"const": "USD_M"}, "data_family": {"const": "MARK_PRICE_KLINES"}, "open": {"$ref": "#/$defs/decimal"}, "high": {"$ref": "#/$defs/decimal"}, "low": {"$ref": "#/$defs/decimal"}, "close": {"$ref": "#/$defs/decimal"}},
+      "required": ["open", "high", "low", "close"]
+    },
+    "aggTradeFields": {
+      "properties": {"fact_type": {"const": "AGG_TRADE"}, "market": {"const": "SPOT"}, "data_family": {"const": "AGG_TRADES"}, "aggregate_trade_id": {"type": "integer", "minimum": 1}, "price": {"$ref": "#/$defs/decimal"}, "quantity": {"$ref": "#/$defs/decimal"}, "first_trade_id": {"type": "integer", "minimum": 1}, "last_trade_id": {"type": "integer", "minimum": 1}, "is_buyer_maker": {"type": "boolean"}, "is_best_match": {"type": "boolean"}},
+      "required": ["aggregate_trade_id", "price", "quantity", "first_trade_id", "last_trade_id", "is_buyer_maker", "is_best_match"]
+    },
+    "fundingFields": {
+      "properties": {"fact_type": {"const": "FUNDING_RATE"}, "market": {"const": "USD_M"}, "data_family": {"const": "FUNDING_RATE"}, "funding_interval_hours": {"const": 8}, "funding_rate": {"$ref": "#/$defs/decimal"}},
+      "required": ["funding_interval_hours", "funding_rate"]
+    },
+    "fact": {
+      "allOf": [
+        {"$ref": "#/$defs/factBase"},
+        {"oneOf": [
+          {"$ref": "#/$defs/klineFields"},
+          {"$ref": "#/$defs/markKlineFields"},
+          {"$ref": "#/$defs/aggTradeFields"},
+          {"$ref": "#/$defs/fundingFields"}
+        ]}
+      ],
+      "unevaluatedProperties": false
     }
   }
 }

@@ -668,6 +668,33 @@ class MarketDataArtifactTests(unittest.TestCase):
             self.build(snapshot_id=" bad snapshot id ")
         self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
 
+    def test_historical_schema_rejects_invalid_calendar_time_and_cross_family_fields(self):
+        from jsonschema import Draft202012Validator
+
+        snapshot = self.build()
+        schema = json.loads((
+            __import__("pathlib").Path(__file__).parents[1] / "config" /
+            "historical-market-data-snapshot-v1.schema.json"
+        ).read_text())
+        validator = Draft202012Validator(schema)
+        invalid_time = json.loads(json.dumps(snapshot))
+        invalid_time["ingested_at"] = "2026-99-99T99:99:99Z"
+        self.assertTrue(list(validator.iter_errors(invalid_time)))
+        cross_family = json.loads(json.dumps(snapshot))
+        cross_family["facts"][0]["price"] = "1"
+        self.assertTrue(list(validator.iter_errors(cross_family)))
+
+    def test_runtime_reasons_reject_rehashed_schema_contract_violations(self):
+        snapshot = self.build()
+        invalid_algorithm = json.loads(json.dumps(snapshot))
+        invalid_algorithm["hash_algorithm"] = "BLAKE3"
+        invalid_algorithm["snapshot_hash"] = historical_market_data_snapshot_hash(invalid_algorithm)
+        self.assertIn("MARKET_DATA_SCHEMA_INVALID", historical_market_data_snapshot_reasons(invalid_algorithm))
+        invalid_canonicalization = json.loads(json.dumps(snapshot))
+        invalid_canonicalization["canonicalization"] = "OTHER"
+        invalid_canonicalization["snapshot_hash"] = historical_market_data_snapshot_hash(invalid_canonicalization)
+        self.assertIn("MARKET_DATA_SCHEMA_INVALID", historical_market_data_snapshot_reasons(invalid_canonicalization))
+
 
 class FeeScheduleContractTests(unittest.TestCase):
     def schedule(self, *, environment="RESEARCH", second_start="2024-02-01T00:00:00Z"):
@@ -751,3 +778,12 @@ class FeeScheduleContractTests(unittest.TestCase):
         draft["fee_schedule_hash"] = fee_schedule_snapshot_hash(draft)
         self.assertIn("FEE_SCHEDULE_APPROVAL_INVALID", fee_schedule_snapshot_reasons(draft))
         self.assertTrue(list(validator.iter_errors(draft)))
+
+        whitespace_id = self.schedule()
+        whitespace_id["fee_schedule_id"] = " invalid"
+        whitespace_id["fee_schedule_hash"] = fee_schedule_snapshot_hash(whitespace_id)
+        self.assertIn("FEE_SCHEDULE_INVALID", fee_schedule_snapshot_reasons(whitespace_id))
+        unknown_approval = self.schedule()
+        unknown_approval["schedules"][0]["approval"]["unapproved"] = "x"
+        unknown_approval["fee_schedule_hash"] = fee_schedule_snapshot_hash(unknown_approval)
+        self.assertIn("FEE_SCHEDULE_INVALID", fee_schedule_snapshot_reasons(unknown_approval))

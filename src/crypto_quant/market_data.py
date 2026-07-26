@@ -3,15 +3,19 @@
 import csv
 import hashlib
 import hmac
+import json
 import re
 import stat
 import zipfile
+from functools import lru_cache
 from io import BytesIO
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Context, Decimal, InvalidOperation, localcontext
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+
+from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_decimal
 from .evidence import artifact_self_hash
@@ -50,6 +54,18 @@ _FAMILY_SPECS = {
         False,
     ),
 }
+
+
+@lru_cache(maxsize=2)
+def _artifact_validator(filename: str) -> Draft202012Validator:
+    schema_path = Path(__file__).resolve().parents[2] / "config" / filename
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
+def _schema_valid(filename: str, artifact: Mapping[str, Any]) -> bool:
+    return not tuple(_artifact_validator(filename).iter_errors(artifact))
 
 
 class MarketDataError(ValueError):
@@ -784,6 +800,8 @@ def historical_market_data_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tupl
     if not isinstance(snapshot, Mapping):
         return ("MARKET_DATA_SNAPSHOT_INVALID",)
     reasons = []
+    if not _schema_valid("historical-market-data-snapshot-v1.schema.json", snapshot):
+        reasons.append("MARKET_DATA_SCHEMA_INVALID")
     if snapshot.get("$schema") != "./historical-market-data-snapshot-v1.schema.json":
         reasons.append("MARKET_DATA_SCHEMA_INVALID")
     if snapshot.get("schema_version") != "1.0.0":
@@ -928,6 +946,8 @@ def fee_schedule_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tuple[str, ...
     if not isinstance(snapshot, Mapping):
         return ("FEE_SCHEDULE_INVALID",)
     reasons = []
+    if not _schema_valid("fee-schedule-snapshot-v1.schema.json", snapshot):
+        reasons.append("FEE_SCHEDULE_INVALID")
     if snapshot.get("$schema") != "./fee-schedule-snapshot-v1.schema.json" or snapshot.get("schema_version") != "1.0.0":
         reasons.append("FEE_SCHEDULE_INVALID")
     try:
