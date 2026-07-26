@@ -38,7 +38,8 @@
     "schema_version": {
       "enum": [
         "1.0.0",
-        "1.1.0"
+        "1.1.0",
+        "1.2.0"
       ]
     },
     "series_id": {
@@ -90,6 +91,9 @@
     },
     "pairing_report": {
       "$ref": "#/$defs/pairingReport"
+    },
+    "counterfactual_replay_id": {
+      "$ref": "#/$defs/id"
     },
     "accounting_policy_id": {
       "$ref": "#/$defs/id"
@@ -216,6 +220,48 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "required": [
+          "counterfactual_replay_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "schema_version": {
+            "const": "1.2.0"
+          },
+          "series_kind": {
+            "const": "PRIMARY_ENDPOINT_CONTRIBUTION"
+          },
+          "observations": {
+            "items": {
+              "required": [
+                "counterfactual_replay_period_hash"
+              ]
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "schema_version": {
+            "not": {
+              "const": "1.2.0"
+            }
+          },
+          "observations": {
+            "items": {
+              "not": {
+                "required": [
+                  "counterfactual_replay_period_hash"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -332,6 +378,9 @@
           "type": "boolean"
         },
         "source_economic_snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "counterfactual_replay_period_hash": {
           "$ref": "#/$defs/sha256"
         },
         "proposal_id": {

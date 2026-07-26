@@ -1,5 +1,6 @@
 """Deterministic source-path analysis for complete-trade replay."""
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_EVEN, localcontext
@@ -7,8 +8,11 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .canonical import business_hash, canonical_decimal
 from .economics import economic_snapshot_reasons
+from .evidence import artifact_self_hash
 from .statistics import (
     cash_flow_adjusted_economic_log_growth,
+    one_sided_95_moving_block_bootstrap,
+    statistical_series_hash,
     statistical_series_reasons,
 )
 
@@ -150,6 +154,7 @@ def _unrealized_at_checkpoint(
     equity_point: Mapping[str, Any],
     positions: Mapping[str, PositionState],
     direction: str,
+    allow_extra: bool = False,
 ) -> Tuple[Decimal, Decimal]:
     if checkpoint.get("as_of") != equity_point.get("as_of"):
         raise ValueError("TRADE_REPLAY_VALUATION_TIME_MISMATCH")
@@ -171,7 +176,11 @@ def _unrealized_at_checkpoint(
         for instrument_id, state in positions.items()
         if state.quantity != 0
     }
-    if set(indexed) != required:
+    if (
+        not required.issubset(set(indexed))
+        if allow_extra
+        else set(indexed) != required
+    ):
         raise ValueError("TRADE_REPLAY_VALUATION_MISSING")
     unrealized = Decimal("0")
     expected_exit_fees = Decimal("0")
@@ -651,3 +660,600 @@ def analyze_trade_replay_source(
             completed_trades=tuple(completed),
             funding_assignment=dict(sorted(funding_assignment.items())),
         )
+
+
+def trade_replay_snapshot_hash(snapshot: Mapping[str, Any]) -> str:
+    return artifact_self_hash(snapshot, "replay_hash")
+
+
+def _serialized_trade(trade: CompletedTrade) -> Dict[str, Any]:
+    return {
+        "trade_id": trade.trade_id,
+        "instrument_id": trade.instrument_id,
+        "fill_ids": list(trade.fill_ids),
+        "funding_ids": list(trade.funding_ids),
+        "economic_contribution_usdt": canonical_decimal(
+            trade.contribution_usdt
+        ),
+        "opened_at": trade.opened_at,
+        "closed_at": trade.closed_at,
+        "eligible": trade.eligible,
+    }
+
+
+def _selected_trade_ids(
+    completed_trades: Sequence[CompletedTrade],
+) -> Tuple[str, ...]:
+    positive = [
+        trade
+        for trade in completed_trades
+        if trade.eligible and trade.contribution_usdt > 0
+    ]
+    return tuple(
+        trade.trade_id
+        for trade in sorted(
+            positive,
+            key=lambda trade: (
+                -trade.contribution_usdt,
+                trade.trade_id,
+            ),
+        )[:5]
+    )
+
+
+def _apply_counterfactual_fill(
+    positions: Dict[str, PositionState],
+    fact: Mapping[str, Any],
+) -> Tuple[Decimal, Decimal]:
+    instrument_id = fact["instrument_id"]
+    quantity = _decimal(fact["quantity"])
+    price = _decimal(fact["price"])
+    multiplier = _decimal(fact["contract_multiplier"])
+    fee = _decimal(fact["fee_value_usdt"])
+    delta = quantity if fact["side"] == "BUY" else -quantity
+    state = positions.get(
+        instrument_id,
+        PositionState(
+            Decimal("0"),
+            Decimal("0"),
+            multiplier,
+        ),
+    )
+    if state.quantity != 0 and state.multiplier != multiplier:
+        raise ValueError("TRADE_REPLAY_MULTIPLIER_CHANGED")
+    if state.quantity == 0 or (state.quantity > 0) == (delta > 0):
+        new_quantity = state.quantity + delta
+        new_average = (
+            price
+            if state.quantity == 0
+            else (
+                abs(state.quantity) * state.average
+                + abs(delta) * price
+            )
+            / abs(new_quantity)
+        )
+        realized = Decimal("0")
+    else:
+        if abs(delta) > abs(state.quantity):
+            raise ValueError("TRADE_REPLAY_FILL_CROSSES_ZERO")
+        closed = abs(delta)
+        realized = (
+            (
+                price - state.average
+                if state.quantity > 0
+                else state.average - price
+            )
+            * closed
+            * state.multiplier
+        )
+        new_quantity = state.quantity + delta
+        new_average = (
+            state.average if new_quantity != 0 else Decimal("0")
+        )
+    positions[instrument_id] = PositionState(
+        new_quantity,
+        new_average,
+        multiplier,
+    )
+    return realized, fee
+
+
+def _counterfactual_points(
+    *,
+    source_series_snapshot: Mapping[str, Any],
+    economic_snapshots: Sequence[Mapping[str, Any]],
+    valuation_checkpoints: Sequence[Mapping[str, Any]],
+    selected_trades: Sequence[CompletedTrade],
+) -> Mapping[str, Tuple[Mapping[str, Any], ...]]:
+    pairs = _validate_sources(
+        source_series_snapshot,
+        economic_snapshots,
+    )
+    valuations = _valuation_index(valuation_checkpoints)
+    excluded_fill_ids = {
+        fill_id
+        for trade in selected_trades
+        for fill_id in trade.fill_ids
+    }
+    excluded_funding_ids = {
+        funding_id
+        for trade in selected_trades
+        for funding_id in trade.funding_ids
+    }
+    first_snapshot = pairs[0][1]
+    positions = {
+        item["instrument_id"]: PositionState(
+            _decimal(item["signed_quantity"]),
+            _decimal(item["moving_average_entry_price"]),
+            _decimal(item["contract_multiplier"]),
+        )
+        for item in _expected_position_payload(
+            first_snapshot["opening_positions"]
+        )
+    }
+    base_equity = _decimal(
+        first_snapshot["starting_liquidation_equity_usdt"]
+    )
+    direction = source_series_snapshot["scope"]["direction"]
+    realized = Decimal("0")
+    fees = Decimal("0")
+    funding = Decimal("0")
+    cash_flow = Decimal("0")
+    initial_unrealized: Optional[Decimal] = None
+    points_by_snapshot: Dict[
+        str,
+        Tuple[Mapping[str, Any], ...],
+    ] = {}
+
+    for _, snapshot in pairs:
+        events = []
+        for fact in snapshot["fills"]:
+            if fact["fill_id"] not in excluded_fill_ids:
+                events.append(_source_event("FILL", fact))
+        for fact in snapshot["funding_cashflows"]:
+            if fact["funding_id"] not in excluded_funding_ids:
+                events.append(_source_event("FUNDING", fact))
+        for fact in snapshot["external_cash_flows"]:
+            events.append(_source_event("CASH_FLOW", fact))
+        for fact in snapshot["equity_points"]:
+            events.append(_source_event("EQUITY", fact))
+        events.sort(key=lambda item: item[:4])
+        replayed_points = []
+        for _, _, fact_type, _, fact in events:
+            if fact_type == "FILL":
+                realized_delta, fee = _apply_counterfactual_fill(
+                    positions,
+                    fact,
+                )
+                realized += realized_delta
+                fees += fee
+            elif fact_type == "FUNDING":
+                state = positions.get(
+                    fact["instrument_id"],
+                    PositionState(
+                        Decimal("0"),
+                        Decimal("0"),
+                        Decimal("1"),
+                    ),
+                )
+                if (
+                    state.quantity == 0
+                    or state.quantity
+                    != _decimal(fact["position_quantity"])
+                ):
+                    raise ValueError(
+                        "TRADE_REPLAY_FUNDING_POSITION_MISMATCH"
+                    )
+                funding += _decimal(fact["signed_amount_usdt"])
+            elif fact_type == "CASH_FLOW":
+                cash_flow += _decimal(fact["signed_amount_usdt"])
+            else:
+                key = (
+                    snapshot["snapshot_hash"],
+                    fact["equity_snapshot_id"],
+                )
+                unrealized, expected_exit_fee = (
+                    _unrealized_at_checkpoint(
+                        checkpoint=valuations[key],
+                        equity_point=fact,
+                        positions=positions,
+                        direction=direction,
+                        allow_extra=True,
+                    )
+                )
+                if initial_unrealized is None:
+                    initial_unrealized = unrealized
+                equity = (
+                    base_equity
+                    + realized
+                    + unrealized
+                    - initial_unrealized
+                    - fees
+                    + funding
+                    + cash_flow
+                )
+                if equity <= 0:
+                    raise ValueError(
+                        "TRADE_REPLAY_COUNTERFACTUAL_EQUITY_NONPOSITIVE"
+                    )
+                replayed_points.append(
+                    {
+                        "equity_snapshot_id": fact[
+                            "equity_snapshot_id"
+                        ],
+                        "as_of": fact["as_of"],
+                        "liquidation_equity_usdt": canonical_decimal(
+                            equity
+                        ),
+                        "position_cost_bases": list(
+                            _position_payload(positions)
+                        ),
+                        "expected_exit_fee_accrued_usdt": (
+                            canonical_decimal(expected_exit_fee)
+                        ),
+                    }
+                )
+        points_by_snapshot[snapshot["snapshot_hash"]] = tuple(
+            replayed_points
+        )
+    return points_by_snapshot
+
+
+def _counterfactual_growth(
+    *,
+    snapshot: Mapping[str, Any],
+    replayed_points: Sequence[Mapping[str, Any]],
+) -> Decimal:
+    if len(replayed_points) != len(snapshot["equity_points"]):
+        raise ValueError("TRADE_REPLAY_COUNTERFACTUAL_MISMATCH")
+    growth = Decimal("0")
+    for previous, current in zip(
+        replayed_points,
+        replayed_points[1:],
+    ):
+        start_time = _timestamp(previous["as_of"])
+        end_time = _timestamp(current["as_of"])
+        starting_equity = _decimal(
+            previous["liquidation_equity_usdt"]
+        )
+        external = sum(
+            (
+                _decimal(item["signed_amount_usdt"])
+                for item in snapshot["external_cash_flows"]
+                if start_time
+                < _timestamp(item["occurred_at"])
+                <= end_time
+            ),
+            Decimal("0"),
+        )
+        costs = sum(
+            (
+                _decimal(item["amount_usdt"])
+                for item in snapshot["allocated_costs"]
+                if start_time
+                < _timestamp(item["occurred_at"])
+                <= end_time
+            ),
+            Decimal("0"),
+        )
+        adjusted_end = (
+            _decimal(current["liquidation_equity_usdt"])
+            - external
+            - costs
+        )
+        if starting_equity <= 0 or adjusted_end <= 0:
+            raise ValueError(
+                "TRADE_REPLAY_COUNTERFACTUAL_EQUITY_NONPOSITIVE"
+            )
+        growth += (adjusted_end / starting_equity).ln()
+    return growth
+
+
+def _build_counterfactual_series(
+    *,
+    replay_id: str,
+    source_series_snapshot: Mapping[str, Any],
+    economic_snapshots: Sequence[Mapping[str, Any]],
+    valuation_checkpoints: Sequence[Mapping[str, Any]],
+    completed_trades: Sequence[CompletedTrade],
+    selected_trade_ids: Sequence[str],
+) -> Dict[str, Any]:
+    selected_set = set(selected_trade_ids)
+    selected_trades = [
+        trade
+        for trade in completed_trades
+        if trade.trade_id in selected_set
+    ]
+    points_by_snapshot = _counterfactual_points(
+        source_series_snapshot=source_series_snapshot,
+        economic_snapshots=economic_snapshots,
+        valuation_checkpoints=valuation_checkpoints,
+        selected_trades=selected_trades,
+    )
+    snapshot_by_hash = {
+        snapshot["snapshot_hash"]: snapshot
+        for snapshot in economic_snapshots
+    }
+    series = deepcopy(source_series_snapshot)
+    series["schema_version"] = "1.2.0"
+    series["series_id"] = "cf:" + business_hash(
+        {
+            "replay_id": replay_id,
+            "source_series_hash": source_series_snapshot["series_hash"],
+        }
+    )[:32]
+    series["series_hash"] = "0" * 64
+    series["counterfactual_replay_id"] = replay_id
+    observations = []
+    for source_observation in source_series_snapshot["observations"]:
+        snapshot_hash = source_observation[
+            "source_economic_snapshot_hash"
+        ]
+        snapshot = snapshot_by_hash[snapshot_hash]
+        points = points_by_snapshot[snapshot_hash]
+        observation = deepcopy(source_observation)
+        observation["value"] = canonical_decimal(
+            _counterfactual_growth(
+                snapshot=snapshot,
+                replayed_points=points,
+            )
+        )
+        observation["counterfactual_replay_period_hash"] = business_hash(
+            {
+                "replay_id": replay_id,
+                "period_start": observation["period_start"],
+                "period_end": observation["period_end"],
+                "selected_trade_ids": list(selected_trade_ids),
+                "replayed_equity_points": list(points),
+            }
+        )
+        observations.append(observation)
+    series["observations"] = observations
+    series["series_hash"] = statistical_series_hash(series)
+    reasons = statistical_series_reasons(series)
+    if reasons:
+        raise ValueError(
+            "TRADE_REPLAY_COUNTERFACTUAL_SERIES_INVALID:"
+            + ",".join(reasons)
+        )
+    return series
+
+
+def _policy_bindings(
+    series: Mapping[str, Any],
+) -> Dict[str, Any]:
+    names = (
+        "accounting_policy_id",
+        "accounting_policy_hash",
+        "cost_allocation_policy_id",
+        "cost_allocation_policy_hash",
+        "split_policy_id",
+        "split_policy_hash",
+        "statistical_design_policy_id",
+        "statistical_design_policy_hash",
+        "experiment_manifest_id",
+        "experiment_manifest_hash",
+    )
+    return {name: series[name] for name in names}
+
+
+def _canonical_source_order(
+    series: Mapping[str, Any],
+    snapshots: Sequence[Mapping[str, Any]],
+) -> Tuple[Mapping[str, Any], ...]:
+    by_hash = {
+        snapshot["snapshot_hash"]: snapshot
+        for snapshot in snapshots
+    }
+    return tuple(
+        by_hash[source_hash]
+        for source_hash in series["source_economic_snapshot_hashes"]
+    )
+
+
+def _canonical_valuation_order(
+    snapshots: Sequence[Mapping[str, Any]],
+    valuation_checkpoints: Sequence[Mapping[str, Any]],
+) -> Tuple[Mapping[str, Any], ...]:
+    indexed = _valuation_index(valuation_checkpoints)
+    return tuple(
+        indexed[
+            (
+                snapshot["snapshot_hash"],
+                point["equity_snapshot_id"],
+            )
+        ]
+        for snapshot in snapshots
+        for point in snapshot["equity_points"]
+    )
+
+
+def _expected_trade_replay(
+    *,
+    replay_id: str,
+    source_series_snapshot: Mapping[str, Any],
+    economic_snapshots: Sequence[Mapping[str, Any]],
+    valuation_checkpoints: Sequence[Mapping[str, Any]],
+    generated_at: str,
+) -> Dict[str, Any]:
+    analysis = analyze_trade_replay_source(
+        source_series_snapshot=source_series_snapshot,
+        economic_snapshots=economic_snapshots,
+        valuation_checkpoints=valuation_checkpoints,
+    )
+    ordered_snapshots = _canonical_source_order(
+        source_series_snapshot,
+        economic_snapshots,
+    )
+    ordered_valuations = _canonical_valuation_order(
+        ordered_snapshots,
+        valuation_checkpoints,
+    )
+    selected_ids = _selected_trade_ids(analysis.completed_trades)
+    counterfactual = _build_counterfactual_series(
+        replay_id=replay_id,
+        source_series_snapshot=source_series_snapshot,
+        economic_snapshots=ordered_snapshots,
+        valuation_checkpoints=ordered_valuations,
+        completed_trades=analysis.completed_trades,
+        selected_trade_ids=selected_ids,
+    )
+    artifact = {
+        "$schema": "./trade-replay-snapshot-v1.schema.json",
+        "schema_version": "1.0.0",
+        "replay_id": replay_id,
+        "replay_hash": "0" * 64,
+        "hash_algorithm": "SHA-256",
+        "canonicalization": "RFC8785_JCS",
+        "source_series_snapshot": deepcopy(source_series_snapshot),
+        "source_series_hash": source_series_snapshot["series_hash"],
+        "source_economic_snapshots": deepcopy(
+            list(ordered_snapshots)
+        ),
+        "source_economic_snapshot_hashes": [
+            snapshot["snapshot_hash"]
+            for snapshot in ordered_snapshots
+        ],
+        "scope": deepcopy(source_series_snapshot["scope"]),
+        "policy_bindings": _policy_bindings(
+            source_series_snapshot
+        ),
+        "approved_production_capital_usdt": (
+            source_series_snapshot[
+                "approved_production_capital_usdt"
+            ]
+        ),
+        "bootstrap_design": deepcopy(
+            source_series_snapshot["bootstrap_design"]
+        ),
+        "valuation_checkpoints": deepcopy(
+            list(ordered_valuations)
+        ),
+        "original_replay": deepcopy(
+            list(analysis.original_replay)
+        ),
+        "completed_trades": [
+            _serialized_trade(trade)
+            for trade in analysis.completed_trades
+        ],
+        "selected_trade_ids": list(selected_ids),
+        "counterfactual_series": counterfactual,
+        "generated_at": generated_at,
+        "replay_verified": True,
+    }
+    return artifact
+
+
+def trade_replay_snapshot_reasons(
+    snapshot: Mapping[str, Any],
+) -> Tuple[str, ...]:
+    if not isinstance(snapshot, Mapping):
+        return ("TRADE_REPLAY_INVALID",)
+    reasons = []
+    try:
+        if snapshot.get("replay_hash") != trade_replay_snapshot_hash(
+            snapshot
+        ):
+            reasons.append("TRADE_REPLAY_SELF_HASH_MISMATCH")
+    except Exception:
+        reasons.append("TRADE_REPLAY_NOT_CANONICAL")
+    try:
+        expected = _expected_trade_replay(
+            replay_id=snapshot["replay_id"],
+            source_series_snapshot=snapshot[
+                "source_series_snapshot"
+            ],
+            economic_snapshots=snapshot[
+                "source_economic_snapshots"
+            ],
+            valuation_checkpoints=snapshot[
+                "valuation_checkpoints"
+            ],
+            generated_at=snapshot["generated_at"],
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        reason = str(exc)
+        reasons.append(
+            reason
+            if reason.startswith("TRADE_REPLAY_")
+            else "TRADE_REPLAY_REDERIVATION_FAILED"
+        )
+        return tuple(sorted(set(reasons)))
+    scalar_checks = {
+        "source_series_hash": "TRADE_REPLAY_SOURCE_SERIES_MISMATCH",
+        "source_economic_snapshot_hashes": (
+            "TRADE_REPLAY_ECONOMIC_SOURCE_MISMATCH"
+        ),
+        "scope": "TRADE_REPLAY_SCOPE_MISMATCH",
+        "policy_bindings": "TRADE_REPLAY_POLICY_MISMATCH",
+        "approved_production_capital_usdt": (
+            "TRADE_REPLAY_CAPITAL_MISMATCH"
+        ),
+        "bootstrap_design": "TRADE_REPLAY_BOOTSTRAP_MISMATCH",
+        "valuation_checkpoints": "TRADE_REPLAY_VALUATION_MISMATCH",
+        "original_replay": "TRADE_REPLAY_ORIGINAL_REPLAY_MISMATCH",
+        "completed_trades": "TRADE_REPLAY_TRADE_ID_MISMATCH",
+        "selected_trade_ids": "TRADE_REPLAY_SELECTION_MISMATCH",
+        "counterfactual_series": "TRADE_REPLAY_COUNTERFACTUAL_MISMATCH",
+    }
+    for field, reason in scalar_checks.items():
+        try:
+            if business_hash(snapshot.get(field)) != business_hash(
+                expected[field]
+            ):
+                reasons.append(reason)
+        except Exception:
+            reasons.append(reason)
+    if snapshot.get("replay_verified") is not True:
+        reasons.append("TRADE_REPLAY_UNVERIFIED")
+    return tuple(sorted(set(reasons)))
+
+
+def build_trade_replay_snapshot(
+    *,
+    replay_id: str,
+    source_series_snapshot: Mapping[str, Any],
+    economic_snapshots: Sequence[Mapping[str, Any]],
+    valuation_checkpoints: Sequence[Mapping[str, Any]],
+    generated_at: str,
+) -> Dict[str, Any]:
+    if not isinstance(replay_id, str) or not replay_id:
+        raise ValueError("TRADE_REPLAY_ID_INVALID")
+    with localcontext() as context:
+        context.prec = 50
+        context.rounding = ROUND_HALF_EVEN
+        artifact = _expected_trade_replay(
+            replay_id=replay_id,
+            source_series_snapshot=source_series_snapshot,
+            economic_snapshots=economic_snapshots,
+            valuation_checkpoints=valuation_checkpoints,
+            generated_at=generated_at,
+        )
+        artifact["replay_hash"] = trade_replay_snapshot_hash(
+            artifact
+        )
+        reasons = trade_replay_snapshot_reasons(artifact)
+        if reasons:
+            raise ValueError(
+                "invalid trade replay snapshot: "
+                + ",".join(reasons)
+            )
+        return artifact
+
+
+def leave_top_5_positive_trades_out_mbb_lcb95(
+    inputs: Mapping[str, Any],
+) -> Tuple[str, Any, Tuple[str, ...]]:
+    snapshot = inputs.get("trade_replay_snapshot")
+    if not isinstance(snapshot, Mapping):
+        return "FAIL", None, ("TRADE_REPLAY_INVALID",)
+    reasons = trade_replay_snapshot_reasons(snapshot)
+    if reasons:
+        return "FAIL", None, reasons
+    return one_sided_95_moving_block_bootstrap(
+        {
+            "statistical_series_snapshot": snapshot[
+                "counterfactual_series"
+            ]
+        }
+    )

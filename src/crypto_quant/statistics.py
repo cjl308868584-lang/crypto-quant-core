@@ -495,6 +495,27 @@ def statistical_series_reasons(
         reasons.append("STATISTICAL_SERIES_KIND_INVALID")
     if any(name in series for name in _PAIRED_TOP_LEVEL_FIELDS):
         reasons.append("STATISTICAL_SERIES_PAIRED_FIELDS_UNEXPECTED")
+    counterfactual_id = series.get("counterfactual_replay_id")
+    is_counterfactual = counterfactual_id is not None
+    if is_counterfactual:
+        try:
+            _require_id(
+                counterfactual_id,
+                "counterfactual_replay_id",
+            )
+        except ValueError:
+            reasons.append(
+                "STATISTICAL_SERIES_COUNTERFACTUAL_ID_INVALID"
+            )
+        if (
+            series.get("schema_version") != "1.2.0"
+            or kind != "PRIMARY_ENDPOINT_CONTRIBUTION"
+        ):
+            reasons.append(
+                "STATISTICAL_SERIES_COUNTERFACTUAL_KIND_INVALID"
+            )
+    elif series.get("schema_version") == "1.2.0":
+        reasons.append("STATISTICAL_SERIES_COUNTERFACTUAL_ID_MISSING")
 
     observations = series.get("observations")
     if not isinstance(observations, list) or not observations:
@@ -534,6 +555,23 @@ def statistical_series_reasons(
                 observation.get("calendar_month_complete")
             )
             _decimal(observation.get("value"))
+            counterfactual_hash = observation.get(
+                "counterfactual_replay_period_hash"
+            )
+            if is_counterfactual:
+                try:
+                    _require_hash(
+                        counterfactual_hash,
+                        "counterfactual_replay_period_hash",
+                    )
+                except ValueError:
+                    reasons.append(
+                        "STATISTICAL_SERIES_COUNTERFACTUAL_PERIOD_HASH_INVALID"
+                    )
+            elif counterfactual_hash is not None:
+                reasons.append(
+                    "STATISTICAL_SERIES_COUNTERFACTUAL_PERIOD_HASH_UNEXPECTED"
+                )
             metadata_present = [
                 name in observation for name in _PAIR_METADATA_FIELDS
             ]

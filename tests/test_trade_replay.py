@@ -1,14 +1,32 @@
+import json
 import unittest
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_EVEN, localcontext
+from decimal import (
+    Decimal,
+    ROUND_HALF_EVEN,
+    getcontext,
+    localcontext,
+)
+from pathlib import Path
+
+from jsonschema import Draft202012Validator
 
 from crypto_quant.canonical import canonical_decimal
 from crypto_quant.economics import economic_snapshot_hash
 from crypto_quant.statistics import statistical_series_hash
-from crypto_quant.trade_replay import analyze_trade_replay_source
+from crypto_quant.trade_replay import (
+    analyze_trade_replay_source,
+    build_trade_replay_snapshot,
+    leave_top_5_positive_trades_out_mbb_lcb95,
+    trade_replay_snapshot_hash,
+    trade_replay_snapshot_reasons,
+)
 
 from tests.factories import complete_trade_replay_inputs
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def timestamp(hour):
@@ -384,6 +402,282 @@ class CompleteTradeSourceReplayTests(unittest.TestCase):
                 forged_snapshots,
                 forged_valuations,
             )
+
+
+class CompleteTradeCounterfactualTests(unittest.TestCase):
+    @staticmethod
+    def build(
+        *,
+        trade_pnls=("10", "9", "8", "7", "6", "5"),
+        block_length=2,
+        minimum_block_count=2,
+    ):
+        source, snapshots, valuations = complete_trade_replay_inputs(
+            trade_pnls=trade_pnls,
+            block_length=block_length,
+            minimum_block_count=minimum_block_count,
+        )
+        return build_trade_replay_snapshot(
+            replay_id="trade-replay-test",
+            source_series_snapshot=source,
+            economic_snapshots=snapshots,
+            valuation_checkpoints=valuations,
+            generated_at=source["generated_at"],
+        )
+
+    def test_selects_exactly_five_largest_positive_complete_trades(self):
+        artifact = self.build()
+        contributions = {
+            item["trade_id"]: Decimal(item["economic_contribution_usdt"])
+            for item in artifact["completed_trades"]
+        }
+
+        self.assertEqual(len(artifact["selected_trade_ids"]), 5)
+        self.assertEqual(
+            [contributions[item] for item in artifact["selected_trade_ids"]],
+            [
+                Decimal("10"),
+                Decimal("9"),
+                Decimal("8"),
+                Decimal("7"),
+                Decimal("6"),
+            ],
+        )
+        with localcontext() as context:
+            context.prec = 50
+            context.rounding = ROUND_HALF_EVEN
+            self.assertEqual(
+                sum(
+                    (
+                        Decimal(item["value"])
+                        for item in artifact["counterfactual_series"][
+                            "observations"
+                        ]
+                    ),
+                    Decimal("0"),
+                ),
+                (Decimal("1005") / Decimal("1000")).ln(),
+            )
+
+    def test_equal_contribution_uses_trade_id_ascending(self):
+        artifact = self.build(trade_pnls=("10",) * 6)
+        all_ids = sorted(
+            item["trade_id"] for item in artifact["completed_trades"]
+        )
+        self.assertEqual(
+            artifact["selected_trade_ids"],
+            all_ids[:5],
+        )
+
+    def test_fewer_than_five_removes_all_positive_trades(self):
+        artifact = self.build(trade_pnls=("3", "0", "-1", "2"))
+        contributions = {
+            item["trade_id"]: Decimal(item["economic_contribution_usdt"])
+            for item in artifact["completed_trades"]
+        }
+        self.assertEqual(
+            [contributions[item] for item in artifact["selected_trade_ids"]],
+            [Decimal("3"), Decimal("2")],
+        )
+
+    def test_no_positive_trade_removes_none_but_still_replays(self):
+        artifact = self.build(trade_pnls=("0", "-1", "0", "-2"))
+        self.assertEqual(artifact["selected_trade_ids"], [])
+        self.assertNotEqual(
+            artifact["counterfactual_series"]["series_hash"],
+            artifact["source_series_hash"],
+        )
+        self.assertEqual(
+            [
+                item["value"]
+                for item in artifact["counterfactual_series"][
+                    "observations"
+                ]
+            ],
+            [
+                item["value"]
+                for item in artifact["source_series_snapshot"][
+                    "observations"
+                ]
+            ],
+        )
+
+    def test_counterfactual_series_tampering_fails_closed(self):
+        artifact = self.build()
+        tampered = deepcopy(artifact)
+        tampered["counterfactual_series"]["observations"][0]["value"] = "1"
+        tampered["counterfactual_series"]["series_hash"] = (
+            statistical_series_hash(tampered["counterfactual_series"])
+        )
+        tampered["replay_hash"] = trade_replay_snapshot_hash(tampered)
+        self.assertIn(
+            "TRADE_REPLAY_COUNTERFACTUAL_MISMATCH",
+            trade_replay_snapshot_reasons(tampered),
+        )
+
+    def test_selected_trade_removes_all_fills_and_owned_funding(self):
+        source, snapshots, valuations = complete_trade_replay_inputs(
+            trade_pnls=("12",)
+        )
+        snapshot = snapshots[0]
+        snapshot["fills"][1]["price"] = "110"
+        snapshot["fills"][1]["source_event_sequence"] = 4
+        snapshot["funding_cashflows"] = [
+            {
+                "funding_id": "funding-owned",
+                "source_event_sequence": 3,
+                "instrument_id": "BINANCE:SPOT:BTCUSDT",
+                "signed_amount_usdt": "2",
+                "position_quantity": "1",
+                "funding_rate": "0.02",
+                "mark_price": "100",
+                "settled_at": timestamp(12),
+            }
+        ]
+        snapshot["equity_points"][-1]["source_event_sequence"] = 5
+        CompleteTradeSourceReplayTests.rehash(
+            source,
+            snapshots,
+            valuations,
+        )
+
+        artifact = build_trade_replay_snapshot(
+            replay_id="funding-removal",
+            source_series_snapshot=source,
+            economic_snapshots=snapshots,
+            valuation_checkpoints=valuations,
+            generated_at=source["generated_at"],
+        )
+
+        self.assertEqual(
+            artifact["completed_trades"][0]["funding_ids"],
+            ["funding-owned"],
+        )
+        self.assertEqual(
+            artifact["completed_trades"][0][
+                "economic_contribution_usdt"
+            ],
+            "12",
+        )
+        self.assertEqual(
+            artifact["counterfactual_series"]["observations"][0][
+                "value"
+            ],
+            "0",
+        )
+
+    def test_external_flows_and_allocated_costs_are_preserved(self):
+        source, snapshots, valuations = complete_trade_replay_inputs(
+            trade_pnls=("60",)
+        )
+        snapshot = snapshots[0]
+        snapshot["fills"][1]["price"] = "110"
+        snapshot["fills"][1]["source_event_sequence"] = 4
+        snapshot["external_cash_flows"] = [
+            {
+                "flow_id": "deposit-kept",
+                "source_event_sequence": 3,
+                "flow_type": "DEPOSIT",
+                "signed_amount_usdt": "50",
+                "occurred_at": timestamp(10),
+            }
+        ]
+        snapshot["allocated_costs"] = [
+            {
+                "cost_id": "shared-cost-kept",
+                "source_event_sequence": 5,
+                "category": "INFRASTRUCTURE",
+                "amount_usdt": "2",
+                "allocation_scope": "SHARED",
+                "occurred_at": timestamp(20),
+            }
+        ]
+        snapshot["equity_points"][-1]["source_event_sequence"] = 6
+        CompleteTradeSourceReplayTests.rehash(
+            source,
+            snapshots,
+            valuations,
+            recompute_values=False,
+        )
+        with localcontext() as context:
+            context.prec = 50
+            context.rounding = ROUND_HALF_EVEN
+            source["observations"][0]["value"] = canonical_decimal(
+                (Decimal("1008") / Decimal("1000")).ln()
+            )
+            source["series_hash"] = statistical_series_hash(source)
+
+        artifact = build_trade_replay_snapshot(
+            replay_id="cost-flow-preservation",
+            source_series_snapshot=source,
+            economic_snapshots=snapshots,
+            valuation_checkpoints=valuations,
+            generated_at=source["generated_at"],
+        )
+
+        with localcontext() as context:
+            context.prec = 50
+            context.rounding = ROUND_HALF_EVEN
+            expected = canonical_decimal(
+                (Decimal("998") / Decimal("1000")).ln()
+            )
+        self.assertEqual(
+            artifact["counterfactual_series"]["observations"][0][
+                "value"
+            ],
+            expected,
+        )
+        source_value = Decimal(
+            source["observations"][0]["value"]
+        )
+        self.assertNotEqual(
+            Decimal(expected),
+            source_value - Decimal("10"),
+        )
+
+    def test_artifact_schema_and_decimal_context_are_deterministic(self):
+        schema = json.loads(
+            (
+                ROOT / "config" / "trade-replay-snapshot-v1.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        Draft202012Validator.check_schema(schema)
+        original_precision = getcontext().prec
+        hashes = set()
+        try:
+            for precision in (9, 18, 28, 60):
+                getcontext().prec = precision
+                artifact = self.build()
+                self.assertEqual(
+                    list(
+                        Draft202012Validator(schema).iter_errors(
+                            artifact
+                        )
+                    ),
+                    [],
+                )
+                hashes.add(artifact["replay_hash"])
+        finally:
+            getcontext().prec = original_precision
+        self.assertEqual(len(hashes), 1)
+
+    def test_insufficient_blocks_is_inconclusive(self):
+        artifact = self.build(
+            trade_pnls=("10",),
+            block_length=2,
+            minimum_block_count=2,
+        )
+        status, value, reasons = (
+            leave_top_5_positive_trades_out_mbb_lcb95(
+                {"trade_replay_snapshot": artifact}
+            )
+        )
+        self.assertEqual(status, "INCONCLUSIVE")
+        self.assertIsNone(value)
+        self.assertEqual(
+            reasons,
+            ("STATISTICAL_SERIES_INSUFFICIENT_BLOCKS",),
+        )
 
 
 if __name__ == "__main__":

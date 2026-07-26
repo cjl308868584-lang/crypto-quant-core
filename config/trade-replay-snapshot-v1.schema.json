@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trade-replay-snapshot-v1.schema.json",
+  "title": "Complete Trade Counterfactual Replay Snapshot v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "replay_id",
+    "replay_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "source_series_snapshot",
+    "source_series_hash",
+    "source_economic_snapshots",
+    "source_economic_snapshot_hashes",
+    "scope",
+    "policy_bindings",
+    "approved_production_capital_usdt",
+    "bootstrap_design",
+    "valuation_checkpoints",
+    "original_replay",
+    "completed_trades",
+    "selected_trade_ids",
+    "counterfactual_series",
+    "generated_at",
+    "replay_verified"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./trade-replay-snapshot-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "replay_id": {
+      "$ref": "#/$defs/id"
+    },
+    "replay_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "hash_algorithm": {
+      "const": "SHA-256"
+    },
+    "canonicalization": {
+      "const": "RFC8785_JCS"
+    },
+    "source_series_snapshot": {
+      "type": "object"
+    },
+    "source_series_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_economic_snapshots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object"
+      }
+    },
+    "source_economic_snapshot_hashes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "policy_bindings": {
+      "$ref": "#/$defs/policyBindings"
+    },
+    "approved_production_capital_usdt": {
+      "$ref": "#/$defs/positiveDecimal"
+    },
+    "bootstrap_design": {
+      "$ref": "#/$defs/bootstrapDesign"
+    },
+    "valuation_checkpoints": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "#/$defs/valuationCheckpoint"
+      }
+    },
+    "original_replay": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "#/$defs/replayPoint"
+      }
+    },
+    "completed_trades": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/completedTrade"
+      }
+    },
+    "selected_trade_ids": {
+      "type": "array",
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "counterfactual_series": {
+      "type": "object"
+    },
+    "generated_at": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "replay_verified": {
+      "const": true
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "nonnegativeDecimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "positiveDecimal": {
+      "type": "string",
+      "pattern": "^((0\\.[0-9]*[1-9][0-9]*)|([1-9][0-9]*(\\.[0-9]+)?))$"
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "account_id",
+        "evaluation_ledger",
+        "release_route",
+        "direction",
+        "venue",
+        "recipe_release_id",
+        "recipe_release_hash",
+        "deployment_line_id",
+        "deployment_line_hash",
+        "evaluation_window_start",
+        "evaluation_window_end"
+      ],
+      "properties": {
+        "account_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evaluation_ledger": {
+          "enum": [
+            "BASELINE_LEDGER",
+            "AI_LEDGER"
+          ]
+        },
+        "release_route": {
+          "enum": [
+            "BASELINE_ONLY",
+            "AI_ENHANCED"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "LONG",
+            "SHORT"
+          ]
+        },
+        "venue": {
+          "enum": [
+            "BINANCE_SPOT",
+            "BINANCE_USDT_PERP"
+          ]
+        },
+        "recipe_release_id": {
+          "$ref": "#/$defs/id"
+        },
+        "recipe_release_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "deployment_line_id": {
+          "$ref": "#/$defs/id"
+        },
+        "deployment_line_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "evaluation_window_start": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "evaluation_window_end": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "additionalProperties": false
+    },
+    "policyBindings": {
+      "type": "object",
+      "required": [
+        "accounting_policy_id",
+        "accounting_policy_hash",
+        "cost_allocation_policy_id",
+        "cost_allocation_policy_hash",
+        "split_policy_id",
+        "split_policy_hash",
+        "statistical_design_policy_id",
+        "statistical_design_policy_hash",
+        "experiment_manifest_id",
+        "experiment_manifest_hash"
+      ],
+      "properties": {
+        "accounting_policy_id": {
+          "$ref": "#/$defs/id"
+        },
+        "accounting_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "cost_allocation_policy_id": {
+          "$ref": "#/$defs/id"
+        },
+        "cost_allocation_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "split_policy_id": {
+          "$ref": "#/$defs/id"
+        },
+        "split_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "statistical_design_policy_id": {
+          "$ref": "#/$defs/id"
+        },
+        "statistical_design_policy_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "experiment_manifest_id": {
+          "$ref": "#/$defs/id"
+        },
+        "experiment_manifest_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "bootstrapDesign": {
+      "type": "object",
+      "required": [
+        "block_length",
+        "minimum_block_count",
+        "resample_count",
+        "seed",
+        "confidence_level",
+        "confidence_side",
+        "sampling_rule",
+        "quantile_rule"
+      ],
+      "properties": {
+        "block_length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minimum_block_count": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "resample_count": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 1000000
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "confidence_level": {
+          "const": "0.95"
+        },
+        "confidence_side": {
+          "const": "LOWER_ONE_SIDED"
+        },
+        "sampling_rule": {
+          "const": "OVERLAPPING_NON_CIRCULAR_MBB_TRUNCATE_TO_N"
+        },
+        "quantile_rule": {
+          "const": "CONSERVATIVE_NEAREST_RANK_V1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "valuationCheckpoint": {
+      "type": "object",
+      "required": [
+        "source_economic_snapshot_hash",
+        "equity_snapshot_id",
+        "as_of",
+        "instruments"
+      ],
+      "properties": {
+        "source_economic_snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "equity_snapshot_id": {
+          "$ref": "#/$defs/id"
+        },
+        "as_of": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "instruments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/valuationInstrument"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "valuationInstrument": {
+      "type": "object",
+      "required": [
+        "instrument_id",
+        "long_executable_exit_price_usdt",
+        "short_executable_exit_price_usdt",
+        "contract_multiplier",
+        "expected_exit_fee_usdt",
+        "valuation_source_hash"
+      ],
+      "properties": {
+        "instrument_id": {
+          "$ref": "#/$defs/id"
+        },
+        "long_executable_exit_price_usdt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/positiveDecimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "short_executable_exit_price_usdt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/positiveDecimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contract_multiplier": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "expected_exit_fee_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "valuation_source_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "position": {
+      "type": "object",
+      "required": [
+        "instrument_id",
+        "signed_quantity",
+        "moving_average_entry_price",
+        "contract_multiplier"
+      ],
+      "properties": {
+        "instrument_id": {
+          "$ref": "#/$defs/id"
+        },
+        "signed_quantity": {
+          "$ref": "#/$defs/decimal"
+        },
+        "moving_average_entry_price": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "contract_multiplier": {
+          "$ref": "#/$defs/positiveDecimal"
+        }
+      },
+      "additionalProperties": false
+    },
+    "replayPoint": {
+      "type": "object",
+      "required": [
+        "source_economic_snapshot_hash",
+        "equity_snapshot_id",
+        "as_of",
+        "liquidation_equity_usdt",
+        "position_cost_bases",
+        "expected_exit_fee_accrued_usdt"
+      ],
+      "properties": {
+        "source_economic_snapshot_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "equity_snapshot_id": {
+          "$ref": "#/$defs/id"
+        },
+        "as_of": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "liquidation_equity_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        },
+        "position_cost_bases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/position"
+          }
+        },
+        "expected_exit_fee_accrued_usdt": {
+          "$ref": "#/$defs/nonnegativeDecimal"
+        }
+      },
+      "additionalProperties": false
+    },
+    "completedTrade": {
+      "type": "object",
+      "required": [
+        "trade_id",
+        "instrument_id",
+        "fill_ids",
+        "funding_ids",
+        "economic_contribution_usdt",
+        "opened_at",
+        "closed_at",
+        "eligible"
+      ],
+      "properties": {
+        "trade_id": {
+          "$ref": "#/$defs/id"
+        },
+        "instrument_id": {
+          "$ref": "#/$defs/id"
+        },
+        "fill_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "funding_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "economic_contribution_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "opened_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "closed_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "eligible": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
