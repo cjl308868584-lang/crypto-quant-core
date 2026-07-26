@@ -19,6 +19,13 @@ from .economics import (
 )
 from .errors import CanonicalizationError, PolicyError
 from .evidence import artifact_self_hash
+from .statistics import (
+    cash_flow_adjusted_economic_log_growth,
+    complete_utc_calendar_month_count,
+    geyer_initial_positive_sequence_ess,
+    monthly_economic_pnl_mbb_lcb95,
+    one_sided_95_moving_block_bootstrap,
+)
 
 
 @dataclass(frozen=True)
@@ -155,6 +162,21 @@ _CALLABLES: Mapping[
     "cash_flow_adjusted_daily_loss": cash_flow_adjusted_daily_loss,
     "cash_flow_adjusted_max_drawdown": cash_flow_adjusted_max_drawdown,
     "worst_case_gross_exposure_ratio": worst_case_gross_exposure_ratio,
+    "geyer_initial_positive_sequence_ess": (
+        geyer_initial_positive_sequence_ess
+    ),
+    "one_sided_95_moving_block_bootstrap": (
+        one_sided_95_moving_block_bootstrap
+    ),
+    "monthly_economic_pnl_mbb_lcb95": (
+        monthly_economic_pnl_mbb_lcb95
+    ),
+    "complete_utc_calendar_month_count": (
+        complete_utc_calendar_month_count
+    ),
+    "cash_flow_adjusted_economic_log_growth": (
+        cash_flow_adjusted_economic_log_growth
+    ),
 }
 
 
@@ -168,11 +190,13 @@ class EstimatorRegistry:
         golden_vectors: Mapping[str, Any],
         catalog: Mapping[str, Any],
         economic_snapshot_schema: Mapping[str, Any],
+        statistical_series_schema: Mapping[str, Any],
     ) -> None:
         self.registry = registry
         self.golden_vectors = golden_vectors
         self.catalog = catalog
         self.economic_snapshot_schema = economic_snapshot_schema
+        self.statistical_series_schema = statistical_series_schema
         self.registry_hash = registry["registry_hash"]
         self.golden_bundle_hash = golden_vectors["bundle_hash"]
         self._implementations = {
@@ -197,9 +221,13 @@ class EstimatorRegistry:
         economic_snapshot_schema = _load_json_strict(
             config_dir / "economic-ledger-snapshot-v1.schema.json"
         )
+        statistical_series_schema = _load_json_strict(
+            config_dir / "statistical-series-snapshot-v1.schema.json"
+        )
         Draft202012Validator.check_schema(registry_schema)
         Draft202012Validator.check_schema(golden_schema)
         Draft202012Validator.check_schema(economic_snapshot_schema)
+        Draft202012Validator.check_schema(statistical_series_schema)
         registry = _load_json_strict(config_dir / "estimator-registry-v1.json")
         golden = _load_json_strict(
             config_dir / "estimator-golden-vectors-v1.json"
@@ -279,6 +307,7 @@ class EstimatorRegistry:
             golden_vectors=golden,
             catalog=catalog,
             economic_snapshot_schema=economic_snapshot_schema,
+            statistical_series_schema=statistical_series_schema,
         )
         report = instance.run_golden_vectors()
         if not report.passed:
@@ -345,6 +374,20 @@ class EstimatorRegistry:
                     "FAIL",
                     None,
                     ("ECONOMIC_SNAPSHOT_SCHEMA_INVALID",),
+                )
+        if "statistical_series_snapshot" in required_fields:
+            errors = list(
+                Draft202012Validator(
+                    self.statistical_series_schema
+                ).iter_errors(inputs["statistical_series_snapshot"])
+            )
+            if errors:
+                return self._execution(
+                    estimator_id,
+                    implementation,
+                    "FAIL",
+                    None,
+                    ("STATISTICAL_SERIES_SCHEMA_INVALID",),
                 )
         status, value, reasons = _CALLABLES[implementation["callable_id"]](inputs)
         return self._execution(

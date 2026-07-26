@@ -115,7 +115,12 @@
             "period_economic_pnl",
             "cash_flow_adjusted_daily_loss",
             "cash_flow_adjusted_max_drawdown",
-            "worst_case_gross_exposure_ratio"
+            "worst_case_gross_exposure_ratio",
+            "geyer_initial_positive_sequence_ess",
+            "one_sided_95_moving_block_bootstrap",
+            "monthly_economic_pnl_mbb_lcb95",
+            "complete_utc_calendar_month_count",
+            "cash_flow_adjusted_economic_log_growth"
           ]
         },
         "input_fields": {
@@ -130,7 +135,8 @@
         "output_type": {
           "enum": [
             "decimal",
-            "boolean"
+            "boolean",
+            "integer"
           ]
         },
         "deterministic": {

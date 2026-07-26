@@ -2,7 +2,7 @@
   "$schema": "./estimator-registry-v1.schema.json",
   "schema_version": "1.0.0",
   "registry_id": "estimator-registry-v1",
-  "registry_version": "1.1.0",
+  "registry_version": "1.2.0",
   "metric_catalog_id": "release-metrics-v1.1",
   "metric_catalog_version": "1.1.1",
   "status": "BUILD_CANDIDATE",
@@ -162,7 +162,82 @@
       "golden_vector_ids": [
         "economic-worst-gross-exposure"
       ]
+    },
+    {
+      "estimator_id": "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1",
+      "implementation_id": "statistics.geyer-initial-positive-sequence-ess",
+      "implementation_version": "1.0.0",
+      "callable_id": "geyer_initial_positive_sequence_ess",
+      "input_fields": [
+        "statistical_series_snapshot"
+      ],
+      "output_type": "integer",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "statistics-geyer-ess"
+      ]
+    },
+    {
+      "estimator_id": "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1",
+      "implementation_id": "statistics.one-sided-95-moving-block-bootstrap",
+      "implementation_version": "1.0.0",
+      "callable_id": "one_sided_95_moving_block_bootstrap",
+      "input_fields": [
+        "statistical_series_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "statistics-moving-block-lcb95"
+      ]
+    },
+    {
+      "estimator_id": "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1",
+      "implementation_id": "statistics.monthly-economic-pnl-mbb-lcb95",
+      "implementation_version": "1.0.0",
+      "callable_id": "monthly_economic_pnl_mbb_lcb95",
+      "input_fields": [
+        "statistical_series_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "statistics-monthly-economic-pnl-lcb95"
+      ]
+    },
+    {
+      "estimator_id": "COMPLETE_UTC_CALENDAR_MONTH_COUNT_V1",
+      "implementation_id": "statistics.complete-utc-calendar-month-count",
+      "implementation_version": "1.0.0",
+      "callable_id": "complete_utc_calendar_month_count",
+      "input_fields": [
+        "statistical_series_snapshot"
+      ],
+      "output_type": "integer",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "statistics-complete-month-count"
+      ]
+    },
+    {
+      "estimator_id": "CASH_FLOW_ADJUSTED_ECONOMIC_LOG_GROWTH_V1",
+      "implementation_id": "statistics.cash-flow-adjusted-economic-log-growth",
+      "implementation_version": "1.0.0",
+      "callable_id": "cash_flow_adjusted_economic_log_growth",
+      "input_fields": [
+        "economic_ledger_snapshot"
+      ],
+      "output_type": "decimal",
+      "deterministic": true,
+      "binary_float_allowed": false,
+      "golden_vector_ids": [
+        "statistics-economic-log-growth"
+      ]
     }
   ],
-  "registry_hash": "7ec8db77714e6d90679ff8c3551f2e99e4a2ceec52f0769bc74c53baff18cdff"
+  "registry_hash": "cec76b2881042f4a872dd71fa52324aed7ba8c9a0b6e52263e00d47d9c18978f"
 }

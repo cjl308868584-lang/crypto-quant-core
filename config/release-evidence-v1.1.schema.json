@@ -371,6 +371,9 @@
         },
         "economic_ledger_snapshot": {
           "$ref": "#/$defs/freezeProof"
+        },
+        "statistical_series_snapshot": {
+          "$ref": "#/$defs/freezeProof"
         }
       },
       "additionalProperties": false

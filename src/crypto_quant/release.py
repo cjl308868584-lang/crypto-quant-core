@@ -30,6 +30,25 @@ from .release_artifacts import (
     validate_supporting_observation_bundle,
 )
 
+_ECONOMIC_SNAPSHOT_ESTIMATOR_IDS = frozenset(
+    {
+        "FILL_BASED_GROSS_MINUS_FEES_PLUS_SIGNED_FUNDING_V1",
+        "CASH_FLOW_ADJUSTED_LIQUIDATION_EQUITY_MINUS_ALLOCATED_COSTS_V1",
+        "CASH_FLOW_ADJUSTED_DAILY_LOSS_V1",
+        "CASH_FLOW_ADJUSTED_ECONOMIC_LOG_GROWTH_V1",
+        "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1",
+        "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1",
+    }
+)
+_STATISTICAL_SERIES_ESTIMATOR_IDS = frozenset(
+    {
+        "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1",
+        "ONE_SIDED_95_MOVING_BLOCK_BOOTSTRAP_V1",
+        "MONTHLY_ECONOMIC_PNL_MBB_LCB95_V1",
+        "COMPLETE_UTC_CALENDAR_MONTH_COUNT_V1",
+    }
+)
+
 
 def strict_format_checker() -> FormatChecker:
     checker = FormatChecker()
@@ -1141,6 +1160,7 @@ class PolicyBundle:
         scope_verified: bool,
         trust_verified: bool,
         economic_ledger_snapshot: Optional[Mapping[str, Any]] = None,
+        statistical_series_snapshot: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
         if estimator_id == "ACTUAL_DEPLOYABLE_CAPITAL_V1":
             return {
@@ -1182,15 +1202,13 @@ class PolicyBundle:
                 "comparison": comparison,
                 "scope_verified": scope_verified and trust_verified,
             }
-        if estimator_id in {
-            "FILL_BASED_GROSS_MINUS_FEES_PLUS_SIGNED_FUNDING_V1",
-            "CASH_FLOW_ADJUSTED_LIQUIDATION_EQUITY_MINUS_ALLOCATED_COSTS_V1",
-            "CASH_FLOW_ADJUSTED_DAILY_LOSS_V1",
-            "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1",
-            "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1",
-        }:
+        if estimator_id in _ECONOMIC_SNAPSHOT_ESTIMATOR_IDS:
             return {
                 "economic_ledger_snapshot": economic_ledger_snapshot,
+            }
+        if estimator_id in _STATISTICAL_SERIES_ESTIMATOR_IDS:
+            return {
+                "statistical_series_snapshot": statistical_series_snapshot,
             }
         return {}
 
@@ -1271,6 +1289,101 @@ class PolicyBundle:
                 reasons.append(
                     f"ECONOMIC_SNAPSHOT_SOURCE_HASH_MISSING:{field}"
                 )
+        return tuple(sorted(set(reasons)))
+
+    @staticmethod
+    def _statistical_series_reference_reasons(
+        evidence: Mapping[str, Any],
+        trust: EvidenceTrustContext,
+    ) -> Tuple[str, ...]:
+        series = trust.artifact_documents.get(
+            "statistical_series_snapshot"
+        )
+        if not isinstance(series, Mapping):
+            return ("STATISTICAL_SERIES_DOCUMENT_MISSING",)
+        reasons: List[str] = []
+        frozen = evidence.get("frozen_release_inputs")
+        proof = (
+            frozen.get("statistical_series_snapshot")
+            if isinstance(frozen, Mapping)
+            else None
+        )
+        if not isinstance(proof, Mapping):
+            reasons.append("STATISTICAL_SERIES_FREEZE_PROOF_MISSING")
+        else:
+            if proof.get("artifact_id") != series.get("series_id"):
+                reasons.append("STATISTICAL_SERIES_FREEZE_ID_MISMATCH")
+            if proof.get("artifact_hash") != series.get("series_hash"):
+                reasons.append("STATISTICAL_SERIES_FREEZE_HASH_MISMATCH")
+        if trust.artifact_hashes.get(
+            "statistical_series_snapshot"
+        ) != series.get("series_hash"):
+            reasons.append("STATISTICAL_SERIES_TRUST_HASH_MISMATCH")
+
+        scope = series.get("scope")
+        if not isinstance(scope, Mapping):
+            reasons.append("STATISTICAL_SERIES_SCOPE_MISSING")
+            scope = {}
+        for name in (
+            "evaluation_ledger",
+            "release_route",
+            "direction",
+            "venue",
+            "recipe_release_id",
+            "recipe_release_hash",
+            "deployment_line_id",
+            "deployment_line_hash",
+            "evaluation_window_start",
+            "evaluation_window_end",
+        ):
+            if scope.get(name) != evidence.get(name):
+                reasons.append(f"STATISTICAL_SERIES_SCOPE_MISMATCH:{name}")
+
+        claimed = evidence.get("policy_binding_hashes")
+        if not isinstance(claimed, Mapping):
+            claimed = {}
+        policy_fields = {
+            "accounting_policy_hash": "accounting_policy_id",
+            "cost_allocation_policy_hash": "cost_allocation_policy_id",
+            "split_policy_hash": "split_policy_id",
+            "statistical_design_policy_hash": (
+                "statistical_design_policy_id"
+            ),
+        }
+        for series_field, binding_name in policy_fields.items():
+            if series.get(series_field) != claimed.get(binding_name):
+                reasons.append(
+                    f"STATISTICAL_SERIES_POLICY_MISMATCH:{binding_name}"
+                )
+        if (
+            series.get("experiment_manifest_id")
+            != evidence.get("experiment_manifest_id")
+            or series.get("experiment_manifest_hash")
+            != evidence.get("experiment_manifest_hash")
+        ):
+            reasons.append("STATISTICAL_SERIES_EXPERIMENT_MISMATCH")
+        if not PolicyBundle._same_business_value(
+            series.get("approved_production_capital_usdt"),
+            evidence.get("approved_production_capital_usdt"),
+        ):
+            reasons.append("STATISTICAL_SERIES_APPROVED_CAPITAL_MISMATCH")
+
+        artifact_hashes = evidence.get("artifact_hashes")
+        artifact_set = (
+            set(artifact_hashes) if isinstance(artifact_hashes, list) else set()
+        )
+        source_economic_hashes = series.get(
+            "source_economic_snapshot_hashes"
+        )
+        if not isinstance(source_economic_hashes, list):
+            source_economic_hashes = []
+            reasons.append("STATISTICAL_SERIES_SOURCE_LIST_INVALID")
+        required_sources = {
+            series.get("series_hash"),
+            *source_economic_hashes,
+        }
+        if not required_sources.issubset(artifact_set):
+            reasons.append("STATISTICAL_SERIES_SOURCE_HASH_MISSING")
         return tuple(sorted(set(reasons)))
 
     def validate_gate_evidence(
@@ -1426,15 +1539,23 @@ class PolicyBundle:
                 economic_snapshot = trust.artifact_documents.get(
                     "economic_ledger_snapshot"
                 )
-                if definition["estimator_id"] in {
-                    "FILL_BASED_GROSS_MINUS_FEES_PLUS_SIGNED_FUNDING_V1",
-                    "CASH_FLOW_ADJUSTED_LIQUIDATION_EQUITY_MINUS_ALLOCATED_COSTS_V1",
-                    "CASH_FLOW_ADJUSTED_DAILY_LOSS_V1",
-                    "CASH_FLOW_ADJUSTED_MAX_DRAWDOWN_V1",
-                    "WORST_CASE_GROSS_EXPOSURE_OVER_MARKED_EQUITY_V1",
-                }:
+                statistical_series = trust.artifact_documents.get(
+                    "statistical_series_snapshot"
+                )
+                if definition["estimator_id"] in (
+                    _ECONOMIC_SNAPSHOT_ESTIMATOR_IDS
+                ):
                     reasons.extend(
                         self._economic_snapshot_reference_reasons(
+                            evidence,
+                            trust,
+                        )
+                    )
+                if definition["estimator_id"] in (
+                    _STATISTICAL_SERIES_ESTIMATOR_IDS
+                ):
+                    reasons.extend(
+                        self._statistical_series_reference_reasons(
                             evidence,
                             trust,
                         )
@@ -1453,6 +1574,11 @@ class PolicyBundle:
                     economic_ledger_snapshot=(
                         economic_snapshot
                         if isinstance(economic_snapshot, Mapping)
+                        else None
+                    ),
+                    statistical_series_snapshot=(
+                        statistical_series
+                        if isinstance(statistical_series, Mapping)
                         else None
                     ),
                 )

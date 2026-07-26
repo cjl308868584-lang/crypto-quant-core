@@ -679,6 +679,91 @@ def validate_supporting_observation_bundle(
                 reasons.append(
                     f"SUPPORTING_ECONOMIC_SOURCE_INCOMPLETE:{metric_id}"
                 )
+        statistical_series = (
+            inputs.get("statistical_series_snapshot")
+            if isinstance(inputs, Mapping)
+            else None
+        )
+        if isinstance(statistical_series, Mapping):
+            statistical_scope = statistical_series.get("scope")
+            if not isinstance(statistical_scope, Mapping):
+                reasons.append(
+                    f"SUPPORTING_STATISTICAL_SCOPE_MISSING:{metric_id}"
+                )
+                statistical_scope = {}
+            for name in (
+                "evaluation_ledger",
+                "release_route",
+                "direction",
+                "venue",
+                "recipe_release_id",
+                "recipe_release_hash",
+                "deployment_line_id",
+                "deployment_line_hash",
+                "evaluation_window_start",
+                "evaluation_window_end",
+            ):
+                if (
+                    name in expected_scope
+                    and statistical_scope.get(name)
+                    != expected_scope.get(name)
+                ):
+                    reasons.append(
+                        f"SUPPORTING_STATISTICAL_SCOPE_MISMATCH:{metric_id}:{name}"
+                    )
+            bindings = expected_scope.get("policy_binding_hashes")
+            if isinstance(bindings, Mapping):
+                policy_fields = {
+                    "accounting_policy_hash": "accounting_policy_id",
+                    "cost_allocation_policy_hash": "cost_allocation_policy_id",
+                    "split_policy_hash": "split_policy_id",
+                    "statistical_design_policy_hash": (
+                        "statistical_design_policy_id"
+                    ),
+                }
+                for series_field, binding_name in policy_fields.items():
+                    if statistical_series.get(
+                        series_field
+                    ) != bindings.get(binding_name):
+                        reasons.append(
+                            f"SUPPORTING_STATISTICAL_POLICY_MISMATCH:{metric_id}:{binding_name}"
+                        )
+            for name in (
+                "experiment_manifest_id",
+                "experiment_manifest_hash",
+                "approved_production_capital_usdt",
+            ):
+                if (
+                    name in expected_scope
+                    and not _same_value(
+                        statistical_series.get(name),
+                        expected_scope.get(name),
+                    )
+                ):
+                    reasons.append(
+                        f"SUPPORTING_STATISTICAL_REFERENCE_MISMATCH:{metric_id}:{name}"
+                    )
+            statistical_source_hashes = statistical_series.get(
+                "source_economic_snapshot_hashes"
+            )
+            if not isinstance(statistical_source_hashes, list):
+                statistical_source_hashes = []
+                reasons.append(
+                    f"SUPPORTING_STATISTICAL_SOURCE_LIST_INVALID:{metric_id}"
+                )
+            required_statistical_sources = {
+                statistical_series.get("series_hash"),
+                *statistical_source_hashes,
+            }
+            if (
+                not isinstance(source_hashes, list)
+                or not required_statistical_sources.issubset(
+                    set(source_hashes)
+                )
+            ):
+                reasons.append(
+                    f"SUPPORTING_STATISTICAL_SOURCE_INCOMPLETE:{metric_id}"
+                )
         if execution.status == "COMPUTED":
             observations[metric_id] = execution.value
         elif execution.status == "INCONCLUSIVE":
