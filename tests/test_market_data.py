@@ -563,6 +563,33 @@ class MarketDataArtifactTests(unittest.TestCase):
             self.build(incomplete)
         self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
 
+    def test_artifact_binds_fact_identity_to_verified_archive_and_base_schema(self):
+        first = self.build()
+        revised_archive = self.build(archive_sha256="c" * 64)
+        self.assertNotEqual(first["facts"][0]["fact_id"], revised_archive["facts"][0]["fact_id"])
+        invalid_id = [dict(fact) for fact in self.facts]
+        invalid_id[0]["fact_id"] = 1
+        with self.assertRaises(MarketDataError) as raised:
+            self.build(invalid_id)
+        self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
+
+    def test_artifact_allows_equal_aggtrade_times_when_business_ids_increase(self):
+        request = HistoricalArchiveRequest.create(
+            market="SPOT", data_family="AGG_TRADES", symbol="ETHUSDT",
+            interval_or_null=None, period_kind="DAILY", period="2024-01-02",
+        )
+        facts = parse_market_facts(
+            request,
+            b"1,1,1,1,1,1704153600000,true,false\n2,1,1,2,2,1704153600000,false,true\n",
+            "2026-07-27T00:00:00Z",
+        )
+        snapshot = build_historical_market_data_snapshot(
+            snapshot_id="equal-aggtrade-times", request=request, facts=facts,
+            archive_sha256="a" * 64, checksum_sha256="b" * 64,
+            ingested_at="2026-07-27T00:00:00Z", recorded_at="2026-07-27T00:00:01Z",
+        )
+        self.assertEqual(historical_market_data_snapshot_reasons(snapshot), ())
+
     def test_artifact_hash_and_schema_reject_mutation_and_unknown_business_field(self):
         from jsonschema import Draft202012Validator
 
@@ -646,6 +673,7 @@ class FeeScheduleContractTests(unittest.TestCase):
         ).read_text())
         validator = Draft202012Validator(schema)
         self.assertFalse(list(validator.iter_errors(self.schedule())))
+        self.assertTrue(list(validator.iter_errors(self.schedule(environment="PRODUCTION"))))
         unknown = self.schedule()
         unknown["schedules"][0]["rebate"] = "0"
         self.assertTrue(list(validator.iter_errors(unknown)))

@@ -29,6 +29,7 @@ _REQUEST_CONSTRUCTION_TOKEN = object()
 _VERIFIED_ARCHIVE_TOKEN = object()
 _DECIMAL_CONTEXT = Context(prec=50)
 _SHA256 = re.compile(r"^[a-f0-9]{64}$")
+_FACT_ID = re.compile(r"^mdf_[a-f0-9]{64}$")
 _KLINE_INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "4h": 14_400_000, "1d": 86_400_000}
 _SPOT_MICROSECOND_BOUNDARY = datetime(2025, 1, 1, tzinfo=timezone.utc)
 _FAMILY_SPECS = {
@@ -612,6 +613,15 @@ def _valid_fact_payload(request: HistoricalArchiveRequest, fact: Mapping[str, An
     if set(fact) != expected_fields or fact.get("fact_type") != expected_type:
         return False
     try:
+        if (
+            not isinstance(fact["fact_id"], str)
+            or _FACT_ID.fullmatch(fact["fact_id"]) is None
+            or not isinstance(fact["business_key"], str)
+            or not fact["business_key"]
+            or not isinstance(fact["source_row_number"], int)
+            or fact["source_row_number"] < 1
+        ):
+            return False
         if request.data_family in ("KLINES", "MARK_PRICE_KLINES"):
             open_price, high, low, close = (Decimal(_decimal(fact[name], positive=True)) for name in ("open", "high", "low", "close"))
             return low <= min(open_price, close) <= max(open_price, close) <= high
@@ -687,7 +697,7 @@ def _quality_reasons(
             reasons.append("MARKET_DATA_TIME_ORDER")
         if not _request_period_contains(request, event):
             reasons.append("MARKET_DATA_PERIOD_SCOPE")
-        if previous_event is not None and event <= previous_event:
+        if previous_event is not None and event < previous_event:
             reasons.append("MARKET_DATA_EVENT_ORDER")
         previous_event = event
         event_times.append(event)
@@ -776,6 +786,17 @@ def build_historical_market_data_snapshot(
     blocking = _quality_reasons(request, copied_facts, ingested_at, recorded_at)
     if blocking:
         raise MarketDataError("MARKET_DATA_QUALITY_BLOCKING")
+    archive_bound_facts = []
+    for fact in copied_facts:
+        bound = dict(fact)
+        bound["fact_id"] = "mdf_" + business_hash(
+            {
+                "archive_sha256": archive_sha256,
+                "source_row_fact_id": fact["fact_id"],
+                "business_key": fact["business_key"],
+            }
+        )
+        archive_bound_facts.append(bound)
     receipt = {
         "provider": request.provider,
         "archive_sha256": archive_sha256,
@@ -802,7 +823,7 @@ def build_historical_market_data_snapshot(
         "request": _request_payload(request),
         "source_receipt": receipt,
         "quality_report": report,
-        "facts": copied_facts,
+        "facts": archive_bound_facts,
         "ingested_at": ingested_at,
         "recorded_at": recorded_at,
     }

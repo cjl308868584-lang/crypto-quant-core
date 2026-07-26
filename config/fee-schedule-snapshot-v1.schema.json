@@ -7,6 +7,7 @@
   "properties": {
     "$schema": {"const": "./fee-schedule-snapshot-v1.schema.json"}, "schema_version": {"const": "1.0.0"}, "fee_schedule_id": {"$ref": "#/$defs/id"}, "fee_schedule_hash": {"$ref": "#/$defs/hash"}, "hash_algorithm": {"const": "SHA-256"}, "canonicalization": {"const": "RFC8785_JCS"}, "usage_environment": {"enum": ["RESEARCH", "PRODUCTION"]}, "production_approval": {"$ref": "#/$defs/approval"}, "schedules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fee"}}
   },
+  "allOf": [{"if": {"properties": {"usage_environment": {"const": "PRODUCTION"}}, "required": ["usage_environment"]}, "then": {"required": ["production_approval"]}}],
   "$defs": {
     "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}, "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "time": {"type": "string", "pattern": "^.+Z$"}, "decimal": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
     "approval": {"type": "object", "additionalProperties": false, "required": ["approved_by", "approved_at"], "properties": {"approved_by": {"$ref": "#/$defs/id"}, "approved_at": {"$ref": "#/$defs/time"}}},
