@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.1.0",
+  "template_id": "experiment-manifest-v1-template",
+  "template_version": "1.0.0",
+  "artifact_type": "EXPERIMENT_MANIFEST",
+  "artifact_id_or_null": null,
+  "lifecycle_status": "TEMPLATE_UNAPPROVED",
+  "production_eligible": false,
+  "specification": {
+    "identity_and_lineage": {
+      "experiment_id_or_null": null,
+      "hypothesis_id_or_null": null,
+      "parent_experiment_ids": [],
+      "release_route_or_null": null,
+      "ai_endpoint_or_null": null,
+      "endpoint_policy_version_or_null": null,
+      "baseline_recipe_release_id_or_null": null,
+      "recipe_release_id_or_null": null,
+      "recipe_release_hash_or_null": null,
+      "route_and_endpoint_frozen_at_or_null": null,
+      "created_by_or_null": null,
+      "created_at_or_null": null,
+      "run_status": "PLANNED",
+      "failure_reason_or_null": null
+    },
+    "code_and_environment": {
+      "git_commit_or_null": null,
+      "dirty_worktree": false,
+      "dirty_patch_hash_or_null": null,
+      "environment_lock_hash_or_null": null,
+      "library_and_hardware_summary_or_null": null,
+      "random_seeds": {},
+      "training_entrypoint_or_null": null,
+      "parameters": {}
+    },
+    "data": {
+      "raw_snapshot_ids": [],
+      "raw_snapshot_hashes": [],
+      "data_sources": [],
+      "available_time_rule_or_null": null,
+      "instrument_metadata_hashes": [],
+      "fit_calibration_validation_windows": [],
+      "purge_and_embargo_rule_or_null": null,
+      "missing_and_anomaly_rule_or_null": null,
+      "data_quality_report_id_or_null": null
+    },
+    "economic_definition": {
+      "strategy_proposal_version_or_null": null,
+      "feature_schema_hash_or_null": null,
+      "label_version_or_null": null,
+      "cost_model_version_or_null": null,
+      "fill_slippage_funding_model_versions": {},
+      "policy_ids": {},
+      "approved_production_capital_usdt_or_null": null,
+      "reporting_asset": "USDT",
+      "evaluation_window_start_or_null": null,
+      "evaluation_window_end_or_null": null,
+      "risk_policy_version_or_null": null,
+      "position_mapping_version_or_null": null,
+      "benchmark_version_or_null": null,
+      "minimum_economic_effect_or_null": null,
+      "target_power": "0.80",
+      "maximum_ci_width_or_null": null,
+      "trial_family_id_or_null": null,
+      "multiplicity_method": "HOLM",
+      "family_wise_alpha": "0.05"
+    },
+    "search_budget": {
+      "predeclared_trial_budget_or_null": null,
+      "actual_total_trials": 0,
+      "hyperparameter_space": {},
+      "feature_set_count": 0,
+      "threshold_variant_count": 0,
+      "aborted_trials": 0,
+      "failed_trials": 0,
+      "invalid_trials": 0
+    },
+    "outputs": {
+      "model_and_calibrator_hashes": [],
+      "oos_prediction_artifact_hash_or_null": null,
+      "fold_trades_and_equity_hash_or_null": null,
+      "metrics_charts_audit_hash_or_null": null,
+      "feature_stability_hash_or_null": null,
+      "failure_log_hash_or_null": null,
+      "conclusion_or_null": null,
+      "signed_by_or_null": null
+    }
+  },
+  "approval": {
+    "approved_by_or_null": null,
+    "approved_at_or_null": null,
+    "content_hash_or_null": null,
+    "approval_evidence_hash_or_null": null
+  },
+  "notes": [
+    "每次运行必须复制为新Artifact并冻结全部谱系、Trial和失败记录。",
+    "本模板未经审批，不得绑定ReleaseGatePolicy。"
+  ]
+}

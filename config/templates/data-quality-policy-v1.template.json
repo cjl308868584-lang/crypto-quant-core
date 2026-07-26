@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.1.0",
+  "template_id": "data-quality-policy-v1-template",
+  "template_version": "1.0.0",
+  "artifact_type": "DATA_QUALITY_POLICY",
+  "artifact_id_or_null": null,
+  "lifecycle_status": "TEMPLATE_UNAPPROVED",
+  "production_eligible": false,
+  "specification": {
+    "policy_id_or_null": null,
+    "product_data_matrix": [
+      {
+        "product": "SPOT_LONG",
+        "required_fields": [
+          "SPOT_OHLCV",
+          "SPOT_BBO",
+          "SPOT_TRADES"
+        ],
+        "context_fields": [
+          "PERP_MARK",
+          "PERP_INDEX",
+          "PERP_PREMIUM",
+          "PERP_FUNDING",
+          "PERP_OPEN_INTEREST",
+          "PERP_TAKER_FLOW"
+        ],
+        "not_applicable_fields": [
+          "FUNDING_CASHFLOW"
+        ],
+        "context_missing_blocks_new_risk": true
+      },
+      {
+        "product": "USDT_PERP_SHORT",
+        "required_fields": [
+          "PERP_OHLCV",
+          "PERP_BBO",
+          "PERP_TRADES",
+          "PERP_MARK",
+          "PERP_INDEX"
+        ],
+        "context_fields": [
+          "PERP_PREMIUM",
+          "PERP_FUNDING",
+          "PERP_OPEN_INTEREST",
+          "PERP_TAKER_FLOW"
+        ],
+        "not_applicable_fields": [],
+        "context_missing_blocks_new_risk": true
+      }
+    ],
+    "point_in_time_rules": [
+      "EVENT_AVAILABLE_AT_MUST_NOT_EXCEED_DECISION_TIME",
+      "REVISIONS_KEEP_ORIGINAL_AND_CORRECTION_LINEAGE",
+      "CONTEXT_ONLY_FIELDS_CANNOT_CREATE_ORDERS"
+    ],
+    "freshness_thresholds_or_null": null,
+    "duplicate_gap_revision_rules": [
+      "DUPLICATE_EVENT_ID_IS_IDEMPOTENT",
+      "GAPS_ARE_EXPLICIT_AND_BLOCK_WHEN_REQUIRED",
+      "OUT_OF_ORDER_EVENTS_REPLAY_DETERMINISTICALLY"
+    ],
+    "offline_live_parity_required": true,
+    "quality_report_hash_or_null": null
+  },
+  "approval": {
+    "approved_by_or_null": null,
+    "approved_at_or_null": null,
+    "content_hash_or_null": null,
+    "approval_evidence_hash_or_null": null
+  },
+  "notes": [
+    "必须在批准前冻结每个数据族的数值freshness阈值。",
+    "本模板未经审批，不得绑定ReleaseGatePolicy。"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.1.0",
+  "template_id": "cost-allocation-policy-v1-template",
+  "template_version": "1.0.0",
+  "artifact_type": "COST_ALLOCATION_POLICY",
+  "artifact_id_or_null": null,
+  "lifecycle_status": "TEMPLATE_UNAPPROVED",
+  "production_eligible": false,
+  "specification": {
+    "policy_id_or_null": null,
+    "ai_incremental_cost_categories": [
+      "AI_DATA",
+      "AI_INFERENCE",
+      "MODEL_TRAINING",
+      "AI_MONITORING_AND_AUDIT"
+    ],
+    "shared_cost_allocation_rule_or_null": null,
+    "project_roi_costs_separate": true,
+    "double_counting_forbidden": true,
+    "required_cost_event_types": [
+      "OperatingCost",
+      "AIInferenceCost",
+      "ModelTrainingCost",
+      "MonitoringAndAuditCost"
+    ],
+    "allocation_window_or_null": null
+  },
+  "approval": {
+    "approved_by_or_null": null,
+    "approved_at_or_null": null,
+    "content_hash_or_null": null,
+    "approval_evidence_hash_or_null": null
+  },
+  "notes": [
+    "共享基础设施分摊规则和窗口必须在结果揭晓前冻结。",
+    "本模板未经审批，不得用于AI增量或盈利声明。"
+  ]
+}

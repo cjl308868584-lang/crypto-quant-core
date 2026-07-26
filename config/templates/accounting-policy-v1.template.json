@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.1.0",
+  "template_id": "accounting-policy-v1-template",
+  "template_version": "1.0.0",
+  "artifact_type": "ACCOUNTING_POLICY",
+  "artifact_id_or_null": null,
+  "lifecycle_status": "TEMPLATE_UNAPPROVED",
+  "production_eligible": false,
+  "specification": {
+    "policy_id_or_null": null,
+    "reporting_asset": "USDT",
+    "cost_basis_method": "MOVING_WEIGHTED_AVERAGE",
+    "partial_fill_accounting": "PER_FILL",
+    "fee_accounting": "INDEPENDENT_FEE_FACT",
+    "funding_allocation": "ACTUAL_POSITION_AT_SETTLEMENT",
+    "non_usdt_valuation": "VERSIONED_FX_VALUATION_FACT",
+    "window_end_marking": "CONSERVATIVE_EXECUTABLE_CLOSE",
+    "expected_exit_fee_accrual": true,
+    "cash_flow_adjustment": "DEPOSIT_WITHDRAWAL_INTERNAL_TRANSFER_EXCLUDED",
+    "approved_production_capital_usdt_or_null": null,
+    "capital_search_grid_hash_or_null": null
+  },
+  "approval": {
+    "approved_by_or_null": null,
+    "approved_at_or_null": null,
+    "content_hash_or_null": null,
+    "approval_evidence_hash_or_null": null
+  },
+  "notes": [
+    "批准资本、评估窗口和资本网格必须绑定具体Release，不得跨Scope复用。",
+    "本模板未经审批，不得用于任何economic gate。"
+  ]
+}

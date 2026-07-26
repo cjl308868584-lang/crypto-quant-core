@@ -11,7 +11,7 @@ from crypto_quant.ledger import EventLedger
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 HASH_A = "a" * 64
 GOLDEN_PROJECTION_HASH = (
-    "db5c86ade60add594b5af276c2c4d939ae51a0bf9887469eb8bc70027e621dd8"
+    "eeeb20f66a72bb148146732ece4d724172b2db20d758ee6cb5235b89dfd511b0"
 )
 
 
@@ -153,6 +153,78 @@ def execution_facts():
                 "active_intent_id_or_null": "intent-1",
             },
         ),
+        (
+            "BalanceStateRecorded",
+            "balance-state-1",
+            {
+                "balance_id": "account-1:USDT",
+                "entity_version": 1,
+                "state": "OBSERVED",
+                "account_id": "account-1",
+                "asset": "USDT",
+                "total_balance": Decimal("500"),
+                "available_balance": Decimal("480"),
+                "locked_balance": Decimal("20"),
+                "borrowed_balance": Decimal("0"),
+                "interest_accrued": Decimal("0"),
+                "exchange_snapshot_time": "2026-01-01T00:00:00.000Z",
+                "source_snapshot_hash": HASH_A,
+            },
+        ),
+        (
+            "ProtectiveOrderStateRecorded",
+            "protective-state-1",
+            {
+                "protective_order_id": "protective-1",
+                "entity_version": 1,
+                "state": "ACTIVE",
+                "instrument_id": "BINANCE:SPOT:ETHUSDT",
+                "position_id": "account-1:BINANCE:SPOT:ETHUSDT",
+                "risk_decision_id": "risk-1",
+                "execution_intent_id": "intent-1",
+                "attempt_id": "attempt-1",
+                "local_order_id": "order-protective-1",
+                "role": "DISASTER_STOP",
+                "side": "SELL",
+                "trigger_price": Decimal("1600"),
+                "limit_price_or_null": None,
+                "covered_quantity": Decimal("0.004"),
+                "reduce_only_or_spot_sell": "SPOT_SELL",
+                "venue_order_id_or_null": "venue-protective-1",
+                "replacement_of_or_null": None,
+                "unprotected_window_started_at_or_null": None,
+                "replacement_deadline_at_or_null": None,
+                "effective_at_or_null": "2026-01-01T00:00:00.000Z",
+                "risk_policy_id": "release-gates-v1.1#risk_thresholds",
+                "risk_policy_hash": HASH_A,
+                "policy_version": "1.1.2",
+            },
+        ),
+        (
+            "FillRecorded",
+            "fill-event-1",
+            {
+                "fill_id": "fill-1",
+                "account_id": "account-1",
+                "market_scope": "BINANCE:SPOT",
+                "exchange_trade_id": "trade-1",
+                "local_order_id": "order-1",
+                "venue_order_id": "venue-order-1",
+                "instrument_id": "BINANCE:SPOT:ETHUSDT",
+                "side": "BUY",
+                "quantity": Decimal("0.004"),
+                "price": Decimal("1800"),
+                "decision_reference_price": Decimal("1799"),
+                "liquidity_role": "TAKER",
+                "fee_amount": Decimal("0.000004"),
+                "fee_asset": "ETH",
+                "fee_value_usdt": Decimal("0.0072"),
+                "fee_fx_rate_id_or_null": "fx-eth-usdt-1",
+                "implementation_shortfall_usdt": Decimal("0.004"),
+                "exchange_event_time": "2026-01-01T00:00:00.000Z",
+                "raw_payload_hash": HASH_A,
+            },
+        ),
     )
 
 
@@ -171,6 +243,26 @@ class ReplayGoldenTests(unittest.TestCase):
                 make_envelope(payload, event_id),
                 payload,
             )
+        covered = ledger.connection.execute(
+            """
+            SELECT sequence, ledger_hash
+            FROM events ORDER BY sequence DESC LIMIT 1
+            """
+        ).fetchone()
+        checkpoint = {
+            "checkpoint_id": "checkpoint-1",
+            "covered_event_sequence": covered["sequence"],
+            "covered_ledger_hash": covered["ledger_hash"],
+            "covered_projection_hash": ledger.state_projection_hash(),
+            "code_commit": "GOLDEN_TEST_COMMIT",
+            "policy_bundle_hash": HASH_A,
+            "created_at": "2026-01-01T00:00:00.000Z",
+        }
+        ledger.append(
+            "CheckpointRecorded",
+            make_envelope(checkpoint, "checkpoint-event-1"),
+            checkpoint,
+        )
 
     def test_complete_execution_projection_rebuild_matches_golden_hash(self) -> None:
         with EventLedger(self.path) as ledger:
@@ -201,8 +293,9 @@ class ReplayGoldenTests(unittest.TestCase):
                         if table.endswith("_projection") and rows
                     ]
                 ),
-                7,
+                10,
             )
+            self.assertEqual(len(live_snapshot["checkpoints"]), 1)
             ledger.rebuild_projections()
             self.assertEqual(ledger.projection_snapshot(), live_snapshot)
             self.assertEqual(ledger.projection_hash(), live_hash)
@@ -287,6 +380,179 @@ class ReplayGoldenTests(unittest.TestCase):
             ledger.rebuild_projections()
             ledger.verify_projection_integrity()
             self.assertEqual(ledger.projection_hash(), expected)
+
+    def test_exchange_trade_id_is_exactly_once_and_conflicts_roll_back(self) -> None:
+        event_type, event_id, fill = execution_facts()[-1]
+        with EventLedger(self.path) as ledger:
+            ledger.append(
+                event_type,
+                make_envelope(fill, event_id),
+                fill,
+            )
+            duplicate = ledger.append(
+                event_type,
+                make_envelope(fill, "fill-event-duplicate"),
+                fill,
+            )
+            self.assertTrue(duplicate.inserted)
+            self.assertEqual(
+                len(ledger.projection_snapshot()["fills_projection"]),
+                1,
+            )
+            conflict = dict(fill)
+            conflict["quantity"] = Decimal("0.005")
+            with self.assertRaises(LedgerConflictError):
+                ledger.append(
+                    event_type,
+                    make_envelope(conflict, "fill-event-conflict"),
+                    conflict,
+                )
+            event_count = ledger.connection.execute(
+                "SELECT COUNT(*) FROM events"
+            ).fetchone()[0]
+            self.assertEqual(event_count, 2)
+
+    def test_balance_protection_and_checkpoint_invariants_fail_closed(self) -> None:
+        facts = {
+            event_type: (event_id, payload)
+            for event_type, event_id, payload in execution_facts()
+        }
+        with EventLedger(self.path) as ledger:
+            balance_id, balance = facts["BalanceStateRecorded"]
+            invalid_balance = dict(balance)
+            invalid_balance["available_balance"] = Decimal("600")
+            with self.assertRaises(LedgerIntegrityError):
+                ledger.append(
+                    "BalanceStateRecorded",
+                    make_envelope(invalid_balance, balance_id),
+                    invalid_balance,
+                )
+
+            protective_id, protective = facts["ProtectiveOrderStateRecorded"]
+            invalid_protective = dict(protective)
+            invalid_protective["unprotected_window_started_at_or_null"] = (
+                "2026-01-01T00:00:00.000Z"
+            )
+            with self.assertRaises(LedgerIntegrityError):
+                ledger.append(
+                    "ProtectiveOrderStateRecorded",
+                    make_envelope(invalid_protective, protective_id),
+                    invalid_protective,
+                )
+
+            intent_type, intent_id, intent = execution_facts()[0]
+            ledger.append(
+                intent_type,
+                make_envelope(intent, intent_id),
+                intent,
+            )
+            covered = ledger.connection.execute(
+                """
+                SELECT sequence, ledger_hash
+                FROM events ORDER BY sequence DESC LIMIT 1
+                """
+            ).fetchone()
+            bad_checkpoint = {
+                "checkpoint_id": "checkpoint-bad",
+                "covered_event_sequence": covered["sequence"],
+                "covered_ledger_hash": covered["ledger_hash"],
+                "covered_projection_hash": HASH_A,
+                "code_commit": "GOLDEN_TEST_COMMIT",
+                "policy_bundle_hash": HASH_A,
+                "created_at": "2026-01-01T00:00:00.000Z",
+            }
+            with self.assertRaises(LedgerIntegrityError):
+                ledger.append(
+                    "CheckpointRecorded",
+                    make_envelope(bad_checkpoint, "checkpoint-event-bad"),
+                    bad_checkpoint,
+                )
+            event_count = ledger.connection.execute(
+                "SELECT COUNT(*) FROM events"
+            ).fetchone()[0]
+            self.assertEqual(event_count, 1)
+
+    def test_checkpoint_refuses_unreconciled_order_and_fill_totals(self) -> None:
+        event_type, event_id, order = execution_facts()[2]
+        with EventLedger(self.path) as ledger:
+            ledger.append(
+                event_type,
+                make_envelope(order, event_id),
+                order,
+            )
+            covered = ledger.connection.execute(
+                """
+                SELECT sequence, ledger_hash
+                FROM events ORDER BY sequence DESC LIMIT 1
+                """
+            ).fetchone()
+            checkpoint = {
+                "checkpoint_id": "checkpoint-unreconciled",
+                "covered_event_sequence": covered["sequence"],
+                "covered_ledger_hash": covered["ledger_hash"],
+                "covered_projection_hash": ledger.state_projection_hash(),
+                "code_commit": "GOLDEN_TEST_COMMIT",
+                "policy_bundle_hash": HASH_A,
+                "created_at": "2026-01-01T00:00:00.000Z",
+            }
+            with self.assertRaises(LedgerIntegrityError):
+                ledger.append(
+                    "CheckpointRecorded",
+                    make_envelope(
+                        checkpoint,
+                        "checkpoint-event-unreconciled",
+                    ),
+                    checkpoint,
+                )
+            event_count = ledger.connection.execute(
+                "SELECT COUNT(*) FROM events"
+            ).fetchone()[0]
+            self.assertEqual(event_count, 1)
+
+    def test_checkpoint_refuses_undercovered_actual_position(self) -> None:
+        facts = {
+            event_type: (event_id, payload)
+            for event_type, event_id, payload in execution_facts()
+        }
+        position_id, position = facts["PositionStateRecorded"]
+        protective_id, protective = facts["ProtectiveOrderStateRecorded"]
+        undercovered = dict(protective)
+        undercovered["covered_quantity"] = Decimal("0.003")
+        with EventLedger(self.path) as ledger:
+            ledger.append(
+                "PositionStateRecorded",
+                make_envelope(position, position_id),
+                position,
+            )
+            ledger.append(
+                "ProtectiveOrderStateRecorded",
+                make_envelope(undercovered, protective_id),
+                undercovered,
+            )
+            covered = ledger.connection.execute(
+                """
+                SELECT sequence, ledger_hash
+                FROM events ORDER BY sequence DESC LIMIT 1
+                """
+            ).fetchone()
+            checkpoint = {
+                "checkpoint_id": "checkpoint-undercovered",
+                "covered_event_sequence": covered["sequence"],
+                "covered_ledger_hash": covered["ledger_hash"],
+                "covered_projection_hash": ledger.state_projection_hash(),
+                "code_commit": "GOLDEN_TEST_COMMIT",
+                "policy_bundle_hash": HASH_A,
+                "created_at": "2026-01-01T00:00:00.000Z",
+            }
+            with self.assertRaises(LedgerIntegrityError):
+                ledger.append(
+                    "CheckpointRecorded",
+                    make_envelope(
+                        checkpoint,
+                        "checkpoint-event-undercovered",
+                    ),
+                    checkpoint,
+                )
 
 
 if __name__ == "__main__":

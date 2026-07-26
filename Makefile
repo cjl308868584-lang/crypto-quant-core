@@ -5,3 +5,4 @@ test:
 
 validate:
 	PYTHONPATH=src python3 scripts/validate_release_config.py
+	PYTHONPATH=src python3 scripts/validate_governance_templates.py

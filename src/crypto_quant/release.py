@@ -14,12 +14,14 @@ from .canonical import business_hash, canonical_decimal
 from .errors import PolicyError
 
 
-def _format_checker() -> FormatChecker:
+def strict_format_checker() -> FormatChecker:
     checker = FormatChecker()
 
     @checker.checks("date")
     def is_date(value: object) -> bool:
-        if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        if not isinstance(value, str):
+            return True
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             return False
         try:
             date.fromisoformat(value)
@@ -30,7 +32,7 @@ def _format_checker() -> FormatChecker:
     @checker.checks("date-time")
     def is_date_time(value: object) -> bool:
         if not isinstance(value, str):
-            return False
+            return True
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
             return parsed.tzinfo is not None and parsed.utcoffset() is not None
@@ -40,7 +42,11 @@ def _format_checker() -> FormatChecker:
     return checker
 
 
-def _load_json(path: Path) -> Dict[str, Any]:
+# Kept as a compatibility alias for the v0.1 public test surface.
+_format_checker = strict_format_checker
+
+
+def load_json_strict(path: Path) -> Dict[str, Any]:
     def reject_duplicates(pairs: Iterable[Tuple[str, Any]]) -> Dict[str, Any]:
         result: Dict[str, Any] = {}
         for key, value in pairs:
@@ -132,12 +138,16 @@ class PolicyBundle:
     @classmethod
     def load(cls, config_dir: Path) -> "PolicyBundle":
         config_dir = Path(config_dir)
-        policy = _load_json(config_dir / "release-gates-v1.1.json")
-        catalog = _load_json(config_dir / "release-metrics-v1.1.json")
-        evidence_schema = _load_json(config_dir / "release-evidence-v1.1.schema.json")
+        policy = load_json_strict(config_dir / "release-gates-v1.1.json")
+        catalog = load_json_strict(config_dir / "release-metrics-v1.1.json")
+        evidence_schema = load_json_strict(
+            config_dir / "release-evidence-v1.1.schema.json"
+        )
 
         for schema_name in cls._SCHEMAS:
-            Draft202012Validator.check_schema(_load_json(config_dir / schema_name))
+            Draft202012Validator.check_schema(
+                load_json_strict(config_dir / schema_name)
+            )
         cls._validate_instance(
             config_dir / "release-gates-v1.1.schema.json",
             policy,
@@ -159,8 +169,11 @@ class PolicyBundle:
 
     @staticmethod
     def _validate_instance(schema_path: Path, instance: Any, label: str) -> None:
-        schema = _load_json(schema_path)
-        validator = Draft202012Validator(schema, format_checker=_format_checker())
+        schema = load_json_strict(schema_path)
+        validator = Draft202012Validator(
+            schema,
+            format_checker=strict_format_checker(),
+        )
         errors = list(validator.iter_errors(instance))
         if errors:
             first = min(errors, key=lambda error: "/".join(map(str, error.path)))

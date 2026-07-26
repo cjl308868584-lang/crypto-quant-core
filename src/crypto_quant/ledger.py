@@ -3,6 +3,7 @@
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Iterator, Mapping, Tuple
@@ -65,6 +66,47 @@ _VERSIONED_PROJECTIONS: Mapping[str, Tuple[str, str, Tuple[str, ...]]] = {
             "active_intent_id_or_null",
         ),
     ),
+    "BalanceStateRecorded": (
+        "balances_projection",
+        "balance_id",
+        (
+            "account_id",
+            "asset",
+            "total_balance",
+            "available_balance",
+            "locked_balance",
+            "borrowed_balance",
+            "interest_accrued",
+            "exchange_snapshot_time",
+            "source_snapshot_hash",
+        ),
+    ),
+    "ProtectiveOrderStateRecorded": (
+        "protective_orders_projection",
+        "protective_order_id",
+        (
+            "instrument_id",
+            "position_id",
+            "risk_decision_id",
+            "execution_intent_id",
+            "attempt_id",
+            "local_order_id",
+            "role",
+            "side",
+            "trigger_price",
+            "limit_price_or_null",
+            "covered_quantity",
+            "reduce_only_or_spot_sell",
+            "venue_order_id_or_null",
+            "replacement_of_or_null",
+            "unprotected_window_started_at_or_null",
+            "replacement_deadline_at_or_null",
+            "effective_at_or_null",
+            "risk_policy_id",
+            "risk_policy_hash",
+            "policy_version",
+        ),
+    ),
 }
 _VERSIONED_PROJECTION_TABLES = tuple(
     dict.fromkeys(spec[0] for spec in _VERSIONED_PROJECTIONS.values())
@@ -106,6 +148,17 @@ _EXECUTOR_STATES = {
 }
 _DEPLOYMENT_STATES = {"ACTIVE", "RETIRED"}
 _RISK_LOCK_STATES = {"ACTIVE", "RELEASED"}
+_PROTECTIVE_ORDER_STATES = {
+    "PLANNED",
+    "SUBMITTING",
+    "ACTIVE",
+    "REPLACE_PENDING",
+    "UNKNOWN",
+    "CANCELED",
+    "FAILED",
+    "TRIGGERED",
+    "EXPIRED",
+}
 _RISK_LOCK_TYPES = {
     "STARTUP",
     "DATA_STALE",
@@ -131,6 +184,26 @@ _DEPLOYMENT_MULTIPLIERS = {
     "CANARY_75": Decimal("0.75"),
     "CHAMPION": Decimal("1"),
 }
+
+
+def _require_sha256(value: Any, field_name: str) -> None:
+    if not isinstance(value, str) or len(value) != 64 or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        raise LedgerIntegrityError(
+            f"{field_name} must be a lowercase SHA-256 digest"
+        )
+
+
+def _require_utc_datetime(value: Any, field_name: str) -> None:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise LedgerIntegrityError(f"{field_name} must be a UTC date-time")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise LedgerIntegrityError(f"{field_name} is not a valid date-time") from exc
+    if parsed.utcoffset() is None:
+        raise LedgerIntegrityError(f"{field_name} must be timezone-aware")
 
 
 @dataclass(frozen=True)
@@ -305,6 +378,53 @@ class EventLedger:
                 event_time TEXT NOT NULL,
                 FOREIGN KEY(last_event_id) REFERENCES events(event_id)
             );
+
+            CREATE TABLE IF NOT EXISTS balances_projection (
+                entity_id TEXT PRIMARY KEY,
+                entity_version INTEGER NOT NULL CHECK(entity_version >= 1),
+                state TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                projection_hash TEXT NOT NULL,
+                last_event_id TEXT NOT NULL,
+                event_time TEXT NOT NULL,
+                FOREIGN KEY(last_event_id) REFERENCES events(event_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS protective_orders_projection (
+                entity_id TEXT PRIMARY KEY,
+                entity_version INTEGER NOT NULL CHECK(entity_version >= 1),
+                state TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                projection_hash TEXT NOT NULL,
+                last_event_id TEXT NOT NULL,
+                event_time TEXT NOT NULL,
+                FOREIGN KEY(last_event_id) REFERENCES events(event_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS fills_projection (
+                fill_id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                market_scope TEXT NOT NULL,
+                exchange_trade_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                projection_hash TEXT NOT NULL,
+                source_event_id TEXT NOT NULL UNIQUE,
+                exchange_event_time TEXT NOT NULL,
+                UNIQUE(account_id, market_scope, exchange_trade_id),
+                FOREIGN KEY(source_event_id) REFERENCES events(event_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS checkpoints (
+                checkpoint_id TEXT PRIMARY KEY,
+                covered_event_sequence INTEGER NOT NULL,
+                covered_ledger_hash TEXT NOT NULL,
+                covered_projection_hash TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                checkpoint_hash TEXT NOT NULL,
+                source_event_id TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(source_event_id) REFERENCES events(event_id)
+            );
             """
         )
         self.connection.commit()
@@ -478,6 +598,17 @@ class EventLedger:
                     event_time,
                 ),
             )
+        elif event_type == "FillRecorded":
+            self._apply_fill_projection(
+                event_id=event_id,
+                payload=payload,
+            )
+        elif event_type == "CheckpointRecorded":
+            self._apply_checkpoint(
+                event_id=event_id,
+                event_time=event_time,
+                payload=payload,
+            )
         elif event_type in _VERSIONED_PROJECTIONS:
             self._apply_versioned_projection(
                 event_type=event_type,
@@ -485,6 +616,235 @@ class EventLedger:
                 event_time=event_time,
                 payload=payload,
             )
+
+    def _apply_fill_projection(
+        self,
+        *,
+        event_id: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        required = {
+            "fill_id",
+            "account_id",
+            "market_scope",
+            "exchange_trade_id",
+            "local_order_id",
+            "venue_order_id",
+            "instrument_id",
+            "side",
+            "quantity",
+            "price",
+            "decision_reference_price",
+            "liquidity_role",
+            "fee_amount",
+            "fee_asset",
+            "fee_value_usdt",
+            "fee_fx_rate_id_or_null",
+            "implementation_shortfall_usdt",
+            "exchange_event_time",
+            "raw_payload_hash",
+        }
+        missing = sorted(required - set(payload))
+        if missing:
+            raise LedgerIntegrityError(
+                f"FillRecorded projection payload missing fields: {missing}"
+            )
+        for field_name in (
+            "fill_id",
+            "account_id",
+            "market_scope",
+            "exchange_trade_id",
+            "local_order_id",
+            "venue_order_id",
+            "instrument_id",
+            "fee_asset",
+        ):
+            value = payload[field_name]
+            if not isinstance(value, str) or not value:
+                raise LedgerIntegrityError(
+                    f"FillRecorded {field_name} must be a non-empty string"
+                )
+        if payload["side"] not in ("BUY", "SELL"):
+            raise LedgerIntegrityError("FillRecorded side must be BUY or SELL")
+        if payload["liquidity_role"] not in ("MAKER", "TAKER"):
+            raise LedgerIntegrityError("FillRecorded liquidity role is invalid")
+        quantity = Decimal(canonical_decimal(payload["quantity"]))
+        price = Decimal(canonical_decimal(payload["price"]))
+        reference = Decimal(
+            canonical_decimal(payload["decision_reference_price"])
+        )
+        fee_amount = Decimal(canonical_decimal(payload["fee_amount"]))
+        fee_value = Decimal(canonical_decimal(payload["fee_value_usdt"]))
+        Decimal(canonical_decimal(payload["implementation_shortfall_usdt"]))
+        if quantity <= 0 or price <= 0 or reference <= 0:
+            raise LedgerIntegrityError(
+                "FillRecorded quantity and prices must be positive"
+            )
+        if fee_amount < 0 or fee_value < 0:
+            raise LedgerIntegrityError("FillRecorded fees cannot be negative")
+        fee_fx = payload["fee_fx_rate_id_or_null"]
+        if fee_fx is not None and (
+            not isinstance(fee_fx, str) or not fee_fx
+        ):
+            raise LedgerIntegrityError(
+                "fee_fx_rate_id_or_null must be null or a non-empty string"
+            )
+        _require_utc_datetime(
+            payload["exchange_event_time"],
+            "exchange_event_time",
+        )
+        _require_sha256(payload["raw_payload_hash"], "raw_payload_hash")
+        payload_json = canonical_json(payload)
+        projection_hash = business_hash(payload)
+        existing_fill_id = self.connection.execute(
+            """
+            SELECT projection_hash FROM fills_projection WHERE fill_id = ?
+            """,
+            (payload["fill_id"],),
+        ).fetchone()
+        if existing_fill_id:
+            if existing_fill_id["projection_hash"] != projection_hash:
+                raise LedgerConflictError(
+                    "fill ID was reused with different Fill content"
+                )
+            return
+        existing = self.connection.execute(
+            """
+            SELECT projection_hash FROM fills_projection
+            WHERE account_id = ? AND market_scope = ? AND exchange_trade_id = ?
+            """,
+            (
+                payload["account_id"],
+                payload["market_scope"],
+                payload["exchange_trade_id"],
+            ),
+        ).fetchone()
+        if existing:
+            if existing["projection_hash"] != projection_hash:
+                raise LedgerConflictError(
+                    "exchange trade ID was reused with different Fill content"
+                )
+            return
+        self.connection.execute(
+            """
+            INSERT INTO fills_projection (
+                fill_id, account_id, market_scope, exchange_trade_id,
+                payload_json, projection_hash, source_event_id,
+                exchange_event_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["fill_id"],
+                payload["account_id"],
+                payload["market_scope"],
+                payload["exchange_trade_id"],
+                payload_json,
+                projection_hash,
+                event_id,
+                payload["exchange_event_time"],
+            ),
+        )
+
+    def _apply_checkpoint(
+        self,
+        *,
+        event_id: str,
+        event_time: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        required = {
+            "checkpoint_id",
+            "covered_event_sequence",
+            "covered_ledger_hash",
+            "covered_projection_hash",
+            "code_commit",
+            "policy_bundle_hash",
+            "created_at",
+        }
+        missing = sorted(required - set(payload))
+        if missing:
+            raise LedgerIntegrityError(
+                f"CheckpointRecorded payload missing fields: {missing}"
+            )
+        if not isinstance(payload["checkpoint_id"], str) or not payload["checkpoint_id"]:
+            raise LedgerIntegrityError("checkpoint_id must be a non-empty string")
+        if not isinstance(payload["code_commit"], str) or not payload["code_commit"]:
+            raise LedgerIntegrityError("checkpoint code_commit must be non-empty")
+        _require_sha256(payload["covered_ledger_hash"], "covered_ledger_hash")
+        _require_sha256(
+            payload["covered_projection_hash"],
+            "covered_projection_hash",
+        )
+        _require_sha256(payload["policy_bundle_hash"], "policy_bundle_hash")
+        _require_utc_datetime(payload["created_at"], "created_at")
+        if payload["created_at"] != event_time:
+            raise LedgerIntegrityError(
+                "checkpoint created_at must equal its event time"
+            )
+        covered_sequence = payload["covered_event_sequence"]
+        if (
+            isinstance(covered_sequence, bool)
+            or not isinstance(covered_sequence, int)
+            or covered_sequence < 1
+        ):
+            raise LedgerIntegrityError(
+                "covered_event_sequence must be a positive integer"
+            )
+        current = self.connection.execute(
+            "SELECT sequence FROM events WHERE event_id = ?",
+            (event_id,),
+        ).fetchone()
+        if current is None or covered_sequence != current["sequence"] - 1:
+            raise LedgerIntegrityError(
+                "checkpoint must cover the immediately preceding event"
+            )
+        covered = self.connection.execute(
+            "SELECT ledger_hash FROM events WHERE sequence = ?",
+            (covered_sequence,),
+        ).fetchone()
+        if (
+            covered is None
+            or covered["ledger_hash"] != payload["covered_ledger_hash"]
+        ):
+            raise LedgerIntegrityError(
+                "checkpoint covered ledger hash does not match event chain"
+            )
+        self.verify_economic_consistency()
+        if payload["covered_projection_hash"] != self.state_projection_hash():
+            raise LedgerIntegrityError(
+                "checkpoint covered projection hash does not match current state"
+            )
+        payload_json = canonical_json(payload)
+        checkpoint_hash = business_hash(payload)
+        existing = self.connection.execute(
+            "SELECT checkpoint_hash FROM checkpoints WHERE checkpoint_id = ?",
+            (payload["checkpoint_id"],),
+        ).fetchone()
+        if existing:
+            if existing["checkpoint_hash"] != checkpoint_hash:
+                raise LedgerConflictError(
+                    "checkpoint ID was reused with different content"
+                )
+            return
+        self.connection.execute(
+            """
+            INSERT INTO checkpoints (
+                checkpoint_id, covered_event_sequence, covered_ledger_hash,
+                covered_projection_hash, payload_json, checkpoint_hash,
+                source_event_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["checkpoint_id"],
+                covered_sequence,
+                payload["covered_ledger_hash"],
+                payload["covered_projection_hash"],
+                payload_json,
+                checkpoint_hash,
+                event_id,
+                payload["created_at"],
+            ),
+        )
 
     def _apply_versioned_projection(
         self,
@@ -584,6 +944,8 @@ class EventLedger:
             "RiskLockStateRecorded": _RISK_LOCK_STATES,
             "DeploymentStateRecorded": _DEPLOYMENT_STATES,
             "PositionExecutorStateRecorded": _EXECUTOR_STATES,
+            "BalanceStateRecorded": {"OBSERVED"},
+            "ProtectiveOrderStateRecorded": _PROTECTIVE_ORDER_STATES,
         }[event_type]
         if state not in allowed_states:
             raise LedgerIntegrityError(
@@ -632,6 +994,28 @@ class EventLedger:
                 "account_id",
                 "economic_asset",
             ),
+            "BalanceStateRecorded": (
+                "balance_id",
+                "account_id",
+                "asset",
+                "exchange_snapshot_time",
+                "source_snapshot_hash",
+            ),
+            "ProtectiveOrderStateRecorded": (
+                "protective_order_id",
+                "instrument_id",
+                "position_id",
+                "risk_decision_id",
+                "execution_intent_id",
+                "attempt_id",
+                "local_order_id",
+                "role",
+                "side",
+                "reduce_only_or_spot_sell",
+                "risk_policy_id",
+                "risk_policy_hash",
+                "policy_version",
+            ),
         }[event_type]
         if any(
             not isinstance(payload[field_name], str) or not payload[field_name]
@@ -645,6 +1029,8 @@ class EventLedger:
             "attempt_hash",
             "instrument_metadata_hash",
             "record_hash",
+            "source_snapshot_hash",
+            "risk_policy_hash",
         ):
             if hash_field in payload:
                 digest = payload[hash_field]
@@ -713,6 +1099,110 @@ class EventLedger:
                     raise LedgerIntegrityError(
                         f"{optional_id} must be null or a non-empty string"
                     )
+        elif event_type == "BalanceStateRecorded":
+            amounts = tuple(
+                Decimal(canonical_decimal(payload[field_name]))
+                for field_name in (
+                    "total_balance",
+                    "available_balance",
+                    "locked_balance",
+                    "borrowed_balance",
+                    "interest_accrued",
+                )
+            )
+            if any(amount < 0 for amount in amounts):
+                raise LedgerIntegrityError(
+                    "balance projection amounts cannot be negative"
+                )
+            total, available, locked, _, _ = amounts
+            if available + locked > total:
+                raise LedgerIntegrityError(
+                    "available plus locked balance cannot exceed total"
+                )
+            if payload["balance_id"] != (
+                f"{payload['account_id']}:{payload['asset']}"
+            ):
+                raise LedgerIntegrityError(
+                    "balance_id must match account and asset"
+                )
+            _require_utc_datetime(
+                payload["exchange_snapshot_time"],
+                "exchange_snapshot_time",
+            )
+        elif event_type == "ProtectiveOrderStateRecorded":
+            if payload["role"] not in ("DISASTER_STOP", "STRATEGY_STOP"):
+                raise LedgerIntegrityError("protective order role is invalid")
+            if payload["side"] not in ("BUY", "SELL"):
+                raise LedgerIntegrityError("protective order side is invalid")
+            if payload["reduce_only_or_spot_sell"] not in (
+                "REDUCE_ONLY",
+                "SPOT_SELL",
+            ):
+                raise LedgerIntegrityError(
+                    "protective order reduction mechanism is invalid"
+                )
+            if payload["reduce_only_or_spot_sell"] == "SPOT_SELL":
+                if (
+                    ":SPOT:" not in payload["instrument_id"]
+                    or payload["side"] != "SELL"
+                ):
+                    raise LedgerIntegrityError(
+                        "SPOT_SELL protection must be a spot SELL"
+                    )
+            elif ":USDT_PERP:" not in payload["instrument_id"]:
+                raise LedgerIntegrityError(
+                    "REDUCE_ONLY protection must use the perpetual carrier"
+                )
+            trigger = Decimal(canonical_decimal(payload["trigger_price"]))
+            covered = Decimal(canonical_decimal(payload["covered_quantity"]))
+            limit_value = payload["limit_price_or_null"]
+            if trigger <= 0 or covered <= 0:
+                raise LedgerIntegrityError(
+                    "protective order trigger and coverage must be positive"
+                )
+            if limit_value is not None and Decimal(
+                canonical_decimal(limit_value)
+            ) <= 0:
+                raise LedgerIntegrityError(
+                    "protective order limit price must be positive or null"
+                )
+            for optional_id in (
+                "venue_order_id_or_null",
+                "replacement_of_or_null",
+            ):
+                value = payload[optional_id]
+                if value is not None and (
+                    not isinstance(value, str) or not value
+                ):
+                    raise LedgerIntegrityError(
+                        f"{optional_id} must be null or a non-empty string"
+                    )
+            parsed_times = {}
+            for field_name in (
+                "unprotected_window_started_at_or_null",
+                "replacement_deadline_at_or_null",
+                "effective_at_or_null",
+            ):
+                value = payload[field_name]
+                if value is not None:
+                    _require_utc_datetime(value, field_name)
+                    parsed_times[field_name] = datetime.fromisoformat(
+                        value[:-1] + "+00:00"
+                    )
+            started = parsed_times.get("unprotected_window_started_at_or_null")
+            deadline = parsed_times.get("replacement_deadline_at_or_null")
+            if (started is None) != (deadline is None):
+                raise LedgerIntegrityError(
+                    "unprotected window start and deadline must appear together"
+                )
+            if started is not None and deadline <= started:
+                raise LedgerIntegrityError(
+                    "protective replacement deadline must follow window start"
+                )
+            if state == "ACTIVE" and "effective_at_or_null" not in parsed_times:
+                raise LedgerIntegrityError(
+                    "ACTIVE protective order requires effective_at"
+                )
 
     def pending_outbox(self) -> Iterator[sqlite3.Row]:
         return iter(
@@ -752,6 +1242,8 @@ class EventLedger:
         with self.connection:
             self.connection.execute("DELETE FROM operating_costs_projection")
             self.connection.execute("DELETE FROM external_cash_flows_projection")
+            self.connection.execute("DELETE FROM fills_projection")
+            self.connection.execute("DELETE FROM checkpoints")
             for table in _VERSIONED_PROJECTION_TABLES:
                 self.connection.execute(f"DELETE FROM {table}")
             rows = self.connection.execute(
@@ -769,9 +1261,11 @@ class EventLedger:
                     payload=payload,
                 )
 
-    def projection_snapshot(self) -> Dict[str, Any]:
-        """Return canonical projection content suitable for Golden replay hashing."""
-
+    def _projection_snapshot(
+        self,
+        *,
+        include_checkpoints: bool,
+    ) -> Dict[str, Any]:
         costs = [
             dict(row)
             for row in self.connection.execute(
@@ -793,6 +1287,27 @@ class EventLedger:
         snapshot: Dict[str, Any] = {
             "operating_costs_projection": costs,
             "external_cash_flows_projection": cash_flows,
+            "fills_projection": [
+                {
+                    "fill_id": row["fill_id"],
+                    "account_id": row["account_id"],
+                    "market_scope": row["market_scope"],
+                    "exchange_trade_id": row["exchange_trade_id"],
+                    "payload": json.loads(row["payload_json"]),
+                    "projection_hash": row["projection_hash"],
+                    "source_event_id": row["source_event_id"],
+                    "exchange_event_time": row["exchange_event_time"],
+                }
+                for row in self.connection.execute(
+                    """
+                    SELECT fill_id, account_id, market_scope, exchange_trade_id,
+                           payload_json, projection_hash, source_event_id,
+                           exchange_event_time
+                    FROM fills_projection
+                    ORDER BY account_id, market_scope, exchange_trade_id
+                    """
+                ).fetchall()
+            ],
         }
         for table in _VERSIONED_PROJECTION_TABLES:
             snapshot[table] = [
@@ -813,11 +1328,48 @@ class EventLedger:
                     """
                 ).fetchall()
             ]
+        if include_checkpoints:
+            snapshot["checkpoints"] = [
+                {
+                    "checkpoint_id": row["checkpoint_id"],
+                    "covered_event_sequence": row["covered_event_sequence"],
+                    "covered_ledger_hash": row["covered_ledger_hash"],
+                    "covered_projection_hash": row["covered_projection_hash"],
+                    "payload": json.loads(row["payload_json"]),
+                    "checkpoint_hash": row["checkpoint_hash"],
+                    "source_event_id": row["source_event_id"],
+                    "created_at": row["created_at"],
+                }
+                for row in self.connection.execute(
+                    """
+                    SELECT checkpoint_id, covered_event_sequence,
+                           covered_ledger_hash, covered_projection_hash,
+                           payload_json, checkpoint_hash, source_event_id,
+                           created_at
+                    FROM checkpoints ORDER BY checkpoint_id
+                    """
+                ).fetchall()
+            ]
         return snapshot
+
+    def projection_snapshot(self) -> Dict[str, Any]:
+        """Return canonical projection content suitable for Golden replay hashing."""
+
+        return self._projection_snapshot(include_checkpoints=True)
+
+    def state_projection_hash(self) -> str:
+        """Hash current derived state without the checkpoint cache itself."""
+
+        self.verify_projection_integrity()
+        return business_hash(
+            self._projection_snapshot(include_checkpoints=False)
+        )
 
     def projection_hash(self) -> str:
         self.verify_projection_integrity()
-        return business_hash(self.projection_snapshot())
+        return business_hash(
+            self._projection_snapshot(include_checkpoints=True)
+        )
 
     def verify_projection_integrity(self) -> None:
         """Detect derived-state tampering before it can be treated as current truth."""
@@ -867,6 +1419,150 @@ class EventLedger:
                     raise LedgerIntegrityError(
                         f"projection does not match its source event in {table}"
                     )
+        fills = self.connection.execute(
+            """
+            SELECT fill_id, payload_json, projection_hash, source_event_id,
+                   exchange_event_time
+            FROM fills_projection
+            """
+        ).fetchall()
+        for row in fills:
+            payload = json.loads(row["payload_json"])
+            if (
+                payload.get("fill_id") != row["fill_id"]
+                or payload.get("exchange_event_time") != row["exchange_event_time"]
+                or business_hash(payload) != row["projection_hash"]
+            ):
+                raise LedgerIntegrityError("fill projection integrity mismatch")
+            source = self.connection.execute(
+                """
+                SELECT event_type, payload_json FROM events WHERE event_id = ?
+                """,
+                (row["source_event_id"],),
+            ).fetchone()
+            if (
+                source is None
+                or source["event_type"] != "FillRecorded"
+                or source["payload_json"] != row["payload_json"]
+            ):
+                raise LedgerIntegrityError(
+                    "fill projection does not match its source event"
+                )
+        checkpoints = self.connection.execute(
+            """
+            SELECT checkpoint_id, payload_json, checkpoint_hash,
+                   source_event_id, created_at
+            FROM checkpoints
+            """
+        ).fetchall()
+        for row in checkpoints:
+            payload = json.loads(row["payload_json"])
+            if (
+                payload.get("checkpoint_id") != row["checkpoint_id"]
+                or payload.get("created_at") != row["created_at"]
+                or business_hash(payload) != row["checkpoint_hash"]
+            ):
+                raise LedgerIntegrityError("checkpoint integrity mismatch")
+            source = self.connection.execute(
+                """
+                SELECT event_type, event_time, payload_json
+                FROM events WHERE event_id = ?
+                """,
+                (row["source_event_id"],),
+            ).fetchone()
+            if (
+                source is None
+                or source["event_type"] != "CheckpointRecorded"
+                or source["event_time"] != row["created_at"]
+                or source["payload_json"] != row["payload_json"]
+            ):
+                raise LedgerIntegrityError(
+                    "checkpoint does not match its source event"
+                )
+
+    def verify_economic_consistency(self) -> None:
+        """Require fills, order totals, positions, and protection to reconcile."""
+
+        fill_totals: Dict[str, Decimal] = {}
+        for row in self.connection.execute(
+            "SELECT payload_json FROM fills_projection"
+        ).fetchall():
+            fill = json.loads(row["payload_json"])
+            order_id = fill["local_order_id"]
+            fill_totals[order_id] = fill_totals.get(
+                order_id,
+                Decimal("0"),
+            ) + Decimal(canonical_decimal(fill["quantity"]))
+        orders = self.connection.execute(
+            "SELECT entity_id, payload_json FROM orders_projection"
+        ).fetchall()
+        order_ids = {row["entity_id"] for row in orders}
+        orphan_fill_orders = sorted(set(fill_totals) - order_ids)
+        if orphan_fill_orders:
+            raise LedgerIntegrityError(
+                f"fill projections reference missing orders: {orphan_fill_orders}"
+            )
+        for row in orders:
+            order = json.loads(row["payload_json"])
+            projected_fill = Decimal(
+                canonical_decimal(order["cumulative_filled_quantity"])
+            )
+            fill_sum = fill_totals.get(row["entity_id"], Decimal("0"))
+            if fill_sum != projected_fill:
+                raise LedgerIntegrityError(
+                    f"order {row['entity_id']} fill projection does not reconcile"
+                )
+
+        active_protection = self.connection.execute(
+            """
+            SELECT payload_json FROM protective_orders_projection
+            WHERE state = 'ACTIVE'
+            """
+        ).fetchall()
+        protection_coverage: Dict[str, Decimal] = {}
+        for row in active_protection:
+            protective = json.loads(row["payload_json"])
+            position = self.connection.execute(
+                """
+                SELECT payload_json FROM positions_projection
+                WHERE entity_id = ?
+                """,
+                (protective["position_id"],),
+            ).fetchone()
+            if position is None:
+                raise LedgerIntegrityError(
+                    "active protective order has no position projection"
+                )
+            position_payload = json.loads(position["payload_json"])
+            if position_payload["instrument_id"] != protective["instrument_id"]:
+                raise LedgerIntegrityError(
+                    "protective order carrier differs from covered position"
+                )
+            covered_quantity = Decimal(
+                canonical_decimal(protective["covered_quantity"])
+            )
+            protection_coverage[protective["position_id"]] = (
+                protection_coverage.get(
+                    protective["position_id"],
+                    Decimal("0"),
+                )
+                + covered_quantity
+            )
+        positions = self.connection.execute(
+            "SELECT entity_id, payload_json FROM positions_projection"
+        ).fetchall()
+        for row in positions:
+            position = json.loads(row["payload_json"])
+            quantity = abs(
+                Decimal(canonical_decimal(position["signed_quantity"]))
+            )
+            if quantity > 0 and protection_coverage.get(
+                row["entity_id"],
+                Decimal("0"),
+            ) < quantity:
+                raise LedgerIntegrityError(
+                    "actual position is not fully covered by active protection"
+                )
 
     def verify_integrity(self) -> str:
         previous = _GENESIS_HASH

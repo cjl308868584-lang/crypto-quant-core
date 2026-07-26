@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.1.0",
+  "template_id": "statistical-design-policy-v1-template",
+  "template_version": "1.0.0",
+  "artifact_type": "STATISTICAL_DESIGN_POLICY",
+  "artifact_id_or_null": null,
+  "lifecycle_status": "TEMPLATE_UNAPPROVED",
+  "production_eligible": false,
+  "specification": {
+    "policy_id_or_null": null,
+    "effective_sample_estimator_id": "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1",
+    "minimum_effect_or_null": null,
+    "achieved_power_algorithm_or_null": null,
+    "minimum_achieved_power": "0.80",
+    "maximum_ci_width_or_null": null,
+    "confidence_side": "ONE_SIDED",
+    "confidence_level": "0.95",
+    "moving_block_bootstrap": {
+      "block_length_or_null": null,
+      "minimum_block_count_or_null": null,
+      "resample_count_or_null": null,
+      "seed_or_null": null
+    },
+    "ece": {
+      "bin_edges_or_null": null,
+      "interval_algorithm_or_null": null,
+      "empty_bin_rule_or_null": null
+    },
+    "dsr_pbo": {
+      "implementation_version_or_null": null,
+      "return_frequency_or_null": null,
+      "trial_family_source": "EXPERIMENT_MANIFEST_CUMULATIVE_TRIAL_FAMILY"
+    },
+    "multiple_testing": {
+      "method": "HOLM",
+      "family_wise_alpha": "0.05",
+      "simultaneous_candidate_family_required": true
+    }
+  },
+  "approval": {
+    "approved_by_or_null": null,
+    "approved_at_or_null": null,
+    "content_hash_or_null": null,
+    "approval_evidence_hash_or_null": null
+  },
+  "notes": [
+    "最小效应、功效算法、CI宽度、Bootstrap和ECE参数必须在结果揭晓前冻结。",
+    "本模板未经审批，样本不足结果只能INCONCLUSIVE。"
+  ]
+}

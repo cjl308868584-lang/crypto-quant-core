@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.1.0",
+  "template_id": "forward-control-policy-v1-template",
+  "template_version": "1.0.0",
+  "artifact_type": "FORWARD_CONTROL_POLICY",
+  "artifact_id_or_null": null,
+  "lifecycle_status": "TEMPLATE_UNAPPROVED",
+  "production_eligible": false,
+  "specification": {
+    "policy_id_or_null": null,
+    "model_age_days": {
+      "warning_and_bucket_downgrade": 45,
+      "block_new_risk": 90
+    },
+    "ood_rejection": {
+      "rolling_decisions": 30,
+      "downgrade_ratio": "0.30",
+      "block_new_risk_ratio": "0.50"
+    },
+    "execution_cost_drift": {
+      "consecutive_fills": 20,
+      "modeled_cost_multiple": "1.50",
+      "action": "BLOCK_NEW_RISK_AND_REESTIMATE"
+    },
+    "ai_incremental_harm": {
+      "minimum_ai_affected_trades": 30,
+      "negative_expectation_action": "DOWNGRADE_OR_APPROVED_FALLBACK"
+    },
+    "drawdown_actions": [
+      {
+        "threshold": "0.12",
+        "action": "HALVE_APPROVED_RISK"
+      },
+      {
+        "threshold": "0.15",
+        "action": "FLATTEN_AND_HALT"
+      },
+      {
+        "threshold": "0.20",
+        "action": "FLATTEN_DISABLE_AUTO_RESTART_AND_INCIDENT"
+      }
+    ],
+    "checkpoint_policy": {
+      "fixed_checkpoints": true,
+      "early_success_stop_allowed": false,
+      "canary_block_days": 30,
+      "maximum_blocks_per_stage": 3
+    },
+    "incident_gate": {
+      "s0_s1_blocks_progression": true,
+      "safety_errors_do_not_wait_for_sample": true
+    }
+  },
+  "approval": {
+    "approved_by_or_null": null,
+    "approved_at_or_null": null,
+    "content_hash_or_null": null,
+    "approval_evidence_hash_or_null": null
+  },
+  "notes": [
+    "伤害边界只允许提前停止，不允许短期盈利提前成功晋级。",
+    "本模板未经审批，不得启动Paper或Canary。"
+  ]
+}

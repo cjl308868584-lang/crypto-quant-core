@@ -1,0 +1,1256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "governance-artifact-v1.schema.json",
+  "title": "Unapproved Governance Artifact Template v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "template_id",
+    "template_version",
+    "artifact_type",
+    "artifact_id_or_null",
+    "lifecycle_status",
+    "production_eligible",
+    "specification",
+    "approval",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1.0"
+    },
+    "template_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*-v1-template$"
+    },
+    "template_version": {
+      "const": "1.0.0"
+    },
+    "artifact_type": {
+      "enum": [
+        "EXPERIMENT_MANIFEST",
+        "DATA_QUALITY_POLICY",
+        "SPLIT_POLICY",
+        "STATISTICAL_DESIGN_POLICY",
+        "ACCOUNTING_POLICY",
+        "COST_ALLOCATION_POLICY",
+        "FORWARD_CONTROL_POLICY",
+        "INCIDENT_REPORT"
+      ]
+    },
+    "artifact_id_or_null": {
+      "type": "null"
+    },
+    "lifecycle_status": {
+      "const": "TEMPLATE_UNAPPROVED"
+    },
+    "production_eligible": {
+      "const": false
+    },
+    "specification": {
+      "type": "object"
+    },
+    "approval": {
+      "$ref": "#/$defs/unapproved"
+    },
+    "notes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "artifact_type": {
+          "const": "EXPERIMENT_MANIFEST"
+        },
+        "specification": {
+          "$ref": "#/$defs/experimentManifest"
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifact_type": {
+          "const": "DATA_QUALITY_POLICY"
+        },
+        "specification": {
+          "$ref": "#/$defs/dataQualityPolicy"
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifact_type": {
+          "const": "SPLIT_POLICY"
+        },
+        "specification": {
+          "$ref": "#/$defs/splitPolicy"
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifact_type": {
+          "const": "STATISTICAL_DESIGN_POLICY"
+        },
+        "specification": {
+          "$ref": "#/$defs/statisticalDesignPolicy"
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifact_type": {
+          "const": "ACCOUNTING_POLICY"
+        },
+        "specification": {
+          "$ref": "#/$defs/accountingPolicy"
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifact_type": {
+          "const": "COST_ALLOCATION_POLICY"
+        },
+        "specification": {
+          "$ref": "#/$defs/costAllocationPolicy"
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifact_type": {
+          "const": "FORWARD_CONTROL_POLICY"
+        },
+        "specification": {
+          "$ref": "#/$defs/forwardControlPolicy"
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifact_type": {
+          "const": "INCIDENT_REPORT"
+        },
+        "specification": {
+          "$ref": "#/$defs/incidentReport"
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "nullableNonEmptyString": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "nullableSha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableDateTime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "nullableDecimal": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "stringArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "unapproved": {
+      "type": "object",
+      "required": [
+        "approved_by_or_null",
+        "approved_at_or_null",
+        "content_hash_or_null",
+        "approval_evidence_hash_or_null"
+      ],
+      "properties": {
+        "approved_by_or_null": {
+          "type": "null"
+        },
+        "approved_at_or_null": {
+          "type": "null"
+        },
+        "content_hash_or_null": {
+          "type": "null"
+        },
+        "approval_evidence_hash_or_null": {
+          "type": "null"
+        }
+      },
+      "additionalProperties": false
+    },
+    "experimentManifest": {
+      "type": "object",
+      "required": [
+        "identity_and_lineage",
+        "code_and_environment",
+        "data",
+        "economic_definition",
+        "search_budget",
+        "outputs"
+      ],
+      "properties": {
+        "identity_and_lineage": {
+          "type": "object",
+          "required": [
+            "experiment_id_or_null",
+            "hypothesis_id_or_null",
+            "parent_experiment_ids",
+            "release_route_or_null",
+            "ai_endpoint_or_null",
+            "endpoint_policy_version_or_null",
+            "baseline_recipe_release_id_or_null",
+            "recipe_release_id_or_null",
+            "recipe_release_hash_or_null",
+            "route_and_endpoint_frozen_at_or_null",
+            "created_by_or_null",
+            "created_at_or_null",
+            "run_status",
+            "failure_reason_or_null"
+          ],
+          "properties": {
+            "experiment_id_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "hypothesis_id_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "parent_experiment_ids": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "release_route_or_null": {
+              "enum": [
+                null,
+                "BASELINE_ONLY",
+                "AI_ENHANCED"
+              ]
+            },
+            "ai_endpoint_or_null": {
+              "enum": [
+                null,
+                "GROWTH",
+                "RISK_EFFICIENCY"
+              ]
+            },
+            "endpoint_policy_version_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "baseline_recipe_release_id_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "recipe_release_id_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "recipe_release_hash_or_null": {
+              "$ref": "#/$defs/nullableSha256"
+            },
+            "route_and_endpoint_frozen_at_or_null": {
+              "$ref": "#/$defs/nullableDateTime"
+            },
+            "created_by_or_null": {
+              "enum": [
+                null,
+                "HUMAN",
+                "AGENT"
+              ]
+            },
+            "created_at_or_null": {
+              "$ref": "#/$defs/nullableDateTime"
+            },
+            "run_status": {
+              "enum": [
+                "PLANNED",
+                "RUNNING",
+                "FAILED",
+                "COMPLETED",
+                "INVALIDATED"
+              ]
+            },
+            "failure_reason_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            }
+          },
+          "additionalProperties": false
+        },
+        "code_and_environment": {
+          "type": "object",
+          "required": [
+            "git_commit_or_null",
+            "dirty_worktree",
+            "dirty_patch_hash_or_null",
+            "environment_lock_hash_or_null",
+            "library_and_hardware_summary_or_null",
+            "random_seeds",
+            "training_entrypoint_or_null",
+            "parameters"
+          ],
+          "properties": {
+            "git_commit_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "dirty_worktree": {
+              "type": "boolean"
+            },
+            "dirty_patch_hash_or_null": {
+              "$ref": "#/$defs/nullableSha256"
+            },
+            "environment_lock_hash_or_null": {
+              "$ref": "#/$defs/nullableSha256"
+            },
+            "library_and_hardware_summary_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "random_seeds": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "training_entrypoint_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "parameters": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "raw_snapshot_ids",
+            "raw_snapshot_hashes",
+            "data_sources",
+            "available_time_rule_or_null",
+            "instrument_metadata_hashes",
+            "fit_calibration_validation_windows",
+            "purge_and_embargo_rule_or_null",
+            "missing_and_anomaly_rule_or_null",
+            "data_quality_report_id_or_null"
+          ],
+          "properties": {
+            "raw_snapshot_ids": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "raw_snapshot_hashes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "data_sources": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "available_time_rule_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "instrument_metadata_hashes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "fit_calibration_validation_windows": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "purge_and_embargo_rule_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "missing_and_anomaly_rule_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "data_quality_report_id_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            }
+          },
+          "additionalProperties": false
+        },
+        "economic_definition": {
+          "type": "object",
+          "required": [
+            "strategy_proposal_version_or_null",
+            "feature_schema_hash_or_null",
+            "label_version_or_null",
+            "cost_model_version_or_null",
+            "fill_slippage_funding_model_versions",
+            "policy_ids",
+            "approved_production_capital_usdt_or_null",
+            "reporting_asset",
+            "evaluation_window_start_or_null",
+            "evaluation_window_end_or_null",
+            "risk_policy_version_or_null",
+            "position_mapping_version_or_null",
+            "benchmark_version_or_null",
+            "minimum_economic_effect_or_null",
+            "target_power",
+            "maximum_ci_width_or_null",
+            "trial_family_id_or_null",
+            "multiplicity_method",
+            "family_wise_alpha"
+          ],
+          "properties": {
+            "strategy_proposal_version_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "feature_schema_hash_or_null": {
+              "$ref": "#/$defs/nullableSha256"
+            },
+            "label_version_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "cost_model_version_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "fill_slippage_funding_model_versions": {
+              "type": "object"
+            },
+            "policy_ids": {
+              "type": "object"
+            },
+            "approved_production_capital_usdt_or_null": {
+              "$ref": "#/$defs/nullableDecimal"
+            },
+            "reporting_asset": {
+              "const": "USDT"
+            },
+            "evaluation_window_start_or_null": {
+              "$ref": "#/$defs/nullableDateTime"
+            },
+            "evaluation_window_end_or_null": {
+              "$ref": "#/$defs/nullableDateTime"
+            },
+            "risk_policy_version_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "position_mapping_version_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "benchmark_version_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "minimum_economic_effect_or_null": {
+              "$ref": "#/$defs/nullableDecimal"
+            },
+            "target_power": {
+              "const": "0.80"
+            },
+            "maximum_ci_width_or_null": {
+              "$ref": "#/$defs/nullableDecimal"
+            },
+            "trial_family_id_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "multiplicity_method": {
+              "const": "HOLM"
+            },
+            "family_wise_alpha": {
+              "const": "0.05"
+            }
+          },
+          "additionalProperties": false
+        },
+        "search_budget": {
+          "type": "object",
+          "required": [
+            "predeclared_trial_budget_or_null",
+            "actual_total_trials",
+            "hyperparameter_space",
+            "feature_set_count",
+            "threshold_variant_count",
+            "aborted_trials",
+            "failed_trials",
+            "invalid_trials"
+          ],
+          "properties": {
+            "predeclared_trial_budget_or_null": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "actual_total_trials": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "hyperparameter_space": {
+              "type": "object"
+            },
+            "feature_set_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "threshold_variant_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "aborted_trials": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "failed_trials": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "invalid_trials": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputs": {
+          "type": "object",
+          "required": [
+            "model_and_calibrator_hashes",
+            "oos_prediction_artifact_hash_or_null",
+            "fold_trades_and_equity_hash_or_null",
+            "metrics_charts_audit_hash_or_null",
+            "feature_stability_hash_or_null",
+            "failure_log_hash_or_null",
+            "conclusion_or_null",
+            "signed_by_or_null"
+          ],
+          "properties": {
+            "model_and_calibrator_hashes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "oos_prediction_artifact_hash_or_null": {
+              "$ref": "#/$defs/nullableSha256"
+            },
+            "fold_trades_and_equity_hash_or_null": {
+              "$ref": "#/$defs/nullableSha256"
+            },
+            "metrics_charts_audit_hash_or_null": {
+              "$ref": "#/$defs/nullableSha256"
+            },
+            "feature_stability_hash_or_null": {
+              "$ref": "#/$defs/nullableSha256"
+            },
+            "failure_log_hash_or_null": {
+              "$ref": "#/$defs/nullableSha256"
+            },
+            "conclusion_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "signed_by_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "productDataRule": {
+      "type": "object",
+      "required": [
+        "product",
+        "required_fields",
+        "context_fields",
+        "not_applicable_fields",
+        "context_missing_blocks_new_risk"
+      ],
+      "properties": {
+        "product": {
+          "enum": [
+            "SPOT_LONG",
+            "USDT_PERP_SHORT"
+          ]
+        },
+        "required_fields": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "context_fields": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "not_applicable_fields": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "context_missing_blocks_new_risk": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "dataQualityPolicy": {
+      "type": "object",
+      "required": [
+        "policy_id_or_null",
+        "product_data_matrix",
+        "point_in_time_rules",
+        "freshness_thresholds_or_null",
+        "duplicate_gap_revision_rules",
+        "offline_live_parity_required",
+        "quality_report_hash_or_null"
+      ],
+      "properties": {
+        "policy_id_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "product_data_matrix": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/productDataRule"
+          }
+        },
+        "point_in_time_rules": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "freshness_thresholds_or_null": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "duplicate_gap_revision_rules": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "offline_live_parity_required": {
+          "const": true
+        },
+        "quality_report_hash_or_null": {
+          "$ref": "#/$defs/nullableSha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "splitPolicy": {
+      "type": "object",
+      "required": [
+        "policy_id_or_null",
+        "timezone",
+        "oos_fold_count",
+        "rolling_training_months",
+        "calibration_segment_required",
+        "absolute_folds",
+        "purge_hours_or_null",
+        "embargo_hours_or_null",
+        "data_snapshot_hash_or_null",
+        "label_overlap_block_definition_or_null",
+        "sealed_audit_months",
+        "sealed_audit_cutoff_or_null",
+        "sealed_audit_access_log_hash_or_null",
+        "initial_audit_execution_limit"
+      ],
+      "properties": {
+        "policy_id_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "timezone": {
+          "const": "UTC"
+        },
+        "oos_fold_count": {
+          "const": 8
+        },
+        "rolling_training_months": {
+          "const": 18
+        },
+        "calibration_segment_required": {
+          "const": true
+        },
+        "absolute_folds": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object"
+          }
+        },
+        "purge_hours_or_null": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 24
+        },
+        "embargo_hours_or_null": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 24
+        },
+        "data_snapshot_hash_or_null": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "label_overlap_block_definition_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "sealed_audit_months": {
+          "const": 12
+        },
+        "sealed_audit_cutoff_or_null": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "sealed_audit_access_log_hash_or_null": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "initial_audit_execution_limit": {
+          "const": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "statisticalDesignPolicy": {
+      "type": "object",
+      "required": [
+        "policy_id_or_null",
+        "effective_sample_estimator_id",
+        "minimum_effect_or_null",
+        "achieved_power_algorithm_or_null",
+        "minimum_achieved_power",
+        "maximum_ci_width_or_null",
+        "confidence_side",
+        "confidence_level",
+        "moving_block_bootstrap",
+        "ece",
+        "dsr_pbo",
+        "multiple_testing"
+      ],
+      "properties": {
+        "policy_id_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "effective_sample_estimator_id": {
+          "const": "GEYER_INITIAL_POSITIVE_SEQUENCE_ESS_V1"
+        },
+        "minimum_effect_or_null": {
+          "$ref": "#/$defs/nullableDecimal"
+        },
+        "achieved_power_algorithm_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "minimum_achieved_power": {
+          "const": "0.80"
+        },
+        "maximum_ci_width_or_null": {
+          "$ref": "#/$defs/nullableDecimal"
+        },
+        "confidence_side": {
+          "const": "ONE_SIDED"
+        },
+        "confidence_level": {
+          "const": "0.95"
+        },
+        "moving_block_bootstrap": {
+          "type": "object",
+          "required": [
+            "block_length_or_null",
+            "minimum_block_count_or_null",
+            "resample_count_or_null",
+            "seed_or_null"
+          ],
+          "properties": {
+            "block_length_or_null": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "minimum_block_count_or_null": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 2
+            },
+            "resample_count_or_null": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1000
+            },
+            "seed_or_null": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "ece": {
+          "type": "object",
+          "required": [
+            "bin_edges_or_null",
+            "interval_algorithm_or_null",
+            "empty_bin_rule_or_null"
+          ],
+          "properties": {
+            "bin_edges_or_null": {
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "interval_algorithm_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "empty_bin_rule_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            }
+          },
+          "additionalProperties": false
+        },
+        "dsr_pbo": {
+          "type": "object",
+          "required": [
+            "implementation_version_or_null",
+            "return_frequency_or_null",
+            "trial_family_source"
+          ],
+          "properties": {
+            "implementation_version_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "return_frequency_or_null": {
+              "$ref": "#/$defs/nullableNonEmptyString"
+            },
+            "trial_family_source": {
+              "const": "EXPERIMENT_MANIFEST_CUMULATIVE_TRIAL_FAMILY"
+            }
+          },
+          "additionalProperties": false
+        },
+        "multiple_testing": {
+          "type": "object",
+          "required": [
+            "method",
+            "family_wise_alpha",
+            "simultaneous_candidate_family_required"
+          ],
+          "properties": {
+            "method": {
+              "const": "HOLM"
+            },
+            "family_wise_alpha": {
+              "const": "0.05"
+            },
+            "simultaneous_candidate_family_required": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "accountingPolicy": {
+      "type": "object",
+      "required": [
+        "policy_id_or_null",
+        "reporting_asset",
+        "cost_basis_method",
+        "partial_fill_accounting",
+        "fee_accounting",
+        "funding_allocation",
+        "non_usdt_valuation",
+        "window_end_marking",
+        "expected_exit_fee_accrual",
+        "cash_flow_adjustment",
+        "approved_production_capital_usdt_or_null",
+        "capital_search_grid_hash_or_null"
+      ],
+      "properties": {
+        "policy_id_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "reporting_asset": {
+          "const": "USDT"
+        },
+        "cost_basis_method": {
+          "const": "MOVING_WEIGHTED_AVERAGE"
+        },
+        "partial_fill_accounting": {
+          "const": "PER_FILL"
+        },
+        "fee_accounting": {
+          "const": "INDEPENDENT_FEE_FACT"
+        },
+        "funding_allocation": {
+          "const": "ACTUAL_POSITION_AT_SETTLEMENT"
+        },
+        "non_usdt_valuation": {
+          "const": "VERSIONED_FX_VALUATION_FACT"
+        },
+        "window_end_marking": {
+          "const": "CONSERVATIVE_EXECUTABLE_CLOSE"
+        },
+        "expected_exit_fee_accrual": {
+          "const": true
+        },
+        "cash_flow_adjustment": {
+          "const": "DEPOSIT_WITHDRAWAL_INTERNAL_TRANSFER_EXCLUDED"
+        },
+        "approved_production_capital_usdt_or_null": {
+          "$ref": "#/$defs/nullableDecimal"
+        },
+        "capital_search_grid_hash_or_null": {
+          "$ref": "#/$defs/nullableSha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "costAllocationPolicy": {
+      "type": "object",
+      "required": [
+        "policy_id_or_null",
+        "ai_incremental_cost_categories",
+        "shared_cost_allocation_rule_or_null",
+        "project_roi_costs_separate",
+        "double_counting_forbidden",
+        "required_cost_event_types",
+        "allocation_window_or_null"
+      ],
+      "properties": {
+        "policy_id_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "ai_incremental_cost_categories": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "shared_cost_allocation_rule_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "project_roi_costs_separate": {
+          "const": true
+        },
+        "double_counting_forbidden": {
+          "const": true
+        },
+        "required_cost_event_types": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "allocation_window_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "forwardControlPolicy": {
+      "type": "object",
+      "required": [
+        "policy_id_or_null",
+        "model_age_days",
+        "ood_rejection",
+        "execution_cost_drift",
+        "ai_incremental_harm",
+        "drawdown_actions",
+        "checkpoint_policy",
+        "incident_gate"
+      ],
+      "properties": {
+        "policy_id_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "model_age_days": {
+          "type": "object",
+          "required": [
+            "warning_and_bucket_downgrade",
+            "block_new_risk"
+          ],
+          "properties": {
+            "warning_and_bucket_downgrade": {
+              "const": 45
+            },
+            "block_new_risk": {
+              "const": 90
+            }
+          },
+          "additionalProperties": false
+        },
+        "ood_rejection": {
+          "type": "object",
+          "required": [
+            "rolling_decisions",
+            "downgrade_ratio",
+            "block_new_risk_ratio"
+          ],
+          "properties": {
+            "rolling_decisions": {
+              "const": 30
+            },
+            "downgrade_ratio": {
+              "const": "0.30"
+            },
+            "block_new_risk_ratio": {
+              "const": "0.50"
+            }
+          },
+          "additionalProperties": false
+        },
+        "execution_cost_drift": {
+          "type": "object",
+          "required": [
+            "consecutive_fills",
+            "modeled_cost_multiple",
+            "action"
+          ],
+          "properties": {
+            "consecutive_fills": {
+              "const": 20
+            },
+            "modeled_cost_multiple": {
+              "const": "1.50"
+            },
+            "action": {
+              "const": "BLOCK_NEW_RISK_AND_REESTIMATE"
+            }
+          },
+          "additionalProperties": false
+        },
+        "ai_incremental_harm": {
+          "type": "object",
+          "required": [
+            "minimum_ai_affected_trades",
+            "negative_expectation_action"
+          ],
+          "properties": {
+            "minimum_ai_affected_trades": {
+              "const": 30
+            },
+            "negative_expectation_action": {
+              "const": "DOWNGRADE_OR_APPROVED_FALLBACK"
+            }
+          },
+          "additionalProperties": false
+        },
+        "drawdown_actions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "required": [
+              "threshold",
+              "action"
+            ],
+            "properties": {
+              "threshold": {
+                "enum": [
+                  "0.12",
+                  "0.15",
+                  "0.20"
+                ]
+              },
+              "action": {
+                "enum": [
+                  "HALVE_APPROVED_RISK",
+                  "FLATTEN_AND_HALT",
+                  "FLATTEN_DISABLE_AUTO_RESTART_AND_INCIDENT"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "checkpoint_policy": {
+          "type": "object",
+          "required": [
+            "fixed_checkpoints",
+            "early_success_stop_allowed",
+            "canary_block_days",
+            "maximum_blocks_per_stage"
+          ],
+          "properties": {
+            "fixed_checkpoints": {
+              "const": true
+            },
+            "early_success_stop_allowed": {
+              "const": false
+            },
+            "canary_block_days": {
+              "const": 30
+            },
+            "maximum_blocks_per_stage": {
+              "const": 3
+            }
+          },
+          "additionalProperties": false
+        },
+        "incident_gate": {
+          "type": "object",
+          "required": [
+            "s0_s1_blocks_progression",
+            "safety_errors_do_not_wait_for_sample"
+          ],
+          "properties": {
+            "s0_s1_blocks_progression": {
+              "const": true
+            },
+            "safety_errors_do_not_wait_for_sample": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "incidentReport": {
+      "type": "object",
+      "required": [
+        "incident_id_or_null",
+        "severity_or_null",
+        "report_status",
+        "detected_at_or_null",
+        "resolved_at_or_null",
+        "affected_accounts",
+        "affected_instruments",
+        "timeline",
+        "impact",
+        "root_cause_or_null",
+        "compensating_event_ids",
+        "corrective_actions",
+        "recurrence_prevention_test_ids",
+        "manual_restart_approval_or_null"
+      ],
+      "properties": {
+        "incident_id_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "severity_or_null": {
+          "enum": [
+            null,
+            "S0",
+            "S1",
+            "S2",
+            "S3"
+          ]
+        },
+        "report_status": {
+          "enum": [
+            "DRAFT",
+            "INVESTIGATING",
+            "MITIGATED",
+            "CLOSED"
+          ]
+        },
+        "detected_at_or_null": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "resolved_at_or_null": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "affected_accounts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "affected_instruments": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "at",
+              "event"
+            ],
+            "properties": {
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "event": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "impact": {
+          "type": "object",
+          "required": [
+            "unauthorized_orders",
+            "duplicate_economic_orders",
+            "maximum_unapproved_exposure_usdt_or_null",
+            "economic_loss_usdt_or_null",
+            "data_or_ledger_integrity_affected"
+          ],
+          "properties": {
+            "unauthorized_orders": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "duplicate_economic_orders": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maximum_unapproved_exposure_usdt_or_null": {
+              "$ref": "#/$defs/nullableDecimal"
+            },
+            "economic_loss_usdt_or_null": {
+              "$ref": "#/$defs/nullableDecimal"
+            },
+            "data_or_ledger_integrity_affected": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "root_cause_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        },
+        "compensating_event_ids": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "corrective_actions": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "recurrence_prevention_test_ids": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "manual_restart_approval_or_null": {
+          "$ref": "#/$defs/nullableNonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

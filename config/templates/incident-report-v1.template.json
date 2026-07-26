@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.1.0",
+  "template_id": "incident-report-v1-template",
+  "template_version": "1.0.0",
+  "artifact_type": "INCIDENT_REPORT",
+  "artifact_id_or_null": null,
+  "lifecycle_status": "TEMPLATE_UNAPPROVED",
+  "production_eligible": false,
+  "specification": {
+    "incident_id_or_null": null,
+    "severity_or_null": null,
+    "report_status": "DRAFT",
+    "detected_at_or_null": null,
+    "resolved_at_or_null": null,
+    "affected_accounts": [],
+    "affected_instruments": [],
+    "timeline": [],
+    "impact": {
+      "unauthorized_orders": 0,
+      "duplicate_economic_orders": 0,
+      "maximum_unapproved_exposure_usdt_or_null": null,
+      "economic_loss_usdt_or_null": null,
+      "data_or_ledger_integrity_affected": false
+    },
+    "root_cause_or_null": null,
+    "compensating_event_ids": [],
+    "corrective_actions": [],
+    "recurrence_prevention_test_ids": [],
+    "manual_restart_approval_or_null": null
+  },
+  "approval": {
+    "approved_by_or_null": null,
+    "approved_at_or_null": null,
+    "content_hash_or_null": null,
+    "approval_evidence_hash_or_null": null
+  },
+  "notes": [
+    "S0/S1关闭前必须填满时间线、影响、根因、补偿事件和防复发测试。",
+    "事故报告本身不解除RiskLock，重启必须走独立人工审批。"
+  ]
+}

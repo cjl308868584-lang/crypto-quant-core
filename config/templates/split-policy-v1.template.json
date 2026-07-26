@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.1.0",
+  "template_id": "split-policy-v1-template",
+  "template_version": "1.0.0",
+  "artifact_type": "SPLIT_POLICY",
+  "artifact_id_or_null": null,
+  "lifecycle_status": "TEMPLATE_UNAPPROVED",
+  "production_eligible": false,
+  "specification": {
+    "policy_id_or_null": null,
+    "timezone": "UTC",
+    "oos_fold_count": 8,
+    "rolling_training_months": 18,
+    "calibration_segment_required": true,
+    "absolute_folds": [],
+    "purge_hours_or_null": null,
+    "embargo_hours_or_null": null,
+    "data_snapshot_hash_or_null": null,
+    "label_overlap_block_definition_or_null": null,
+    "sealed_audit_months": 12,
+    "sealed_audit_cutoff_or_null": null,
+    "sealed_audit_access_log_hash_or_null": null,
+    "initial_audit_execution_limit": 1
+  },
+  "approval": {
+    "approved_by_or_null": null,
+    "approved_at_or_null": null,
+    "content_hash_or_null": null,
+    "approval_evidence_hash_or_null": null
+  },
+  "notes": [
+    "八个季度OOS折必须填入绝对UTC边界，Purge和Embargo不得短于标签与执行影响期。",
+    "本模板未经审批，不得打开Sealed Audit。"
+  ]
+}
