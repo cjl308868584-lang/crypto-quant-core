@@ -11,6 +11,7 @@ import unittest
 import zipfile
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 from crypto_quant.market_data import (
     HistoricalArchiveRequest,
@@ -819,13 +820,24 @@ class PackagedMarketSchemaTests(unittest.TestCase):
             wheel_dir.mkdir()
             target.mkdir()
             outside.mkdir()
+            pip_environment = dict(
+                os.environ,
+                PIP_NO_INDEX="1",
+                PIP_DISABLE_PIP_VERSION_CHECK="1",
+            )
             subprocess.run(
-                [sys.executable, "-m", "pip", "wheel", "--no-deps", "--wheel-dir", str(wheel_dir), str(root)],
+                [
+                    sys.executable, "-m", "pip", "wheel",
+                    "--no-deps", "--no-build-isolation",
+                    "--wheel-dir", str(wheel_dir), str(root),
+                ],
+                env=pip_environment,
                 check=True, capture_output=True, text=True,
             )
             wheel = next(wheel_dir.glob("*.whl"))
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--no-deps", "--target", str(target), str(wheel)],
+                env=pip_environment,
                 check=True, capture_output=True, text=True,
             )
             smoke = """
@@ -849,3 +861,28 @@ assert fee_schedule_snapshot_reasons({})
                 [sys.executable, "-c", smoke], cwd=outside, env=environment,
                 check=True, capture_output=True, text=True,
             )
+
+    def test_wheel_smoke_invokes_pip_in_enforced_offline_mode(self):
+        calls = []
+
+        def record_run(command, **kwargs):
+            calls.append((command, kwargs))
+            if command[1:4] == ["-m", "pip", "wheel"]:
+                wheel_dir = Path(command[command.index("--wheel-dir") + 1])
+                (wheel_dir / "crypto_quant_core-0.15.0-py3-none-any.whl").touch()
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("tests.test_market_data.subprocess.run", side_effect=record_run):
+            self.test_wheel_reasons_work_outside_repository()
+
+        pip_calls = [
+            (command, kwargs)
+            for command, kwargs in calls
+            if command[1:3] == ["-m", "pip"]
+        ]
+        self.assertEqual(len(pip_calls), 2)
+        wheel_command, wheel_kwargs = pip_calls[0]
+        self.assertIn("--no-build-isolation", wheel_command)
+        for _, kwargs in pip_calls:
+            self.assertEqual(kwargs["env"]["PIP_NO_INDEX"], "1")
+            self.assertEqual(kwargs["env"]["PIP_DISABLE_PIP_VERSION_CHECK"], "1")
