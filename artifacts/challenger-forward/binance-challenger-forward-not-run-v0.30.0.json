@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-challenger-forward-not-run-v0.30.0",
+  "release_candidate": "0.30.0",
+  "recorded_at": "2026-07-27T21:46:37.000Z",
+  "status": "WAITING_FORWARD_START_NO_DECISIONS",
+  "policy": {
+    "policy_version": "CHALLENGER_FORWARD_EVENT_STREAM_V1",
+    "challenger_policy_id": "SPOT_LONG_SMA20_COST_MARGIN_MOMENTUM_V2",
+    "policy_hash": "2ef83c7c73fff8b163d9bad8527921bd0d87e60595680236e936254536c800e4",
+    "hypothesis_registration_hash": "885b33d3a91eae1d5822fe12c16773a446c23e702f9a4110ef32f474157fa27f",
+    "forward_start": "2026-07-29T00:00:00.000Z",
+    "cadence_seconds": 14400,
+    "historical_backfill_allowed": false,
+    "broker_access": false
+  },
+  "forward_state": {
+    "decision_count": 0,
+    "snapshot_created": false,
+    "state_database_committed_to_git": false,
+    "missed_slot_count": 0,
+    "outcome_observation_count": 0,
+    "profitability_claim_count": 0
+  },
+  "validation": {
+    "fixture_test_count": 8,
+    "deterministic_rebuild_count": 100,
+    "schema_mirror_exact": true,
+    "append_only_tamper_rejection_verified": true,
+    "cross_decision_input_revision_rejection_verified": true,
+    "broker_symbol_import_count": 0
+  },
+  "eligibility": {
+    "forward_evidence": "INELIGIBLE_NO_DECISIONS",
+    "paper": "INELIGIBLE_NO_OUTCOME_OR_EXTERNAL_TIME_ANCHOR",
+    "release_oos": "INELIGIBLE_FORWARD_COLLECTION_NOT_STARTED",
+    "profitability": "INELIGIBLE"
+  },
+  "warnings": [
+    "THE_REGISTERED_FORWARD_START_HAS_NOT_OCCURRED_AT_RECORDING_TIME",
+    "NO_DECISION_OR_SNAPSHOT_WAS FABRICATED",
+    "LOCAL_TIME_IS_NOT_EXTERNALLY_ANCHORED",
+    "NO_HISTORICAL_BACKFILL",
+    "NO_OUTCOME_OR_PROFITABILITY_CLAIM"
+  ]
+}

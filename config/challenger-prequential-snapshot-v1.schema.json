@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-prequential-snapshot-v1.schema.json",
+  "title": "Challenger Prequential Snapshot V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "snapshot_id", "snapshot_hash", "recorded_at", "policy", "hypothesis_registration", "decisions", "decisions_root_hash", "decision_chain_end_hash", "summary", "continuity_status", "state_integrity", "external_time_anchoring_status", "forward_evidence_eligibility", "paper_eligibility", "release_oos_eligibility", "profitability_eligibility", "warnings"],
+  "properties": {
+    "$schema": {"const": "./challenger-prequential-snapshot-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "snapshot_id": {"type": "string", "pattern": "^challenger_prequential_snapshot_[0-9a-f]{64}$"},
+    "snapshot_hash": {"$ref": "#/$defs/hash"},
+    "recorded_at": {"$ref": "#/$defs/time"},
+    "policy": {"$ref": "#/$defs/policy"},
+    "hypothesis_registration": {"$ref": "#/$defs/registration"},
+    "decisions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/decision"}},
+    "decisions_root_hash": {"$ref": "#/$defs/hash"},
+    "decision_chain_end_hash": {"$ref": "#/$defs/hash"},
+    "summary": {"$ref": "#/$defs/summary"},
+    "continuity_status": {"const": "CONTIGUOUS_FROM_REGISTERED_START"},
+    "state_integrity": {"const": "VERIFIED_APPEND_ONLY_WAL_AND_SEMANTIC_REPLAY"},
+    "external_time_anchoring_status": {"const": "UNANCHORED_LOCAL_CLOCK"},
+    "forward_evidence_eligibility": {"const": "LOCAL_PREQUENTIAL_RESEARCH_ONLY"},
+    "paper_eligibility": {"const": "INELIGIBLE_NO_OUTCOME_OR_EXTERNAL_TIME_ANCHOR"},
+    "release_oos_eligibility": {"const": "INELIGIBLE_FORWARD_COLLECTION_ONLY"},
+    "profitability_eligibility": {"const": "INELIGIBLE"},
+    "warnings": {"const": ["LOCAL_TIME_IS_NOT_EXTERNALLY_ANCHORED", "DECISIONS_ARE_RESEARCH_ONLY_AND_CANNOT_REACH_BROKER", "NO_HISTORICAL_BACKFILL", "NO_OUTCOME_OR_PROFITABILITY_CLAIM"]}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+    "decimal": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
+    "nullableTime": {"oneOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+    "nullableEpisode": {"oneOf": [{"type": "string", "pattern": "^challenger_episode_[0-9a-f]{64}$"}, {"type": "null"}]},
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version", "challenger_policy_id", "hypothesis_registration_hash", "symbol", "market", "interval", "forward_start", "cadence_seconds", "record_deadline_seconds", "warmup_bar_count", "sma_window", "momentum_lag_bars", "sma20_distance_minimum", "eth_log_return_5_threshold", "minimum_hold_hours", "vertical_exit_hours", "historical_backfill_allowed", "broker_access", "policy_hash"],
+      "properties": {
+        "policy_version": {"const": "CHALLENGER_FORWARD_EVENT_STREAM_V1"},
+        "challenger_policy_id": {"const": "SPOT_LONG_SMA20_COST_MARGIN_MOMENTUM_V2"},
+        "hypothesis_registration_hash": {"const": "885b33d3a91eae1d5822fe12c16773a446c23e702f9a4110ef32f474157fa27f"},
+        "symbol": {"const": "ETHUSDT"},
+        "market": {"const": "SPOT"},
+        "interval": {"const": "4h"},
+        "forward_start": {"const": "2026-07-29T00:00:00.000Z"},
+        "cadence_seconds": {"const": 14400},
+        "record_deadline_seconds": {"const": 14400},
+        "warmup_bar_count": {"const": 21},
+        "sma_window": {"const": 20},
+        "momentum_lag_bars": {"const": 5},
+        "sma20_distance_minimum": {"const": "0.005"},
+        "eth_log_return_5_threshold": {"const": "0"},
+        "minimum_hold_hours": {"const": 8},
+        "vertical_exit_hours": {"const": 24},
+        "historical_backfill_allowed": {"const": false},
+        "broker_access": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trial_family", "economic_hypothesis_count", "parameter_combination_count", "challenger_policy_id", "sma20_distance_minimum", "eth_log_return_5_operator", "eth_log_return_5_threshold", "entry_rule", "exit_policy", "episode_regeneration", "viewed_archive_status", "challenger_evaluation_status", "forward_validation_start", "hypothesis_registration_hash"],
+      "properties": {
+        "trial_family": {"const": "baseline-rule-challenger-2026q3"},
+        "economic_hypothesis_count": {"const": 1},
+        "parameter_combination_count": {"const": 1},
+        "challenger_policy_id": {"const": "SPOT_LONG_SMA20_COST_MARGIN_MOMENTUM_V2"},
+        "sma20_distance_minimum": {"const": "0.005"},
+        "eth_log_return_5_operator": {"const": ">"},
+        "eth_log_return_5_threshold": {"const": "0"},
+        "entry_rule": {"const": "ALL_CONDITIONS_REQUIRED"},
+        "exit_policy": {"const": "UNCHANGED_FROM_V1"},
+        "episode_regeneration": {"const": "FULL_EVENT_STREAM_REJECTED_ENTRY_DOES_NOT_CONSUME_WINDOW"},
+        "viewed_archive_status": {"const": "VIEWED_DEVELOPMENT_ONLY"},
+        "challenger_evaluation_status": {"const": "NOT_RUN_PREREGISTERED_FORWARD_ONLY"},
+        "forward_validation_start": {"const": "2026-07-29T00:00:00.000Z"},
+        "hypothesis_registration_hash": {"const": "885b33d3a91eae1d5822fe12c16773a446c23e702f9a4110ef32f474157fa27f"}
+      }
+    },
+    "kline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "market", "data_family", "symbol", "interval", "open_time", "close_time", "available_at", "open", "high", "low", "close", "source_row_hash"],
+      "properties": {
+        "provider": {"const": "BINANCE_PUBLIC_DATA"},
+        "market": {"const": "SPOT"},
+        "data_family": {"const": "KLINES"},
+        "symbol": {"const": "ETHUSDT"},
+        "interval": {"const": "4h"},
+        "open_time": {"$ref": "#/$defs/time"},
+        "close_time": {"$ref": "#/$defs/time"},
+        "available_at": {"$ref": "#/$defs/time"},
+        "open": {"$ref": "#/$defs/decimal"},
+        "high": {"$ref": "#/$defs/decimal"},
+        "low": {"$ref": "#/$defs/decimal"},
+        "close": {"$ref": "#/$defs/decimal"},
+        "source_row_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "state": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position_state", "episode_id_or_null", "entry_decision_time_or_null", "minimum_hold_until_or_null", "vertical_exit_at_or_null"],
+          "properties": {
+            "position_state": {"const": "FLAT"},
+            "episode_id_or_null": {"type": "null"},
+            "entry_decision_time_or_null": {"type": "null"},
+            "minimum_hold_until_or_null": {"type": "null"},
+            "vertical_exit_at_or_null": {"type": "null"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position_state", "episode_id_or_null", "entry_decision_time_or_null", "minimum_hold_until_or_null", "vertical_exit_at_or_null"],
+          "properties": {
+            "position_state": {"const": "LONG"},
+            "episode_id_or_null": {"type": "string", "pattern": "^challenger_episode_[0-9a-f]{64}$"},
+            "entry_decision_time_or_null": {"$ref": "#/$defs/time"},
+            "minimum_hold_until_or_null": {"$ref": "#/$defs/time"},
+            "vertical_exit_at_or_null": {"$ref": "#/$defs/time"}
+          }
+        }
+      ]
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "decision_id", "decision_hash", "sequence", "scheduled_for", "recorded_at", "previous_decision_hash", "policy_hash", "hypothesis_registration_hash", "input_facts_root_hash", "input_klines", "features", "entry_conditions", "state_before", "action", "state_after", "decision_eligibility", "broker_eligibility"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "decision_id": {"type": "string", "pattern": "^challenger_decision_[0-9a-f]{64}$"},
+        "decision_hash": {"$ref": "#/$defs/hash"},
+        "sequence": {"type": "integer", "minimum": 1},
+        "scheduled_for": {"$ref": "#/$defs/time"},
+        "recorded_at": {"$ref": "#/$defs/time"},
+        "previous_decision_hash": {"$ref": "#/$defs/hash"},
+        "policy_hash": {"$ref": "#/$defs/hash"},
+        "hypothesis_registration_hash": {"const": "885b33d3a91eae1d5822fe12c16773a446c23e702f9a4110ef32f474157fa27f"},
+        "input_facts_root_hash": {"$ref": "#/$defs/hash"},
+        "input_klines": {"type": "array", "minItems": 21, "maxItems": 21, "items": {"$ref": "#/$defs/kline"}},
+        "features": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["latest_close", "prior_sma20", "eth_sma20_distance", "eth_log_return_5"],
+          "properties": {
+            "latest_close": {"$ref": "#/$defs/decimal"},
+            "prior_sma20": {"$ref": "#/$defs/decimal"},
+            "eth_sma20_distance": {"$ref": "#/$defs/decimal"},
+            "eth_log_return_5": {"$ref": "#/$defs/decimal"}
+          }
+        },
+        "entry_conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sma20_distance_minimum", "sma20_distance_pass", "eth_log_return_5_threshold", "eth_log_return_5_pass"],
+          "properties": {
+            "sma20_distance_minimum": {"const": "0.005"},
+            "sma20_distance_pass": {"type": "boolean"},
+            "eth_log_return_5_threshold": {"const": "0"},
+            "eth_log_return_5_pass": {"type": "boolean"}
+          }
+        },
+        "state_before": {"$ref": "#/$defs/state"},
+        "action": {"enum": ["REJECT_ENTRY", "ENTER_LONG", "HOLD_LONG_MINIMUM", "HOLD_LONG", "EXIT_LONG_SMA20", "EXIT_LONG_VERTICAL_24H"]},
+        "state_after": {"$ref": "#/$defs/state"},
+        "decision_eligibility": {"const": "LOCAL_PREQUENTIAL_RESEARCH_ONLY"},
+        "broker_eligibility": {"const": "INELIGIBLE_NO_BROKER_ACCESS"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_count", "first_scheduled_for", "last_scheduled_for", "entry_count", "rejected_entry_count", "minimum_hold_count", "hold_count", "sma_exit_count", "vertical_exit_count", "ending_position_state", "missed_slot_count"],
+      "properties": {
+        "decision_count": {"type": "integer", "minimum": 1},
+        "first_scheduled_for": {"$ref": "#/$defs/time"},
+        "last_scheduled_for": {"$ref": "#/$defs/time"},
+        "entry_count": {"type": "integer", "minimum": 0},
+        "rejected_entry_count": {"type": "integer", "minimum": 0},
+        "minimum_hold_count": {"type": "integer", "minimum": 0},
+        "hold_count": {"type": "integer", "minimum": 0},
+        "sma_exit_count": {"type": "integer", "minimum": 0},
+        "vertical_exit_count": {"type": "integer", "minimum": 0},
+        "ending_position_state": {"enum": ["FLAT", "LONG"]},
+        "missed_slot_count": {"const": 0}
+      }
+    }
+  }
+}

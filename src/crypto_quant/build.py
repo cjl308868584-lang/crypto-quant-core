@@ -18,6 +18,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/approved-fallback-registry-v1.1.schema.json",
     "config/baseline-failure-attribution-v1.schema.json",
     "config/causal-feature-label-dataset-v1.schema.json",
+    "config/challenger-prequential-snapshot-v1.schema.json",
     "config/contemporaneous-capture-snapshot-v1.schema.json",
     "config/deployment-line-v1.1.schema.json",
     "config/economic-ledger-snapshot-v1.schema.json",
@@ -65,6 +66,7 @@ _FROZEN_CONFIG_PATHS = (
 _FROZEN_ARTIFACT_PATHS = (
     "artifacts/account-cost/binance-account-commission-smoke-not-run-v0.22.0.json",
     "artifacts/baseline-research/binance-baseline-failure-attribution-v0.29.0.json",
+    "artifacts/challenger-forward/binance-challenger-forward-not-run-v0.30.0.json",
     "artifacts/paper-cost/binance-paper-account-cost-binding-not-run-v0.23.0.json",
     "artifacts/paper-context/binance-context-complete-cycle-not-run-v0.24.0.json",
     "artifacts/orchestration/context-cycle-orchestration-not-run-v0.25.0.json",
