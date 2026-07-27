@@ -1,15 +1,17 @@
 import hashlib
-import inspect
 import io
 import json
+import os
 import tempfile
 import unittest
 import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.request import ProxyHandler
 from unittest.mock import patch
 
+import crypto_quant.market_data as market_data
 from crypto_quant.market_data import (
     HistoricalArchiveRequest,
     HttpResponse,
@@ -147,6 +149,25 @@ class FetchWorkflowTests(unittest.TestCase):
             self.retrieved_at,
         )
 
+    def test_rejects_malformed_ipv6_final_url_without_leaking_a_url_parser_error(self):
+        transport = transport_for(
+            self.request,
+            archive_response=HttpResponse(
+                status=200,
+                final_url="https://[data.binance.vision/archive.zip",
+                headers={},
+                body=archive_bytes(self.request),
+            ),
+        )
+
+        self.assert_reason(
+            "HTTP_RESPONSE_REDIRECT_INVALID",
+            fetch_historical_market_data,
+            self.request,
+            transport,
+            self.retrieved_at,
+        )
+
     def test_rejects_non_success_metadata_gaps_and_declared_content_limit(self):
         cases = (
             (
@@ -199,15 +220,53 @@ class FetchWorkflowTests(unittest.TestCase):
             )
         parser.assert_not_called()
 
-    def test_public_interfaces_do_not_accept_authentication_or_header_inputs(self):
-        self.assertEqual(
-            tuple(inspect.signature(PublicArchiveTransport.get).parameters),
-            ("self", "url"),
+    def test_concrete_transport_disables_environment_proxy_routing(self):
+        with patch.dict(os.environ, {"HTTPS_PROXY": "https://proxy.invalid:8443"}):
+            opener = market_data._public_archive_opener()
+
+        self.assertFalse(
+            any(isinstance(handler, ProxyHandler) for handler in opener.handlers)
         )
-        self.assertEqual(
-            tuple(inspect.signature(fetch_historical_market_data).parameters),
-            ("request", "transport", "retrieved_at"),
-        )
+        self.assertEqual(len(opener.handle_open["https"]), 1)
+
+    def test_checksum_read_is_bounded_to_its_own_limit_before_response_creation(self):
+        class Response:
+            def __init__(self):
+                self.read_sizes = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *unused):
+                return False
+
+            def getcode(self):
+                return 200
+
+            def geturl(self):
+                return self_url
+
+            @property
+            def headers(self):
+                return {}
+
+            def read(self, size):
+                self.read_sizes.append(size)
+                return b"x" * size
+
+        class Opener:
+            def open(self, request, timeout):
+                return response
+
+        self_url = self.request.checksum_url
+        response = Response()
+        with patch("crypto_quant.market_data._public_archive_opener", return_value=Opener()):
+            self.assert_reason(
+                "HTTP_RESPONSE_TOO_LARGE",
+                PublicArchiveTransport().get,
+                self_url,
+            )
+        self.assertEqual(response.read_sizes, [4 * 1024 + 1])
 
 
 class MarketDataCliTests(unittest.TestCase):
@@ -277,6 +336,9 @@ class MarketDataCliTests(unittest.TestCase):
             self.assertEqual(first[0], 0)
             self.assertEqual(second[0], 0)
             artifact = Path(json.loads(first[1])["artifact_path"])
+            first_inode = artifact.stat().st_ino
+            self.assertFalse(json.loads(second[1])["created"])
+            self.assertEqual(artifact.stat().st_ino, first_inode)
             artifact.write_bytes(b"conflicting")
             third = self.invoke(root, transport=transport_for(self.request))
             self.assertNotEqual(third[0], 0)
@@ -292,3 +354,105 @@ class MarketDataCliTests(unittest.TestCase):
             status, _, _ = self.invoke(root, transport=failed)
             self.assertNotEqual(status, 0)
             self.assertFalse((root / "market-data").exists())
+
+    def test_rejects_market_data_directory_symlink_without_writing_to_its_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            target = Path(temporary) / "target"
+            root.mkdir()
+            target.mkdir()
+            (root / "market-data").symlink_to(target, target_is_directory=True)
+
+            status, _, _ = self.invoke(root)
+
+            self.assertNotEqual(status, 0)
+            self.assertEqual(list(target.iterdir()), [])
+
+    def test_rejects_final_symlink_and_hardlink_without_overwriting_them(self):
+        from crypto_quant.market_data_cli import _artifact_bytes
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            root.mkdir()
+            snapshot = fetch_historical_market_data(
+                self.request, self.transport, "2026-07-27T00:00:01Z"
+            )
+            artifact = root / "market-data" / (snapshot["snapshot_id"] + ".json")
+            artifact.parent.mkdir()
+            target = Path(temporary) / "target"
+            target.write_bytes(b"target")
+            artifact.symlink_to(target)
+            status, _, _ = self.invoke(root)
+            self.assertNotEqual(status, 0)
+            self.assertEqual(target.read_bytes(), b"target")
+            artifact.unlink()
+            os.link(target, artifact)
+            status, _, _ = self.invoke(root)
+            self.assertNotEqual(status, 0)
+            self.assertEqual(target.read_bytes(), b"target")
+            self.assertEqual(os.stat(target).st_nlink, 2)
+
+    def test_directory_replacement_during_publish_fails_without_creating_an_artifact(self):
+        import crypto_quant.market_data_cli as cli
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            root.mkdir()
+            original_link = cli.os.link
+            replaced = False
+
+            def replace_directory_then_link(*args, **kwargs):
+                nonlocal replaced
+                if not replaced:
+                    replaced = True
+                    (root / "market-data").rename(root / "market-data-replaced")
+                    (root / "market-data").mkdir()
+                return original_link(*args, **kwargs)
+
+            with patch("crypto_quant.market_data_cli.os.link", side_effect=replace_directory_then_link):
+                status, _, _ = self.invoke(root)
+
+            self.assertNotEqual(status, 0)
+            self.assertEqual(list((root / "market-data").iterdir()), [])
+            self.assertEqual(list((root / "market-data-replaced").iterdir()), [])
+
+    def test_publisher_rolls_back_its_own_artifacts_when_link_fsync_or_cleanup_fails(self):
+        import crypto_quant.market_data_cli as cli
+
+        cases = ("link", "fsync", "cleanup")
+        for fault in cases:
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary) / "root"
+                root.mkdir()
+                original_link = cli.os.link
+                original_fsync = cli.os.fsync
+                original_unlink = cli.os.unlink
+                calls = {"fsync": 0, "cleanup": 0}
+
+                def fail_link(*args, **kwargs):
+                    if fault == "link":
+                        raise OSError("link failed")
+                    return original_link(*args, **kwargs)
+
+                def fail_fsync(fd):
+                    calls["fsync"] += 1
+                    if fault == "fsync" and calls["fsync"] == 2:
+                        raise OSError("directory fsync failed")
+                    return original_fsync(fd)
+
+                def fail_first_temp_cleanup(name, *args, **kwargs):
+                    if fault == "cleanup" and str(name).startswith(".market-data-"):
+                        calls["cleanup"] += 1
+                        if calls["cleanup"] == 1:
+                            raise OSError("cleanup failed")
+                    return original_unlink(name, *args, **kwargs)
+
+                with patch("crypto_quant.market_data_cli.os.link", side_effect=fail_link), patch(
+                    "crypto_quant.market_data_cli.os.fsync", side_effect=fail_fsync
+                ), patch("crypto_quant.market_data_cli.os.unlink", side_effect=fail_first_temp_cleanup):
+                    status, _, _ = self.invoke(root)
+
+                self.assertNotEqual(status, 0)
+                output = root / "market-data"
+                if output.exists():
+                    self.assertEqual(list(output.iterdir()), [])

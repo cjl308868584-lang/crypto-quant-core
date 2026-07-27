@@ -3,11 +3,12 @@
 import argparse
 import json
 import os
+import secrets
+import stat
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Tuple
 
 from .market_data import (
     HistoricalArchiveRequest,
@@ -15,6 +16,10 @@ from .market_data import (
     PublicArchiveTransport,
     fetch_historical_market_data,
 )
+
+
+_OUTPUT_DIRECTORY = "market-data"
+_TEMPORARY_PREFIX = ".market-data-"
 
 
 def _utc_now() -> str:
@@ -42,41 +47,232 @@ def _artifact_bytes(snapshot: object) -> bytes:
     return json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def _publish_immutable(path: Path, payload: bytes) -> bool:
-    """Publish bytes once, returning true only when this call creates the file."""
+def _directory_flags() -> int:
+    required = (getattr(os, "O_DIRECTORY", None), getattr(os, "O_NOFOLLOW", None))
+    if any(flag is None for flag in required):
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+    return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
-    if path.exists():
-        if path.read_bytes() == payload:
+
+def _selected_root_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else Path.cwd() / path
+
+
+def _open_output_root(root: Path) -> int:
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        return os.open(str(root), _directory_flags())
+    except OSError as error:
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID") from error
+
+
+def _open_output_directory(root_fd: int) -> int:
+    try:
+        os.mkdir(_OUTPUT_DIRECTORY, dir_fd=root_fd)
+    except FileExistsError:
+        pass
+    try:
+        return os.open(_OUTPUT_DIRECTORY, _directory_flags(), dir_fd=root_fd)
+    except OSError as error:
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID") from error
+
+
+def _directory_is_attached(root_fd: int, output_fd: int) -> bool:
+    try:
+        entry = os.stat(_OUTPUT_DIRECTORY, dir_fd=root_fd, follow_symlinks=False)
+        opened = os.fstat(output_fd)
+    except OSError:
+        return False
+    return (
+        stat.S_ISDIR(entry.st_mode)
+        and stat.S_ISDIR(opened.st_mode)
+        and (entry.st_dev, entry.st_ino) == (opened.st_dev, opened.st_ino)
+    )
+
+
+def _require_attached_directory(root_fd: int, output_fd: int) -> None:
+    if not _directory_is_attached(root_fd, output_fd):
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+
+
+def _regular_stat(directory_fd: int, name: str):
+    try:
+        entry = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+    return entry
+
+
+def _read_existing_artifact(directory_fd: int, name: str, expected_size: int):
+    entry = _regular_stat(directory_fd, name)
+    if entry is None:
+        return None
+    if entry.st_size != expected_size:
+        return b""
+    try:
+        descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+    except OSError as error:
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID") from error
+    try:
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_nlink != 1
+            or (opened.st_dev, opened.st_ino) != (entry.st_dev, entry.st_ino)
+        ):
+            raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+        chunks = []
+        remaining = expected_size
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def _open_temporary_artifact(directory_fd: int) -> Tuple[str, int]:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    for _ in range(32):
+        name = _TEMPORARY_PREFIX + secrets.token_hex(16)
+        try:
+            descriptor = os.open(name, flags, 0o600, dir_fd=directory_fd)
+        except FileExistsError:
+            continue
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+            os.close(descriptor)
+            raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+        return name, descriptor
+    raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+
+
+def _write_and_sync(descriptor: int, payload: bytes) -> Tuple[int, int]:
+    offset = 0
+    while offset < len(payload):
+        written = os.write(descriptor, payload[offset:])
+        if written <= 0:
+            raise OSError("temporary artifact write failed")
+        offset += written
+    os.fsync(descriptor)
+    written_stat = os.fstat(descriptor)
+    if not stat.S_ISREG(written_stat.st_mode) or written_stat.st_nlink != 1:
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+    return written_stat.st_dev, written_stat.st_ino
+
+
+def _unlink_own_name(directory_fd: int, name: str, identity: Tuple[int, int]) -> None:
+    try:
+        entry = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if (
+        not stat.S_ISREG(entry.st_mode)
+        or (entry.st_dev, entry.st_ino) != identity
+    ):
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+    os.unlink(name, dir_fd=directory_fd)
+
+
+def _rollback_publication(
+    directory_fd: int,
+    artifact_name: str,
+    temporary_name: Optional[str],
+    identity: Tuple[int, int],
+) -> None:
+    _unlink_own_name(directory_fd, artifact_name, identity)
+    if temporary_name is not None:
+        _unlink_own_name(directory_fd, temporary_name, identity)
+    os.fsync(directory_fd)
+
+
+def _publish_in_directory(
+    root_fd: int,
+    directory_fd: int,
+    artifact_name: str,
+    payload: bytes,
+) -> bool:
+    _require_attached_directory(root_fd, directory_fd)
+    existing = _read_existing_artifact(directory_fd, artifact_name, len(payload))
+    if existing is not None:
+        if existing == payload:
             return False
         raise MarketDataError("ARTIFACT_CONFLICT")
-    path.parent.mkdir(parents=True, exist_ok=True)
+
     temporary_name = None
+    temporary_fd = None
+    identity = None
+    published = False
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb", dir=str(path.parent), prefix=".market-data-", delete=False
-        ) as temporary:
-            temporary_name = temporary.name
-            temporary.write(payload)
-            temporary.flush()
-            os.fsync(temporary.fileno())
+        temporary_name, temporary_fd = _open_temporary_artifact(directory_fd)
+        identity = _write_and_sync(temporary_fd, payload)
+        os.close(temporary_fd)
+        temporary_fd = None
+        _require_attached_directory(root_fd, directory_fd)
         try:
-            os.link(temporary_name, path)
+            os.link(
+                temporary_name,
+                artifact_name,
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
         except FileExistsError:
-            if path.read_bytes() != payload:
-                raise MarketDataError("ARTIFACT_CONFLICT")
-            return False
-        directory_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+            existing = _read_existing_artifact(directory_fd, artifact_name, len(payload))
+            if existing == payload:
+                _unlink_own_name(directory_fd, temporary_name, identity)
+                os.fsync(directory_fd)
+                return False
+            raise MarketDataError("ARTIFACT_CONFLICT")
+        published = True
+        _require_attached_directory(root_fd, directory_fd)
+        os.fsync(directory_fd)
+        _unlink_own_name(directory_fd, temporary_name, identity)
+        temporary_name = None
+        os.fsync(directory_fd)
+        _require_attached_directory(root_fd, directory_fd)
         return True
+    except (MarketDataError, OSError) as error:
+        if temporary_fd is not None:
+            os.close(temporary_fd)
+            temporary_fd = None
+        try:
+            if identity is not None:
+                if published:
+                    _rollback_publication(
+                        directory_fd, artifact_name, temporary_name, identity
+                    )
+                elif temporary_name is not None:
+                    _unlink_own_name(directory_fd, temporary_name, identity)
+                    os.fsync(directory_fd)
+        except (MarketDataError, OSError) as rollback_error:
+            raise MarketDataError("ARTIFACT_PUBLISH_FAILED") from rollback_error
+        if isinstance(error, MarketDataError):
+            raise
+        raise MarketDataError("ARTIFACT_PUBLISH_FAILED") from error
     finally:
-        if temporary_name is not None:
-            try:
-                os.unlink(temporary_name)
-            except FileNotFoundError:
-                pass
+        if temporary_fd is not None:
+            os.close(temporary_fd)
+
+
+def _publish_immutable(root: Path, artifact_name: str, payload: bytes) -> bool:
+    """Publish bytes below a no-follow directory boundary without replacement."""
+
+    root_fd = _open_output_root(root)
+    directory_fd = None
+    try:
+        directory_fd = _open_output_directory(root_fd)
+        return _publish_in_directory(root_fd, directory_fd, artifact_name, payload)
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
+        os.close(root_fd)
 
 
 def main(
@@ -105,9 +301,10 @@ def main(
             transport or PublicArchiveTransport(),
             retrieved_at,
         )
-        root = Path(arguments.output_root).expanduser().resolve()
-        artifact = root / "market-data" / (snapshot["snapshot_id"] + ".json")
-        created = _publish_immutable(artifact, _artifact_bytes(snapshot))
+        root = _selected_root_path(arguments.output_root)
+        artifact_name = snapshot["snapshot_id"] + ".json"
+        created = _publish_immutable(root, artifact_name, _artifact_bytes(snapshot))
+        artifact = root.resolve() / _OUTPUT_DIRECTORY / artifact_name
     except SystemExit as error:
         return int(error.code)
     except (MarketDataError, OSError, TypeError, ValueError) as error:

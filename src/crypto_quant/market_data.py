@@ -17,7 +17,7 @@ from pathlib import PurePosixPath
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from jsonschema import Draft202012Validator
 
@@ -96,8 +96,8 @@ class HttpResponse:
 def _is_public_archive_url(url: object) -> bool:
     if not isinstance(url, str):
         return False
-    parsed = urlparse(url)
     try:
+        parsed = urlparse(url)
         return (
             parsed.scheme == "https"
             and parsed.hostname == _PUBLIC_ARCHIVE_HOST
@@ -123,12 +123,24 @@ class _SameHostRedirectHandler(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+def _public_archive_opener():
+    """Build an opener that cannot inherit proxy credentials from the environment."""
+
+    return build_opener(ProxyHandler({}), _SameHostRedirectHandler())
+
+
+def _response_read_limit(url: str) -> int:
+    _require_public_archive_url(url)
+    return _MAX_CHECKSUM_BYTES if url.endswith(".CHECKSUM") else _MAX_ARCHIVE_BYTES
+
+
 class PublicArchiveTransport:
     """Concrete, credential-free public archive transport with a GET-only API."""
 
     def get(self, url):
         _require_public_archive_url(url)
-        opener = build_opener(_SameHostRedirectHandler())
+        maximum_bytes = _response_read_limit(url)
+        opener = _public_archive_opener()
         for attempt in range(_HTTP_GET_ATTEMPTS):
             try:
                 request = Request(url, method="GET")
@@ -137,7 +149,7 @@ class PublicArchiveTransport:
                         status=response.getcode(),
                         final_url=response.geturl(),
                         headers=dict(response.headers.items()),
-                        body=_read_bounded_response(response, _MAX_ARCHIVE_BYTES),
+                        body=_read_bounded_response(response, maximum_bytes),
                     )
             except HTTPError as error:
                 return HttpResponse(
@@ -156,7 +168,7 @@ def _read_bounded_response(response: Any, maximum_bytes: int) -> bytes:
     chunks = []
     total = 0
     while True:
-        chunk = response.read(_READ_CHUNK_BYTES)
+        chunk = response.read(min(_READ_CHUNK_BYTES, maximum_bytes - total + 1))
         if not chunk:
             break
         total += len(chunk)
