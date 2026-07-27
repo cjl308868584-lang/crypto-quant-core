@@ -15,6 +15,7 @@ from .offline_paper import (
     _utc_now,
     build_offline_paper_run,
     capture_offline_paper,
+    minimum_paper_run_recorded_at,
     offline_paper_run_trust_hash,
 )
 
@@ -63,7 +64,7 @@ def main(
         run = build_offline_paper_run(
             capture,
             run_id=run_id,
-            recorded_at=now(),
+            recorded_at=minimum_paper_run_recorded_at(capture, now()),
         )
         trust_hash = offline_paper_run_trust_hash(run)
         root = _selected_root_path(arguments.output_root)

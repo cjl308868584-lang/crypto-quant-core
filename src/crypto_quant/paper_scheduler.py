@@ -23,6 +23,7 @@ from .offline_paper import (
     OfflinePaperPlan,
     build_offline_paper_run,
     capture_offline_paper,
+    minimum_paper_run_recorded_at,
     offline_paper_run_reasons,
     offline_paper_run_trust_hash,
 )
@@ -999,6 +1000,9 @@ def _summary_from_projection(
         "missed_slot_count": statuses.count("MISSED"),
         "expired_slot_count": statuses.count("EXPIRED"),
         "transient_failed_slot_count": statuses.count("FAILED"),
+        "total_failed_attempt_count": sum(
+            item["failure_count"] for item in ordered
+        ),
         "claimed_slot_count": statuses.count("CLAIMED"),
         "prepared_slot_count": statuses.count("PREPARED"),
         "first_scheduled_for_or_null": (
@@ -1236,7 +1240,9 @@ def run_due_paper_cycle(
                 run = build_offline_paper_run(
                     capture,
                     run_id=_run_id(slot),
-                    recorded_at=_clock_value(selected_clock),
+                    recorded_at=minimum_paper_run_recorded_at(
+                        capture, _clock_value(selected_clock)
+                    ),
                 )
                 artifact_bytes = json.dumps(
                     run, sort_keys=True, separators=(",", ":")

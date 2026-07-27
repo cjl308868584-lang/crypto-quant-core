@@ -214,6 +214,7 @@
         "missed_slot_count",
         "expired_slot_count",
         "transient_failed_slot_count",
+        "total_failed_attempt_count",
         "claimed_slot_count",
         "prepared_slot_count",
         "first_scheduled_for_or_null",
@@ -232,6 +233,7 @@
         "missed_slot_count": {"type": "integer", "minimum": 0},
         "expired_slot_count": {"type": "integer", "minimum": 0},
         "transient_failed_slot_count": {"type": "integer", "minimum": 0},
+        "total_failed_attempt_count": {"type": "integer", "minimum": 0},
         "claimed_slot_count": {"type": "integer", "minimum": 0},
         "prepared_slot_count": {"type": "integer", "minimum": 0},
         "first_scheduled_for_or_null": {

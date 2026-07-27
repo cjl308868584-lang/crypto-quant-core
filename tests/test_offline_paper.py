@@ -22,6 +22,7 @@ from crypto_quant.offline_paper import (
     offline_paper_requests,
     offline_paper_run_reasons,
     offline_paper_run_trust_hash,
+    minimum_paper_run_recorded_at,
     _read_bounded,
 )
 
@@ -280,6 +281,15 @@ class OfflinePaperTests(unittest.TestCase):
         self.assertGreaterEqual(
             capture.receipts[2]["request_started_at"],
             capture.decision_time,
+        )
+
+    def test_run_recorded_time_applies_last_receive_plus_one_millisecond_floor(self):
+        capture, _ = valid_capture()
+        self.assertEqual(
+            minimum_paper_run_recorded_at(
+                capture, capture.receipts[3]["response_received_at"]
+            ),
+            "2026-07-27T12:00:00.301Z",
         )
 
     def test_capture_rejects_execution_request_started_before_freeze(self):

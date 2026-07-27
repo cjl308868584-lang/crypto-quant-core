@@ -1154,6 +1154,22 @@ def _raw_body(capture: VerifiedOfflinePaperCapture, index: int) -> bytes:
     return capture.receipts[index]["response_body_utf8"].encode("utf-8")
 
 
+def minimum_paper_run_recorded_at(
+    capture: VerifiedOfflinePaperCapture,
+    candidate: object,
+) -> str:
+    """Apply the deterministic +1ms run-end floor without sleeping."""
+
+    if not isinstance(capture, VerifiedOfflinePaperCapture):
+        raise OfflinePaperError("PAPER_CAPTURE_UNVERIFIED")
+    candidate_dt, _ = _utc(candidate)
+    run_end = max(
+        _utc(capture.receipts[2]["response_received_at"])[0],
+        _utc(capture.receipts[3]["response_received_at"])[0],
+    ) + timedelta(milliseconds=1)
+    return utc_datetime(max(candidate_dt, run_end))
+
+
 def _build_offline_paper_run(
     capture: VerifiedOfflinePaperCapture,
     *,
