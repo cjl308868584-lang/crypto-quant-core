@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/server-time-probe-v1.schema.json",
+  "title": "Binance Server Time Probe v1",
+  "$ref": "paper-runtime-snapshot-v1.schema.json#/$defs/probe"
+}
