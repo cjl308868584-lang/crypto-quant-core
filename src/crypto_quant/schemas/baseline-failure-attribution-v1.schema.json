@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/baseline-failure-attribution-v1.schema.json",
+  "title": "Baseline Failure Attribution V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "attribution_id",
+    "attribution_hash",
+    "recorded_at",
+    "dataset_id",
+    "dataset_hash",
+    "samples_root_hash",
+    "fold_plan_hash",
+    "grouping_policy",
+    "hypothesis_registration",
+    "all_event_metrics",
+    "pooled_archive_oos_metrics",
+    "groups_root_hash",
+    "groups",
+    "contribution_concentration",
+    "diagnosis",
+    "baseline_advancement",
+    "challenger_evaluation_status",
+    "formal_pit_eligibility",
+    "release_oos_eligibility",
+    "profitability_eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./baseline-failure-attribution-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "attribution_id": {"type": "string", "pattern": "^baseline_failure_attribution_[0-9a-f]{64}$"},
+    "attribution_hash": {"$ref": "#/$defs/hash"},
+    "recorded_at": {"$ref": "#/$defs/time"},
+    "dataset_id": {"type": "string", "minLength": 1},
+    "dataset_hash": {"$ref": "#/$defs/hash"},
+    "samples_root_hash": {"$ref": "#/$defs/hash"},
+    "fold_plan_hash": {"$ref": "#/$defs/hash"},
+    "grouping_policy": {"$ref": "#/$defs/groupingPolicy"},
+    "hypothesis_registration": {"$ref": "#/$defs/hypothesis"},
+    "all_event_metrics": {"$ref": "#/$defs/metrics"},
+    "pooled_archive_oos_metrics": {"$ref": "#/$defs/metrics"},
+    "groups_root_hash": {"$ref": "#/$defs/hash"},
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/group"}
+    },
+    "contribution_concentration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["all_events", "pooled_archive_oos"],
+      "properties": {
+        "all_events": {"$ref": "#/$defs/concentration"},
+        "pooled_archive_oos": {"$ref": "#/$defs/concentration"}
+      }
+    },
+    "diagnosis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "all_event_gross_edge_status",
+        "pooled_oos_gross_edge_status",
+        "all_event_exact_fee_drag_usdt",
+        "pooled_oos_exact_fee_drag_usdt",
+        "interpretation"
+      ],
+      "properties": {
+        "all_event_gross_edge_status": {"enum": ["NEGATIVE_BEFORE_FEES", "NONNEGATIVE_BEFORE_FEES"]},
+        "pooled_oos_gross_edge_status": {"enum": ["NEGATIVE_BEFORE_FEES", "NONNEGATIVE_BEFORE_FEES"]},
+        "all_event_exact_fee_drag_usdt": {"$ref": "#/$defs/nonnegativeDecimal"},
+        "pooled_oos_exact_fee_drag_usdt": {"$ref": "#/$defs/nonnegativeDecimal"},
+        "interpretation": {"const": "DESCRIPTIVE_FAILURE_ATTRIBUTION_NOT_A_GATE"}
+      }
+    },
+    "baseline_advancement": {"const": "REJECTED_V1"},
+    "challenger_evaluation_status": {"const": "NOT_RUN_PREREGISTERED_FORWARD_ONLY"},
+    "formal_pit_eligibility": {"const": "INELIGIBLE_ARCHIVE_REPLAY"},
+    "release_oos_eligibility": {"const": "INELIGIBLE_VIEWED_ARCHIVE"},
+    "profitability_eligibility": {"const": "INELIGIBLE"},
+    "warnings": {
+      "const": [
+        "ATTRIBUTION_DESCRIBES_VIEWED_ARCHIVE_DATA_ONLY",
+        "GROUP_RESULTS_MUST_NOT_BE_USED_FOR_THRESHOLD_SEARCH",
+        "CHALLENGER_HAS_NOT_BEEN_EVALUATED",
+        "NO_MODEL_TRAINED_OR_APPROVED",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3,6}Z$"},
+    "decimal": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
+    "nonnegativeDecimal": {"type": "string", "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
+    "nullableDecimal": {
+      "oneOf": [
+        {"$ref": "#/$defs/decimal"},
+        {"type": "null"}
+      ]
+    },
+    "nullableTime": {
+      "oneOf": [
+        {"$ref": "#/$defs/time"},
+        {"type": "null"}
+      ]
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_count",
+        "positive_label_count",
+        "positive_label_rate",
+        "gross_pnl_usdt_sum",
+        "entry_fee_usdt_sum",
+        "exit_fee_usdt_sum",
+        "total_fee_usdt_sum",
+        "net_pnl_usdt_sum",
+        "gross_pnl_usdt_mean",
+        "net_pnl_usdt_mean",
+        "realized_net_return_sum",
+        "fee_flip_count",
+        "minimum_realized_net_return_or_null",
+        "maximum_realized_net_return_or_null",
+        "first_decision_time_or_null",
+        "last_decision_time_or_null"
+      ],
+      "properties": {
+        "sample_count": {"type": "integer", "minimum": 0},
+        "positive_label_count": {"type": "integer", "minimum": 0},
+        "positive_label_rate": {"$ref": "#/$defs/nonnegativeDecimal"},
+        "gross_pnl_usdt_sum": {"$ref": "#/$defs/decimal"},
+        "entry_fee_usdt_sum": {"$ref": "#/$defs/nonnegativeDecimal"},
+        "exit_fee_usdt_sum": {"$ref": "#/$defs/nonnegativeDecimal"},
+        "total_fee_usdt_sum": {"$ref": "#/$defs/nonnegativeDecimal"},
+        "net_pnl_usdt_sum": {"$ref": "#/$defs/decimal"},
+        "gross_pnl_usdt_mean": {"$ref": "#/$defs/decimal"},
+        "net_pnl_usdt_mean": {"$ref": "#/$defs/decimal"},
+        "realized_net_return_sum": {"$ref": "#/$defs/decimal"},
+        "fee_flip_count": {"type": "integer", "minimum": 0},
+        "minimum_realized_net_return_or_null": {"$ref": "#/$defs/nullableDecimal"},
+        "maximum_realized_net_return_or_null": {"$ref": "#/$defs/nullableDecimal"},
+        "first_decision_time_or_null": {"$ref": "#/$defs/nullableTime"},
+        "last_decision_time_or_null": {"$ref": "#/$defs/nullableTime"}
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimension", "bucket_id", "bucket_order", "metrics"],
+      "properties": {
+        "dimension": {"type": "string", "minLength": 1},
+        "bucket_id": {"type": "string", "minLength": 1},
+        "bucket_order": {"type": "integer", "minimum": 1},
+        "metrics": {"$ref": "#/$defs/metrics"}
+      }
+    },
+    "band": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket_id", "lower_inclusive_or_null", "upper_exclusive_or_null"],
+      "properties": {
+        "bucket_id": {"type": "string", "minLength": 1},
+        "lower_inclusive_or_null": {"$ref": "#/$defs/nullableDecimal"},
+        "upper_exclusive_or_null": {"$ref": "#/$defs/nullableDecimal"}
+      }
+    },
+    "groupingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grouping_policy_version",
+        "grouped_scope",
+        "feature_index_map",
+        "bands",
+        "momentum_buckets",
+        "fold_boundary_hours",
+        "grouping_policy_hash"
+      ],
+      "properties": {
+        "grouping_policy_version": {"const": "BASELINE_FAILURE_ATTRIBUTION_V1"},
+        "grouped_scope": {"const": "POOLED_ARCHIVE_OOS"},
+        "feature_index_map": {
+          "const": {
+            "eth_log_return_5": 0,
+            "eth_sma20_distance": 1,
+            "eth_annualized_volatility_20": 2,
+            "eth_mean_range_ratio_6": 3,
+            "eth_taker_buy_quote_ratio_6": 4,
+            "btc_log_return_5": 5,
+            "btc_sma20_distance": 6,
+            "eth_mark_basis": 7,
+            "eth_latest_funding_rate": 8
+          }
+        },
+        "bands": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "eth_sma20_distance",
+            "eth_annualized_volatility_20",
+            "eth_mean_range_ratio_6"
+          ],
+          "properties": {
+            "eth_sma20_distance": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/band"}},
+            "eth_annualized_volatility_20": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/band"}},
+            "eth_mean_range_ratio_6": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/band"}}
+          }
+        },
+        "momentum_buckets": {
+          "const": ["ETH_LOG_RETURN_5_NEGATIVE", "ETH_LOG_RETURN_5_NONNEGATIVE"]
+        },
+        "fold_boundary_hours": {"const": 24},
+        "grouping_policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trial_family",
+        "economic_hypothesis_count",
+        "parameter_combination_count",
+        "challenger_policy_id",
+        "sma20_distance_minimum",
+        "eth_log_return_5_operator",
+        "eth_log_return_5_threshold",
+        "entry_rule",
+        "exit_policy",
+        "episode_regeneration",
+        "viewed_archive_status",
+        "challenger_evaluation_status",
+        "forward_validation_start",
+        "hypothesis_registration_hash"
+      ],
+      "properties": {
+        "trial_family": {"const": "baseline-rule-challenger-2026q3"},
+        "economic_hypothesis_count": {"const": 1},
+        "parameter_combination_count": {"const": 1},
+        "challenger_policy_id": {"const": "SPOT_LONG_SMA20_COST_MARGIN_MOMENTUM_V2"},
+        "sma20_distance_minimum": {"const": "0.005"},
+        "eth_log_return_5_operator": {"const": ">"},
+        "eth_log_return_5_threshold": {"const": "0"},
+        "entry_rule": {"const": "ALL_CONDITIONS_REQUIRED"},
+        "exit_policy": {"const": "UNCHANGED_FROM_V1"},
+        "episode_regeneration": {"const": "FULL_EVENT_STREAM_REJECTED_ENTRY_DOES_NOT_CONSUME_WINDOW"},
+        "viewed_archive_status": {"const": "VIEWED_DEVELOPMENT_ONLY"},
+        "challenger_evaluation_status": {"const": "NOT_RUN_PREREGISTERED_FORWARD_ONLY"},
+        "forward_validation_start": {"const": "2026-07-29T00:00:00.000Z"},
+        "hypothesis_registration_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "concentration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "positive_event_count",
+        "positive_contribution_sum",
+        "top_1_positive_share",
+        "top_5_positive_share",
+        "net_return_sum_after_top_1_positive_removed",
+        "net_return_sum_after_top_5_positive_removed",
+        "top_5_sample_ids"
+      ],
+      "properties": {
+        "positive_event_count": {"type": "integer", "minimum": 0},
+        "positive_contribution_sum": {"$ref": "#/$defs/nonnegativeDecimal"},
+        "top_1_positive_share": {"$ref": "#/$defs/nonnegativeDecimal"},
+        "top_5_positive_share": {"$ref": "#/$defs/nonnegativeDecimal"},
+        "net_return_sum_after_top_1_positive_removed": {"$ref": "#/$defs/decimal"},
+        "net_return_sum_after_top_5_positive_removed": {"$ref": "#/$defs/decimal"},
+        "top_5_sample_ids": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

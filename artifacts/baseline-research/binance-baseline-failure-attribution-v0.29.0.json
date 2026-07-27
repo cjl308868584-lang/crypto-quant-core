@@ -1,0 +1,133 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-baseline-failure-attribution-v0.29.0",
+  "release_candidate": "0.29.0",
+  "status": "PASS_ATTRIBUTION_REJECT_V1_NO_CHALLENGER_EVALUATION",
+  "input": {
+    "dataset_id": "causal_dataset_d9aed82cb5bb7b30df58d55debcde2f59eaf6b29d5e9bbf8f9d6f807adf01549",
+    "dataset_hash": "2a8ee3e2d2345f06764c654a6b0e94c777efafcafe54e88f4a2e2254f4629ec8",
+    "samples_root_hash": "94af2a42637ddda5a8670bb7b96e546717ee80d20d18e903ed235b78deb8f214",
+    "fold_plan_hash": "3ecb1b9fbe7a68a4b499696ec1b5bec67c23a3f66d4a98f208f508f1aeeab199",
+    "viewed_archive_status": "VIEWED_DEVELOPMENT_ONLY"
+  },
+  "attribution": {
+    "attribution_id": "baseline_failure_attribution_3a527f985be46cf041535665f556631271ec5f3d0ebcaee1889c10981558011c",
+    "attribution_hash": "30f0142a4ba831d788379efd5459e61d6274a5f14a7ac8e4740d45b6bb137440",
+    "groups_root_hash": "d0554d2b25f0a9dfa9442d4252c8af71ab893b7edc505151ee8678935bd04b35",
+    "all_events": {
+      "sample_count": 780,
+      "positive_label_count": 254,
+      "gross_pnl_usdt_sum": "-1292.32171",
+      "total_fee_usdt_sum": "2337.76291479",
+      "net_pnl_usdt_sum": "-3630.08462479",
+      "fee_flip_count": 37,
+      "gross_edge_status": "NEGATIVE_BEFORE_FEES"
+    },
+    "pooled_archive_oos": {
+      "sample_count": 419,
+      "positive_label_count": 142,
+      "gross_pnl_usdt_sum": "-957.969754",
+      "total_fee_usdt_sum": "1255.381334241",
+      "net_pnl_usdt_sum": "-2213.351088241",
+      "fee_flip_count": 19,
+      "gross_edge_status": "NEGATIVE_BEFORE_FEES"
+    },
+    "oos_fold_gross_pnl_usdt": [
+      "-22.299047",
+      "-1.824951",
+      "-470.476336",
+      "99.75301",
+      "150.052201",
+      "-414.207741",
+      "-175.097263",
+      "-123.869627"
+    ],
+    "oos_fold_net_pnl_usdt": [
+      "-178.2404845535",
+      "-184.7948426835",
+      "-625.748419585",
+      "-68.378284109",
+      "-27.1383438425",
+      "-560.5616646195",
+      "-312.8183577565",
+      "-255.6706910915"
+    ],
+    "exit_reason": {
+      "sma20_exit_after_min_hold": {
+        "sample_count": 203,
+        "positive_label_count": 0,
+        "gross_pnl_usdt_sum": "-4549.642677",
+        "net_pnl_usdt_sum": "-5151.7275681525"
+      },
+      "vertical_24h_exit": {
+        "sample_count": 216,
+        "positive_label_count": 142,
+        "gross_pnl_usdt_sum": "3591.672923",
+        "net_pnl_usdt_sum": "2938.3764799115"
+      }
+    },
+    "holding_24h": {
+      "sample_count": 242,
+      "positive_label_count": 142,
+      "gross_pnl_usdt_sum": "2977.30026",
+      "net_pnl_usdt_sum": "2246.935829247"
+    },
+    "low_volatility_diagnostic": {
+      "band": "eth_annualized_volatility_20:[0,0.4)",
+      "sample_count": 75,
+      "gross_pnl_usdt_sum": "239.19005",
+      "net_pnl_usdt_sum": "13.863502997",
+      "eligibility": "DESCRIPTIVE_ONLY_NOT_A_THRESHOLD"
+    },
+    "contribution_concentration": {
+      "pooled_oos_positive_event_count": 142,
+      "pooled_oos_positive_contribution_sum": "3.700556977928",
+      "pooled_oos_top_1_positive_share": "0.05683760958458948713695239935",
+      "pooled_oos_top_5_positive_share": "0.1571006552863597732667090158",
+      "pooled_oos_net_return_after_top_5_removed": "-2.794711014398"
+    }
+  },
+  "registered_challenger": {
+    "trial_family": "baseline-rule-challenger-2026q3",
+    "economic_hypothesis_count": 1,
+    "parameter_combination_count": 1,
+    "challenger_policy_id": "SPOT_LONG_SMA20_COST_MARGIN_MOMENTUM_V2",
+    "sma20_distance_minimum": "0.005",
+    "eth_log_return_5_operator": ">",
+    "eth_log_return_5_threshold": "0",
+    "hypothesis_registration_hash": "885b33d3a91eae1d5822fe12c16773a446c23e702f9a4110ef32f474157fa27f",
+    "challenger_evaluation_status": "NOT_RUN_PREREGISTERED_FORWARD_ONLY",
+    "forward_validation_start": "2026-07-29T00:00:00.000Z"
+  },
+  "independent_audits": {
+    "fixture_deterministic_rebuild_count": 100,
+    "actual_deterministic_rebuild_count": 100,
+    "actual_exact_match": true,
+    "process_isolation": "NEW_PYTHON_PROCESS",
+    "network_calls": 0,
+    "semantic_validation_reasons": [],
+    "owner_only_permission_failures": [],
+    "schema_mirror_exact": true
+  },
+  "release_validation": {
+    "focused_attribution_test_count": 6,
+    "full_test_count": 491,
+    "golden_vector_count": 41,
+    "evaluator_build_input_count": 137,
+    "make_validate_command_status": "COMPLETED",
+    "release_policy_result": "FAIL_EXPECTED_DESIGN_BASELINE"
+  },
+  "decision": {
+    "baseline_advancement": "REJECTED_V1",
+    "challenger_advancement": "NOT_EVALUATED",
+    "ai_advancement": "NOT_AUTHORIZED",
+    "profitability_eligibility": "INELIGIBLE",
+    "interpretation": "V1 loses before fees as well as after fees. Fees worsen the loss but are not the sole cause. Exit-path diagnostics are descriptive and cannot authorize a post-hoc rule change."
+  },
+  "notes": [
+    "All grouping boundaries were frozen before the real attribution run.",
+    "No group boundary was moved and no favorable group was promoted into a strategy.",
+    "The registered challenger must regenerate episodes from the full event stream and may only use decision-time-captured forward evidence.",
+    "No model, credential, Broker, order submission, real fill or profitability claim was used."
+  ]
+}

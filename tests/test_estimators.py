@@ -455,6 +455,16 @@ class EvaluatorBuildTests(unittest.TestCase):
             expected,
         )
         self.assertIn(
+            "artifacts/baseline-research/"
+            "binance-baseline-failure-attribution-v0.29.0.json",
+            expected,
+        )
+        self.assertIn(
+            "src/crypto_quant/schemas/"
+            "baseline-failure-attribution-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
             "src/crypto_quant/schemas/"
             "historical-execution-source-v1.schema.json",
             expected,
@@ -536,9 +546,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.23.0")
-        self.assertEqual(manifest["package_version"], "0.28.0")
-        self.assertEqual(crypto_quant.__version__, "0.28.0")
+        self.assertEqual(manifest["manifest_version"], "1.24.0")
+        self.assertEqual(manifest["package_version"], "0.29.0")
+        self.assertEqual(crypto_quant.__version__, "0.29.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",

@@ -2,11 +2,11 @@
   "$schema": "./evaluator-build-manifest-v1.schema.json",
   "schema_version": "1.0.0",
   "manifest_id": "release-evaluator-build-v1",
-  "manifest_version": "1.23.0",
+  "manifest_version": "1.24.0",
   "status": "BUILD_CANDIDATE",
   "evaluator_id": "release-gate-evaluator-v1",
   "package_name": "crypto-quant-core",
-  "package_version": "0.28.0",
+  "package_version": "0.29.0",
   "python_requires": ">=3.9",
   "metric_catalog_id": "release-metrics-v1.1",
   "metric_catalog_version": "1.1.6",
@@ -23,6 +23,7 @@
   "file_hashes": {
     "artifacts/account-cost/binance-account-commission-smoke-not-run-v0.22.0.json": "3ab008d9e95665ada3e0351052ece7dd9db0c63044d99397fa797e6719e3bcb0",
     "artifacts/ai-research/binance-causal-logistic-research-v0.28.0.json": "7b76e70b6924f1b0061da372c765a42d9bbdffead70bb9e40957a2c1ac288d24",
+    "artifacts/baseline-research/binance-baseline-failure-attribution-v0.29.0.json": "b3bb875e6f21b2477f99ac32e6b84404fde0e6b02e14aebaf0b0f5def783038d",
     "artifacts/market-data/binance-contemporaneous-smoke-v0.17.0.json": "313944fbf6847dcda02056cbd3cce8e5f7e11a75f9e157c3fb924023ac42c773",
     "artifacts/market-data/binance-perpetual-context-smoke-failure-v0.21.0.json": "1cce8d84ac150deed8fca40555b81df73d71e1cad08626e46b1c3f9f7b7dd40a",
     "artifacts/market-data/binance-public-data-smoke-v0.16.0.json": "f1bf65dfaff91a8193ebeb08e3e93db82eb0d70f036127445921cb0555b0be41",
@@ -40,6 +41,7 @@
     "artifacts/runtime/v0.20-smoke/runtime/paper-runtime-runtime_event_ea4452a8f11abc78d4e8df0a02f57554e2ec918567b9bedb7c5df20d47b3e34e.json": "36c12175d9d8614d6e0fd68c3e2b617017d2b1abcc9607adc2e6c51ceb7d4bba",
     "config/account-commission-snapshot-v1.schema.json": "49d9b7fd1c1bb4af9be5099d5658dfadc678904da720f95f4b681bb860a023d4",
     "config/approved-fallback-registry-v1.1.schema.json": "c3efbc775066f3c0bdc1dec00299126583213791c4dd07812d8e9d29e4740726",
+    "config/baseline-failure-attribution-v1.schema.json": "6614e7296e3c258260cadd7e564bc0d3e8857dece4949f4d2a6d25e0897acba7",
     "config/causal-feature-label-dataset-v1.schema.json": "a394f3dfc4872d26a59650aef9000ca1e9aab350c693b5c44aad231199486b2e",
     "config/contemporaneous-capture-snapshot-v1.schema.json": "7521274a36ea2c9a3ce6fb41003c897438a38b700907ed86740abbf06509e7b9",
     "config/context-cycle-orchestration-snapshot-v1.schema.json": "5f23010c18bd1675aa59ef48ec46703ce5b9c797fb159f15ba011cdd5029020a",
@@ -80,13 +82,14 @@
     "config/statistical-series-snapshot-v1.schema.json": "3ef36d8465aa4978b178a3b07ffb5f5c877e5921af1d4e4f17ef2bac6260caff",
     "config/supporting-observation-bundle-v1.schema.json": "559b92cf5545b40035c8f30db95c8df7351a2e320f87b7d2572a0e47e830eec0",
     "config/trade-replay-snapshot-v1.schema.json": "d45dfaaf86f2dbdcd83109fd3b329aca6f455812df0022652129079555b8546f",
-    "pyproject.toml": "797725255024743ef6e0adc62bad4fb77d011212b278edab3da7fb53597c404d",
+    "pyproject.toml": "ff48e7979823cfceb7563978c0336b806608ecd2446f8d671745a6c6e2528331",
     "requirements.lock": "71aa777f1717f056886f3de1fb2e1013a5dec5210d681ed30943056edf7ccbed",
-    "setup.py": "c4c21e5b701d434eabf82d03a32b24c14c840ea41f8a30765785f7d526c72e41",
-    "src/crypto_quant/__init__.py": "0fe3c099d32e291812663e85210960690b9a8d25a53918c01c304c92566802da",
+    "setup.py": "9e8002583fd754419727fd9745fa46c8bc1d688f77f76b35c7a51bad949eeb37",
+    "src/crypto_quant/__init__.py": "1fafed18239f6e93278479e164f5e250b3a1e9d757e5529fbe0c53f6e98a761e",
     "src/crypto_quant/account_commission.py": "7ce2db8d648f8e0208951caf866d914854d244e469c9a86a27b1ee14ff84c9f4",
     "src/crypto_quant/account_commission_cli.py": "993e6cb903673bc6781ca0a74494bfc149cea73c4d5a47576a3384e052652076",
-    "src/crypto_quant/build.py": "b6c1b5918ed53768457383a54c4feac8101c09f15dccbd08fa4a6237c3f42dcd",
+    "src/crypto_quant/baseline_attribution.py": "cb72d295c26b05f5205643adc7403b127ac6a174d4e198b06d025661967060dd",
+    "src/crypto_quant/build.py": "9dd0ba2c042d176a1741261b4a16ed5a738868e509cb98ced24b9bf4dd8fb891",
     "src/crypto_quant/canonical.py": "29bca29c775ec8f6734c5676fc0682d402b0659a2250902de68fb7c477891120",
     "src/crypto_quant/capture_cli.py": "d542e062327c3c2f17bf3484a020b5e38d5f07027be12e0bd78cc2c975629bb0",
     "src/crypto_quant/causal_research.py": "20f0065df15988f4bb1838b21b1e955bf5b3053d41547d2e478c91df78bedfd1",
@@ -132,6 +135,7 @@
     "src/crypto_quant/runtime_health.py": "21fa7129849bece853b9eb4780610218087209e0166c3aa8673736fb719e9e03",
     "src/crypto_quant/runtime_health_cli.py": "7866277b96b2680602214d70dc53875813871d916e43bdc2b24f841d8c5db5a3",
     "src/crypto_quant/schemas/account-commission-snapshot-v1.schema.json": "49d9b7fd1c1bb4af9be5099d5658dfadc678904da720f95f4b681bb860a023d4",
+    "src/crypto_quant/schemas/baseline-failure-attribution-v1.schema.json": "6614e7296e3c258260cadd7e564bc0d3e8857dece4949f4d2a6d25e0897acba7",
     "src/crypto_quant/schemas/causal-feature-label-dataset-v1.schema.json": "a394f3dfc4872d26a59650aef9000ca1e9aab350c693b5c44aad231199486b2e",
     "src/crypto_quant/schemas/contemporaneous-capture-snapshot-v1.schema.json": "7521274a36ea2c9a3ce6fb41003c897438a38b700907ed86740abbf06509e7b9",
     "src/crypto_quant/schemas/context-cycle-orchestration-snapshot-v1.schema.json": "5f23010c18bd1675aa59ef48ec46703ce5b9c797fb159f15ba011cdd5029020a",
@@ -155,7 +159,7 @@
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335"
   },
-  "build_input_tree_hash": "a3f0df32a2a37dc1023d53617c023685ee8a3c6ac81799f8d76cc3c3a67a5cba",
+  "build_input_tree_hash": "a02be71b52a77e8c157e5eb3ebf4132af9b77bd39eb2b58a90f75b7f49d08d84",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -163,5 +167,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "4ccf91a0752a37a7ebb6303ecf067ea28b39ea4fc54910ee7a7485347dcc35e7"
+  "manifest_hash": "6905f843cab9e6b05d830bb9ebc3663a7f7597966bed440c50f7d83e484a315f"
 }
