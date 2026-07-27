@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-challenger-live-runner-not-run-v0.31.0",
+  "release_candidate": "0.31.0",
+  "recorded_at": "2026-07-27T22:02:51.000Z",
+  "status": "READY_WAITING_FORWARD_START_NO_NETWORK_RUN",
+  "forward_start": "2026-07-29T00:00:00.000Z",
+  "runner": {
+    "module": "crypto_quant.challenger_forward_runner",
+    "cli_module": "crypto_quant.challenger_forward_runner_cli",
+    "public_server_time_request_count_per_run": 3,
+    "public_kline_request_count_when_due": 1,
+    "public_kline_request_count_when_not_due_or_missed": 0,
+    "credential_required": false,
+    "broker_access": false,
+    "order_submission_access": false,
+    "historical_backfill_allowed": false
+  },
+  "real_execution": {
+    "server_time_request_count": 0,
+    "kline_request_count": 0,
+    "source_bundle_count": 0,
+    "decision_count": 0,
+    "outcome_observation_count": 0,
+    "profitability_claim_count": 0,
+    "operating_system_scheduler_installed": false
+  },
+  "fixture_validation": {
+    "focused_test_count": 11,
+    "deterministic_rebuild_count": 100,
+    "schema_mirror_exact": true,
+    "due_request_path_verified": true,
+    "not_due_zero_market_request_verified": true,
+    "missed_slot_zero_market_request_verified": true,
+    "cross_slot_revision_rejection_verified": true,
+    "source_bundle_semantic_replay_verified": true,
+    "eligible_as_real_forward_evidence": false
+  },
+  "eligibility": {
+    "forward_evidence": "INELIGIBLE_NO_REAL_DECISIONS",
+    "external_time_anchor": "INELIGIBLE_NO_INDEPENDENT_PUBLICATION",
+    "paper": "INELIGIBLE_NO_OUTCOME",
+    "release_oos": "INELIGIBLE_FORWARD_COLLECTION_NOT_STARTED",
+    "profitability": "INELIGIBLE"
+  },
+  "warnings": [
+    "THE_REGISTERED_FORWARD_START_HAS_NOT_OCCURRED_AT_RECORDING_TIME",
+    "NO_REAL_NETWORK_REQUEST_WAS_MADE",
+    "FIXTURE_VALIDATION_IS_NOT_FORWARD_EVIDENCE",
+    "BINANCE_TIME_RECEIPT_IS_NOT_INDEPENDENT_PUBLICATION",
+    "NO_HISTORICAL_BACKFILL",
+    "NO_OUTCOME_OR_PROFITABILITY_CLAIM"
+  ]
+}
