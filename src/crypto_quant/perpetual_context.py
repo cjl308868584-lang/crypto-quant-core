@@ -29,9 +29,9 @@ from .canonical import (
 from .evidence import artifact_self_hash
 from .market_data_cli import _publish_immutable
 from .runtime_health import (
-    RuntimeHealthPolicy,
-    TrustedRuntimeClock,
-    build_server_time_probe,
+    RuntimeHealthError,
+    VerifiedRuntimeGate,
+    open_verified_runtime_gate,
     server_time_probe_reasons,
     server_time_probe_trust_hash,
 )
@@ -495,19 +495,42 @@ def capture_perpetual_context(
     server_time_transport=None,
     futures_transport=None,
 ) -> VerifiedPerpetualContextCapture:
-    policy = RuntimeHealthPolicy.create()
-    probe = build_server_time_probe(
-        transport=server_time_transport,
-        policy=policy,
+    try:
+        gate = open_verified_runtime_gate(
+            server_time_transport=server_time_transport
+        )
+    except RuntimeHealthError as error:
+        if error.reason_code == "PAPER_CLOCK_PROBE_BLOCKED":
+            raise PerpetualContextError(
+                "PERPETUAL_CLOCK_BLOCKED"
+            ) from error
+        raise
+    return capture_perpetual_context_with_runtime_gate(
+        runtime_gate=gate,
+        futures_transport=futures_transport,
     )
+
+
+def capture_perpetual_context_with_runtime_gate(
+    *,
+    runtime_gate: VerifiedRuntimeGate,
+    futures_transport=None,
+) -> VerifiedPerpetualContextCapture:
+    """Capture perpetual context using an issued shared clock gate."""
+
+    if not isinstance(runtime_gate, VerifiedRuntimeGate):
+        raise PerpetualContextError("PERPETUAL_RUNTIME_GATE_INVALID")
+    probe = runtime_gate.probe
+    if server_time_probe_reasons(
+        probe, server_time_probe_trust_hash(probe)
+    ):
+        raise PerpetualContextError("PERPETUAL_RUNTIME_GATE_INVALID")
     if probe["health_status"] not in (
         "HEALTHY_ALIGNED",
         "HEALTHY_CORRECTED",
     ):
         raise PerpetualContextError("PERPETUAL_CLOCK_BLOCKED")
-    trusted_clock = TrustedRuntimeClock(
-        anchor_utc_ms=_epoch_ms(probe["trusted_completed_at_or_null"])
-    )
+    trusted_clock = runtime_gate.clock
     plan = PerpetualContextPlan.create()
     transport = futures_transport or BinancePerpetualContextTransport(
         clock=trusted_clock

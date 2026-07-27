@@ -27,9 +27,9 @@ from .canonical import business_hash, canonical_decimal, stable_id, utc_datetime
 from .evidence import artifact_self_hash
 from .market_data_cli import _publish_immutable
 from .runtime_health import (
-    RuntimeHealthPolicy,
-    TrustedRuntimeClock,
-    build_server_time_probe,
+    RuntimeHealthError,
+    VerifiedRuntimeGate,
+    open_verified_runtime_gate,
     server_time_probe_reasons,
     server_time_probe_trust_hash,
 )
@@ -1046,18 +1046,46 @@ def capture_account_commission(
 ) -> VerifiedAccountCommissionCapture:
     if not isinstance(signer, HmacAccountSigner):
         raise AccountCommissionError("ACCOUNT_CREDENTIAL_INVALID")
-    probe = build_server_time_probe(
-        transport=server_time_transport,
-        policy=RuntimeHealthPolicy.create(),
+    try:
+        gate = open_verified_runtime_gate(
+            server_time_transport=server_time_transport
+        )
+    except RuntimeHealthError as error:
+        if error.reason_code == "PAPER_CLOCK_PROBE_BLOCKED":
+            raise AccountCommissionError(
+                "ACCOUNT_COMMISSION_CLOCK_BLOCKED"
+            ) from error
+        raise
+    return capture_account_commission_with_runtime_gate(
+        signer=signer,
+        runtime_gate=gate,
+        account_transport=account_transport,
     )
+
+
+def capture_account_commission_with_runtime_gate(
+    *,
+    signer: HmacAccountSigner,
+    runtime_gate: VerifiedRuntimeGate,
+    account_transport=None,
+) -> VerifiedAccountCommissionCapture:
+    """Capture account costs using an already verified shared clock gate."""
+
+    if not isinstance(signer, HmacAccountSigner):
+        raise AccountCommissionError("ACCOUNT_CREDENTIAL_INVALID")
+    if not isinstance(runtime_gate, VerifiedRuntimeGate):
+        raise AccountCommissionError("ACCOUNT_RUNTIME_GATE_INVALID")
+    probe = runtime_gate.probe
+    if server_time_probe_reasons(
+        probe, server_time_probe_trust_hash(probe)
+    ):
+        raise AccountCommissionError("ACCOUNT_RUNTIME_GATE_INVALID")
     if probe["health_status"] not in (
         "HEALTHY_ALIGNED",
         "HEALTHY_CORRECTED",
     ):
         raise AccountCommissionError("ACCOUNT_COMMISSION_CLOCK_BLOCKED")
-    trusted_clock = TrustedRuntimeClock(
-        anchor_utc_ms=_epoch_ms(probe["trusted_completed_at_or_null"])
-    )
+    trusted_clock = runtime_gate.clock
     transport = account_transport or BinanceAccountCommissionTransport(
         clock=trusted_clock
     )

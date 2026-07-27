@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "context-cycle-orchestration-not-run-v0.25.0",
+  "release_candidate": "0.25.0",
+  "evaluated_at": "2026-07-28T02:00:00.000Z",
+  "outcome": "NOT_RUN_FAIL_CLOSED",
+  "reason_code": "REAL_READONLY_CREDENTIAL_FILES_AND_SUCCESSFUL_FUTURES_SOURCE_UNAVAILABLE",
+  "real_execution": {
+    "credential_files_available": false,
+    "shared_runtime_gate_opened": false,
+    "account_commission_captured": false,
+    "scheduled_paper_run_created": false,
+    "perpetual_context_captured": false,
+    "cost_binding_created": false,
+    "context_sidecar_completed": false,
+    "physical_network_request_count": 0,
+    "balance_request_count": 0,
+    "order_submission_count": 0
+  },
+  "local_scheduler": {
+    "contract_generated_with_real_paths": false,
+    "launchagent_installed": false,
+    "launchagent_loaded": false,
+    "installation_receipt_available": false,
+    "launchctl_invoked": false
+  },
+  "fixture_validation": {
+    "normal_path_request_count": 15,
+    "single_shared_probe_verified": true,
+    "account_prepare_recovery_verified": true,
+    "paper_then_perpetual_failure_recovery_verified": true,
+    "append_only_tamper_rejection_verified": true,
+    "eligible_as_real_source_evidence": false,
+    "eligible_as_profitability_evidence": false
+  },
+  "eligibility": "REAL_CONTEXT_ORCHESTRATION_AND_OS_SCHEDULING_NOT_STARTED",
+  "notes": [
+    "Missing credential files fail before every network request.",
+    "No fixture response was written into the real longitudinal schedule.",
+    "A generated plist is not evidence that launchd installed or loaded it.",
+    "No balance, position, order or fill endpoint exists in this orchestration."
+  ]
+}

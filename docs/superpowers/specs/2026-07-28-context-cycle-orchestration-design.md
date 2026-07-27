@@ -41,7 +41,8 @@ chain, payload hashes, source-byte hashes and legal state transitions.
 
 The orchestration uses the same 4h slot policy and a 15-minute lease:
 
-- a completed slot returns `ALREADY_SUCCEEDED` with zero network requests;
+- a completed slot returns `ALREADY_SUCCEEDED` after the three-request clock
+  gate, with zero account/Paper/perpetual requests;
 - an unexpired claim returns `BUSY`;
 - a failed or expired claim can be reclaimed while the slot is active;
 - a prepared account source is always reused and never recaptured;

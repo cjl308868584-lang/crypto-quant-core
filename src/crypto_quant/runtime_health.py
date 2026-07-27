@@ -32,6 +32,7 @@ from .paper_scheduler import (
 
 
 _POLICY_TOKEN = object()
+_RUNTIME_GATE_TOKEN = object()
 _GENESIS_HASH = "0" * 64
 _SERVER_TIME_URL = "https://data-api.binance.vision/api/v3/time"
 _SERVER_TIME_HOST = "data-api.binance.vision"
@@ -741,6 +742,26 @@ class TrustedRuntimeClock:
         return _from_epoch_ms(self._anchor_utc_ms + elapsed_ms)
 
 
+@dataclass(frozen=True, init=False)
+class VerifiedRuntimeGate:
+    """One replay-valid probe and the monotonic clock issued from it."""
+
+    probe: Mapping[str, Any]
+    clock: TrustedRuntimeClock
+    probe_request_count: int
+
+    def __init__(self, *args, **kwargs):
+        if kwargs.pop("_token", None) is not _RUNTIME_GATE_TOKEN:
+            raise TypeError(
+                "VerifiedRuntimeGate is issued by open_verified_runtime_gate"
+            )
+        object.__setattr__(self, "probe", kwargs["probe"])
+        object.__setattr__(self, "clock", kwargs["clock"])
+        object.__setattr__(
+            self, "probe_request_count", kwargs["probe_request_count"]
+        )
+
+
 def _trusted_clock_from_probe(probe: Mapping[str, Any]) -> TrustedRuntimeClock:
     if probe.get("health_status") not in (
         "HEALTHY_ALIGNED",
@@ -749,6 +770,38 @@ def _trusted_clock_from_probe(probe: Mapping[str, Any]) -> TrustedRuntimeClock:
         raise RuntimeHealthError("PAPER_CLOCK_PROBE_BLOCKED")
     return TrustedRuntimeClock(
         anchor_utc_ms=_epoch_ms(probe["trusted_completed_at_or_null"])
+    )
+
+
+def open_verified_runtime_gate(
+    *,
+    server_time_transport=None,
+    monotonic_ns=None,
+) -> VerifiedRuntimeGate:
+    """Issue one shared clock gate after a complete healthy probe."""
+
+    probe = build_server_time_probe(
+        transport=server_time_transport,
+        policy=RuntimeHealthPolicy.create(),
+    )
+    trust_hash = server_time_probe_trust_hash(probe)
+    if server_time_probe_reasons(probe, trust_hash):
+        raise RuntimeHealthError("PAPER_CLOCK_PROBE_INVALID")
+    if probe["health_status"] not in (
+        "HEALTHY_ALIGNED",
+        "HEALTHY_CORRECTED",
+    ):
+        raise RuntimeHealthError("PAPER_CLOCK_PROBE_BLOCKED")
+    return VerifiedRuntimeGate(
+        probe=probe,
+        clock=TrustedRuntimeClock(
+            anchor_utc_ms=_epoch_ms(
+                probe["trusted_completed_at_or_null"]
+            ),
+            monotonic_ns=monotonic_ns,
+        ),
+        probe_request_count=3,
+        _token=_RUNTIME_GATE_TOKEN,
     )
 
 
