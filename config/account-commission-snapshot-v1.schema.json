@@ -1,0 +1,376 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/account-commission-snapshot-v1.schema.json",
+  "title": "Account Commission Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_version", "snapshot_id", "snapshot_hash",
+    "recorded_at", "observed_at", "valid_until", "policy",
+    "server_time_probe", "api_key_fingerprint", "receipts",
+    "permission_summary", "commission_context", "cost_scenarios",
+    "quality_report", "network_request_count",
+    "cost_context_eligibility", "historical_backfill_eligibility",
+    "production_eligibility", "profitability_eligibility", "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./account-commission-snapshot-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "snapshot_id": {"$ref": "#/$defs/id"},
+    "snapshot_hash": {"$ref": "#/$defs/hash"},
+    "recorded_at": {"$ref": "#/$defs/timestamp"},
+    "observed_at": {"$ref": "#/$defs/timestamp"},
+    "valid_until": {"$ref": "#/$defs/timestamp"},
+    "policy": {"$ref": "#/$defs/policy"},
+    "server_time_probe": {"type": "object"},
+    "api_key_fingerprint": {"$ref": "#/$defs/hash"},
+    "receipts": {
+      "type": "array",
+      "prefixItems": [
+        {"$ref": "#/$defs/receipt"},
+        {"$ref": "#/$defs/receipt"},
+        {"$ref": "#/$defs/receipt"}
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "permission_summary": {"$ref": "#/$defs/permission"},
+    "commission_context": {"$ref": "#/$defs/context"},
+    "cost_scenarios": {"$ref": "#/$defs/costs"},
+    "quality_report": {"$ref": "#/$defs/quality"},
+    "network_request_count": {"const": 6},
+    "cost_context_eligibility": {
+      "const": "CURRENT_PAPER_CONTEXT_ONLY"
+    },
+    "historical_backfill_eligibility": {"const": "FORBIDDEN"},
+    "production_eligibility": {
+      "const": "EXTERNAL_APPROVAL_NOT_IMPLEMENTED"
+    },
+    "profitability_eligibility": {
+      "const": "INSUFFICIENT_DURATION_AND_EXECUTION"
+    },
+    "warnings": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "CURRENT_RATES_DO_NOT_AUTHORIZE_HISTORICAL_BACKFILL"},
+        {"const": "BNB_DISCOUNT_SCENARIO_NOT_ACCOUNTED"},
+        {"const": "EXTERNAL_PRODUCTION_APPROVAL_NOT_IMPLEMENTED"},
+        {"const": "BALANCES_POSITIONS_ORDERS_AND_FILLS_NOT_CAPTURED"},
+        {"const": "CREDENTIAL_PROCESS_MEMORY_CANNOT_BE_PROVEN_ZEROIZED"},
+        {"const": "AI_MODEL_NOT_RUN"}
+      ],
+      "minItems": 6,
+      "maxItems": 6
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "id": {"type": "string", "minLength": 1, "maxLength": 160},
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "nullableString": {"type": ["string", "null"]},
+    "nullableInteger": {"type": ["integer", "null"], "minimum": 0},
+    "requestPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family", "method", "host", "path", "symbol_or_null",
+        "security_type"
+      ],
+      "properties": {
+        "family": {
+          "enum": [
+            "API_KEY_RESTRICTIONS", "SPOT_ACCOUNT_COMMISSION",
+            "USD_M_ACCOUNT_COMMISSION"
+          ]
+        },
+        "method": {"const": "GET"},
+        "host": {
+          "enum": ["api.binance.com", "fapi.binance.com"]
+        },
+        "path": {"type": "string", "pattern": "^/(api|sapi|fapi)/"},
+        "symbol_or_null": {
+          "oneOf": [{"const": "ETHUSDT"}, {"type": "null"}]
+        },
+        "security_type": {"const": "USER_DATA_SIGNED"}
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "plan_id", "symbol", "recv_window_ms",
+        "server_time_request_count", "signed_request_count",
+        "automatic_retry_count", "requests", "plan_hash"
+      ],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "plan_id": {
+          "const": "ethusdt-current-account-commission-evidence-v1"
+        },
+        "symbol": {"const": "ETHUSDT"},
+        "recv_window_ms": {"const": 5000},
+        "server_time_request_count": {"const": 3},
+        "signed_request_count": {"const": 3},
+        "automatic_retry_count": {"const": 0},
+        "requests": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/requestPolicy"},
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "plan_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "signedRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family", "method", "host", "path", "symbol_or_null",
+        "security_type", "timestamp_ms", "recv_window_ms",
+        "unsigned_query_sha256", "signed_query_sha256",
+        "api_key_fingerprint"
+      ],
+      "properties": {
+        "family": {
+          "enum": [
+            "API_KEY_RESTRICTIONS", "SPOT_ACCOUNT_COMMISSION",
+            "USD_M_ACCOUNT_COMMISSION"
+          ]
+        },
+        "method": {"const": "GET"},
+        "host": {
+          "enum": ["api.binance.com", "fapi.binance.com"]
+        },
+        "path": {"type": "string", "pattern": "^/(api|sapi|fapi)/"},
+        "symbol_or_null": {
+          "oneOf": [{"const": "ETHUSDT"}, {"type": "null"}]
+        },
+        "security_type": {"const": "USER_DATA_SIGNED"},
+        "timestamp_ms": {"type": "integer", "minimum": 0},
+        "recv_window_ms": {"const": 5000},
+        "unsigned_query_sha256": {"$ref": "#/$defs/hash"},
+        "signed_query_sha256": {"$ref": "#/$defs/hash"},
+        "api_key_fingerprint": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "headers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "http_date_or_null", "retry_after_or_null",
+        "used_weight_1m_or_null"
+      ],
+      "properties": {
+        "http_date_or_null": {"$ref": "#/$defs/nullableString"},
+        "retry_after_or_null": {"$ref": "#/$defs/nullableString"},
+        "used_weight_1m_or_null": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request", "status", "final_host", "final_path",
+        "selected_headers", "response_body_utf8",
+        "response_body_sha256", "request_started_at",
+        "response_received_at", "receipt_hash"
+      ],
+      "properties": {
+        "request": {"$ref": "#/$defs/signedRequest"},
+        "status": {"const": 200},
+        "final_host": {
+          "enum": ["api.binance.com", "fapi.binance.com"]
+        },
+        "final_path": {"type": "string", "pattern": "^/(api|sapi|fapi)/"},
+        "selected_headers": {"$ref": "#/$defs/headers"},
+        "response_body_utf8": {"type": "string", "maxLength": 65536},
+        "response_body_sha256": {"$ref": "#/$defs/hash"},
+        "request_started_at": {"$ref": "#/$defs/timestamp"},
+        "response_received_at": {"$ref": "#/$defs/timestamp"},
+        "receipt_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "permission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status", "flags", "create_time_ms",
+        "trading_authority_expiration_time_ms_or_null",
+        "unknown_true_permissions"
+      ],
+      "properties": {
+        "status": {"const": "READ_ONLY_IP_RESTRICTED"},
+        "flags": {
+          "type": "object",
+          "minProperties": 9,
+          "additionalProperties": {"type": "boolean"}
+        },
+        "create_time_ms": {"type": "integer", "minimum": 0},
+        "trading_authority_expiration_time_ms_or_null": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "unknown_true_permissions": {
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    },
+    "rateGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maker", "taker", "buyer", "seller"],
+      "properties": {
+        "maker": {"$ref": "#/$defs/decimal"},
+        "taker": {"$ref": "#/$defs/decimal"},
+        "buyer": {"$ref": "#/$defs/decimal"},
+        "seller": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "spotRates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maker_buy", "maker_sell", "taker_buy", "taker_sell"
+      ],
+      "properties": {
+        "maker_buy": {"$ref": "#/$defs/decimal"},
+        "maker_sell": {"$ref": "#/$defs/decimal"},
+        "taker_buy": {"$ref": "#/$defs/decimal"},
+        "taker_sell": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "discount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled_for_account", "enabled_for_symbol", "asset", "rate"
+      ],
+      "properties": {
+        "enabled_for_account": {"type": "boolean"},
+        "enabled_for_symbol": {"type": "boolean"},
+        "asset": {"const": "BNB"},
+        "rate": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "spot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol", "standard_commission", "special_commission",
+        "tax_commission", "discount",
+        "authoritative_no_discount_rates",
+        "bnb_discount_scenario_or_null",
+        "authoritative_cost_semantics"
+      ],
+      "properties": {
+        "symbol": {"const": "ETHUSDT"},
+        "standard_commission": {"$ref": "#/$defs/rateGroup"},
+        "special_commission": {"$ref": "#/$defs/rateGroup"},
+        "tax_commission": {"$ref": "#/$defs/rateGroup"},
+        "discount": {"$ref": "#/$defs/discount"},
+        "authoritative_no_discount_rates": {
+          "$ref": "#/$defs/spotRates"
+        },
+        "bnb_discount_scenario_or_null": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/spotRates"}
+          ]
+        },
+        "authoritative_cost_semantics": {
+          "const": "NO_DISCOUNT_UNTIL_PAYMENT_ASSET_AND_BALANCE_PROVEN"
+        }
+      }
+    },
+    "futures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol", "maker_rate", "taker_rate",
+        "two_taker_sides_rate"
+      ],
+      "properties": {
+        "symbol": {"const": "ETHUSDT"},
+        "maker_rate": {"$ref": "#/$defs/decimal"},
+        "taker_rate": {"$ref": "#/$defs/decimal"},
+        "two_taker_sides_rate": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spot", "usd_m_perpetual"],
+      "properties": {
+        "spot": {"$ref": "#/$defs/spot"},
+        "usd_m_perpetual": {"$ref": "#/$defs/futures"}
+      }
+    },
+    "costs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "notional_usdt", "rate_unit",
+        "spot_taker_buy_per_1000_usdt",
+        "spot_taker_sell_per_1000_usdt",
+        "spot_two_taker_sides_rate",
+        "spot_two_taker_sides_per_1000_usdt",
+        "futures_taker_per_1000_usdt",
+        "futures_two_taker_sides_rate",
+        "futures_two_taker_sides_per_1000_usdt",
+        "v0_18_assumed_rate_per_side",
+        "v0_18_assumption_covers_spot_taker_buy",
+        "v0_18_assumption_covers_spot_taker_sell",
+        "v0_18_assumption_covers_futures_taker",
+        "scenario_semantics"
+      ],
+      "properties": {
+        "notional_usdt": {"const": "1000"},
+        "rate_unit": {"const": "UNIT_RATIO"},
+        "spot_taker_buy_per_1000_usdt": {"$ref": "#/$defs/decimal"},
+        "spot_taker_sell_per_1000_usdt": {"$ref": "#/$defs/decimal"},
+        "spot_two_taker_sides_rate": {"$ref": "#/$defs/decimal"},
+        "spot_two_taker_sides_per_1000_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "futures_taker_per_1000_usdt": {"$ref": "#/$defs/decimal"},
+        "futures_two_taker_sides_rate": {"$ref": "#/$defs/decimal"},
+        "futures_two_taker_sides_per_1000_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "v0_18_assumed_rate_per_side": {"const": "0.0015"},
+        "v0_18_assumption_covers_spot_taker_buy": {"type": "boolean"},
+        "v0_18_assumption_covers_spot_taker_sell": {"type": "boolean"},
+        "v0_18_assumption_covers_futures_taker": {"type": "boolean"},
+        "scenario_semantics": {
+          "const": "CURRENT_COMMISSION_CONTEXT_NOT_REALIZED_PNL"
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status", "reason_codes", "receipt_count",
+        "raw_responses_preserved",
+        "permission_scope_verified_before_commission",
+        "credentials_persisted", "bnb_discount_authoritative"
+      ],
+      "properties": {
+        "status": {"const": "PASS"},
+        "reason_codes": {"type": "array", "maxItems": 0},
+        "receipt_count": {"const": 3},
+        "raw_responses_preserved": {"const": true},
+        "permission_scope_verified_before_commission": {"const": true},
+        "credentials_persisted": {"const": false},
+        "bnb_discount_authoritative": {"const": false}
+      }
+    }
+  }
+}

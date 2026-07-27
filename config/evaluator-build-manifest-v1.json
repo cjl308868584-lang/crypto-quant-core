@@ -2,11 +2,11 @@
   "$schema": "./evaluator-build-manifest-v1.schema.json",
   "schema_version": "1.0.0",
   "manifest_id": "release-evaluator-build-v1",
-  "manifest_version": "1.16.0",
+  "manifest_version": "1.17.0",
   "status": "BUILD_CANDIDATE",
   "evaluator_id": "release-gate-evaluator-v1",
   "package_name": "crypto-quant-core",
-  "package_version": "0.21.0",
+  "package_version": "0.22.0",
   "python_requires": ">=3.9",
   "metric_catalog_id": "release-metrics-v1.1",
   "metric_catalog_version": "1.1.6",
@@ -21,6 +21,7 @@
   "unavailable_estimator_count": 32,
   "file_set_policy": "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
   "file_hashes": {
+    "artifacts/account-cost/binance-account-commission-smoke-not-run-v0.22.0.json": "3ab008d9e95665ada3e0351052ece7dd9db0c63044d99397fa797e6719e3bcb0",
     "artifacts/market-data/binance-contemporaneous-smoke-v0.17.0.json": "313944fbf6847dcda02056cbd3cce8e5f7e11a75f9e157c3fb924023ac42c773",
     "artifacts/market-data/binance-perpetual-context-smoke-failure-v0.21.0.json": "1cce8d84ac150deed8fca40555b81df73d71e1cad08626e46b1c3f9f7b7dd40a",
     "artifacts/market-data/binance-public-data-smoke-v0.16.0.json": "f1bf65dfaff91a8193ebeb08e3e93db82eb0d70f036127445921cb0555b0be41",
@@ -31,6 +32,7 @@
     "artifacts/runtime/v0.20-smoke/paper/paper-slot-ethusdt_20260727t120000z.json": "aca271493006b7c6335070abf97e432770fe1e56f8ce1e4c2b04d5fbfd6cef97",
     "artifacts/runtime/v0.20-smoke/runtime/paper-runtime-runtime_event_827acba8afd454ae735cd0c0d157b76beb125466a243b30159e2ee7233283f2c.json": "767306ed4748ba4b48e7d70b92f34be744fd5c2c5ed178539349a9fb5d1d1b1c",
     "artifacts/runtime/v0.20-smoke/runtime/paper-runtime-runtime_event_ea4452a8f11abc78d4e8df0a02f57554e2ec918567b9bedb7c5df20d47b3e34e.json": "36c12175d9d8614d6e0fd68c3e2b617017d2b1abcc9607adc2e6c51ceb7d4bba",
+    "config/account-commission-snapshot-v1.schema.json": "49d9b7fd1c1bb4af9be5099d5658dfadc678904da720f95f4b681bb860a023d4",
     "config/approved-fallback-registry-v1.1.schema.json": "c3efbc775066f3c0bdc1dec00299126583213791c4dd07812d8e9d29e4740726",
     "config/contemporaneous-capture-snapshot-v1.schema.json": "7521274a36ea2c9a3ce6fb41003c897438a38b700907ed86740abbf06509e7b9",
     "config/deployment-line-v1.1.schema.json": "a3d5b4df5c5fe953fe93dcea1616c37997aef06415b2fbc073d8c4a4c7b5a2fc",
@@ -61,11 +63,13 @@
     "config/statistical-series-snapshot-v1.schema.json": "3ef36d8465aa4978b178a3b07ffb5f5c877e5921af1d4e4f17ef2bac6260caff",
     "config/supporting-observation-bundle-v1.schema.json": "559b92cf5545b40035c8f30db95c8df7351a2e320f87b7d2572a0e47e830eec0",
     "config/trade-replay-snapshot-v1.schema.json": "d45dfaaf86f2dbdcd83109fd3b329aca6f455812df0022652129079555b8546f",
-    "pyproject.toml": "134106260d894c3e9a22fc9187efa0984fe4c5da9cd673c5c95f8edd23d96812",
+    "pyproject.toml": "692c6cd5497ca8385809d419ef63a22b75492b3805f4ad2873c1237ff721b58c",
     "requirements.lock": "71aa777f1717f056886f3de1fb2e1013a5dec5210d681ed30943056edf7ccbed",
-    "setup.py": "79d3cf31909114960bbe5360c790faef76076415bc06fb2ac3dee147ab56788a",
-    "src/crypto_quant/__init__.py": "c106b64f7ae0e5592bf7b0171e0670c01971f278f21ea67e2bf3250c7c5f56ca",
-    "src/crypto_quant/build.py": "fa1f23c7417e6aeb76aefb298077d03b5dcc19c68b7cd30a1864c8cd41e55dc3",
+    "setup.py": "45c318494e0dacbe69bbe6cd9b53542cca53ab262e8f8d3b4bf7db055bef7f51",
+    "src/crypto_quant/__init__.py": "929a62417f72978272a0ac4db041e063025d9567cb9a18575486f0b08442770d",
+    "src/crypto_quant/account_commission.py": "b3b018e40879a580b7297a93b0dca4b5f849e553e0823de680ac5b04c9c4c9df",
+    "src/crypto_quant/account_commission_cli.py": "993e6cb903673bc6781ca0a74494bfc149cea73c4d5a47576a3384e052652076",
+    "src/crypto_quant/build.py": "3624f802e62f8059478c6b2206ce3d659264c2b9e99e9e0cb391bf329852a1f0",
     "src/crypto_quant/canonical.py": "29bca29c775ec8f6734c5676fc0682d402b0659a2250902de68fb7c477891120",
     "src/crypto_quant/capture_cli.py": "d542e062327c3c2f17bf3484a020b5e38d5f07027be12e0bd78cc2c975629bb0",
     "src/crypto_quant/contemporaneous_capture.py": "dd1ee4d7e7ad1033d7a641d2a2666ed478bcc49c4e77c04b1399a259827dabf3",
@@ -95,6 +99,7 @@
     "src/crypto_quant/risk.py": "a26de087433963dd348ae223618e2d789f0d45c224eb6db2efe28f01e4b5aef7",
     "src/crypto_quant/runtime_health.py": "d2ecb8f63fe0d97b7d70ab181ff360d431df84d0fb3a6d33a80e6a0d7d7507cf",
     "src/crypto_quant/runtime_health_cli.py": "7866277b96b2680602214d70dc53875813871d916e43bdc2b24f841d8c5db5a3",
+    "src/crypto_quant/schemas/account-commission-snapshot-v1.schema.json": "49d9b7fd1c1bb4af9be5099d5658dfadc678904da720f95f4b681bb860a023d4",
     "src/crypto_quant/schemas/contemporaneous-capture-snapshot-v1.schema.json": "7521274a36ea2c9a3ce6fb41003c897438a38b700907ed86740abbf06509e7b9",
     "src/crypto_quant/schemas/fee-schedule-snapshot-v1.schema.json": "0ac0eff90fcc0b2bb2315140aa3a3b2899a7411c7138971ad90e93555b6b44a4",
     "src/crypto_quant/schemas/historical-market-data-snapshot-v1.schema.json": "5ed5cfaac6741d410439a3b37f46ff8e4576f3cf9981976f394d8240f12abff4",
@@ -107,7 +112,7 @@
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335"
   },
-  "build_input_tree_hash": "e5be3b0dd0451ff47243c4be9f409bd415ad3195bee3251afa794c176e4d2faa",
+  "build_input_tree_hash": "3edfc3fe439e1f505a8f642ec319aecc3f0775a9553cecb35adc9fb945d9a21d",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -115,5 +120,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "792a91f6ecb09e95a2c124216df0710fe412442efc5938eee4c27b9333f08754"
+  "manifest_hash": "312e51ad6adb83eae73995d2934284a95a04aa19cac86b380786cbf4e02d1f08"
 }

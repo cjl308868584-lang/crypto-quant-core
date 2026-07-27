@@ -3,4 +3,4 @@
 from .canonical import business_hash, canonical_json, stable_id
 
 __all__ = ["business_hash", "canonical_json", "stable_id"]
-__version__ = "0.21.0"
+__version__ = "0.22.0"

@@ -26,6 +26,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/estimator-registry-v1.schema.json",
     "config/evaluator-build-manifest-v1.schema.json",
     "config/experiment-manifest-v1.1.schema.json",
+    "config/account-commission-snapshot-v1.schema.json",
     "config/fee-schedule-snapshot-v1.schema.json",
     "config/historical-market-data-snapshot-v1.schema.json",
     "config/model-bundle-v1.1.schema.json",
@@ -50,6 +51,7 @@ _FROZEN_CONFIG_PATHS = (
     "setup.py",
 )
 _FROZEN_ARTIFACT_PATHS = (
+    "artifacts/account-cost/binance-account-commission-smoke-not-run-v0.22.0.json",
     "artifacts/market-data/binance-contemporaneous-smoke-v0.17.0.json",
     "artifacts/market-data/binance-public-data-smoke-v0.16.0.json",
     "artifacts/paper/binance-offline-paper-smoke-v0.18.0.json",

@@ -72,8 +72,10 @@ secret、signature 或带 signature 的 URL。
 - `ipRestrict=true`；
 - withdrawals、internal transfer、universal transfer 均禁用；
 - Spot/Margin trading、Futures trading、Margin、Vanilla Options 均禁用。
+- Portfolio Margin trading 和任何未来新增的权限布尔字段均不得为 true。
 
-任何字段缺失、类型错误、权限过宽或响应无法验证时：
+允许保留 Binance 新增的 false 权限字段，但任何未知 true 权限都按过宽处理。
+任何必需字段缺失、类型错误、权限过宽或响应无法验证时：
 
 - 两个 commission endpoint 调用数必须为 0；
 - 输出 `ACCOUNT_CREDENTIAL_SCOPE_BLOCKED`；
@@ -135,13 +137,14 @@ discount 同时启用且 asset 为 BNB 时，才额外报告：
 
 ```text
 discounted_scenario =
-  (standard.role + standard.side) * (1 - discount)
+  (standard.role + standard.side) * discount
   + special.role + special.side
   + tax.role + tax.side
 ```
 
-由于没有证明 BNB 余额、实际扣费资产和 USDT 换算，discounted 值只是情景，
-不得作为当前权威成本。
+这里的 `discount` 按 Binance Commission FAQ 是折后乘数，而不是“再减去的
+比例”。由于没有证明 BNB 余额、实际扣费资产和 USDT 换算，discounted 值
+仍只是情景，不得作为当前权威成本。
 
 ### 6.2 USDⓈ-M
 

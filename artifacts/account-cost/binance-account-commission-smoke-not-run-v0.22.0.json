@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-account-commission-smoke-not-run-v0.22.0",
+  "release_candidate": "0.22.0",
+  "evaluated_at": "2026-07-27T16:43:24.000Z",
+  "planned_command": "PYTHONPATH=src python3 -m crypto_quant.account_commission_cli --output-root /tmp/crypto-quant-v022-account-cost",
+  "outcome": "NOT_RUN_FAIL_CLOSED",
+  "reason_code": "REAL_ACCOUNT_COMMISSION_SMOKE_NOT_RUN_NO_COMPLIANT_CREDENTIAL_FILES",
+  "network": {
+    "server_time_request_count": 0,
+    "signed_request_attempt_count": 0,
+    "account_response_receipt_count": 0,
+    "automatic_retry_count": 0
+  },
+  "security_boundary": {
+    "credential_values_requested_in_chat": false,
+    "credential_files_read": false,
+    "api_key_header_sent": false,
+    "signature_created": false,
+    "account_balances_requested": false,
+    "orders_requested_or_submitted": false,
+    "proxy_used": false,
+    "substitute_source_used": false
+  },
+  "eligibility": "REAL_ACCOUNT_COMMISSION_NOT_CAPTURED",
+  "notes": [
+    "No compliant credential-file paths were present in the fixed environment variables.",
+    "A fixture replay proves parser and cost-math behavior but is not real account evidence.",
+    "No public, third-party or other-account rate was substituted for the missing account-specific evidence."
+  ]
+}
