@@ -309,6 +309,12 @@ class MarketDataCliTests(unittest.TestCase):
             self.assertEqual(payload, json.dumps(json.loads(payload), sort_keys=True, separators=(",", ":")).encode("utf-8"))
             snapshot = json.loads(payload)
             self.assertEqual(summary["snapshot_hash"], snapshot["snapshot_hash"])
+            self.assertEqual(
+                summary["snapshot_attestation_hash"],
+                market_data.historical_market_data_snapshot_attestation_hash(
+                    snapshot
+                ),
+            )
             self.assertIn("source_receipt", snapshot)
             self.assertIn("quality_report", snapshot)
 

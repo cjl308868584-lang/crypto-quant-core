@@ -46,6 +46,8 @@ _KLINE_INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "4h": 14_400_000, "1d": 86_4
 _SPOT_MICROSECOND_BOUNDARY = datetime(2025, 1, 1, tzinfo=timezone.utc)
 _PARSER_VERSION = "BINANCE_CSV_V1"
 _AVAILABILITY_BASIS = "OFFLINE_ARCHIVE_OBSERVED_AT_INGESTION"
+_SNAPSHOT_ATTESTATION_TYPE = "HISTORICAL_MARKET_DATA_SNAPSHOT_ATTESTATION"
+_SNAPSHOT_ATTESTATION_SCHEMA_VERSION = "1.0.0"
 _FAMILY_SPECS = {
     ("SPOT", "KLINES"): ("spot", "daily", "klines", True),
     ("SPOT", "AGG_TRADES"): ("spot", "daily", "aggTrades", False),
@@ -1167,6 +1169,59 @@ def historical_market_data_snapshot_hash(snapshot: Mapping[str, Any]) -> str:
     return artifact_self_hash(snapshot, "snapshot_hash")
 
 
+def historical_market_data_snapshot_attestation_envelope(
+    snapshot: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Return the external trust envelope for one complete snapshot version."""
+
+    try:
+        receipt = snapshot["source_receipt"]
+        envelope = {
+            "attestation_schema_version": _SNAPSHOT_ATTESTATION_SCHEMA_VERSION,
+            "attestation_type": _SNAPSHOT_ATTESTATION_TYPE,
+            "hash_algorithm": "SHA-256",
+            "canonicalization": "RFC8785_JCS",
+            "snapshot_schema": snapshot["$schema"],
+            "snapshot_schema_version": snapshot["schema_version"],
+            "parser_version": snapshot["parser_version"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "recorded_at": snapshot["recorded_at"],
+            "receipt_hash": receipt["receipt_hash"],
+            "snapshot_hash": snapshot["snapshot_hash"],
+        }
+    except (KeyError, TypeError) as error:
+        raise MarketDataError("SNAPSHOT_ATTESTATION_INVALID") from error
+    if (
+        not isinstance(receipt, Mapping)
+        or envelope["snapshot_schema"]
+        != "./historical-market-data-snapshot-v1.schema.json"
+        or envelope["snapshot_schema_version"] != "1.0.0"
+        or envelope["parser_version"] != _PARSER_VERSION
+        or not isinstance(envelope["snapshot_id"], str)
+        or _ID.fullmatch(envelope["snapshot_id"]) is None
+        or not isinstance(envelope["receipt_hash"], str)
+        or _SHA256.fullmatch(envelope["receipt_hash"]) is None
+        or not isinstance(envelope["snapshot_hash"], str)
+        or _SHA256.fullmatch(envelope["snapshot_hash"]) is None
+    ):
+        raise MarketDataError("SNAPSHOT_ATTESTATION_INVALID")
+    try:
+        _utc_input(envelope["recorded_at"])
+    except MarketDataError as error:
+        raise MarketDataError("SNAPSHOT_ATTESTATION_INVALID") from error
+    return envelope
+
+
+def historical_market_data_snapshot_attestation_hash(
+    snapshot: Mapping[str, Any],
+) -> str:
+    """Hash the external envelope that must be anchored outside the snapshot."""
+
+    return business_hash(
+        historical_market_data_snapshot_attestation_envelope(snapshot)
+    )
+
+
 def _facts_root_hash(facts: Sequence[Mapping[str, Any]]) -> str:
     return business_hash([dict(fact) for fact in facts])
 
@@ -1215,6 +1270,7 @@ def _parse_one_fact(
 def historical_market_data_snapshot_reasons(
     snapshot: Mapping[str, Any],
     *,
+    trusted_snapshot_attestation_hashes: Optional[Sequence[str]] = None,
     trusted_receipt_hashes: Optional[Sequence[str]] = None,
 ) -> Tuple[str, ...]:
     """Fail closed when a replayed archive artifact is not self-consistent."""
@@ -1243,16 +1299,20 @@ def historical_market_data_snapshot_reasons(
             reasons.append("SNAPSHOT_HASH_MISMATCH")
         receipt = snapshot["source_receipt"]
         report = snapshot["quality_report"]
-        receipt_hash = receipt.get("receipt_hash")
-        if trusted_receipt_hashes is None:
-            reasons.append("TRUSTED_RECEIPT_ATTESTATION_REQUIRED")
+        snapshot_attestation_hash = (
+            historical_market_data_snapshot_attestation_hash(snapshot)
+        )
+        if trusted_snapshot_attestation_hashes is None:
+            reasons.append("TRUSTED_SNAPSHOT_ATTESTATION_REQUIRED")
+            if trusted_receipt_hashes is not None:
+                reasons.append("TRUSTED_RECEIPT_ATTESTATION_INSUFFICIENT")
         else:
             try:
-                trusted_hashes = set(trusted_receipt_hashes)
+                trusted_hashes = set(trusted_snapshot_attestation_hashes)
             except TypeError:
                 trusted_hashes = set()
-            if receipt_hash not in trusted_hashes:
-                reasons.append("TRUSTED_RECEIPT_ATTESTATION_MISMATCH")
+            if snapshot_attestation_hash not in trusted_hashes:
+                reasons.append("TRUSTED_SNAPSHOT_ATTESTATION_MISMATCH")
         if receipt.get("receipt_hash") != artifact_self_hash(receipt, "receipt_hash"):
             reasons.append("RECEIPT_HASH_MISMATCH")
         if report.get("report_hash") != artifact_self_hash(report, "report_hash"):
@@ -1503,9 +1563,12 @@ def _build_historical_market_data_snapshot(
         "recorded_at": recorded_at,
     }
     snapshot["snapshot_hash"] = historical_market_data_snapshot_hash(snapshot)
+    snapshot_attestation_hash = historical_market_data_snapshot_attestation_hash(
+        snapshot
+    )
     reasons = historical_market_data_snapshot_reasons(
         snapshot,
-        trusted_receipt_hashes={receipt["receipt_hash"]},
+        trusted_snapshot_attestation_hashes={snapshot_attestation_hash},
     )
     allowed_degraded_reasons = set(report["blocking_findings"]) | {
         "MARKET_DATA_QUALITY_BLOCKING",

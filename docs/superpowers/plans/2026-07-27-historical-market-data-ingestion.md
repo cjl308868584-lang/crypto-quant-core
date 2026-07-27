@@ -4,7 +4,7 @@
 
 **Goal:** Add a public-only, fail-closed Binance historical archive ingestion pipeline that verifies official checksums, normalizes real market/cost facts, records deterministic provenance and makes archive-only PIT limitations machine-enforceable.
 
-**Architecture:** A strict `HistoricalArchiveRequest` generates allowlisted Binance public-data paths; an injectable GET-only fetch boundary returns raw ZIP and CHECKSUM responses; safety and checksum validation issue an opaque `VerifiedArchive` before exact family parsers normalize Decimal/UTC facts. `PublicArchiveReceipt`, `DataQualityReport`, and `HistoricalMarketDataSnapshot` form a content-addressed evidence chain, but complete validation additionally requires an independently supplied trusted receipt hash. Archive snapshots always remain `ARCHIVE_REPLAY_ONLY`; account-specific fee schedules stay separate and effective-dated.
+**Architecture:** A strict `HistoricalArchiveRequest` generates allowlisted Binance public-data paths; an injectable GET-only fetch boundary returns raw ZIP and CHECKSUM responses; safety and checksum validation issue an opaque `VerifiedArchive` before exact family parsers normalize Decimal/UTC facts. `PublicArchiveReceipt`, `DataQualityReport`, and `HistoricalMarketDataSnapshot` form a content-addressed evidence chain, but complete validation additionally requires an independently supplied external snapshot-attestation hash that binds both receipt and complete snapshot identity. Archive snapshots always remain `ARCHIVE_REPLAY_ONLY`; account-specific fee schedules stay separate and effective-dated.
 
 **Tech Stack:** Python 3.9+, standard-library `urllib`, `zipfile`, `csv`, `Decimal`, `datetime`, existing canonical SHA-256 helpers, JSON Schema Draft 2020-12, `unittest`.
 
@@ -38,8 +38,10 @@ step wording that allowed caller-assembled snapshots:
   number, then compares every normalized field.
 - The receipt binds the full request/URLs/times/sizes/digests/member, CSV hash,
   source-row root and facts root. Self-hashes are integrity checks, not trust
-  anchors: the reasons API defaults to fail-closed without an independently
-  supplied trusted receipt hash.
+  anchors. A separate envelope binds schema/parser, snapshot identity/time,
+  receipt hash and snapshot hash; its hash is stored outside the snapshot.
+  The reasons API defaults to fail-closed without that independently supplied
+  snapshot-attestation hash. Receipt-only trust is explicitly insufficient.
 - Kline facts retain all validated volume/trade/taker/open/close fields, and
   quality reports expose all approved counters, coverage and findings.
 - Funding intervals come from each row as strict integers in `1..24`;
@@ -167,6 +169,8 @@ git commit -m "feat: add safe public archive boundary"
 
 - `parse_market_facts(request, csv_bytes, ingested_at)`
 - `build_historical_market_data_snapshot(...)`
+- `historical_market_data_snapshot_attestation_envelope(snapshot)`
+- `historical_market_data_snapshot_attestation_hash(snapshot)`
 - `historical_market_data_snapshot_hash(snapshot)`
 - `historical_market_data_snapshot_reasons(snapshot)`
 - `fee_schedule_snapshot_hash(snapshot)`
@@ -332,7 +336,7 @@ git commit -m "feat: add get-only market data fetch workflow"
 
 - [ ] **Step 1: Execute one real official archive smoke ingestion**
 
-Use a recent completed ETHUSDT Spot daily 4h archive. Do not commit the raw ZIP or normalized row payload. Generate a compact evidence document containing request, official/archive/checksum hashes, receipt hash, row count, quality report hash, snapshot hash, retrieval time and `ARCHIVE_REPLAY_ONLY`.
+Use a recent completed ETHUSDT Spot daily 4h archive. Do not commit the raw ZIP or normalized row payload. Generate a compact evidence document containing request, official/archive/checksum hashes, receipt hash, row count, quality report hash, snapshot hash, external snapshot-attestation hash, retrieval time and `ARCHIVE_REPLAY_ONLY`.
 
 If the remote archive is genuinely unavailable, record a fail-closed smoke result with status/error evidence; do not fabricate success and do not block unit-level release.
 

@@ -28,10 +28,16 @@ hash、CSV/source-row/facts roots、quality report hash 和 snapshot hash。
 hash；验证时重新调用 family parser 并逐字段比较。归档 fact 还显式保留
 `ingested_at`，且必须与 `available_at` 及 snapshot `ingested_at` 相等。
 
-所有这些 self-hash 只能证明内部一致，不能凭空产生外部信任。完整验证必须
-从受信获取边界独立保存并显式提供 `trusted_receipt_hashes`；默认无
-attestation 的 Artifact 必须失败。协调修改 raw row、ZIP、checksum 和
-所有 self-hash，仍无法匹配原先独立保存的 receipt anchor。
+所有这些 self-hash 只能证明内部一致，不能凭空产生外部信任。receipt
+anchor 只覆盖来源链，不能覆盖 `snapshot_id`、`recorded_at` 等 snapshot
+层字段。完整验证必须从受信获取边界独立保存并显式提供
+`trusted_snapshot_attestation_hashes`。该外部 envelope 不写回 snapshot，
+并绑定 snapshot schema/parser、identity/time、receipt hash 与完整
+snapshot self-hash。默认无 snapshot attestation 的 Artifact 必须失败；
+只传 legacy receipt anchor 明确返回
+`TRUSTED_RECEIPT_ATTESTATION_INSUFFICIENT`。协调修改 raw row、ZIP、
+checksum 或任意 snapshot 字段并重算全部 self-hash，仍无法匹配原先独立
+保存的 snapshot-attestation anchor。
 
 手续费计划单独保存为带有效期和审批状态的 `FeeScheduleSnapshot`。费率
 取决于产品、账户等级、折扣和生效时间，不能从 Kline、AggTrade 或当前
@@ -50,7 +56,7 @@ Funding interval 是每行来源事实，不固定为 8 小时。连续性按当
 - 官方 checksum 通过之前不得解压或解析；
 - 原始 ZIP、完整 CSV 和 normalized rows 不进入仓库；
 - source URL 相同而内容哈希不同，必须视为不同来源版本；
-- 无独立 trusted receipt attestation 时，完整快照不得判为 PASS；
+- 无独立 trusted snapshot attestation 时，完整快照不得判为 PASS；
 - `ARCHIVE_REPLAY_ONLY` 不得支持 PIT-valid OOS 或盈利声明；
 - v0.16 的 Fee Schedule 不存在生产晋级路径；
 - Funding gap 的 degraded artifact 只能用于研究，不能进入正式证据门。

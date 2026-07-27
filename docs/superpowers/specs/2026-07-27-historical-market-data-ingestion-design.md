@@ -123,9 +123,7 @@ FeeScheduleSnapshot (manual, effective-dated, separately approved)
 - `receipt_hash`。
 
 哈希使用现有 canonical business hash 规则。URL 相同但字节变化时必须生成不同 receipt。
-`receipt_hash` 只是内容地址，不是独立信任来源。完整 PASS 必须由调用方从
-受信获取边界另行保存并显式传入该 receipt hash；不能从待验证 Artifact
-自身读取 receipt hash 后把它当作 attestation。
+`receipt_hash` 只是来源内容地址，不是完整 snapshot 的独立信任来源。
 
 ### 6.3 `MarketDataFact`
 
@@ -165,8 +163,19 @@ quote volume、trade count、taker base/quote volume 与已验证 ignore 字段�
 事实按 `(event_time, source_row_number, fact_id)` 排序。相同输入、相同 `retrieved_at` 和相同解析器版本必须得到相同哈希。
 生产 fetch 和两个 snapshot builder 都只能消费 opaque `VerifiedArchive`
 capability；不能接受 caller 提供的 facts、archive hash 或 checksum hash
-拼装快照。离线 `historical_market_data_snapshot_reasons` 默认没有独立
-receipt attestation 时必须失败关闭。
+拼装快照。
+
+完整可信 PASS 还要求一个保存在 snapshot 之外的 external snapshot
+attestation。规范 envelope 至少绑定 `receipt_hash + snapshot_hash`；v0.16
+同时绑定 attestation schema/type、snapshot schema/parser、
+`snapshot_id` 与 `recorded_at`。attestation hash 不写入 snapshot，避免与
+snapshot self-hash 形成循环。调用方必须从受信获取/发布边界另行保存并
+显式传入原始 attestation hash；不能从待验证 Artifact 临时计算后自证。
+离线 `historical_market_data_snapshot_reasons` 默认无该 anchor 时返回
+`TRUSTED_SNAPSHOT_ATTESTATION_REQUIRED`。只传 legacy receipt anchor 返回
+`TRUSTED_RECEIPT_ATTESTATION_INSUFFICIENT`，不能获得完整 PASS。任意
+snapshot 字段（包括 `snapshot_id`、`recorded_at`）改写并重算
+`snapshot_hash` 后都必须与原 attestation anchor 不匹配。
 
 ### 6.5 `FeeScheduleSnapshot`
 
@@ -273,6 +282,9 @@ python -m crypto_quant.market_data fetch \
 幂等成功的 commit point 必须再次打开 final name，验证它仍指向初次读取的
 同一 inode 且 bytes 完全一致；仅验证父目录仍 attached 不足以阻止并发
 rename/replacement。
+
+CLI 成功摘要必须公开 external snapshot-attestation hash，供调用方在
+snapshot Artifact 之外持久化为信任锚。
 
 网络错误、429、5xx、超时或内容超限均失败，不重试订单类请求（本模块不存在订单类请求）；公开 GET 最多按固定策略重试，测试中可禁用。
 

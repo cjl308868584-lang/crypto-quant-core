@@ -13,7 +13,8 @@
 - 支持 Spot Kline/AggTrade、USDⓈ-M Mark Price Kline/Funding Rate；
 - 冻结 Decimal、UTC、严格 source row、source/payload hashes、完整 quality
   report、receipt roots 和 snapshot 哈希；
-- 完整验证要求独立 trusted receipt attestation，默认无锚失败关闭；
+- 完整验证要求在 Artifact 外独立保存的 trusted snapshot attestation；该
+  envelope 绑定 receipt 与完整 snapshot hash，receipt-only 明确不充分；
 - Kline 保留所有已验证 volume/trade/taker/open/close 字段；
 - 每个 fact 显式保留 `ingested_at`，归档模式下与 fact `available_at` 及
   snapshot `ingested_at` 严格相等；
@@ -37,24 +38,30 @@
 - CHECKSUM SHA-256：
   `2413eb36a0d9f1fa90bea973bdf0c8dd0e15e4306c21427b5f543f09ceb55897`
 - Receipt hash：
-  `1a350b35803b2a2250fc8bf1af549cea858dc7f11fb00fe14bd5d455fb24f9bb`
+  `fb70e609054a1d32c5a350bb4b623a076ac46c605e0236611726c5a5190b6b84`
 - Source-row root：
   `9f8a6349342061ce65bea467bd5f1ac1619e481fed945c852ad15ad81eb70cbf`
 - Facts root：
-  `08376604eb228fe3465695615cf6be35aec1d037dfab2abd3dddeb5606f90a56`
+  `c315367ef3b9fd664118c972dc57fe0ad67c6959b7d74b8ae777b9f3cb099039`
 - Row count：6
 - Quality report hash：
   `6e1a9aab31fbdae54fbac2fd34fc366d2f09bca546574a178feb4c7e46351b60`
 - Snapshot hash：
-  `744d53c36d66488cb05e4eb68be744ac365d432234408b08ab909d4fa752e34e`
+  `0930b265622811a4d73e9704f4eab0ddd1d7b0bf62ee248934553d55538d324a`
+- External snapshot-attestation hash：
+  `042f6bcfa291f7343b1b3b0f8e1fbcba209f7d29eb825ac1b487b35372c00d2d`
 - PIT/quality：`ARCHIVE_REPLAY_ONLY` / `FORMAL_COMPLETE`
 
 第二次独立受限 GET 重新获取 ZIP 与官方 `.CHECKSUM`，其 SHA-256 与首次
 完全一致；用相同观测时间重放 importer 后，receipt、source-row/facts
 roots、quality report、snapshot hash 和完整 snapshot bytes 全部一致。
 全部 6 个 fact 的 ingestion/availability/snapshot 时间交叉验证通过。
-显式 trusted receipt 验证 reasons 为空；无锚验证只返回
-`TRUSTED_RECEIPT_ATTESTATION_REQUIRED`。验证完成后完整临时快照已移至系统
+external snapshot-attestation hash 也与重放完全一致。显式 trusted
+snapshot attestation 验证 reasons 为空；无锚验证只返回
+`TRUSTED_SNAPSHOT_ATTESTATION_REQUIRED`；receipt-only 返回
+`TRUSTED_RECEIPT_ATTESTATION_INSUFFICIENT` 且不能 PASS。`recorded_at=2099`
+和 `snapshot_id` 改写并重算 snapshot hash 均返回
+`TRUSTED_SNAPSHOT_ATTESTATION_MISMATCH`。验证完成后完整临时快照已移至系统
 废纸篓，仓库只提交 compact evidence。
 
 ## 可执行覆盖
@@ -66,14 +73,14 @@ roots、quality report、snapshot hash 和完整 snapshot bytes 全部一致。
 
 ## 最终验证证据
 
-- Focused market-data tests：73 项，0 失败
-- 全量测试：289 项，0 失败
+- Focused market-data tests：75 项，0 失败
+- 全量测试：291 项，0 失败
 - Golden report hash：
   `e3e7dc45865d860489514a574c64ca14a8dd6f089a0b74129414231741882fc3`
 - Build input tree hash：
-  `8bd66cb9cceee77e886d92a1baf5783997aa8a1d48587886f62901e10a6f95e5`
+  `8b8e759e226acb57d79ca9c9161e5d226b86c17effa9116c924e6f027611a544`
 - Evaluator build hash：
-  `3ad77e6a0fb58ad6d83d6a39d9cb9076604a747dd244ca95ab39c8c581581c44`
+  `2538bc3eec3a33a921cc7141d118bd4277eb9d703eeabeedf3d71d3267c8121f`
 
 ## 赚钱与 PIT 含义
 

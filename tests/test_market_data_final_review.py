@@ -16,6 +16,7 @@ from crypto_quant.market_data import (
     fetch_historical_market_data,
     fee_schedule_snapshot_hash,
     fee_schedule_snapshot_reasons,
+    historical_market_data_snapshot_attestation_hash,
     historical_market_data_snapshot_hash,
     historical_market_data_snapshot_reasons,
     verify_official_checksum,
@@ -230,25 +231,29 @@ class ProvenanceAndApprovedContractTests(unittest.TestCase):
 
     def test_fact_ingested_at_must_crosslink_snapshot_and_source_row_replay(self):
         snapshot = self.fetch()
-        trusted_receipt = snapshot["source_receipt"]["receipt_hash"]
+        trusted_attestation = (
+            historical_market_data_snapshot_attestation_hash(snapshot)
+        )
         mutated = json.loads(json.dumps(snapshot))
         mutated["facts"][0]["ingested_at"] = RECORDED_AT
         mutated["snapshot_hash"] = historical_market_data_snapshot_hash(mutated)
 
         reasons = historical_market_data_snapshot_reasons(
             mutated,
-            trusted_receipt_hashes={trusted_receipt},
+            trusted_snapshot_attestation_hashes={trusted_attestation},
         )
         self.assertIn("MARKET_DATA_FACT_TIME_CROSSLINK", reasons)
         self.assertIn("FACT_SOURCE_ROW_REPLAY_MISMATCH", reasons)
 
     def test_validator_replays_raw_row_and_rejects_normalized_close_rehash_probe(self):
         snapshot = self.fetch()
-        trusted_receipt = snapshot["source_receipt"]["receipt_hash"]
+        trusted_attestation = (
+            historical_market_data_snapshot_attestation_hash(snapshot)
+        )
         self.assertEqual(
             historical_market_data_snapshot_reasons(
                 snapshot,
-                trusted_receipt_hashes={trusted_receipt},
+                trusted_snapshot_attestation_hashes={trusted_attestation},
             ),
             (),
         )
@@ -261,32 +266,119 @@ class ProvenanceAndApprovedContractTests(unittest.TestCase):
             "FACT_SOURCE_ROW_REPLAY_MISMATCH",
             historical_market_data_snapshot_reasons(
                 mutated,
-                trusted_receipt_hashes={trusted_receipt},
+                trusted_snapshot_attestation_hashes={trusted_attestation},
             ),
         )
 
-    def test_coordinated_raw_archive_checksum_rehash_needs_original_trusted_receipt(self):
+    def test_coordinated_rehash_needs_original_trusted_snapshot_attestation(self):
         original = self.fetch()
         forged = self.fetch(kline_csv(first_close="101.75"))
-        original_anchor = original["source_receipt"]["receipt_hash"]
+        original_anchor = historical_market_data_snapshot_attestation_hash(
+            original
+        )
 
         self.assertNotEqual(
             forged["source_receipt"]["archive_sha256"],
             original["source_receipt"]["archive_sha256"],
         )
         self.assertNotEqual(
-            forged["source_receipt"]["receipt_hash"],
+            historical_market_data_snapshot_attestation_hash(forged),
             original_anchor,
         )
         self.assertIn(
-            "TRUSTED_RECEIPT_ATTESTATION_REQUIRED",
+            "TRUSTED_SNAPSHOT_ATTESTATION_REQUIRED",
             historical_market_data_snapshot_reasons(forged),
         )
         self.assertIn(
-            "TRUSTED_RECEIPT_ATTESTATION_MISMATCH",
+            "TRUSTED_SNAPSHOT_ATTESTATION_MISMATCH",
             historical_market_data_snapshot_reasons(
                 forged,
-                trusted_receipt_hashes={original_anchor},
+                trusted_snapshot_attestation_hashes={original_anchor},
+            ),
+        )
+
+    def test_external_snapshot_attestation_rejects_recorded_at_rewrite(self):
+        from crypto_quant.market_data import (
+            historical_market_data_snapshot_attestation_envelope,
+            historical_market_data_snapshot_attestation_hash,
+        )
+
+        original = self.fetch()
+        envelope = historical_market_data_snapshot_attestation_envelope(original)
+        self.assertEqual(
+            set(envelope),
+            {
+                "attestation_schema_version",
+                "attestation_type",
+                "hash_algorithm",
+                "canonicalization",
+                "snapshot_schema",
+                "snapshot_schema_version",
+                "parser_version",
+                "snapshot_id",
+                "recorded_at",
+                "receipt_hash",
+                "snapshot_hash",
+            },
+        )
+        self.assertEqual(
+            envelope["receipt_hash"],
+            original["source_receipt"]["receipt_hash"],
+        )
+        self.assertEqual(envelope["snapshot_hash"], original["snapshot_hash"])
+        attestation_anchor = historical_market_data_snapshot_attestation_hash(
+            original
+        )
+        receipt_anchor = original["source_receipt"]["receipt_hash"]
+        rewritten = json.loads(json.dumps(original))
+        rewritten["recorded_at"] = "2099-01-01T00:00:00Z"
+        rewritten["snapshot_hash"] = historical_market_data_snapshot_hash(
+            rewritten
+        )
+
+        self.assertIn(
+            "TRUSTED_SNAPSHOT_ATTESTATION_MISMATCH",
+            historical_market_data_snapshot_reasons(
+                rewritten,
+                trusted_snapshot_attestation_hashes={attestation_anchor},
+            ),
+        )
+        self.assertIn(
+            "TRUSTED_RECEIPT_ATTESTATION_INSUFFICIENT",
+            historical_market_data_snapshot_reasons(
+                rewritten,
+                trusted_receipt_hashes={receipt_anchor},
+            ),
+        )
+
+    def test_external_snapshot_attestation_rejects_snapshot_id_rewrite(self):
+        from crypto_quant.market_data import (
+            historical_market_data_snapshot_attestation_hash,
+        )
+
+        original = self.fetch()
+        attestation_anchor = historical_market_data_snapshot_attestation_hash(
+            original
+        )
+        receipt_anchor = original["source_receipt"]["receipt_hash"]
+        rewritten = json.loads(json.dumps(original))
+        rewritten["snapshot_id"] = "rewritten-snapshot-id"
+        rewritten["snapshot_hash"] = historical_market_data_snapshot_hash(
+            rewritten
+        )
+
+        self.assertIn(
+            "TRUSTED_SNAPSHOT_ATTESTATION_MISMATCH",
+            historical_market_data_snapshot_reasons(
+                rewritten,
+                trusted_snapshot_attestation_hashes={attestation_anchor},
+            ),
+        )
+        self.assertIn(
+            "TRUSTED_RECEIPT_ATTESTATION_INSUFFICIENT",
+            historical_market_data_snapshot_reasons(
+                rewritten,
+                trusted_receipt_hashes={receipt_anchor},
             ),
         )
 
@@ -466,8 +558,8 @@ class FundingScheduleAndDegradedResearchTests(unittest.TestCase):
         self.assertEqual(
             historical_market_data_snapshot_reasons(
                 snapshot,
-                trusted_receipt_hashes={
-                    snapshot["source_receipt"]["receipt_hash"]
+                trusted_snapshot_attestation_hashes={
+                    historical_market_data_snapshot_attestation_hash(snapshot)
                 },
             ),
             (),
@@ -512,8 +604,8 @@ class FundingScheduleAndDegradedResearchTests(unittest.TestCase):
             "MARKET_DATA_RESEARCH_ONLY_DEGRADED",
             historical_market_data_snapshot_reasons(
                 degraded,
-                trusted_receipt_hashes={
-                    degraded["source_receipt"]["receipt_hash"]
+                trusted_snapshot_attestation_hashes={
+                    historical_market_data_snapshot_attestation_hash(degraded)
                 },
             ),
         )

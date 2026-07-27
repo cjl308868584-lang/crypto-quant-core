@@ -20,6 +20,7 @@ from crypto_quant.market_data import (
     extract_expected_csv,
     fee_schedule_snapshot_hash,
     fee_schedule_snapshot_reasons,
+    historical_market_data_snapshot_attestation_hash,
     historical_market_data_snapshot_hash,
     historical_market_data_snapshot_reasons,
     parse_market_facts,
@@ -576,14 +577,14 @@ class MarketDataArtifactTests(unittest.TestCase):
         ).hexdigest())
         self.assertEqual(snapshot["pit_eligibility"], "ARCHIVE_REPLAY_ONLY")
         self.assertIn(
-            "TRUSTED_RECEIPT_ATTESTATION_REQUIRED",
+            "TRUSTED_SNAPSHOT_ATTESTATION_REQUIRED",
             historical_market_data_snapshot_reasons(snapshot),
         )
         self.assertEqual(
             historical_market_data_snapshot_reasons(
                 snapshot,
-                trusted_receipt_hashes={
-                    snapshot["source_receipt"]["receipt_hash"]
+                trusted_snapshot_attestation_hashes={
+                    historical_market_data_snapshot_attestation_hash(snapshot)
                 },
             ),
             (),
@@ -613,8 +614,8 @@ class MarketDataArtifactTests(unittest.TestCase):
             "FACT_SOURCE_ROW_REPLAY_MISMATCH",
             historical_market_data_snapshot_reasons(
                 incomplete,
-                trusted_receipt_hashes={
-                    snapshot["source_receipt"]["receipt_hash"]
+                trusted_snapshot_attestation_hashes={
+                    historical_market_data_snapshot_attestation_hash(snapshot)
                 },
             ),
         )
@@ -636,8 +637,8 @@ class MarketDataArtifactTests(unittest.TestCase):
             "MARKET_DATA_SCHEMA_INVALID",
             historical_market_data_snapshot_reasons(
                 invalid_id,
-                trusted_receipt_hashes={
-                    first["source_receipt"]["receipt_hash"]
+                trusted_snapshot_attestation_hashes={
+                    historical_market_data_snapshot_attestation_hash(first)
                 },
             ),
         )
@@ -673,8 +674,8 @@ class MarketDataArtifactTests(unittest.TestCase):
         self.assertEqual(
             historical_market_data_snapshot_reasons(
                 snapshot,
-                trusted_receipt_hashes={
-                    snapshot["source_receipt"]["receipt_hash"]
+                trusted_snapshot_attestation_hashes={
+                    historical_market_data_snapshot_attestation_hash(snapshot)
                 },
             ),
             (),
@@ -940,7 +941,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 import zipfile
-from crypto_quant.market_data import (HistoricalArchiveRequest, build_historical_market_data_snapshot, fee_schedule_snapshot_reasons, historical_market_data_snapshot_reasons, verify_official_checksum)
+from crypto_quant.market_data import (HistoricalArchiveRequest, build_historical_market_data_snapshot, fee_schedule_snapshot_reasons, historical_market_data_snapshot_attestation_hash, historical_market_data_snapshot_reasons, verify_official_checksum)
 request = HistoricalArchiveRequest.create(market='USD_M', data_family='FUNDING_RATE', symbol='ETHUSDT', interval_or_null=None, period_kind='MONTHLY', period='2024-01')
 start = datetime(2024, 1, 1, tzinfo=timezone.utc)
 rows = ('\\n'.join(f'{int((start + timedelta(hours=8 * index)).timestamp() * 1000)},8,0.0001' for index in range(93)) + '\\n').encode()
@@ -951,7 +952,7 @@ archive_bytes = buffer.getvalue()
 checksum = f"{hashlib.sha256(archive_bytes).hexdigest()}  {request.archive_filename}\\n".encode()
 verified = verify_official_checksum(request, archive_bytes, checksum)
 snapshot = build_historical_market_data_snapshot(snapshot_id='wheel-funding-202401', verified_archive=verified, retrieved_at='2026-07-27T00:00:00Z', ingested_at='2026-07-27T00:00:00Z', recorded_at='2026-07-27T00:00:01Z')
-assert historical_market_data_snapshot_reasons(snapshot, trusted_receipt_hashes={snapshot['source_receipt']['receipt_hash']}) == ()
+assert historical_market_data_snapshot_reasons(snapshot, trusted_snapshot_attestation_hashes={historical_market_data_snapshot_attestation_hash(snapshot)}) == ()
 assert historical_market_data_snapshot_reasons({})
 fee = {'$schema': './fee-schedule-snapshot-v1.schema.json', 'schema_version': '1.0.0', 'fee_schedule_id': 'wheel-fee', 'content_hash': '0' * 64, 'hash_algorithm': 'SHA-256', 'canonicalization': 'RFC8785_JCS', 'usage_environment': 'RESEARCH', 'schedules': [{'fee_id': 'fee-one', 'venue': 'BINANCE', 'product': 'USD_M_PERPETUAL', 'account_tier': 'VIP_0', 'symbol': 'ETHUSDT', 'effective_from': '2024-01-01T00:00:00Z', 'effective_to_or_null': None, 'maker_rate': '0.0002', 'taker_rate': '0.0005', 'source_reference': 'manual:wheel', 'recorded_at': '2024-01-02T00:00:00Z', 'lifecycle': 'APPROVED', 'approval': {'approved_by': 'risk', 'approved_at': '2023-12-31T00:00:00Z', 'approval_reference': 'research:wheel'}}]}
 from crypto_quant.market_data import fee_schedule_snapshot_hash

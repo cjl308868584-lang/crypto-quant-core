@@ -15,6 +15,7 @@ from .market_data import (
     MarketDataError,
     PublicArchiveTransport,
     fetch_historical_market_data,
+    historical_market_data_snapshot_attestation_hash,
 )
 
 
@@ -381,6 +382,9 @@ def main(
             transport or PublicArchiveTransport(),
             retrieved_at,
         )
+        snapshot_attestation_hash = (
+            historical_market_data_snapshot_attestation_hash(snapshot)
+        )
         root = _selected_root_path(arguments.output_root)
         artifact_name = snapshot["snapshot_id"] + ".json"
         artifact = root.resolve() / _OUTPUT_DIRECTORY / artifact_name
@@ -395,6 +399,7 @@ def main(
             {
                 "artifact_path": str(artifact),
                 "created": created,
+                "snapshot_attestation_hash": snapshot_attestation_hash,
                 "snapshot_hash": snapshot["snapshot_hash"],
             },
             sort_keys=True,

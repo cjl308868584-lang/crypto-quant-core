@@ -1,13 +1,13 @@
 {
   "schema_version": "1.0.0",
   "evidence_id": "binance-public-data-smoke-v0.16.0",
-  "status": "PASS_WITH_INDEPENDENT_RECEIPT_ATTESTATION",
+  "status": "PASS_WITH_INDEPENDENT_SNAPSHOT_ATTESTATION",
   "retrieval_mode": "PUBLIC_GET_ONLY",
   "parser_version": "BINANCE_CSV_V1",
   "availability_basis": "OFFLINE_ARCHIVE_OBSERVED_AT_INGESTION",
   "pit_eligibility": "ARCHIVE_REPLAY_ONLY",
   "quality_eligibility": "FORMAL_COMPLETE",
-  "retrieved_at": "2026-07-27T10:21:28.953355Z",
+  "retrieved_at": "2026-07-27T11:07:08.007133Z",
   "request": {
     "schema_version": "1.0.0",
     "provider": "BINANCE_PUBLIC_DATA",
@@ -40,10 +40,11 @@
     "checksum_file_sha256": "2413eb36a0d9f1fa90bea973bdf0c8dd0e15e4306c21427b5f543f09ceb55897",
     "csv_sha256": "d132b8175bdf452165af93d0cd63e7cd2cf20bf40955218fc050ade702ca6935",
     "source_rows_root_hash": "9f8a6349342061ce65bea467bd5f1ac1619e481fed945c852ad15ad81eb70cbf",
-    "facts_root_hash": "08376604eb228fe3465695615cf6be35aec1d037dfab2abd3dddeb5606f90a56",
-    "trusted_receipt_hash": "1a350b35803b2a2250fc8bf1af549cea858dc7f11fb00fe14bd5d455fb24f9bb",
+    "facts_root_hash": "c315367ef3b9fd664118c972dc57fe0ad67c6959b7d74b8ae777b9f3cb099039",
+    "receipt_hash": "fb70e609054a1d32c5a350bb4b623a076ac46c605e0236611726c5a5190b6b84",
     "quality_report_hash": "6e1a9aab31fbdae54fbac2fd34fc366d2f09bca546574a178feb4c7e46351b60",
-    "snapshot_hash": "744d53c36d66488cb05e4eb68be744ac365d432234408b08ab909d4fa752e34e"
+    "snapshot_hash": "0930b265622811a4d73e9704f4eab0ddd1d7b0bf62ee248934553d55538d324a",
+    "trusted_snapshot_attestation_hash": "042f6bcfa291f7343b1b3b0f8e1fbcba209f7d29eb825ac1b487b35372c00d2d"
   },
   "snapshot_id": "historical-20d5e9be0f30295b89345ec5f68625f90d100bc00911414753909f87ff99db64",
   "quality": {
@@ -61,7 +62,7 @@
     "warning_findings": []
   },
   "independent_verification": {
-    "verified_at": "2026-07-27T10:22:04.998786Z",
+    "verified_at": "2026-07-27T11:09:31.022716Z",
     "archive_redownload_sha256": "a1f42574c036d4ae7670bb163dc1b787acf20f06bee958c32e736186757dc08b",
     "official_checksum_redownload_sha256": "2413eb36a0d9f1fa90bea973bdf0c8dd0e15e4306c21427b5f543f09ceb55897",
     "official_checksum_matches_archive": true,
@@ -70,11 +71,22 @@
     "facts_root_hash_matches_replay": true,
     "quality_report_hash_matches_replay": true,
     "snapshot_hash_matches_replay": true,
+    "snapshot_attestation_hash_matches_replay": true,
     "snapshot_bytes_equivalent": true,
     "fact_ingested_at_crosslink_pass": true,
     "trusted_validation_reasons": [],
     "unanchored_validation_reasons": [
-      "TRUSTED_RECEIPT_ATTESTATION_REQUIRED"
+      "TRUSTED_SNAPSHOT_ATTESTATION_REQUIRED"
+    ],
+    "receipt_only_validation_reasons": [
+      "TRUSTED_RECEIPT_ATTESTATION_INSUFFICIENT",
+      "TRUSTED_SNAPSHOT_ATTESTATION_REQUIRED"
+    ],
+    "recorded_at_rewrite_validation_reasons": [
+      "TRUSTED_SNAPSHOT_ATTESTATION_MISMATCH"
+    ],
+    "snapshot_id_rewrite_validation_reasons": [
+      "TRUSTED_SNAPSHOT_ATTESTATION_MISMATCH"
     ]
   },
   "retention": {
