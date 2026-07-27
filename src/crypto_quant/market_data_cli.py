@@ -68,20 +68,27 @@ def _open_output_root(root: Path) -> int:
         raise MarketDataError("ARTIFACT_OUTPUT_INVALID") from error
 
 
-def _open_output_directory(root_fd: int) -> int:
+def _open_output_directory(
+    root_fd: int,
+    output_directory: str = _OUTPUT_DIRECTORY,
+) -> int:
     try:
-        os.mkdir(_OUTPUT_DIRECTORY, dir_fd=root_fd)
+        os.mkdir(output_directory, dir_fd=root_fd)
     except FileExistsError:
         pass
     try:
-        return os.open(_OUTPUT_DIRECTORY, _directory_flags(), dir_fd=root_fd)
+        return os.open(output_directory, _directory_flags(), dir_fd=root_fd)
     except OSError as error:
         raise MarketDataError("ARTIFACT_OUTPUT_INVALID") from error
 
 
-def _directory_is_attached(root_fd: int, output_fd: int) -> bool:
+def _directory_is_attached(
+    root_fd: int,
+    output_fd: int,
+    output_directory: str = _OUTPUT_DIRECTORY,
+) -> bool:
     try:
-        entry = os.stat(_OUTPUT_DIRECTORY, dir_fd=root_fd, follow_symlinks=False)
+        entry = os.stat(output_directory, dir_fd=root_fd, follow_symlinks=False)
         opened = os.fstat(output_fd)
     except OSError:
         return False
@@ -92,8 +99,12 @@ def _directory_is_attached(root_fd: int, output_fd: int) -> bool:
     )
 
 
-def _require_attached_directory(root_fd: int, output_fd: int) -> None:
-    if not _directory_is_attached(root_fd, output_fd):
+def _require_attached_directory(
+    root_fd: int,
+    output_fd: int,
+    output_directory: str = _OUTPUT_DIRECTORY,
+) -> None:
+    if not _directory_is_attached(root_fd, output_fd, output_directory):
         raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
 
 
@@ -262,13 +273,14 @@ def _publish_in_directory(
     directory_fd: int,
     artifact_name: str,
     payload: bytes,
+    output_directory: str = _OUTPUT_DIRECTORY,
 ) -> bool:
-    _require_attached_directory(root_fd, directory_fd)
+    _require_attached_directory(root_fd, directory_fd, output_directory)
     existing = _read_existing_artifact(directory_fd, artifact_name, len(payload))
     if existing is not None:
         existing_payload, existing_identity = existing
         if existing_payload == payload:
-            _require_attached_directory(root_fd, directory_fd)
+            _require_attached_directory(root_fd, directory_fd, output_directory)
             _require_same_final_artifact_at_commit(
                 directory_fd,
                 artifact_name,
@@ -287,7 +299,7 @@ def _publish_in_directory(
         _write_and_sync(temporary_fd, payload, identity)
         os.close(temporary_fd)
         temporary_fd = None
-        _require_attached_directory(root_fd, directory_fd)
+        _require_attached_directory(root_fd, directory_fd, output_directory)
         try:
             os.link(
                 temporary_name,
@@ -302,7 +314,9 @@ def _publish_in_directory(
                 existing_identity = existing[1]
                 _unlink_own_name(directory_fd, temporary_name, identity)
                 os.fsync(directory_fd)
-                _require_attached_directory(root_fd, directory_fd)
+                _require_attached_directory(
+                    root_fd, directory_fd, output_directory
+                )
                 _require_same_final_artifact_at_commit(
                     directory_fd,
                     artifact_name,
@@ -312,12 +326,12 @@ def _publish_in_directory(
                 return False
             raise MarketDataError("ARTIFACT_CONFLICT")
         published = True
-        _require_attached_directory(root_fd, directory_fd)
+        _require_attached_directory(root_fd, directory_fd, output_directory)
         os.fsync(directory_fd)
         _unlink_own_name(directory_fd, temporary_name, identity)
         temporary_name = None
         os.fsync(directory_fd)
-        _require_attached_directory(root_fd, directory_fd)
+        _require_attached_directory(root_fd, directory_fd, output_directory)
         return True
     except (MarketDataError, OSError) as error:
         if temporary_fd is not None:
@@ -342,14 +356,26 @@ def _publish_in_directory(
             _close_without_reversing_result(temporary_fd)
 
 
-def _publish_immutable(root: Path, artifact_name: str, payload: bytes) -> bool:
+def _publish_immutable(
+    root: Path,
+    artifact_name: str,
+    payload: bytes,
+    *,
+    output_directory: str = _OUTPUT_DIRECTORY,
+) -> bool:
     """Publish bytes below a no-follow directory boundary without replacement."""
 
     root_fd = _open_output_root(root)
     directory_fd = None
     try:
-        directory_fd = _open_output_directory(root_fd)
-        return _publish_in_directory(root_fd, directory_fd, artifact_name, payload)
+        directory_fd = _open_output_directory(root_fd, output_directory)
+        return _publish_in_directory(
+            root_fd,
+            directory_fd,
+            artifact_name,
+            payload,
+            output_directory,
+        )
     finally:
         if directory_fd is not None:
             _close_without_reversing_result(directory_fd)

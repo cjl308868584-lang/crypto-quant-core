@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/offline-paper-run-v1.schema.json",
+  "title": "Offline Paper Run v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "run_id",
+    "run_hash",
+    "recorded_at",
+    "plan",
+    "decision_time",
+    "run_end",
+    "receipts",
+    "market",
+    "policies",
+    "arms",
+    "pairing",
+    "security_boundary",
+    "paper_eligibility",
+    "profitability_eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./offline-paper-run-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "run_id": {"$ref": "#/$defs/id"},
+    "run_hash": {"$ref": "#/$defs/hash"},
+    "recorded_at": {"$ref": "#/$defs/timestamp"},
+    "plan": {"$ref": "#/$defs/plan"},
+    "decision_time": {"$ref": "#/$defs/timestamp"},
+    "run_end": {"$ref": "#/$defs/timestamp"},
+    "receipts": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"$ref": "#/$defs/receipt"}
+    },
+    "market": {"$ref": "#/$defs/market"},
+    "policies": {"$ref": "#/$defs/policies"},
+    "arms": {"$ref": "#/$defs/arms"},
+    "pairing": {"$ref": "#/$defs/pairing"},
+    "security_boundary": {"$ref": "#/$defs/security"},
+    "paper_eligibility": {"const": "OFFLINE_PAPER_SMOKE_ONLY"},
+    "profitability_eligibility": {"const": "INSUFFICIENT_DURATION_AND_AI"},
+    "warnings": {
+      "const": [
+        "ACCOUNT_FEE_SCHEDULE_UNOBSERVED",
+        "ACCOUNT_SPECIFIC_FILTERS_UNOBSERVED",
+        "BBO_SEQUENCE_UNOBSERVABLE_REST_SNAPSHOT",
+        "AGG_TRADE_WINDOW_GAPS_POSSIBLE",
+        "PERPETUAL_CONTEXT_NOT_CAPTURED",
+        "AI_MODEL_NOT_RUN",
+        "PAPER_DURATION_BELOW_90_DAYS",
+        "NO_FORMAL_STATISTICAL_SAMPLE"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$"
+    },
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "stage", "family", "method", "url"],
+      "properties": {
+        "request_id": {"$ref": "#/$defs/id"},
+        "stage": {
+          "enum": ["DECISION_INPUT", "EXECUTION_OBSERVATION"]
+        },
+        "family": {
+          "enum": [
+            "SPOT_KLINE_4H_WARMUP",
+            "SPOT_EXCHANGE_INFO",
+            "SPOT_BBO",
+            "SPOT_AGG_TRADE"
+          ]
+        },
+        "method": {"const": "GET"},
+        "url": {
+          "type": "string",
+          "pattern": "^https://data-api\\.binance\\.vision/api/v3/"
+        }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "provider", "symbol", "requests"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "provider": {"const": "BINANCE_MARKET_DATA_ONLY"},
+        "symbol": {"const": "ETHUSDT"},
+        "requests": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/request"}
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "stage",
+        "family",
+        "symbol",
+        "method",
+        "url",
+        "request_started_at",
+        "response_received_at",
+        "recorded_at",
+        "status",
+        "final_url",
+        "http_date_or_null",
+        "etag_or_null",
+        "last_modified_or_null",
+        "retry_after_or_null",
+        "body_size_bytes",
+        "body_sha256",
+        "response_body_utf8",
+        "receipt_hash"
+      ],
+      "properties": {
+        "request_id": {"$ref": "#/$defs/id"},
+        "stage": {
+          "enum": ["DECISION_INPUT", "EXECUTION_OBSERVATION"]
+        },
+        "family": {
+          "enum": [
+            "SPOT_KLINE_4H_WARMUP",
+            "SPOT_EXCHANGE_INFO",
+            "SPOT_BBO",
+            "SPOT_AGG_TRADE"
+          ]
+        },
+        "symbol": {"const": "ETHUSDT"},
+        "method": {"const": "GET"},
+        "url": {
+          "type": "string",
+          "pattern": "^https://data-api\\.binance\\.vision/api/v3/"
+        },
+        "request_started_at": {"$ref": "#/$defs/timestamp"},
+        "response_received_at": {"$ref": "#/$defs/timestamp"},
+        "recorded_at": {"$ref": "#/$defs/timestamp"},
+        "status": {"const": 200},
+        "final_url": {
+          "type": "string",
+          "pattern": "^https://data-api\\.binance\\.vision/api/v3/"
+        },
+        "http_date_or_null": {"$ref": "#/$defs/nullableString"},
+        "etag_or_null": {"$ref": "#/$defs/nullableString"},
+        "last_modified_or_null": {"$ref": "#/$defs/nullableString"},
+        "retry_after_or_null": {"$ref": "#/$defs/nullableString"},
+        "body_size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2097152
+        },
+        "body_sha256": {"$ref": "#/$defs/hash"},
+        "response_body_utf8": {"type": "string", "minLength": 1},
+        "receipt_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "instrument": {
+      "type": "object",
+      "required": [
+        "instrument_id",
+        "symbol",
+        "price_tick",
+        "quantity_step",
+        "min_quantity",
+        "max_quantity",
+        "min_notional",
+        "maker_fee",
+        "taker_fee",
+        "metadata_source"
+      ],
+      "properties": {
+        "instrument_id": {"const": "BINANCE:SPOT:ETHUSDT"},
+        "symbol": {"const": "ETHUSDT"},
+        "price_tick": {"$ref": "#/$defs/decimal"},
+        "quantity_step": {"$ref": "#/$defs/decimal"},
+        "min_quantity": {"$ref": "#/$defs/decimal"},
+        "max_quantity": {"$ref": "#/$defs/decimal"},
+        "min_notional": {"$ref": "#/$defs/decimal"},
+        "maker_fee": {"const": "0.0015"},
+        "taker_fee": {"const": "0.0015"},
+        "metadata_source": {
+          "const": "BINANCE_PUBLIC_EXCHANGE_INFO_RESPONSE"
+        }
+      }
+    },
+    "market": {
+      "type": "object",
+      "required": [
+        "symbol",
+        "decision_time",
+        "closed_4h_klines",
+        "instrument_metadata",
+        "instrument_metadata_hash",
+        "bbo",
+        "agg_trade_window",
+        "receipt_hashes",
+        "market_hash"
+      ],
+      "properties": {
+        "symbol": {"const": "ETHUSDT"},
+        "decision_time": {"$ref": "#/$defs/timestamp"},
+        "closed_4h_klines": {
+          "type": "array",
+          "minItems": 21,
+          "maxItems": 200
+        },
+        "instrument_metadata": {"$ref": "#/$defs/instrument"},
+        "instrument_metadata_hash": {"$ref": "#/$defs/hash"},
+        "bbo": {
+          "type": "object",
+          "required": [
+            "bid_price",
+            "bid_quantity",
+            "ask_price",
+            "ask_quantity"
+          ],
+          "properties": {
+            "bid_price": {"$ref": "#/$defs/decimal"},
+            "bid_quantity": {"$ref": "#/$defs/decimal"},
+            "ask_price": {"$ref": "#/$defs/decimal"},
+            "ask_quantity": {"$ref": "#/$defs/decimal"}
+          }
+        },
+        "agg_trade_window": {"type": "object"},
+        "receipt_hashes": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/hash"}
+        },
+        "market_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline_strategy",
+        "fill_policy",
+        "starting_virtual_equity_usdt",
+        "volatility_target",
+        "risk_bucket",
+        "slippage_per_side",
+        "assumed_taker_fee_per_side"
+      ],
+      "properties": {
+        "baseline_strategy": {
+          "const": "SPOT_LONG_SMA20_VOL12_BUCKET25_V1"
+        },
+        "fill_policy": {
+          "const": "OFFLINE_PAPER_CONSERVATIVE_BBO_V1"
+        },
+        "starting_virtual_equity_usdt": {"const": "1000"},
+        "volatility_target": {"const": "0.12"},
+        "risk_bucket": {"const": "0.25"},
+        "slippage_per_side": {"const": "0.001"},
+        "assumed_taker_fee_per_side": {"const": "0.0015"}
+      }
+    },
+    "arm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arm_status", "decision", "fill", "economic_snapshot"],
+      "properties": {
+        "arm_status": {"type": "string", "minLength": 1},
+        "decision": {"type": "object"},
+        "fill": {"type": "object"},
+        "economic_snapshot": {"type": "object"}
+      }
+    },
+    "arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "ai"],
+      "properties": {
+        "baseline": {"$ref": "#/$defs/arm"},
+        "ai": {"$ref": "#/$defs/arm"}
+      }
+    },
+    "pairing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "same_decision_time",
+        "same_market_input",
+        "baseline_market_hash",
+        "ai_market_hash",
+        "paired_statistical_eligibility",
+        "paired_observation_count"
+      ],
+      "properties": {
+        "same_decision_time": {"const": true},
+        "same_market_input": {"const": true},
+        "baseline_market_hash": {"$ref": "#/$defs/hash"},
+        "ai_market_hash": {"$ref": "#/$defs/hash"},
+        "paired_statistical_eligibility": {
+          "const": "INELIGIBLE_AI_NOT_RUN"
+        },
+        "paired_observation_count": {"const": 0}
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "public_get_only",
+        "credentials_read",
+        "account_endpoints_called",
+        "broker_interface_present",
+        "orders_submitted",
+        "temporary_wal_ledgers_only"
+      ],
+      "properties": {
+        "public_get_only": {"const": true},
+        "credentials_read": {"const": false},
+        "account_endpoints_called": {"const": false},
+        "broker_interface_present": {"const": false},
+        "orders_submitted": {"const": false},
+        "temporary_wal_ledgers_only": {"const": true}
+      }
+    }
+  }
+}
