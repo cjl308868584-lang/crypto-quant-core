@@ -48,8 +48,8 @@
     },
     "receipt": {
       "type": "object", "additionalProperties": false,
-      "required": ["provider", "archive_sha256", "checksum_sha256", "available_at", "ingested_at", "receipt_hash"],
-      "properties": {"provider": {"const": "BINANCE_PUBLIC_DATA"}, "archive_sha256": {"$ref": "#/$defs/hash"}, "checksum_sha256": {"$ref": "#/$defs/hash"}, "available_at": {"$ref": "#/$defs/time"}, "ingested_at": {"$ref": "#/$defs/time"}, "receipt_hash": {"$ref": "#/$defs/hash"}}
+      "required": ["provider", "archive_sha256", "checksum_sha256", "available_at", "ingested_at", "source_etag_or_null", "source_last_modified_at_or_null", "receipt_hash"],
+      "properties": {"provider": {"const": "BINANCE_PUBLIC_DATA"}, "archive_sha256": {"$ref": "#/$defs/hash"}, "checksum_sha256": {"$ref": "#/$defs/hash"}, "available_at": {"$ref": "#/$defs/time"}, "ingested_at": {"$ref": "#/$defs/time"}, "source_etag_or_null": {"type": ["string", "null"]}, "source_last_modified_at_or_null": {"type": ["string", "null"]}, "receipt_hash": {"$ref": "#/$defs/hash"}}
     },
     "report": {
       "type": "object", "additionalProperties": false,

@@ -15,6 +15,9 @@ from datetime import datetime, timedelta, timezone
 from decimal import Context, Decimal, InvalidOperation, localcontext
 from pathlib import PurePosixPath
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from jsonschema import Draft202012Validator
 
@@ -30,6 +33,9 @@ _MAX_CSV_BYTES = 256 * 1024 * 1024
 _MAX_CHECKSUM_BYTES = 4 * 1024
 _MAX_COMPRESSION_RATIO = 100
 _READ_CHUNK_BYTES = 64 * 1024
+_PUBLIC_ARCHIVE_HOST = "data.binance.vision"
+_HTTP_TIMEOUT_SECONDS = 15
+_HTTP_GET_ATTEMPTS = 2
 _REQUEST_CONSTRUCTION_TOKEN = object()
 _VERIFIED_ARCHIVE_TOKEN = object()
 _DECIMAL_CONTEXT = Context(prec=50)
@@ -75,6 +81,89 @@ class MarketDataError(ValueError):
     def __init__(self, reason_code: str):
         super().__init__(reason_code)
         self.reason_code = reason_code
+
+
+@dataclass(frozen=True)
+class HttpResponse:
+    """The complete, non-streaming result of one public HTTPS GET."""
+
+    status: int
+    final_url: str
+    headers: Mapping[str, str]
+    body: bytes
+
+
+def _is_public_archive_url(url: object) -> bool:
+    if not isinstance(url, str):
+        return False
+    parsed = urlparse(url)
+    try:
+        return (
+            parsed.scheme == "https"
+            and parsed.hostname == _PUBLIC_ARCHIVE_HOST
+            and parsed.port is None
+            and parsed.username is None
+            and parsed.password is None
+            and bool(parsed.path)
+        )
+    except ValueError:
+        return False
+
+
+def _require_public_archive_url(url: object) -> None:
+    if not _is_public_archive_url(url):
+        raise MarketDataError("HTTP_RESPONSE_REDIRECT_INVALID")
+
+
+class _SameHostRedirectHandler(HTTPRedirectHandler):
+    """Allow HTTPS redirects only when they remain on the public archive host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _require_public_archive_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class PublicArchiveTransport:
+    """Concrete, credential-free public archive transport with a GET-only API."""
+
+    def get(self, url):
+        _require_public_archive_url(url)
+        opener = build_opener(_SameHostRedirectHandler())
+        for attempt in range(_HTTP_GET_ATTEMPTS):
+            try:
+                request = Request(url, method="GET")
+                with opener.open(request, timeout=_HTTP_TIMEOUT_SECONDS) as response:
+                    return HttpResponse(
+                        status=response.getcode(),
+                        final_url=response.geturl(),
+                        headers=dict(response.headers.items()),
+                        body=_read_bounded_response(response, _MAX_ARCHIVE_BYTES),
+                    )
+            except HTTPError as error:
+                return HttpResponse(
+                    status=error.code,
+                    final_url=error.geturl(),
+                    headers=dict(error.headers.items()) if error.headers is not None else {},
+                    body=b"",
+                )
+            except (OSError, TimeoutError, URLError) as error:
+                if attempt + 1 == _HTTP_GET_ATTEMPTS:
+                    raise MarketDataError("HTTP_TRANSPORT_FAILURE") from error
+        raise MarketDataError("HTTP_TRANSPORT_FAILURE")
+
+
+def _read_bounded_response(response: Any, maximum_bytes: int) -> bytes:
+    chunks = []
+    total = 0
+    while True:
+        chunk = response.read(_READ_CHUNK_BYTES)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > maximum_bytes:
+            raise MarketDataError("HTTP_RESPONSE_TOO_LARGE")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @dataclass(frozen=True, init=False)
@@ -297,6 +386,85 @@ def extract_expected_csv(
         except (EOFError, OSError, RuntimeError, ValueError, zipfile.BadZipFile) as exc:
             raise MarketDataError("ZIP_MEMBER_READ") from exc
     return b"".join(chunks)
+
+
+def _response_header(headers: Mapping[str, str], name: str) -> Optional[str]:
+    for key, value in headers.items():
+        if key.lower() == name.lower():
+            return value
+    return None
+
+
+def _validated_response(
+    response: object,
+    *,
+    maximum_bytes: int,
+) -> HttpResponse:
+    if not isinstance(response, HttpResponse):
+        raise MarketDataError("HTTP_RESPONSE_METADATA_INVALID")
+    if response.status != 200:
+        raise MarketDataError("HTTP_STATUS_INVALID")
+    if (
+        not isinstance(response.final_url, str)
+        or not isinstance(response.headers, Mapping)
+        or not isinstance(response.body, bytes)
+        or any(not isinstance(key, str) or not isinstance(value, str) for key, value in response.headers.items())
+    ):
+        raise MarketDataError("HTTP_RESPONSE_METADATA_INVALID")
+    _require_public_archive_url(response.final_url)
+    content_length = _response_header(response.headers, "Content-Length")
+    if content_length is not None:
+        if not content_length.isascii() or not content_length.isdigit():
+            raise MarketDataError("HTTP_RESPONSE_METADATA_INVALID")
+        if int(content_length) > maximum_bytes:
+            raise MarketDataError("HTTP_RESPONSE_TOO_LARGE")
+    if len(response.body) > maximum_bytes:
+        raise MarketDataError("HTTP_RESPONSE_TOO_LARGE")
+    return response
+
+
+def _fetched_snapshot_id(request: HistoricalArchiveRequest) -> str:
+    return "historical-" + business_hash(_request_payload(request))
+
+
+def fetch_historical_market_data(
+    request: HistoricalArchiveRequest,
+    transport: PublicArchiveTransport,
+    retrieved_at: str,
+) -> Dict[str, Any]:
+    """Fetch, authenticate, parse, and freeze one allowlisted archive snapshot."""
+
+    if not isinstance(request, HistoricalArchiveRequest) or not hasattr(transport, "get"):
+        raise MarketDataError("REQUEST_INVALID")
+    _utc_input(retrieved_at)
+    archive_response = _validated_response(
+        transport.get(request.archive_url),
+        maximum_bytes=_MAX_ARCHIVE_BYTES,
+    )
+    checksum_response = _validated_response(
+        transport.get(request.checksum_url),
+        maximum_bytes=_MAX_CHECKSUM_BYTES,
+    )
+    verified_archive = verify_official_checksum(
+        request,
+        archive_response.body,
+        checksum_response.body,
+    )
+    csv_bytes = extract_expected_csv(request, verified_archive)
+    facts = parse_market_facts(request, csv_bytes, retrieved_at)
+    return build_historical_market_data_snapshot(
+        snapshot_id=_fetched_snapshot_id(request),
+        request=request,
+        facts=facts,
+        archive_sha256=hashlib.sha256(archive_response.body).hexdigest(),
+        checksum_sha256=hashlib.sha256(checksum_response.body).hexdigest(),
+        ingested_at=retrieved_at,
+        recorded_at=retrieved_at,
+        source_etag_or_null=_response_header(archive_response.headers, "ETag"),
+        source_last_modified_at_or_null=_response_header(
+            archive_response.headers, "Last-Modified"
+        ),
+    )
 
 
 def _validate_zip_member(
@@ -834,6 +1002,8 @@ def historical_market_data_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tupl
             or _SHA256.fullmatch(receipt["archive_sha256"]) is None
             or not isinstance(receipt.get("checksum_sha256"), str)
             or _SHA256.fullmatch(receipt["checksum_sha256"]) is None
+            or not isinstance(receipt.get("source_etag_or_null"), (str, type(None)))
+            or not isinstance(receipt.get("source_last_modified_at_or_null"), (str, type(None)))
         ):
             reasons.append("RECEIPT_CROSSLINK_MISMATCH")
         if not isinstance(snapshot.get("snapshot_id"), str) or _ID.fullmatch(snapshot["snapshot_id"]) is None:
@@ -862,6 +1032,8 @@ def build_historical_market_data_snapshot(
     checksum_sha256: str,
     ingested_at: str,
     recorded_at: str,
+    source_etag_or_null: Optional[str] = None,
+    source_last_modified_at_or_null: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build a self-verifying, archive-only market-data artifact."""
 
@@ -873,6 +1045,8 @@ def build_historical_market_data_snapshot(
         or not isinstance(checksum_sha256, str)
         or _SHA256.fullmatch(archive_sha256) is None
         or _SHA256.fullmatch(checksum_sha256) is None
+        or not isinstance(source_etag_or_null, (str, type(None)))
+        or not isinstance(source_last_modified_at_or_null, (str, type(None)))
     ):
         raise MarketDataError("MARKET_DATA_QUALITY_BLOCKING")
     copied_facts = [dict(fact) for fact in facts]
@@ -892,6 +1066,8 @@ def build_historical_market_data_snapshot(
         "checksum_sha256": checksum_sha256,
         "available_at": ingested_at,
         "ingested_at": ingested_at,
+        "source_etag_or_null": source_etag_or_null,
+        "source_last_modified_at_or_null": source_last_modified_at_or_null,
         "receipt_hash": "0" * 64,
     }
     receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")

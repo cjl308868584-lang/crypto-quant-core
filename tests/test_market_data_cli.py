@@ -1,0 +1,294 @@
+import hashlib
+import inspect
+import io
+import json
+import tempfile
+import unittest
+import zipfile
+from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
+
+from crypto_quant.market_data import (
+    HistoricalArchiveRequest,
+    HttpResponse,
+    MarketDataError,
+    PublicArchiveTransport,
+    fetch_historical_market_data,
+)
+
+
+def archive_request():
+    return HistoricalArchiveRequest.create(
+        market="SPOT",
+        data_family="KLINES",
+        symbol="ETHUSDT",
+        interval_or_null="1m",
+        period_kind="DAILY",
+        period="2024-01-02",
+    )
+
+
+def archive_bytes(request):
+    start = datetime(2024, 1, 2, tzinfo=timezone.utc)
+    rows = []
+    for minute in range(24 * 60):
+        opened = start + timedelta(minutes=minute)
+        closed = opened + timedelta(minutes=1) - timedelta(milliseconds=1)
+        rows.append(
+            f"{int(opened.timestamp() * 1000)},100,101,99,100,1,"
+            f"{int(closed.timestamp() * 1000)},0,1,0,0,0"
+        )
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(request.expected_csv_name, ("\n".join(rows) + "\n").encode("ascii"))
+    return output.getvalue()
+
+
+class InMemoryTransport:
+    def __init__(self, responses):
+        self.responses = responses
+        self.requested_urls = []
+
+    def get(self, url):
+        self.requested_urls.append(url)
+        return self.responses[url]
+
+
+def transport_for(request, *, archive_response=None, checksum_response=None):
+    archive = archive_bytes(request)
+    checksum = (
+        f"{hashlib.sha256(archive).hexdigest()}  {request.archive_filename}\n"
+    ).encode("ascii")
+    return InMemoryTransport({
+        request.archive_url: archive_response or HttpResponse(
+            status=200,
+            final_url=request.archive_url,
+            headers={"ETag": '"archive-v1"', "Last-Modified": "Tue, 02 Jan 2024 00:00:00 GMT"},
+            body=archive,
+        ),
+        request.checksum_url: checksum_response or HttpResponse(
+            status=200,
+            final_url=request.checksum_url,
+            headers={},
+            body=checksum,
+        ),
+    })
+
+
+class FetchWorkflowTests(unittest.TestCase):
+    def setUp(self):
+        self.request = archive_request()
+        self.retrieved_at = "2026-07-27T00:00:00Z"
+
+    def assert_reason(self, expected, callable_object, *args):
+        with self.assertRaises(MarketDataError) as raised:
+            callable_object(*args)
+        self.assertEqual(raised.exception.reason_code, expected)
+
+    def test_fetches_exactly_two_allowlisted_gets_and_binds_archive_http_validators(self):
+        transport = transport_for(self.request)
+
+        snapshot = fetch_historical_market_data(
+            self.request, transport, self.retrieved_at
+        )
+
+        self.assertEqual(
+            transport.requested_urls,
+            [self.request.archive_url, self.request.checksum_url],
+        )
+        self.assertEqual(
+            snapshot["source_receipt"]["source_etag_or_null"], '"archive-v1"'
+        )
+        self.assertEqual(
+            snapshot["source_receipt"]["source_last_modified_at_or_null"],
+            "Tue, 02 Jan 2024 00:00:00 GMT",
+        )
+        self.assertEqual(snapshot["ingested_at"], self.retrieved_at)
+        self.assertEqual(snapshot["point_in_time_policy"], "ARCHIVE_REPLAY_ONLY")
+
+    def test_rejects_redirect_to_a_host_outside_the_public_archive_allowlist(self):
+        archive = archive_bytes(self.request)
+        transport = transport_for(
+            self.request,
+            archive_response=HttpResponse(
+                status=200,
+                final_url="https://example.invalid/archive.zip",
+                headers={},
+                body=archive,
+            ),
+        )
+
+        self.assert_reason(
+            "HTTP_RESPONSE_REDIRECT_INVALID",
+            fetch_historical_market_data,
+            self.request,
+            transport,
+            self.retrieved_at,
+        )
+
+    def test_rejects_malformed_final_url_without_leaking_a_url_parser_error(self):
+        transport = transport_for(
+            self.request,
+            archive_response=HttpResponse(
+                status=200,
+                final_url="https://data.binance.vision:invalid/archive.zip",
+                headers={},
+                body=archive_bytes(self.request),
+            ),
+        )
+
+        self.assert_reason(
+            "HTTP_RESPONSE_REDIRECT_INVALID",
+            fetch_historical_market_data,
+            self.request,
+            transport,
+            self.retrieved_at,
+        )
+
+    def test_rejects_non_success_metadata_gaps_and_declared_content_limit(self):
+        cases = (
+            (
+                "HTTP_STATUS_INVALID",
+                HttpResponse(404, self.request.archive_url, {}, b"not found"),
+            ),
+            (
+                "HTTP_RESPONSE_METADATA_INVALID",
+                HttpResponse(200, None, {}, b""),
+            ),
+            (
+                "HTTP_RESPONSE_TOO_LARGE",
+                HttpResponse(
+                    200,
+                    self.request.archive_url,
+                    {"Content-Length": str(64 * 1024 * 1024 + 1)},
+                    b"",
+                ),
+            ),
+        )
+        for expected, response in cases:
+            with self.subTest(expected=expected):
+                self.assert_reason(
+                    expected,
+                    fetch_historical_market_data,
+                    self.request,
+                    transport_for(self.request, archive_response=response),
+                    self.retrieved_at,
+                )
+
+    def test_verifies_official_checksum_before_invoking_the_parser(self):
+        archive = archive_bytes(self.request)
+        transport = transport_for(
+            self.request,
+            checksum_response=HttpResponse(
+                200,
+                self.request.checksum_url,
+                {},
+                b"0" * 64 + b"  ETHUSDT-1m-2024-01-02.zip\n",
+            ),
+        )
+
+        with patch("crypto_quant.market_data.parse_market_facts") as parser:
+            self.assert_reason(
+                "CHECKSUM_DIGEST_MISMATCH",
+                fetch_historical_market_data,
+                self.request,
+                transport,
+                self.retrieved_at,
+            )
+        parser.assert_not_called()
+
+    def test_public_interfaces_do_not_accept_authentication_or_header_inputs(self):
+        self.assertEqual(
+            tuple(inspect.signature(PublicArchiveTransport.get).parameters),
+            ("self", "url"),
+        )
+        self.assertEqual(
+            tuple(inspect.signature(fetch_historical_market_data).parameters),
+            ("request", "transport", "retrieved_at"),
+        )
+
+
+class MarketDataCliTests(unittest.TestCase):
+    def setUp(self):
+        self.request = archive_request()
+        self.transport = transport_for(self.request)
+        self.arguments = [
+            "--market", "SPOT",
+            "--data-family", "KLINES",
+            "--symbol", "ETHUSDT",
+            "--interval", "1m",
+            "--period", "2024-01-02",
+        ]
+
+    def invoke(self, root, *, transport=None):
+        from crypto_quant.market_data_cli import main
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            status = main(
+                [*self.arguments, "--output-root", str(root)],
+                transport=transport or self.transport,
+                clock=lambda: "2026-07-27T00:00:01Z",
+            )
+        return status, stdout.getvalue(), stderr.getvalue()
+
+    def test_structured_arguments_write_a_canonical_artifact_below_selected_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "selected-root"
+            status, stdout, stderr = self.invoke(root)
+
+            self.assertEqual(status, 0)
+            self.assertEqual(stderr, "")
+            summary = json.loads(stdout)
+            artifact = Path(summary["artifact_path"])
+            self.assertTrue(artifact.is_relative_to(root.resolve()))
+            self.assertEqual(artifact.parent, root.resolve() / "market-data")
+            payload = artifact.read_bytes()
+            self.assertEqual(payload, json.dumps(json.loads(payload), sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            snapshot = json.loads(payload)
+            self.assertEqual(summary["snapshot_hash"], snapshot["snapshot_hash"])
+            self.assertIn("source_receipt", snapshot)
+            self.assertIn("quality_report", snapshot)
+
+    def test_rejects_sensitive_or_arbitrary_endpoint_arguments(self):
+        from crypto_quant.market_data_cli import main
+
+        with tempfile.TemporaryDirectory() as temporary:
+            for forbidden in ("--url", "--api-key", "--order", "--account"):
+                with self.subTest(forbidden=forbidden):
+                    stderr = io.StringIO()
+                    with redirect_stderr(stderr):
+                        status = main([
+                            *self.arguments,
+                            "--output-root", temporary,
+                            forbidden,
+                            "value",
+                        ])
+                    self.assertNotEqual(status, 0)
+                    self.assertIn("unrecognized arguments", stderr.getvalue())
+
+    def test_identical_artifact_is_idempotent_but_conflicting_artifact_is_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            first = self.invoke(root)
+            second = self.invoke(root)
+            self.assertEqual(first[0], 0)
+            self.assertEqual(second[0], 0)
+            artifact = Path(json.loads(first[1])["artifact_path"])
+            artifact.write_bytes(b"conflicting")
+            third = self.invoke(root, transport=transport_for(self.request))
+            self.assertNotEqual(third[0], 0)
+            self.assertEqual(artifact.read_bytes(), b"conflicting")
+
+    def test_fetch_failure_leaves_no_final_artifact(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            failed = transport_for(
+                self.request,
+                archive_response=HttpResponse(500, self.request.archive_url, {}, b""),
+            )
+            status, _, _ = self.invoke(root, transport=failed)
+            self.assertNotEqual(status, 0)
+            self.assertFalse((root / "market-data").exists())
