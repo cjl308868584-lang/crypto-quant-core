@@ -3,11 +3,22 @@
 import hashlib
 import json
 import re
+from functools import lru_cache
+from importlib import resources
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Context, Decimal, InvalidOperation, localcontext
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
+from urllib.request import (
+    HTTPRedirectHandler,
+    ProxyHandler,
+    Request,
+    build_opener,
+)
+
+from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_decimal
 from .evidence import artifact_self_hash
@@ -25,6 +36,19 @@ _SHA256 = re.compile(r"^[a-f0-9]{64}$")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _INTERVAL_MS = {"1m": 60_000, "4h": 14_400_000}
 _ATTESTATION_TYPE = "CONTEMPORANEOUS_CAPTURE_SNAPSHOT_ATTESTATION"
+_HTTP_TIMEOUT_SECONDS = 15
+_HTTP_ATTEMPTS = 2
+_READ_CHUNK_BYTES = 64 * 1024
+
+
+@lru_cache(maxsize=1)
+def _snapshot_validator() -> Draft202012Validator:
+    resource = resources.files("crypto_quant").joinpath(
+        "schemas", "contemporaneous-capture-snapshot-v1.schema.json"
+    )
+    schema = json.loads(resource.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
 
 
 class CaptureError(ValueError):
@@ -153,6 +177,95 @@ class PublicCaptureHttpResponse:
     response_received_at: str
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(
+        timespec="milliseconds"
+    ).replace("+00:00", "Z")
+
+
+class _SameMarketHostRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _valid_public_url(newurl):
+            raise CaptureError("CAPTURE_REDIRECT_INVALID")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _public_market_opener():
+    return build_opener(ProxyHandler({}), _SameMarketHostRedirectHandler())
+
+
+def _read_bounded(response: object) -> bytes:
+    chunks = []
+    total = 0
+    while True:
+        chunk = response.read(min(_READ_CHUNK_BYTES, _MAX_BODY_BYTES - total + 1))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _MAX_BODY_BYTES:
+            raise CaptureError("CAPTURE_RESPONSE_TOO_LARGE")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+class BinancePublicMarketDataTransport:
+    """Credential-free GET transport for the exact market-data-only host."""
+
+    def __init__(self, *, clock=None, opener=None):
+        self._clock = clock or _utc_now
+        self._opener = opener or _public_market_opener()
+
+    def get(self, request: CaptureRequest) -> PublicCaptureHttpResponse:
+        if (
+            not isinstance(request, CaptureRequest)
+            or not _valid_public_url(request.url)
+            or request not in capture_requests(
+                ContemporaneousCapturePlan.create(request.symbol)
+            )
+        ):
+            raise CaptureError("CAPTURE_REQUEST_INVALID")
+        for attempt in range(_HTTP_ATTEMPTS):
+            started = self._clock()
+            try:
+                http_request = Request(request.url, method="GET")
+                with self._opener.open(
+                    http_request, timeout=_HTTP_TIMEOUT_SECONDS
+                ) as response:
+                    status = response.getcode()
+                    result = PublicCaptureHttpResponse(
+                        status=status,
+                        final_url=response.geturl(),
+                        headers=dict(response.headers.items()),
+                        body=_read_bounded(response),
+                        request_started_at=started,
+                        response_received_at=self._clock(),
+                    )
+                if status >= 500 and attempt + 1 < _HTTP_ATTEMPTS:
+                    continue
+                return result
+            except HTTPError as error:
+                if error.code >= 500 and attempt + 1 < _HTTP_ATTEMPTS:
+                    continue
+                return PublicCaptureHttpResponse(
+                    status=error.code,
+                    final_url=error.geturl(),
+                    headers=(
+                        dict(error.headers.items())
+                        if error.headers is not None
+                        else {}
+                    ),
+                    body=b"",
+                    request_started_at=started,
+                    response_received_at=self._clock(),
+                )
+            except CaptureError:
+                raise
+            except (OSError, TimeoutError, URLError) as error:
+                if attempt + 1 == _HTTP_ATTEMPTS:
+                    raise CaptureError("CAPTURE_TRANSPORT_FAILURE") from error
+        raise CaptureError("CAPTURE_TRANSPORT_FAILURE")
+
+
 @dataclass(frozen=True, init=False)
 class VerifiedCaptureBatch:
     plan: ContemporaneousCapturePlan
@@ -265,7 +378,11 @@ def _headers(headers: object) -> Dict[str, Optional[str]]:
     }
 
 
-def _receipt(request: CaptureRequest, response: PublicCaptureHttpResponse):
+def _receipt(
+    request: CaptureRequest,
+    response: PublicCaptureHttpResponse,
+    recorded_at: str,
+):
     if (
         not isinstance(response, PublicCaptureHttpResponse)
         or response.status != 200
@@ -279,6 +396,13 @@ def _receipt(request: CaptureRequest, response: PublicCaptureHttpResponse):
     received, received_text = _utc(response.response_received_at)
     if received < started:
         raise CaptureError("CAPTURE_CLOCK_INVALID")
+    recorded_dt, recorded_text = _utc(recorded_at)
+    if recorded_dt < received:
+        raise CaptureError("CAPTURE_CLOCK_INVALID")
+    try:
+        response_body_utf8 = response.body.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise CaptureError("CAPTURE_JSON_INVALID") from error
     receipt = {
         "request_id": request.request_id,
         "family": request.family,
@@ -287,11 +411,14 @@ def _receipt(request: CaptureRequest, response: PublicCaptureHttpResponse):
         "url": request.url,
         "request_started_at": started_text,
         "response_received_at": received_text,
+        "ingested_at": recorded_text,
+        "recorded_at": recorded_text,
         "status": response.status,
         "final_url": response.final_url,
         **_headers(response.headers),
         "body_size_bytes": len(response.body),
         "body_sha256": hashlib.sha256(response.body).hexdigest(),
+        "response_body_utf8": response_body_utf8,
     }
     receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
     return receipt
@@ -534,9 +661,8 @@ def capture_once(
     plan: ContemporaneousCapturePlan,
     transport: object,
     *,
-    recorded_at: str,
+    recorded_at,
 ) -> VerifiedCaptureBatch:
-    recorded_dt, recorded_text = _utc(recorded_at)
     receipts = []
     observations = []
     for request in capture_requests(plan):
@@ -546,7 +672,9 @@ def capture_once(
             raise
         except Exception as error:
             raise CaptureError("CAPTURE_TRANSPORT_FAILURE") from error
-        receipt = _receipt(request, response)
+        observed_recorded_at = recorded_at() if callable(recorded_at) else recorded_at
+        recorded_dt, recorded_text = _utc(observed_recorded_at)
+        receipt = _receipt(request, response, recorded_text)
         received_dt, _ = _utc(receipt["response_received_at"])
         if recorded_dt < received_dt:
             raise CaptureError("CAPTURE_CLOCK_INVALID")
@@ -827,6 +955,80 @@ def _observation_replay_valid(item: Mapping[str, Any]) -> bool:
         return False
 
 
+def _snapshot_replays(snapshot: Mapping[str, Any]) -> bool:
+    plan_fields = snapshot["plan"]
+    plan = ContemporaneousCapturePlan.create(plan_fields["symbol"])
+    if plan_fields != _plan_payload(plan):
+        return False
+    requests = {item.request_id: item for item in capture_requests(plan)}
+    receipts = snapshot["response_receipts"]
+    if not isinstance(receipts, list) or len(receipts) % 4:
+        return False
+    if receipts != sorted(
+        receipts,
+        key=lambda item: (
+            item["request_started_at"], item["request_id"], item["receipt_hash"]
+        ),
+    ):
+        return False
+    raw = []
+    for receipt in receipts:
+        request = requests.get(receipt["request_id"])
+        if request is None:
+            return False
+        if (
+            receipt["family"] != request.family
+            or receipt["symbol"] != request.symbol
+            or receipt["interval_or_null"] != request.interval_or_null
+            or receipt["url"] != request.url
+            or receipt["final_url"] != request.url
+            or receipt["status"] != 200
+            or receipt["receipt_hash"]
+            != artifact_self_hash(receipt, "receipt_hash")
+        ):
+            return False
+        body = receipt["response_body_utf8"].encode("utf-8")
+        if (
+            receipt["body_size_bytes"] != len(body)
+            or receipt["body_sha256"] != hashlib.sha256(body).hexdigest()
+        ):
+            return False
+        started, _ = _utc(receipt["request_started_at"])
+        received, _ = _utc(receipt["response_received_at"])
+        ingested, _ = _utc(receipt["ingested_at"])
+        recorded, _ = _utc(receipt["recorded_at"])
+        if not started <= received <= ingested <= recorded:
+            return False
+        raw.extend(
+            _parse(
+                request,
+                receipt,
+                body,
+                receipt["ingested_at"],
+                receipt["recorded_at"],
+            )
+        )
+    observations, counters = _canonicalize_observations(raw)
+    report = _quality_report(receipts, raw, observations, counters)
+    snapshot_recorded, recorded_text = _utc(snapshot["recorded_at"])
+    if any(_utc(item["recorded_at"])[0] > snapshot_recorded for item in receipts):
+        return False
+    return (
+        snapshot["session_started_at"]
+        == min(item["request_started_at"] for item in receipts)
+        and snapshot["session_ended_at"]
+        == max(item["response_received_at"] for item in receipts)
+        and snapshot["recorded_at"] == recorded_text
+        and snapshot["response_count"] == len(receipts)
+        and snapshot["raw_observation_count"] == len(raw)
+        and snapshot["canonical_observation_count"] == len(observations)
+        and snapshot["observations"] == observations
+        and snapshot["quality_report"] == report
+        and snapshot["response_receipts_root_hash"] == business_hash(receipts)
+        and snapshot["observations_root_hash"] == business_hash(observations)
+    )
+
+
 def capture_snapshot_reasons(
     snapshot: Mapping[str, Any],
     *,
@@ -835,7 +1037,13 @@ def capture_snapshot_reasons(
     if not isinstance(snapshot, Mapping):
         return ("CAPTURE_SNAPSHOT_INVALID",)
     reasons = []
+    try:
+        schema_valid = not tuple(_snapshot_validator().iter_errors(snapshot))
+    except (TypeError, ValueError):
+        schema_valid = False
     if (
+        not schema_valid
+        or
         snapshot.get("$schema")
         != "./contemporaneous-capture-snapshot-v1.schema.json"
         or snapshot.get("schema_version") != "1.0.0"
@@ -865,7 +1073,10 @@ def capture_snapshot_reasons(
             reasons.append("CAPTURE_RECEIPT_HASH_MISMATCH")
         if report.get("report_hash") != artifact_self_hash(report, "report_hash"):
             reasons.append("CAPTURE_QUALITY_HASH_MISMATCH")
-        if any(not _observation_replay_valid(item) for item in observations):
+        if (
+            any(not _observation_replay_valid(item) for item in observations)
+            or not _snapshot_replays(snapshot)
+        ):
             reasons.append("CAPTURE_OBSERVATION_REPLAY_MISMATCH")
         required_warnings = {
             "ACCOUNT_COSTS_AND_FILLS_NOT_CAPTURED",

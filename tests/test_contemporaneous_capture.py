@@ -2,6 +2,7 @@ import copy
 import json
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 
 from crypto_quant.contemporaneous_capture import (
     CaptureError,
@@ -265,6 +266,56 @@ class ObservationAndSessionTests(unittest.TestCase):
             capture_snapshot_reasons(
                 changed, trusted_snapshot_attestation_hashes=[anchor]
             ),
+        )
+
+    def test_schema_and_raw_response_are_revalidated(self):
+        plan = ContemporaneousCapturePlan.create("ETHUSDT")
+        batch = capture_once(
+            plan,
+            FakeTransport(_responses()),
+            recorded_at="2026-04-01T00:01:00.200Z",
+        )
+        snapshot = build_capture_session(
+            [batch],
+            session_id="schema-session",
+            recorded_at="2026-04-01T00:01:00.300Z",
+        )
+        anchor = capture_snapshot_attestation_hash(snapshot)
+        changed = copy.deepcopy(snapshot)
+        changed["unexpected"] = True
+        changed["snapshot_hash"] = capture_snapshot_hash(changed)
+        self.assertIn(
+            "CAPTURE_SCHEMA_INVALID",
+            capture_snapshot_reasons(
+                changed, trusted_snapshot_attestation_hashes=[anchor]
+            ),
+        )
+        changed = copy.deepcopy(snapshot)
+        changed["response_receipts"][0]["response_body_utf8"] = "[]"
+        changed["response_receipts"][0]["body_size_bytes"] = 2
+        changed["response_receipts"][0]["body_sha256"] = (
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e5b5a"
+            "75ecf31b4a5a86c1f"
+        )
+        changed["response_receipts"][0]["receipt_hash"] = "0" * 64
+        changed["response_receipts_root_hash"] = "0" * 64
+        changed["snapshot_hash"] = capture_snapshot_hash(changed)
+        reasons = capture_snapshot_reasons(
+            changed, trusted_snapshot_attestation_hashes=[anchor]
+        )
+        self.assertIn("CAPTURE_OBSERVATION_REPLAY_MISMATCH", reasons)
+
+    def test_governance_and_packaged_schemas_are_byte_identical(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(
+            (
+                root / "config"
+                / "contemporaneous-capture-snapshot-v1.schema.json"
+            ).read_bytes(),
+            (
+                root / "src" / "crypto_quant" / "schemas"
+                / "contemporaneous-capture-snapshot-v1.schema.json"
+            ).read_bytes(),
         )
 
     def test_closed_kline_content_change_fails_closed(self):

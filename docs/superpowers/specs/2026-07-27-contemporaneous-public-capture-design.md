@@ -125,17 +125,20 @@ v0.17 不提供任意单端点 CLI。
 - `request_id`、family、symbol、interval；
 - 规范 URL；
 - `request_started_at`、`response_received_at`；
+- `ingested_at`、`recorded_at`；
 - status、final URL；
 - allowlisted 响应 metadata：`Date`、`ETag`、`Last-Modified`、
   `Retry-After`（缺失则 null）；
-- body size 和 SHA-256；
+- bounded 原始 UTF-8 JSON response body、body size 和 SHA-256；
 - `receipt_hash`。
 
 约束：
 
 `request_started_at <= response_received_at`
 
-receipt 不保存授权 header，因为该接口不允许授权输入。body size 有硬上限。
+receipt 不保存授权 header，因为该接口不允许授权输入。保存原始 body 是为了
+让离线验证器能从响应字节重跑 parser，而不是信任已规范化的观察；body size
+有硬上限。
 self-hash 只能证明内部完整性，不是信任锚。
 
 ### 6.3 `ContemporaneousMarketObservation`
