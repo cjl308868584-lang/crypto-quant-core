@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/logistic-archive-research-v1.schema.json",
+  "title": "Logistic Archive Research v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "research_id",
+    "research_hash",
+    "recorded_at",
+    "dataset_id",
+    "dataset_hash",
+    "recipe",
+    "folds",
+    "predictions_root_hash",
+    "predictions",
+    "summary",
+    "research_status",
+    "formal_pit_eligibility",
+    "release_oos_eligibility",
+    "model_activation_eligibility",
+    "profitability_eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./logistic-archive-research-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "research_id": {"$ref": "#/$defs/id"},
+    "research_hash": {"$ref": "#/$defs/hash"},
+    "recorded_at": {"$ref": "#/$defs/time"},
+    "dataset_id": {"$ref": "#/$defs/id"},
+    "dataset_hash": {"$ref": "#/$defs/hash"},
+    "recipe": {"$ref": "#/$defs/recipe"},
+    "folds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {"$ref": "#/$defs/fold"}
+    },
+    "predictions_root_hash": {"$ref": "#/$defs/hash"},
+    "predictions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/prediction"}
+    },
+    "summary": {"$ref": "#/$defs/summary"},
+    "research_status": {
+      "enum": [
+        "EXPLORATORY_LOGISTIC_BRIER_BETTER_THAN_CONSTANT",
+        "EXPLORATORY_LOGISTIC_NOT_BETTER_THAN_CONSTANT"
+      ]
+    },
+    "formal_pit_eligibility": {"const": "INELIGIBLE_ARCHIVE_REPLAY"},
+    "release_oos_eligibility": {
+      "const": "INELIGIBLE_EXPLORATORY_ARCHIVE"
+    },
+    "model_activation_eligibility": {
+      "const": "INELIGIBLE_RESEARCH_ONLY"
+    },
+    "profitability_eligibility": {"const": "INELIGIBLE"},
+    "warnings": {
+      "const": [
+        "EXPLORATORY_ARCHIVE_OOS_IS_NOT_SEALED_RELEASE_AUDIT",
+        "SIMPLE_BASELINE_ECONOMIC_GATE_NOT_PASSED",
+        "LONG_ONLY_SHORT_NOT_EVALUATED",
+        "NO_MODEL_APPROVED_OR_DEPLOYABLE",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "decimalArray9": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {"$ref": "#/$defs/decimal"}
+    },
+    "recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recipe_version",
+        "recipe_hash",
+        "feature_schema_hash",
+        "label_policy_hash",
+        "direction",
+        "model_family",
+        "standardization",
+        "l2_penalty",
+        "fit_learning_rate",
+        "fit_iterations",
+        "platt_learning_rate",
+        "platt_iterations",
+        "acceptance_threshold",
+        "parameter_precision",
+        "purge_hours",
+        "embargo_hours",
+        "shuffle",
+        "trial_count"
+      ],
+      "properties": {
+        "recipe_version": {"const": "FIXED_L2_LOGISTIC_PLATT_V1"},
+        "recipe_hash": {"$ref": "#/$defs/hash"},
+        "feature_schema_hash": {"$ref": "#/$defs/hash"},
+        "label_policy_hash": {"$ref": "#/$defs/hash"},
+        "direction": {"const": "LONG"},
+        "model_family": {"const": "LOGISTIC_REGRESSION"},
+        "standardization": {"const": "FIT_WINDOW_ZSCORE_POPULATION"},
+        "l2_penalty": {"const": "0.1"},
+        "fit_learning_rate": {"const": "0.05"},
+        "fit_iterations": {"const": 1000},
+        "platt_learning_rate": {"const": "0.01"},
+        "platt_iterations": {"const": 500},
+        "acceptance_threshold": {"const": "0.55"},
+        "parameter_precision": {"const": 12},
+        "purge_hours": {"const": 24},
+        "embargo_hours": {"const": 24},
+        "shuffle": {"const": false},
+        "trial_count": {"const": 1}
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "feature_means",
+        "feature_standard_deviations",
+        "logistic_intercept",
+        "logistic_weights",
+        "platt_intercept",
+        "platt_slope",
+        "constant_probability"
+      ],
+      "properties": {
+        "feature_means": {"$ref": "#/$defs/decimalArray9"},
+        "feature_standard_deviations": {"$ref": "#/$defs/decimalArray9"},
+        "logistic_intercept": {"$ref": "#/$defs/decimal"},
+        "logistic_weights": {"$ref": "#/$defs/decimalArray9"},
+        "platt_intercept": {"$ref": "#/$defs/decimal"},
+        "platt_slope": {"$ref": "#/$defs/decimal"},
+        "constant_probability": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logistic_brier",
+        "constant_brier",
+        "baseline_net_return_sum",
+        "filtered_net_return_sum",
+        "paired_increment_sum",
+        "acceptance_rate"
+      ],
+      "properties": {
+        "logistic_brier": {"$ref": "#/$defs/decimal"},
+        "constant_brier": {"$ref": "#/$defs/decimal"},
+        "baseline_net_return_sum": {"$ref": "#/$defs/decimal"},
+        "filtered_net_return_sum": {"$ref": "#/$defs/decimal"},
+        "paired_increment_sum": {"$ref": "#/$defs/decimal"},
+        "acceptance_rate": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "fold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fold_id",
+        "fold_index",
+        "fit_window_start",
+        "fit_window_end_exclusive",
+        "calibration_window_start",
+        "calibration_window_end_exclusive",
+        "oos_window_start",
+        "oos_window_end_exclusive",
+        "fit_sample_count",
+        "calibration_sample_count",
+        "oos_sample_count",
+        "accepted_oos_sample_count",
+        "fit_effective_event_count",
+        "feature_count_limit",
+        "feature_complexity_eligible",
+        "parameters",
+        "prediction_root_hash",
+        "metrics"
+      ],
+      "properties": {
+        "fold_id": {"$ref": "#/$defs/id"},
+        "fold_index": {"type": "integer", "minimum": 1, "maximum": 8},
+        "fit_window_start": {"$ref": "#/$defs/time"},
+        "fit_window_end_exclusive": {"$ref": "#/$defs/time"},
+        "calibration_window_start": {"$ref": "#/$defs/time"},
+        "calibration_window_end_exclusive": {"$ref": "#/$defs/time"},
+        "oos_window_start": {"$ref": "#/$defs/time"},
+        "oos_window_end_exclusive": {"$ref": "#/$defs/time"},
+        "fit_sample_count": {"type": "integer", "minimum": 1},
+        "calibration_sample_count": {"type": "integer", "minimum": 1},
+        "oos_sample_count": {"type": "integer", "minimum": 1},
+        "accepted_oos_sample_count": {"type": "integer", "minimum": 0},
+        "fit_effective_event_count": {"type": "integer", "minimum": 1},
+        "feature_count_limit": {"type": "integer", "minimum": 0},
+        "feature_complexity_eligible": {"type": "boolean"},
+        "parameters": {"$ref": "#/$defs/parameters"},
+        "prediction_root_hash": {"$ref": "#/$defs/hash"},
+        "metrics": {"$ref": "#/$defs/metrics"}
+      }
+    },
+    "prediction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_id",
+        "fold_id",
+        "fold_index",
+        "decision_time",
+        "p_net_positive",
+        "accepted",
+        "y_take",
+        "realized_net_return_24h",
+        "baseline_net_return",
+        "filtered_net_return",
+        "paired_increment"
+      ],
+      "properties": {
+        "sample_id": {"$ref": "#/$defs/id"},
+        "fold_id": {"$ref": "#/$defs/id"},
+        "fold_index": {"type": "integer", "minimum": 1, "maximum": 8},
+        "decision_time": {"$ref": "#/$defs/time"},
+        "p_net_positive": {"$ref": "#/$defs/decimal"},
+        "accepted": {"type": "boolean"},
+        "y_take": {"type": "integer", "enum": [0, 1]},
+        "realized_net_return_24h": {"$ref": "#/$defs/decimal"},
+        "baseline_net_return": {"$ref": "#/$defs/decimal"},
+        "filtered_net_return": {"$ref": "#/$defs/decimal"},
+        "paired_increment": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fold_count",
+        "oos_sample_count",
+        "accepted_oos_sample_count",
+        "acceptance_rate",
+        "logistic_brier",
+        "constant_brier",
+        "brier_better_fold_count",
+        "baseline_net_return_sum",
+        "filtered_net_return_sum",
+        "paired_increment_sum",
+        "baseline_nonnegative_quarter_count",
+        "filtered_nonnegative_quarter_count",
+        "feature_complexity_eligible_fold_count",
+        "simple_baseline_economic_gate_status"
+      ],
+      "properties": {
+        "fold_count": {"type": "integer", "minimum": 1, "maximum": 8},
+        "oos_sample_count": {"type": "integer", "minimum": 1},
+        "accepted_oos_sample_count": {"type": "integer", "minimum": 0},
+        "acceptance_rate": {"$ref": "#/$defs/decimal"},
+        "logistic_brier": {"$ref": "#/$defs/decimal"},
+        "constant_brier": {"$ref": "#/$defs/decimal"},
+        "brier_better_fold_count": {"type": "integer", "minimum": 0, "maximum": 8},
+        "baseline_net_return_sum": {"$ref": "#/$defs/decimal"},
+        "filtered_net_return_sum": {"$ref": "#/$defs/decimal"},
+        "paired_increment_sum": {"$ref": "#/$defs/decimal"},
+        "baseline_nonnegative_quarter_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "filtered_nonnegative_quarter_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "feature_complexity_eligible_fold_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "simple_baseline_economic_gate_status": {
+          "const": "NOT_PASSED_EXPLORATORY_POINT_ESTIMATE"
+        }
+      }
+    }
+  }
+}

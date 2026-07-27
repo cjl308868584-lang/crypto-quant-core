@@ -16,6 +16,7 @@ from .evidence import artifact_self_hash
 
 _FROZEN_CONFIG_PATHS = (
     "config/approved-fallback-registry-v1.1.schema.json",
+    "config/causal-feature-label-dataset-v1.schema.json",
     "config/contemporaneous-capture-snapshot-v1.schema.json",
     "config/deployment-line-v1.1.schema.json",
     "config/economic-ledger-snapshot-v1.schema.json",
@@ -29,6 +30,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/account-commission-snapshot-v1.schema.json",
     "config/fee-schedule-snapshot-v1.schema.json",
     "config/historical-market-data-snapshot-v1.schema.json",
+    "config/historical-execution-source-v1.schema.json",
     "config/historical-research-corpus-plan-v1.schema.json",
     "config/historical-research-corpus-repair-v1.schema.json",
     "config/historical-research-corpus-snapshot-v1.schema.json",
@@ -42,6 +44,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/paper-cycle-context-bundle-v1.schema.json",
     "config/context-cycle-orchestration-snapshot-v1.schema.json",
     "config/local-scheduler-contract-v1.schema.json",
+    "config/logistic-archive-research-v1.schema.json",
     "config/perpetual-context-snapshot-v1.schema.json",
     "config/recipe-release-v1.1.schema.json",
     "config/release-evidence-v1.1.schema.json",
@@ -65,6 +68,7 @@ _FROZEN_ARTIFACT_PATHS = (
     "artifacts/orchestration/context-cycle-orchestration-not-run-v0.25.0.json",
     "artifacts/research-corpus/binance-monthly-corpus-smoke-v0.26.0.json",
     "artifacts/research-corpus/binance-research-corpus-completion-v0.27.0.json",
+    "artifacts/ai-research/binance-causal-logistic-research-v0.28.0.json",
     "artifacts/market-data/binance-contemporaneous-smoke-v0.17.0.json",
     "artifacts/market-data/binance-public-data-smoke-v0.16.0.json",
     "artifacts/paper/binance-offline-paper-smoke-v0.18.0.json",

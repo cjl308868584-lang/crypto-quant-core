@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/causal-feature-label-dataset-v1.schema.json",
+  "title": "Causal Feature Label Dataset v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "dataset_id",
+    "dataset_hash",
+    "recorded_at",
+    "source_roots",
+    "feature_schema",
+    "label_policy",
+    "samples_root_hash",
+    "samples",
+    "summary",
+    "research_eligibility",
+    "formal_pit_eligibility",
+    "profitability_eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./causal-feature-label-dataset-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "dataset_id": {"$ref": "#/$defs/id"},
+    "dataset_hash": {"$ref": "#/$defs/hash"},
+    "recorded_at": {"$ref": "#/$defs/time"},
+    "source_roots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corpus_plan_hash",
+        "corpus_snapshot_hash",
+        "corpus_repair_bundle_hash",
+        "execution_source_root_hash",
+        "feature_input_facts_root_hash"
+      ],
+      "properties": {
+        "corpus_plan_hash": {"$ref": "#/$defs/hash"},
+        "corpus_snapshot_hash": {"$ref": "#/$defs/hash"},
+        "corpus_repair_bundle_hash": {"$ref": "#/$defs/hash"},
+        "execution_source_root_hash": {"$ref": "#/$defs/hash"},
+        "feature_input_facts_root_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "feature_schema": {"$ref": "#/$defs/featureSchema"},
+    "label_policy": {"$ref": "#/$defs/labelPolicy"},
+    "samples_root_hash": {"$ref": "#/$defs/hash"},
+    "samples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/sample"}
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direction",
+        "sample_count",
+        "positive_label_count",
+        "negative_label_count",
+        "feature_count",
+        "first_decision_time",
+        "last_decision_time",
+        "required_execution_minute_count",
+        "missing_required_execution_minute_count",
+        "maximum_holding_hours"
+      ],
+      "properties": {
+        "direction": {"const": "LONG"},
+        "sample_count": {"type": "integer", "minimum": 1},
+        "positive_label_count": {"type": "integer", "minimum": 0},
+        "negative_label_count": {"type": "integer", "minimum": 0},
+        "feature_count": {"const": 9},
+        "first_decision_time": {"$ref": "#/$defs/time"},
+        "last_decision_time": {"$ref": "#/$defs/time"},
+        "required_execution_minute_count": {"type": "integer", "minimum": 2},
+        "missing_required_execution_minute_count": {"const": 0},
+        "maximum_holding_hours": {"const": 24}
+      }
+    },
+    "research_eligibility": {"const": "ARCHIVE_CAUSAL_RESEARCH_ONLY"},
+    "formal_pit_eligibility": {"const": "INELIGIBLE_ARCHIVE_REPLAY"},
+    "profitability_eligibility": {"const": "INELIGIBLE"},
+    "warnings": {
+      "const": [
+        "EVENT_TIME_CAUSALITY_DOES_NOT_PROVE_HISTORICAL_INGESTION_AVAILABILITY",
+        "ONE_MINUTE_WORST_BAR_FILLS_ARE_PROXIES_NOT_REAL_FILLS",
+        "LONG_ONLY_SHORT_NOT_EVALUATED",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3,6}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "featureSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "feature_schema_version",
+        "feature_schema_hash",
+        "ordered_feature_names",
+        "feature_count",
+        "missing_value_policy",
+        "causality_policy"
+      ],
+      "properties": {
+        "feature_schema_version": {"const": "CAUSAL_ARCHIVE_FEATURES_V1"},
+        "feature_schema_hash": {"$ref": "#/$defs/hash"},
+        "ordered_feature_names": {
+          "const": [
+            "eth_log_return_5",
+            "eth_sma20_distance",
+            "eth_annualized_volatility_20",
+            "eth_mean_range_ratio_6",
+            "eth_taker_buy_quote_ratio_6",
+            "btc_log_return_5",
+            "btc_sma20_distance",
+            "eth_mark_basis",
+            "eth_latest_funding_rate"
+          ]
+        },
+        "feature_count": {"const": 9},
+        "missing_value_policy": {"const": "FAIL_CLOSED_NO_IMPUTATION"},
+        "causality_policy": {
+          "const": "SOURCE_EVENT_TIME_NOT_AFTER_DECISION_TIME"
+        }
+      }
+    },
+    "labelPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label_policy_version",
+        "label_policy_hash",
+        "direction",
+        "horizon_hours",
+        "minimum_hold_hours",
+        "reference_notional_usdt",
+        "quantity_step_eth",
+        "price_tick_usdt",
+        "slippage_rate_per_side",
+        "taker_fee_rate_per_side",
+        "fill_policy"
+      ],
+      "properties": {
+        "label_policy_version": {"const": "SPOT_LONG_24H_1M_WORST_BAR_V1"},
+        "label_policy_hash": {"$ref": "#/$defs/hash"},
+        "direction": {"const": "LONG"},
+        "horizon_hours": {"const": 24},
+        "minimum_hold_hours": {"const": 8},
+        "reference_notional_usdt": {"const": "1000"},
+        "quantity_step_eth": {"const": "0.0001"},
+        "price_tick_usdt": {"const": "0.01"},
+        "slippage_rate_per_side": {"const": "0.001"},
+        "taker_fee_rate_per_side": {"const": "0.0015"},
+        "fill_policy": {
+          "const": "OFFICIAL_1M_WORST_BAR_PLUS_10BPS_V1"
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_id",
+        "direction",
+        "decision_time",
+        "entry_open_time",
+        "exit_decision_time",
+        "exit_open_time",
+        "label_end_time_exclusive",
+        "holding_hours",
+        "exit_reason",
+        "max_feature_event_time",
+        "feature_values",
+        "feature_vector_hash",
+        "entry_source_row_hash",
+        "exit_source_row_hash",
+        "entry_fill_price",
+        "exit_fill_price",
+        "filled_quantity",
+        "entry_fee_usdt",
+        "exit_fee_usdt",
+        "gross_pnl_usdt",
+        "net_pnl_usdt",
+        "realized_net_return_24h",
+        "y_take",
+        "label_hash"
+      ],
+      "properties": {
+        "sample_id": {"$ref": "#/$defs/id"},
+        "direction": {"const": "LONG"},
+        "decision_time": {"$ref": "#/$defs/time"},
+        "entry_open_time": {"$ref": "#/$defs/time"},
+        "exit_decision_time": {"$ref": "#/$defs/time"},
+        "exit_open_time": {"$ref": "#/$defs/time"},
+        "label_end_time_exclusive": {"$ref": "#/$defs/time"},
+        "holding_hours": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 24,
+          "multipleOf": 4
+        },
+        "exit_reason": {
+          "enum": ["SMA20_EXIT_AFTER_MIN_HOLD", "VERTICAL_24H_EXIT"]
+        },
+        "max_feature_event_time": {"$ref": "#/$defs/time"},
+        "feature_values": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": {"$ref": "#/$defs/decimal"}
+        },
+        "feature_vector_hash": {"$ref": "#/$defs/hash"},
+        "entry_source_row_hash": {"$ref": "#/$defs/hash"},
+        "exit_source_row_hash": {"$ref": "#/$defs/hash"},
+        "entry_fill_price": {"$ref": "#/$defs/decimal"},
+        "exit_fill_price": {"$ref": "#/$defs/decimal"},
+        "filled_quantity": {"$ref": "#/$defs/decimal"},
+        "entry_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "exit_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "gross_pnl_usdt": {"$ref": "#/$defs/decimal"},
+        "net_pnl_usdt": {"$ref": "#/$defs/decimal"},
+        "realized_net_return_24h": {"$ref": "#/$defs/decimal"},
+        "y_take": {"type": "integer", "enum": [0, 1]},
+        "label_hash": {"$ref": "#/$defs/hash"}
+      }
+    }
+  }
+}

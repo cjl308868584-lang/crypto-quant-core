@@ -450,6 +450,26 @@ class EvaluatorBuildTests(unittest.TestCase):
             expected,
         )
         self.assertIn(
+            "artifacts/ai-research/"
+            "binance-causal-logistic-research-v0.28.0.json",
+            expected,
+        )
+        self.assertIn(
+            "src/crypto_quant/schemas/"
+            "historical-execution-source-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "src/crypto_quant/schemas/"
+            "causal-feature-label-dataset-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "src/crypto_quant/schemas/"
+            "logistic-archive-research-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
             "src/crypto_quant/schemas/"
             "perpetual-context-snapshot-v1.schema.json",
             expected,
@@ -516,9 +536,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.22.0")
-        self.assertEqual(manifest["package_version"], "0.27.0")
-        self.assertEqual(crypto_quant.__version__, "0.27.0")
+        self.assertEqual(manifest["manifest_version"], "1.23.0")
+        self.assertEqual(manifest["package_version"], "0.28.0")
+        self.assertEqual(crypto_quant.__version__, "0.28.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",

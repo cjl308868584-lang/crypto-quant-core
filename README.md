@@ -94,6 +94,12 @@
 86. [完整语料与显式日档修复 ADR-0027](docs/adr/0027-complete-research-corpus-with-explicit-daily-repairs.md)
 87. [Binance 完整 Corpus Evidence v0.27.0](artifacts/research-corpus/binance-research-corpus-completion-v0.27.0.json)
 88. [实施追踪 v0.27.0](docs/implementation-status-v0.27.0.md)
+89. [Historical Execution Source Schema](config/historical-execution-source-v1.schema.json)
+90. [Causal Feature/Label Dataset Schema](config/causal-feature-label-dataset-v1.schema.json)
+91. [Logistic Archive Research Schema](config/logistic-archive-research-v1.schema.json)
+92. [因果标签与 Logistic 档案研究 ADR-0028](docs/adr/0028-causal-logistic-archive-research.md)
+93. [Binance 因果 Logistic 研究证据 v0.28.0](artifacts/ai-research/binance-causal-logistic-research-v0.28.0.json)
+94. [实施追踪 v0.28.0](docs/implementation-status-v0.28.0.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -108,7 +114,7 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.27.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文、当前账户 Spot/USDⓈ-M commission 的只读取证边界、账户费率与Paper经济结果的PIT费用重放绑定、账户成本/永续同槽位的context-complete可恢复侧车、共享可信时钟与保留决策前账户证据的可恢复完整周期编排，以及42个完整月、8个滚动季度OOS fold、168项官方月度归档及两处显式官方日档修复的完整研究语料。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
+Git中的设计基线已冻结，当前代码版本为 `0.28.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文、当前账户 Spot/USDⓈ-M commission 的只读取证边界、账户费率与Paper经济结果的PIT费用重放绑定、账户成本/永续同槽位的context-complete可恢复侧车、共享可信时钟与保留决策前账户证据的可恢复完整周期编排、42个完整月与显式日档修复的完整研究语料，以及官方1m执行代理、严格因果event-based标签和固定低维Logistic档案研究。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
 
 当前58个Catalog算法中有26个Estimator可执行，其余32个明确Fail-Closed。公开历史归档的结构化请求只能访问ETHUSDT/BTCUSDT的allowlisted数据族；生产transport只执行无凭据GET，必须在解压前通过官方checksum，并将来源、质量和快照绑定到哈希。真实smoke已验证2026-07-25 ETHUSDT Spot daily 4h归档，但全部事后归档固定为`ARCHIVE_REPLAY_ONLY`：URL不是Artifact身份，也不能证明历史决策时点的数据可用性。Fee Schedule因产品、账户层级、折扣和生效期而独立冻结，不能从行情或当前网页费率反填历史。
 
@@ -134,7 +140,9 @@ v0.26把AI训练前的数据窗口前瞻冻结为`2023-01`至`2026-06`，每月�
 
 v0.27在仓库外 owner-only 目录完成168/168项语料，并保留两个 Binance 月度 ETH Mark 来源缺口。系统只使用对应缺失UTC日的官方daily archive与checksum建立显式repair sidecar，精确补齐12个4h间隔；独立新进程在网络禁用时可完全重建repair bundle。完整覆盖只允许archive research feature build，仍不获得PIT、正式OOS或盈利资格。
 
-仓库仍没有真实账户费率响应、成功的真实Futures上下文、真实成交/实际滑点、已安装的操作系统调度、event-based标签、批准模型或连续90天Paper证据，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。AI臂因没有批准模型固定为`NOT_RUN_NO_APPROVED_MODEL`、零成交和统计不合格；没有用启发式信号冒充AI。FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、余额读取或真实下单能力；凭据模块仅允许one-shot只读费率取证。下一步是基于完整语料实现严格滞后特征、24h保守执行标签和低维Logistic研究基准，同时准备owner-only、IP-restricted只读凭据文件运行真实完整周期并累计Paper。详细完成度见[实施追踪 v0.27.0](docs/implementation-status-v0.27.0.md)，修复边界见[ADR-0027](docs/adr/0027-complete-research-corpus-with-explicit-daily-repairs.md)。
+v0.28从42个月官方ETHUSDT Spot 1m档案保存1,560个所需执行分钟，显式保留81个与所需行零交集的官方来源缺口。严格因果数据集包含780个非重叠LONG事件；419个滚动OOS事件中，简单基线8/8季度为负。固定Logistic只接受10个事件，过滤后累计点估计略正，但整体Brier差于常数预测器且仅2/8折更优。因此基线与Logistic均拒绝晋级，不启动XGBoost；这是防止“几乎全空仓”被包装成AI优势的预期Fail-Closed结果。
+
+仓库仍没有真实账户费率响应、成功的真实Futures上下文、真实成交/实际滑点、已安装的操作系统调度、批准模型或连续90天Paper证据，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。AI臂仍没有批准模型，不能进入发布或下单链。FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、余额读取或真实下单能力；凭据模块仅允许one-shot只读费率取证。下一步不是增加模型复杂度，而是重新设计简单基线的经济逻辑与预登记假设，同时准备owner-only、IP-restricted只读凭据文件运行真实完整周期并累计Paper。详细完成度见[实施追踪 v0.28.0](docs/implementation-status-v0.28.0.md)，研究裁决见[ADR-0028](docs/adr/0028-causal-logistic-archive-research.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
