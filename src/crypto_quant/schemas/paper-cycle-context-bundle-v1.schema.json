@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/paper-cycle-context-bundle-v1.schema.json",
+  "title": "Paper Cycle Context Bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "bundle_id",
+    "bundle_hash",
+    "created_at",
+    "lineage",
+    "paper_cost_binding",
+    "perpetual_context_snapshot",
+    "pit_context",
+    "cost_outcome",
+    "perpetual_observation",
+    "security_boundary",
+    "cycle_eligibility",
+    "paper_eligibility",
+    "production_eligibility",
+    "profitability_eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./paper-cycle-context-bundle-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "bundle_id": {"$ref": "#/$defs/id"},
+    "bundle_hash": {"$ref": "#/$defs/hash"},
+    "created_at": {"$ref": "#/$defs/timestamp"},
+    "lineage": {"$ref": "#/$defs/lineage"},
+    "paper_cost_binding": {"type": "object", "minProperties": 1},
+    "perpetual_context_snapshot": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "pit_context": {"$ref": "#/$defs/pit"},
+    "cost_outcome": {"$ref": "#/$defs/cost"},
+    "perpetual_observation": {"$ref": "#/$defs/perpetual"},
+    "security_boundary": {"$ref": "#/$defs/security"},
+    "cycle_eligibility": {"const": "CONTEXT_COMPLETE_RESEARCH_ONLY"},
+    "paper_eligibility": {
+      "const": "LONGITUDINAL_COLLECTION_IN_PROGRESS"
+    },
+    "production_eligibility": {"const": "NOT_APPROVED"},
+    "profitability_eligibility": {
+      "const": "INSUFFICIENT_DURATION_EXECUTION_AND_AI"
+    },
+    "warnings": {
+      "const": [
+        "PERPETUAL_CONTEXT_NOT_CONSUMED_BY_BASELINE_SIGNAL",
+        "FUNDING_SCENARIOS_NOT_REALIZED_PNL",
+        "ACCOUNT_COMMISSION_CURRENT_ONLY",
+        "EXTERNAL_SOURCE_ATTESTATIONS_REQUIRED",
+        "SHORT_EXECUTION_NOT_IMPLEMENTED",
+        "AI_MODEL_NOT_RUN",
+        "OPERATING_SYSTEM_SCHEDULER_NOT_CONFIGURED",
+        "PAPER_DURATION_BELOW_90_DAYS",
+        "PROFITABILITY_NOT_PROVEN"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$"
+    },
+    "nullableDecimal": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/decimal"}
+      ]
+    },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paper_cost_binding_trusted_attestation_hash",
+        "offline_paper_trusted_attestation_hash",
+        "account_commission_trusted_attestation_hash",
+        "perpetual_context_trusted_attestation_hash",
+        "paper_cost_binding_hash",
+        "offline_paper_run_hash",
+        "account_commission_snapshot_hash",
+        "perpetual_context_snapshot_hash",
+        "copies_are_lineage_not_independent_proof"
+      ],
+      "properties": {
+        "paper_cost_binding_trusted_attestation_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "offline_paper_trusted_attestation_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "account_commission_trusted_attestation_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "perpetual_context_trusted_attestation_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "paper_cost_binding_hash": {"$ref": "#/$defs/hash"},
+        "offline_paper_run_hash": {"$ref": "#/$defs/hash"},
+        "account_commission_snapshot_hash": {"$ref": "#/$defs/hash"},
+        "perpetual_context_snapshot_hash": {"$ref": "#/$defs/hash"},
+        "copies_are_lineage_not_independent_proof": {"const": true}
+      }
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot_id", "scheduled_for", "due_at", "expires_at"],
+      "properties": {
+        "slot_id": {
+          "type": "string",
+          "pattern": "^ETHUSDT_[0-9]{8}T(00|04|08|12|16|20)0000Z$"
+        },
+        "scheduled_for": {"$ref": "#/$defs/timestamp"},
+        "due_at": {"$ref": "#/$defs/timestamp"},
+        "expires_at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "pit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "schedule_policy_hash",
+        "slot",
+        "paper_decision_time",
+        "paper_run_end",
+        "perpetual_source_time",
+        "perpetual_recorded_at",
+        "absolute_source_skew_seconds",
+        "maximum_source_skew_seconds",
+        "perpetual_availability_role",
+        "perpetual_used_in_signal",
+        "historical_backfill_used"
+      ],
+      "properties": {
+        "status": {"const": "PASS"},
+        "schedule_policy_hash": {"$ref": "#/$defs/hash"},
+        "slot": {"$ref": "#/$defs/slot"},
+        "paper_decision_time": {"$ref": "#/$defs/timestamp"},
+        "paper_run_end": {"$ref": "#/$defs/timestamp"},
+        "perpetual_source_time": {"$ref": "#/$defs/timestamp"},
+        "perpetual_recorded_at": {"$ref": "#/$defs/timestamp"},
+        "absolute_source_skew_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 900
+        },
+        "maximum_source_skew_seconds": {"const": 900},
+        "perpetual_availability_role": {
+          "enum": [
+            "PRE_DECISION_AVAILABLE_NOT_CONSUMED",
+            "POST_DECISION_OBSERVATIONAL_NOT_SIGNAL"
+          ]
+        },
+        "perpetual_used_in_signal": {"const": false},
+        "historical_backfill_used": {"const": false}
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_fill_status",
+        "account_total_fee_usdt",
+        "account_costed_ending_liquidation_equity_usdt",
+        "account_costed_liquidation_net_change_usdt",
+        "realized_pnl_claimed"
+      ],
+      "properties": {
+        "source_fill_status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "account_total_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "account_costed_ending_liquidation_equity_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "account_costed_liquidation_net_change_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "realized_pnl_claimed": {"const": false}
+      }
+    },
+    "perpetual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "market",
+        "source_time",
+        "mark_price",
+        "index_price",
+        "basis_usdt",
+        "basis_rate",
+        "current_open_interest",
+        "open_interest_4h_value_change_rate_or_null",
+        "next_funding_short_cashflow_per_1000_usdt",
+        "repeated_current_rate_24h_short_cashflow_per_1000_usdt",
+        "two_x_recent_absolute_adverse_24h_short_cashflow_per_1000_usdt",
+        "funding_realized",
+        "forecast_claimed"
+      ],
+      "properties": {
+        "symbol": {"const": "ETHUSDT"},
+        "market": {"const": "USD_M_PERPETUAL"},
+        "source_time": {"$ref": "#/$defs/timestamp"},
+        "mark_price": {"$ref": "#/$defs/decimal"},
+        "index_price": {"$ref": "#/$defs/decimal"},
+        "basis_usdt": {"$ref": "#/$defs/decimal"},
+        "basis_rate": {"$ref": "#/$defs/decimal"},
+        "current_open_interest": {"$ref": "#/$defs/decimal"},
+        "open_interest_4h_value_change_rate_or_null": {
+          "$ref": "#/$defs/nullableDecimal"
+        },
+        "next_funding_short_cashflow_per_1000_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "repeated_current_rate_24h_short_cashflow_per_1000_usdt": {
+          "$ref": "#/$defs/nullableDecimal"
+        },
+        "two_x_recent_absolute_adverse_24h_short_cashflow_per_1000_usdt": {
+          "$ref": "#/$defs/nullableDecimal"
+        },
+        "funding_realized": {"const": false},
+        "forecast_claimed": {"const": false}
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "network_requests_made_by_bundle",
+        "credentials_read_by_bundle",
+        "account_balances_read",
+        "orders_submitted",
+        "paper_run_changed",
+        "perpetual_used_in_signal"
+      ],
+      "properties": {
+        "network_requests_made_by_bundle": {"const": 0},
+        "credentials_read_by_bundle": {"const": false},
+        "account_balances_read": {"const": false},
+        "orders_submitted": {"const": false},
+        "paper_run_changed": {"const": false},
+        "perpetual_used_in_signal": {"const": false}
+      }
+    }
+  }
+}

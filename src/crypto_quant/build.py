@@ -35,6 +35,8 @@ _FROZEN_CONFIG_PATHS = (
     "config/paper-schedule-snapshot-v1.schema.json",
     "config/paired-risk-evaluation-snapshot-v1.schema.json",
     "config/paper-account-cost-binding-v1.schema.json",
+    "config/paper-context-schedule-snapshot-v1.schema.json",
+    "config/paper-cycle-context-bundle-v1.schema.json",
     "config/perpetual-context-snapshot-v1.schema.json",
     "config/recipe-release-v1.1.schema.json",
     "config/release-evidence-v1.1.schema.json",
@@ -54,6 +56,7 @@ _FROZEN_CONFIG_PATHS = (
 _FROZEN_ARTIFACT_PATHS = (
     "artifacts/account-cost/binance-account-commission-smoke-not-run-v0.22.0.json",
     "artifacts/paper-cost/binance-paper-account-cost-binding-not-run-v0.23.0.json",
+    "artifacts/paper-context/binance-context-complete-cycle-not-run-v0.24.0.json",
     "artifacts/market-data/binance-contemporaneous-smoke-v0.17.0.json",
     "artifacts/market-data/binance-public-data-smoke-v0.16.0.json",
     "artifacts/paper/binance-offline-paper-smoke-v0.18.0.json",

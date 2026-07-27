@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/paper-context-schedule-snapshot-v1.schema.json",
+  "title": "Paper Context Schedule Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "snapshot_id",
+    "snapshot_hash",
+    "recorded_at",
+    "policy",
+    "events",
+    "events_root_hash",
+    "event_chain_end_hash",
+    "slots",
+    "summary",
+    "state_integrity",
+    "scheduler_eligibility",
+    "paper_eligibility",
+    "production_eligibility",
+    "profitability_eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./paper-context-schedule-snapshot-v1.schema.json"
+    },
+    "schema_version": {"const": "1.0.0"},
+    "snapshot_id": {"$ref": "#/$defs/id"},
+    "snapshot_hash": {"$ref": "#/$defs/hash"},
+    "recorded_at": {"$ref": "#/$defs/timestamp"},
+    "policy": {"$ref": "#/$defs/policy"},
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/event"}
+    },
+    "events_root_hash": {"$ref": "#/$defs/hash"},
+    "event_chain_end_hash": {"$ref": "#/$defs/hash"},
+    "slots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/slot"}
+    },
+    "summary": {"$ref": "#/$defs/summary"},
+    "state_integrity": {"const": "VERIFIED_APPEND_ONLY_WAL"},
+    "scheduler_eligibility": {
+      "const": "CONTEXT_SIDECAR_OPERATIONAL_RESEARCH_ONLY"
+    },
+    "paper_eligibility": {
+      "const": "LONGITUDINAL_COLLECTION_IN_PROGRESS"
+    },
+    "production_eligibility": {"const": "NOT_APPROVED"},
+    "profitability_eligibility": {
+      "const": "INSUFFICIENT_DURATION_EXECUTION_AND_AI"
+    },
+    "warnings": {
+      "oneOf": [
+        {
+          "const": [
+            "CONTEXT_COMPLETE_DURATION_BELOW_90_DAYS",
+            "EXTERNAL_SOURCE_ATTESTATIONS_REQUIRED",
+            "REAL_ACCOUNT_AND_FUTURES_PROVENANCE_NOT_INFERRED_FROM_STATE",
+            "AI_MODEL_NOT_RUN",
+            "OPERATING_SYSTEM_SCHEDULER_NOT_CONFIGURED",
+            "PROFITABILITY_NOT_PROVEN"
+          ]
+        },
+        {
+          "const": [
+            "EXTERNAL_SOURCE_ATTESTATIONS_REQUIRED",
+            "REAL_ACCOUNT_AND_FUTURES_PROVENANCE_NOT_INFERRED_FROM_STATE",
+            "AI_MODEL_NOT_RUN",
+            "OPERATING_SYSTEM_SCHEDULER_NOT_CONFIGURED",
+            "PROFITABILITY_NOT_PROVEN"
+          ]
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableHash": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableString": {"type": ["string", "null"]},
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 180
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "schedule_id",
+        "symbol",
+        "timezone",
+        "utc_anchor",
+        "cadence_seconds",
+        "close_delay_seconds",
+        "lease_seconds",
+        "network_attempts_per_invocation",
+        "historical_backfill_allowed",
+        "policy_hash",
+        "sidecar_policy"
+      ],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "schedule_id": {
+          "const": "ethusdt-public-offline-paper-4h-v1"
+        },
+        "symbol": {"const": "ETHUSDT"},
+        "timezone": {"const": "UTC"},
+        "utc_anchor": {"const": "00:00:00"},
+        "cadence_seconds": {"const": 14400},
+        "close_delay_seconds": {"const": 300},
+        "lease_seconds": {"const": 900},
+        "network_attempts_per_invocation": {"const": 1},
+        "historical_backfill_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"},
+        "sidecar_policy": {
+          "const": "ACCOUNT_COST_AND_PERPETUAL_CONTEXT_COMPLETE_V1"
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "event_id",
+        "event_type",
+        "slot_id",
+        "event_time",
+        "payload",
+        "payload_hash",
+        "previous_event_hash",
+        "event_hash"
+      ],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "event_id": {"$ref": "#/$defs/id"},
+        "event_type": {
+          "enum": [
+            "CONTEXT_CLAIMED",
+            "CONTEXT_PREPARED",
+            "CONTEXT_SUCCEEDED",
+            "CONTEXT_FAILED"
+          ]
+        },
+        "slot_id": {
+          "type": "string",
+          "pattern": "^ETHUSDT_[0-9]{8}T(00|04|08|12|16|20)0000Z$"
+        },
+        "event_time": {"$ref": "#/$defs/timestamp"},
+        "payload": {"type": "object"},
+        "payload_hash": {"$ref": "#/$defs/hash"},
+        "previous_event_hash": {"$ref": "#/$defs/hash"},
+        "event_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot_id",
+        "scheduled_for",
+        "due_at",
+        "expires_at",
+        "status",
+        "attempt_count",
+        "failure_count",
+        "artifact_name_or_null",
+        "artifact_sha256_or_null",
+        "bundle_hash_or_null",
+        "bundle_trust_hash_or_null"
+      ],
+      "properties": {
+        "slot_id": {
+          "type": "string",
+          "pattern": "^ETHUSDT_[0-9]{8}T(00|04|08|12|16|20)0000Z$"
+        },
+        "scheduled_for": {"$ref": "#/$defs/timestamp"},
+        "due_at": {"$ref": "#/$defs/timestamp"},
+        "expires_at": {"$ref": "#/$defs/timestamp"},
+        "status": {
+          "enum": [
+            "CLAIMED",
+            "PREPARED",
+            "FAILED",
+            "SUCCEEDED"
+          ]
+        },
+        "attempt_count": {"type": "integer", "minimum": 1},
+        "failure_count": {"type": "integer", "minimum": 0},
+        "artifact_name_or_null": {"$ref": "#/$defs/nullableString"},
+        "artifact_sha256_or_null": {"$ref": "#/$defs/nullableHash"},
+        "bundle_hash_or_null": {"$ref": "#/$defs/nullableHash"},
+        "bundle_trust_hash_or_null": {"$ref": "#/$defs/nullableHash"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "known_slot_count",
+        "expected_slot_count_between_bounds",
+        "unobserved_slot_count_between_bounds",
+        "context_complete_slot_count",
+        "failed_slot_count",
+        "claimed_slot_count",
+        "prepared_slot_count",
+        "total_failed_attempt_count",
+        "first_scheduled_for_or_null",
+        "last_scheduled_for_or_null",
+        "observed_calendar_days",
+        "continuous_context_complete",
+        "ninety_day_context_complete"
+      ],
+      "properties": {
+        "known_slot_count": {"type": "integer", "minimum": 1},
+        "expected_slot_count_between_bounds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "unobserved_slot_count_between_bounds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "context_complete_slot_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_slot_count": {"type": "integer", "minimum": 0},
+        "claimed_slot_count": {"type": "integer", "minimum": 0},
+        "prepared_slot_count": {"type": "integer", "minimum": 0},
+        "total_failed_attempt_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "first_scheduled_for_or_null": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/timestamp"}
+          ]
+        },
+        "last_scheduled_for_or_null": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/timestamp"}
+          ]
+        },
+        "observed_calendar_days": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "continuous_context_complete": {"type": "boolean"},
+        "ninety_day_context_complete": {"type": "boolean"}
+      }
+    }
+  }
+}

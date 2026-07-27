@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-context-complete-cycle-not-run-v0.24.0",
+  "release_candidate": "0.24.0",
+  "evaluated_at": "2026-07-27T18:30:00.000Z",
+  "outcome": "NOT_RUN_FAIL_CLOSED",
+  "reason_code": "REAL_CONTEXT_COMPLETE_CYCLE_NOT_RUN_MISSING_REAL_ACCOUNT_AND_FUTURES_SOURCES",
+  "required_sources": {
+    "scheduled_offline_paper_run": true,
+    "real_account_commission_snapshot": false,
+    "real_paper_account_cost_binding": false,
+    "real_perpetual_context_snapshot": false,
+    "all_external_attestations_available": false,
+    "same_slot_pit_window_proven": false
+  },
+  "sidecar_execution": {
+    "wal_state_created_for_real_cycle": false,
+    "prepared_blob_created_for_real_cycle": false,
+    "context_bundle_published": false,
+    "context_schedule_snapshot_published": false,
+    "network_request_count": 0,
+    "credential_file_read_count": 0,
+    "order_submission_count": 0
+  },
+  "fixture_validation": {
+    "bundle_and_schedule_tests_executed": true,
+    "prepared_crash_recovery_tested": true,
+    "published_crash_recovery_tested": true,
+    "resume_source_read_count": 0,
+    "eligible_as_real_context_evidence": false,
+    "eligible_as_profitability_evidence": false
+  },
+  "eligibility": "REAL_CONTEXT_COMPLETE_LONGITUDINAL_COLLECTION_NOT_STARTED",
+  "notes": [
+    "The legacy scheduled Paper evidence remains unchanged.",
+    "No fixture account or Futures response was substituted for a real context-complete slot.",
+    "Only sidecar SUCCEEDED slots may count toward future context-complete duration."
+  ]
+}
