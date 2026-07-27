@@ -62,8 +62,9 @@ Required interfaces:
 
 ## Task 2: parse source-bound observations
 
-1. Write failing Kline tests covering exact Decimal strings, 1m/4h, open/close
-   semantics, current/closed state and malformed OHLC/time/count values.
+1. Write failing Kline tests covering exact Decimal strings, 1m/4h,
+   `event_time=open_time`, separately retained close-time semantics,
+   current/closed state and malformed OHLC/time/count values.
 2. Implement strict Kline parsing.
 3. Write failing AggTrade tests covering source IDs/time, maker flag, ID ordering,
    duplicate/conflicting IDs and malformed values.

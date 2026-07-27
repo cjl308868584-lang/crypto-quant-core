@@ -164,8 +164,10 @@ self-hash 只能证明内部完整性，不是信任锚。
 
 family 语义：
 
-- Kline：`event_time=close_time`，`event_time_basis=SOURCE_CLOSE_TIME`。
-  未收盘 Kline 仍可被捕获，但 `is_closed=false`，不得作为完整决策 bar；
+- Kline：`event_time=open_time`，`event_time_basis=SOURCE_OPEN_TIME`，并另存
+  `close_time`。未收盘 Kline 可被捕获，但 `is_closed=false`，不得作为完整
+  决策 bar；只有在 `available_at > close_time` 且后续重放仍一致时，完整
+  bar 才可按 `close_time` 进入后续决策时钟；
 - AggTrade：`event_time=trade_time`，
   `event_time_basis=SOURCE_TRADE_TIME`；
 - BBO：源没有事件时间，因此
