@@ -1,7 +1,12 @@
 import hashlib
 import io
 import json
+import os
+from pathlib import Path
+import subprocess
 import struct
+import sys
+import tempfile
 import unittest
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -787,3 +792,60 @@ class FeeScheduleContractTests(unittest.TestCase):
         unknown_approval["schedules"][0]["approval"]["unapproved"] = "x"
         unknown_approval["fee_schedule_hash"] = fee_schedule_snapshot_hash(unknown_approval)
         self.assertIn("FEE_SCHEDULE_INVALID", fee_schedule_snapshot_reasons(unknown_approval))
+
+
+class PackagedMarketSchemaTests(unittest.TestCase):
+    def test_packaged_schemas_are_byte_identical_to_governance_schemas(self):
+        from importlib import resources
+
+        root = Path(__file__).parents[1]
+        for filename in (
+            "historical-market-data-snapshot-v1.schema.json",
+            "fee-schedule-snapshot-v1.schema.json",
+        ):
+            with self.subTest(filename=filename):
+                packaged = resources.files("crypto_quant").joinpath("schemas", filename).read_bytes()
+                governed = (root / "config" / filename).read_bytes()
+                self.assertEqual(hashlib.sha256(packaged).hexdigest(), hashlib.sha256(governed).hexdigest())
+                self.assertEqual(packaged, governed)
+
+    def test_wheel_reasons_work_outside_repository(self):
+        root = Path(__file__).parents[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            wheel_dir = temporary_path / "wheel"
+            target = temporary_path / "site"
+            outside = temporary_path / "outside"
+            wheel_dir.mkdir()
+            target.mkdir()
+            outside.mkdir()
+            subprocess.run(
+                [sys.executable, "-m", "pip", "wheel", "--no-deps", "--wheel-dir", str(wheel_dir), str(root)],
+                check=True, capture_output=True, text=True,
+            )
+            wheel = next(wheel_dir.glob("*.whl"))
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--no-deps", "--target", str(target), str(wheel)],
+                check=True, capture_output=True, text=True,
+            )
+            smoke = """
+from datetime import datetime, timedelta, timezone
+from crypto_quant.market_data import (HistoricalArchiveRequest, build_historical_market_data_snapshot, fee_schedule_snapshot_reasons, historical_market_data_snapshot_reasons, parse_market_facts)
+request = HistoricalArchiveRequest.create(market='USD_M', data_family='FUNDING_RATE', symbol='ETHUSDT', interval_or_null=None, period_kind='MONTHLY', period='2024-01')
+start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+rows = '\\n'.join(f'{int((start + timedelta(hours=8 * index)).timestamp() * 1000)},8,0.0001' for index in range(93)).encode()
+facts = parse_market_facts(request, rows, '2026-07-27T00:00:00Z')
+snapshot = build_historical_market_data_snapshot(snapshot_id='wheel-funding-202401', request=request, facts=facts, archive_sha256='a' * 64, checksum_sha256='b' * 64, ingested_at='2026-07-27T00:00:00Z', recorded_at='2026-07-27T00:00:01Z')
+assert historical_market_data_snapshot_reasons(snapshot) == ()
+assert historical_market_data_snapshot_reasons({})
+fee = {'$schema': './fee-schedule-snapshot-v1.schema.json', 'schema_version': '1.0.0', 'fee_schedule_id': 'wheel-fee', 'fee_schedule_hash': '0' * 64, 'hash_algorithm': 'SHA-256', 'canonicalization': 'RFC8785_JCS', 'usage_environment': 'RESEARCH', 'schedules': [{'fee_id': 'fee-one', 'market': 'USD_M', 'symbol': 'ETHUSDT', 'effective_at': '2024-01-01T00:00:00Z', 'expires_at': None, 'maker_rate': '0.0002', 'taker_rate': '0.0005', 'lifecycle': 'APPROVED', 'approval': {'approved_by': 'risk', 'approved_at': '2023-12-31T00:00:00Z'}}]}
+from crypto_quant.market_data import fee_schedule_snapshot_hash
+fee['fee_schedule_hash'] = fee_schedule_snapshot_hash(fee)
+assert fee_schedule_snapshot_reasons(fee) == ()
+assert fee_schedule_snapshot_reasons({})
+"""
+            environment = dict(os.environ, PYTHONPATH=str(target))
+            subprocess.run(
+                [sys.executable, "-c", smoke], cwd=outside, env=environment,
+                check=True, capture_output=True, text=True,
+            )

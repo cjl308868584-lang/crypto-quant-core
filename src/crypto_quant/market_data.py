@@ -8,11 +8,12 @@ import re
 import stat
 import zipfile
 from functools import lru_cache
+from importlib import resources
 from io import BytesIO
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Context, Decimal, InvalidOperation, localcontext
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from jsonschema import Draft202012Validator
@@ -58,8 +59,8 @@ _FAMILY_SPECS = {
 
 @lru_cache(maxsize=2)
 def _artifact_validator(filename: str) -> Draft202012Validator:
-    schema_path = Path(__file__).resolve().parents[2] / "config" / filename
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema_resource = resources.files("crypto_quant").joinpath("schemas", filename)
+    schema = json.loads(schema_resource.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
 
