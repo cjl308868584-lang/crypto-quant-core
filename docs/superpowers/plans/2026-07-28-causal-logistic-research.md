@@ -7,7 +7,7 @@
 
 2. 实现 execution sidecar
    - 新增 compact 1m source Schema 与 package mirror；
-   - 验证官方 checksum、ZIP、整月分钟覆盖和 selected raw rows；
+   - 验证官方 checksum、ZIP、分钟网格、显式 source gap 和 selected raw rows；
    - owner-only 原子发布、冲突拒绝、离线重放和恢复测试；
    - 在仓库外完成 42 个月官方 execution source。
 

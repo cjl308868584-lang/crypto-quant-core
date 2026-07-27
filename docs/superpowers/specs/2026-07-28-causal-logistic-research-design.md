@@ -29,9 +29,15 @@ Meta 研究数据集，并训练固定配方的低维 Logistic 基准。目标�
 - 时间范围仍为 `2023-01` 至 `2026-06`；
 - 每月只访问官方 monthly ZIP 与 `.CHECKSUM`，共 84 个无凭据 GET；
 - ZIP/checksum exact bytes 保存在仓库外 owner-only 目录；
-- compact snapshot 验证整月每一分钟连续性，但只固化实际 entry/exit 所需
-  1m 原始行；
+- compact snapshot 验证整月分钟网格、显式绑定交易所 source gap，并只固化
+  实际 entry/exit 所需 1m 原始行；
 - Git 只保存 compact completion/research evidence，不保存月度 ZIP。
+
+实现期发现 Binance `2023-03-24` official monthly 与 official daily 同时缺少
+`12:40` 至 `13:59` 共 80 根分钟，且 `12:39` 行提前在 `12:39:43.061`
+结束。两种官方归档的缺口一致，不能用日档修复。该月固定记录 81 个不可用
+分钟；本版本 45 个实际所需 entry/exit 分钟均不在缺口内，因此只授予
+`RESEARCH_REQUIRED_ROWS_COMPLETE_WITH_SOURCE_GAPS`，不得宣称整月来源完整。
 
 ## 3. 基础 Proposal 与持仓路径
 
@@ -144,7 +150,8 @@ v0.28 不用这些探索性结果通过正式 ReleaseGate。无论点估计如�
 
 ## 8. 验收
 
-1. 42 个月 1m ZIP/checksum 全部可恢复、owner-only、整月连续；
+1. 42 个月 1m ZIP/checksum 全部可恢复、owner-only，所需 1m 行 100%
+   完整；任何非所需 source gap 必须显式绑定；
 2. 所有特征最大事件时间不晚于决策时间；
 3. 所有 entry/exit minute 严格晚于各自决策；
 4. Prefix-vs-full 与不同 warm-up 长度逐字段相同；
