@@ -29,6 +29,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/fee-schedule-snapshot-v1.schema.json",
     "config/historical-market-data-snapshot-v1.schema.json",
     "config/model-bundle-v1.1.schema.json",
+    "config/offline-paper-run-v1.schema.json",
     "config/paired-risk-evaluation-snapshot-v1.schema.json",
     "config/recipe-release-v1.1.schema.json",
     "config/release-evidence-v1.1.schema.json",
@@ -47,6 +48,7 @@ _FROZEN_CONFIG_PATHS = (
 _FROZEN_ARTIFACT_PATHS = (
     "artifacts/market-data/binance-contemporaneous-smoke-v0.17.0.json",
     "artifacts/market-data/binance-public-data-smoke-v0.16.0.json",
+    "artifacts/paper/binance-offline-paper-smoke-v0.18.0.json",
 )
 
 

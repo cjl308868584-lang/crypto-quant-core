@@ -324,6 +324,9 @@ class OfflinePaperTests(unittest.TestCase):
         self.assertEqual(
             economic_snapshot_reasons(run["arms"]["ai"]["economic_snapshot"]), ()
         )
+        self.assertEqual(
+            run["arms"]["ai"]["decision"]["decision_source"], "NOT_RUN"
+        )
         self.assertEqual(run["arms"]["ai"]["fill"]["status"], "NOT_RUN_NO_APPROVED_MODEL")
 
     def test_flat_baseline_does_not_manufacture_a_trade(self):

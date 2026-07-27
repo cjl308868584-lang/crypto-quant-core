@@ -108,6 +108,19 @@ def _require_attached_directory(
         raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
 
 
+def _require_selected_attached_directory(
+    root_fd: int,
+    output_fd: int,
+    output_directory: str,
+) -> None:
+    # Keep the original two-argument commit-point call contract for the
+    # historical market-data directory and its adversarial race tests.
+    if output_directory == _OUTPUT_DIRECTORY:
+        _require_attached_directory(root_fd, output_fd)
+    else:
+        _require_attached_directory(root_fd, output_fd, output_directory)
+
+
 def _regular_stat(directory_fd: int, name: str):
     try:
         entry = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
@@ -275,12 +288,16 @@ def _publish_in_directory(
     payload: bytes,
     output_directory: str = _OUTPUT_DIRECTORY,
 ) -> bool:
-    _require_attached_directory(root_fd, directory_fd, output_directory)
+    _require_selected_attached_directory(
+        root_fd, directory_fd, output_directory
+    )
     existing = _read_existing_artifact(directory_fd, artifact_name, len(payload))
     if existing is not None:
         existing_payload, existing_identity = existing
         if existing_payload == payload:
-            _require_attached_directory(root_fd, directory_fd, output_directory)
+            _require_selected_attached_directory(
+                root_fd, directory_fd, output_directory
+            )
             _require_same_final_artifact_at_commit(
                 directory_fd,
                 artifact_name,
@@ -299,7 +316,9 @@ def _publish_in_directory(
         _write_and_sync(temporary_fd, payload, identity)
         os.close(temporary_fd)
         temporary_fd = None
-        _require_attached_directory(root_fd, directory_fd, output_directory)
+        _require_selected_attached_directory(
+            root_fd, directory_fd, output_directory
+        )
         try:
             os.link(
                 temporary_name,
@@ -314,7 +333,7 @@ def _publish_in_directory(
                 existing_identity = existing[1]
                 _unlink_own_name(directory_fd, temporary_name, identity)
                 os.fsync(directory_fd)
-                _require_attached_directory(
+                _require_selected_attached_directory(
                     root_fd, directory_fd, output_directory
                 )
                 _require_same_final_artifact_at_commit(
@@ -326,12 +345,16 @@ def _publish_in_directory(
                 return False
             raise MarketDataError("ARTIFACT_CONFLICT")
         published = True
-        _require_attached_directory(root_fd, directory_fd, output_directory)
+        _require_selected_attached_directory(
+            root_fd, directory_fd, output_directory
+        )
         os.fsync(directory_fd)
         _unlink_own_name(directory_fd, temporary_name, identity)
         temporary_name = None
         os.fsync(directory_fd)
-        _require_attached_directory(root_fd, directory_fd, output_directory)
+        _require_selected_attached_directory(
+            root_fd, directory_fd, output_directory
+        )
         return True
     except (MarketDataError, OSError) as error:
         if temporary_fd is not None:

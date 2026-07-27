@@ -46,7 +46,7 @@ _ALLOWED_SYMBOLS = frozenset(("ETHUSDT",))
 _MAX_BODY_BYTES = 2 * 1024 * 1024
 _READ_CHUNK_BYTES = 64 * 1024
 _HTTP_TIMEOUT_SECONDS = 15
-_HTTP_ATTEMPTS = 2
+_HTTP_ATTEMPTS = 1
 _PLAN_TOKEN = object()
 _CAPTURE_TOKEN = object()
 _DECIMAL_CONTEXT = Context(prec=50)
@@ -1275,7 +1275,7 @@ def _build_offline_paper_run(
             "ai": {
                 "arm_status": "NOT_RUN_NO_APPROVED_MODEL",
                 "decision": {
-                    "decision_source": "MODEL",
+                    "decision_source": "NOT_RUN",
                     "eligible": False,
                     "ineligibility_reason_mask": ["NO_APPROVED_MODEL"],
                     "recommended_action": "FREEZE_INCREASES",
