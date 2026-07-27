@@ -1051,7 +1051,10 @@ def _snapshot_replays(snapshot: Mapping[str, Any]) -> bool:
     observations, counters = _canonicalize_observations(raw)
     report = _quality_report(receipts, raw, observations, counters)
     snapshot_recorded, recorded_text = _utc(snapshot["recorded_at"])
-    if any(_utc(item["recorded_at"])[0] > snapshot_recorded for item in receipts):
+    if any(
+        _utc(item["recorded_at"])[0] > snapshot_recorded
+        for item in list(receipts) + list(observations)
+    ):
         return False
     return (
         snapshot["session_started_at"]

@@ -16,6 +16,7 @@ from .evidence import artifact_self_hash
 
 _FROZEN_CONFIG_PATHS = (
     "config/approved-fallback-registry-v1.1.schema.json",
+    "config/contemporaneous-capture-snapshot-v1.schema.json",
     "config/deployment-line-v1.1.schema.json",
     "config/economic-ledger-snapshot-v1.schema.json",
     "config/endpoint-reevaluation-snapshot-v1.schema.json",
@@ -44,6 +45,7 @@ _FROZEN_CONFIG_PATHS = (
     "setup.py",
 )
 _FROZEN_ARTIFACT_PATHS = (
+    "artifacts/market-data/binance-contemporaneous-smoke-v0.17.0.json",
     "artifacts/market-data/binance-public-data-smoke-v0.16.0.json",
 )
 

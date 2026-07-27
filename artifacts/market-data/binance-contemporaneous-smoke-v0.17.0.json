@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-contemporaneous-smoke-v0.17.0",
+  "status": "PASS_RESEARCH_ONLY_WITH_INDEPENDENT_SNAPSHOT_ATTESTATION",
+  "provider": "BINANCE_MARKET_DATA_ONLY",
+  "symbol": "ETHUSDT",
+  "retrieval_mode": "PUBLIC_GET_ONLY_NO_CREDENTIALS",
+  "parser_version": "BINANCE_SPOT_REST_CAPTURE_V1",
+  "request_urls": [
+    "https://data-api.binance.vision/api/v3/klines?interval=1m&limit=2&symbol=ETHUSDT",
+    "https://data-api.binance.vision/api/v3/klines?interval=4h&limit=2&symbol=ETHUSDT",
+    "https://data-api.binance.vision/api/v3/aggTrades?limit=100&symbol=ETHUSDT",
+    "https://data-api.binance.vision/api/v3/ticker/bookTicker?symbol=ETHUSDT"
+  ],
+  "rounds": [
+    {
+      "round_id": "ethusdt-public-smoke-round1",
+      "snapshot_hash": "6968c680cb8bae0be6523073b9715236daeb8e0f352846286ce989688922b4dd",
+      "trusted_snapshot_attestation_hash": "01e0c4a1acd07bd40715b77e0bb685b62acaa5f3675e2a54ec6f70a5307aab6a",
+      "trusted_validation_reasons": [],
+      "source_clock_floor_count": 20,
+      "max_source_clock_ahead_ms": 1165
+    },
+    {
+      "round_id": "ethusdt-public-smoke-round2",
+      "snapshot_hash": "a2f12c69495d8806b8b0659d06e1161cf67d37ef77935294c2775c2fa9f9dd7b",
+      "trusted_snapshot_attestation_hash": "28aa504aca6f26166f607cd6cb2f5aad99e956dff2a9af5ba6da0a99138a21f4",
+      "trusted_validation_reasons": [],
+      "source_clock_floor_count": 45,
+      "max_source_clock_ahead_ms": 1185
+    }
+  ],
+  "combined_session": {
+    "session_id": "ethusdt-public-smoke-two-round",
+    "session_started_at": "2026-07-27T12:30:26.048Z",
+    "session_ended_at": "2026-07-27T12:31:06.984Z",
+    "recorded_at": "2026-07-27T12:31:31.462Z",
+    "response_count": 8,
+    "raw_observation_count": 210,
+    "canonical_observation_count": 209,
+    "response_receipts_root_hash": "4437d9d38e87e60db0e7cf9f4aa0084be665e996c88bbc53ec926efbbf701262",
+    "observations_root_hash": "7938557339b26b2bca5f068539d62593dc7c2632093953a1a5af76b02074aa6c",
+    "quality_report_hash": "088b4757ee4c113de7642a5eb6cc97aec3d3a8ceb12e97b7899d18ad0c8833e6",
+    "snapshot_hash": "db5aa112e526d045a3841f417c6b29e7f48ed6ebef3054ba91d7608a7ec58364",
+    "trusted_snapshot_attestation_hash": "df7d4f2a5c71cda4841eabd86680b1437bd396d3d3ea2bdf4d95a4bc472eb432",
+    "trusted_validation_reasons": [],
+    "pit_eligibility": "CONTEMPORANEOUS_RESEARCH_ONLY",
+    "paper_eligibility": "CAPTURE_REPLAY_ONLY"
+  },
+  "quality": {
+    "family_coverage": [
+      "SPOT_AGG_TRADE",
+      "SPOT_BBO",
+      "SPOT_KLINE"
+    ],
+    "kline_revision_count": 2,
+    "kline_duplicate_count": 1,
+    "closed_kline_mutation_count": 0,
+    "agg_trade_duplicate_count": 0,
+    "agg_trade_gap_count": 301,
+    "agg_trade_conflict_count": 0,
+    "bbo_duplicate_count": 0,
+    "source_clock_floor_count": 65,
+    "max_source_clock_ahead_ms": 1185,
+    "blocking_findings": [],
+    "warnings": [
+      "ACCOUNT_COSTS_AND_FILLS_NOT_CAPTURED",
+      "BBO_SEQUENCE_UNOBSERVABLE_REST_SNAPSHOT",
+      "CAPTURE_DURATION_BELOW_PAPER_MINIMUM",
+      "PERPETUAL_CONTEXT_NOT_CAPTURED",
+      "SOURCE_CLOCK_FLOOR_APPLIED"
+    ]
+  },
+  "retention": {
+    "full_raw_response_snapshots_committed": false,
+    "price_or_quantity_values_committed": false,
+    "compact_hash_and_count_evidence_only": true,
+    "temporary_full_snapshots_deleted_after_verification": true
+  },
+  "profitability_claim": "NONE",
+  "paper_pass_claim": "NONE"
+}

@@ -45,6 +45,10 @@
 37. [官方历史数据来源决策 ADR-0016](docs/adr/0016-public-historical-data-provenance.md)
 38. [Binance 官方归档 Smoke Evidence v0.16.0](artifacts/market-data/binance-public-data-smoke-v0.16.0.json)
 39. [实施追踪 v0.16.0](docs/implementation-status-v0.16.0.md)
+40. [Contemporaneous Capture Snapshot Schema](config/contemporaneous-capture-snapshot-v1.schema.json)
+41. [同时公开行情捕获决策 ADR-0017](docs/adr/0017-contemporaneous-public-capture.md)
+42. [Binance 同时捕获 Smoke Evidence v0.17.0](artifacts/market-data/binance-contemporaneous-smoke-v0.17.0.json)
+43. [实施追踪 v0.17.0](docs/implementation-status-v0.17.0.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -59,11 +63,13 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.16.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间，以及Binance官方公开历史归档的只读摄取与可重放快照。历史快照保存严格source row、fact级`ingested_at`并逐行重放；完整验证必须显式提供在Artifact之外保存的trusted snapshot-attestation hash。该外部envelope同时绑定receipt与完整snapshot self-hash，单独receipt hash不再足够。
+Git中的设计基线已冻结，当前代码版本为 `0.17.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档，以及公开Spot行情的同时只读捕获与修订/缺口证据。完整历史或capture验证都必须显式提供在Artifact之外保存的trusted snapshot-attestation hash，self-hash不能自证来源可信。
 
 当前58个Catalog算法中有26个Estimator可执行，其余32个明确Fail-Closed。公开历史归档的结构化请求只能访问ETHUSDT/BTCUSDT的allowlisted数据族；生产transport只执行无凭据GET，必须在解压前通过官方checksum，并将来源、质量和快照绑定到哈希。真实smoke已验证2026-07-25 ETHUSDT Spot daily 4h归档，但全部事后归档固定为`ARCHIVE_REPLAY_ONLY`：URL不是Artifact身份，也不能证明历史决策时点的数据可用性。Fee Schedule因产品、账户层级、折扣和生效期而独立冻结，不能从行情或当前网页费率反填历史。
 
-仓库仍没有contemporaneous capture、真实账户费用/成交/滑点或离线Paper经济Artifact，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。Funding gap只允许显式`RESEARCH_ONLY_DEGRADED`研究快照；FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、交易所账户Adapter、API密钥读取或真实下单能力。下一步是建立实际接收时间和修订链捕获，并用真实数据生成离线Paper决策、fill、账本和统计Artifact。详细完成度见[实施追踪 v0.16.0](docs/implementation-status-v0.16.0.md)，来源决策见[ADR-0016](docs/adr/0016-public-historical-data-provenance.md)。
+v0.17固定轮询公开market-data-only端点的1m/4h Kline、AggTrade和BBO，保存原始响应、客户端接收时刻、Kline修订、可观测AggTrade缺口和外部session attestation。BBO没有源事件时间/序列，固定标记为`BBO_SEQUENCE_UNOBSERVABLE_REST_SNAPSHOT`；交易所源时钟领先本机时使用保守clock floor并显式报告。真实两轮smoke重放通过，但持续时间不足、缺永续上下文和账户成本/成交，因此固定为`CONTEMPORANEOUS_RESEARCH_ONLY`/`CAPTURE_REPLAY_ONLY`。
+
+仓库仍没有真实账户费用/成交/滑点或离线Paper经济Artifact，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。Funding gap只允许显式`RESEARCH_ONLY_DEGRADED`研究快照；FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、交易所账户Adapter、API密钥读取或真实下单能力。下一步是用已捕获真实输入生成双臂离线Paper决策、保守fill、账本和统计Artifact。详细完成度见[实施追踪 v0.17.0](docs/implementation-status-v0.17.0.md)，捕获边界见[ADR-0017](docs/adr/0017-contemporaneous-public-capture.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
