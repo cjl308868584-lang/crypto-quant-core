@@ -805,6 +805,111 @@ class MarketDataArtifactTests(unittest.TestCase):
                     0,
                 )
 
+    def test_monthly_mark_kline_accepts_exact_official_underscore_header(self):
+        request = HistoricalArchiveRequest.create(
+            market="USD_M",
+            data_family="MARK_PRICE_KLINES",
+            symbol="ETHUSDT",
+            interval_or_null="4h",
+            period_kind="MONTHLY",
+            period="2023-01",
+        )
+        start = datetime(2023, 1, 1, tzinfo=timezone.utc)
+        header = (
+            "open_time,open,high,low,close,volume,close_time,quote_volume,"
+            "count,taker_buy_volume,taker_buy_quote_volume,ignore"
+        )
+        rows = [header]
+        for index in range(31 * 6):
+            opened = int(
+                (start + timedelta(hours=4 * index)).timestamp() * 1_000
+            )
+            rows.append(
+                f"{opened},100,101,99,100.5,0,{opened + 14_399_999},"
+                "0,14400,0,0,0"
+            )
+        csv_bytes = ("\n".join(rows) + "\n").encode("ascii")
+        archive = zip_bytes((request.expected_csv_name, csv_bytes))
+        verified_archive = verify_official_checksum(
+            request,
+            archive,
+            (
+                f"{hashlib.sha256(archive).hexdigest()}"
+                f"  {request.archive_filename}\n"
+            ).encode("ascii"),
+        )
+        snapshot = build_historical_market_data_snapshot(
+            snapshot_id="monthly-mark-official-header",
+            verified_archive=verified_archive,
+            retrieved_at="2026-07-28T00:00:00Z",
+            ingested_at="2026-07-28T00:00:00Z",
+            recorded_at="2026-07-28T00:00:01Z",
+        )
+
+        self.assertEqual(snapshot["parser_version"], "BINANCE_CSV_V2")
+        self.assertEqual(snapshot["quality_report"]["row_count"], 186)
+        self.assertTrue(snapshot["quality_report"]["expected_period_coverage"])
+
+    def test_funding_coverage_accepts_subsecond_official_schedule_jitter(self):
+        request = HistoricalArchiveRequest.create(
+            market="USD_M",
+            data_family="FUNDING_RATE",
+            symbol="ETHUSDT",
+            interval_or_null=None,
+            period_kind="MONTHLY",
+            period="2023-01",
+        )
+        start = datetime(2023, 1, 1, tzinfo=timezone.utc)
+        offsets = (0, 8, 0, 7)
+        rows = ["calc_time,funding_interval_hours,last_funding_rate"]
+        for index in range(31 * 3):
+            scheduled = start + timedelta(hours=8 * index)
+            milliseconds = (
+                int(scheduled.timestamp() * 1_000)
+                + offsets[index % len(offsets)]
+            )
+            rows.append(f"{milliseconds},8,0.0001")
+        csv_bytes = ("\n".join(rows) + "\n").encode("ascii")
+        archive = zip_bytes((request.expected_csv_name, csv_bytes))
+        verified_archive = verify_official_checksum(
+            request,
+            archive,
+            (
+                f"{hashlib.sha256(archive).hexdigest()}"
+                f"  {request.archive_filename}\n"
+            ).encode("ascii"),
+        )
+        snapshot = build_historical_market_data_snapshot(
+            snapshot_id="monthly-funding-official-jitter",
+            verified_archive=verified_archive,
+            retrieved_at="2026-07-28T00:00:00Z",
+            ingested_at="2026-07-28T00:00:00Z",
+            recorded_at="2026-07-28T00:00:01Z",
+        )
+
+        self.assertEqual(snapshot["quality_report"]["missing_interval_count"], 0)
+        self.assertEqual(
+            snapshot["quality_report"]["warning_findings"],
+            ["FUNDING_CALC_TIME_JITTER_WITHIN_1S"],
+        )
+        self.assertEqual(snapshot["quality_eligibility"], "FORMAL_COMPLETE")
+
+    def test_v1_snapshot_remains_verifiable_after_v2_parser_release(self):
+        snapshot = self.build()
+        snapshot["parser_version"] = "BINANCE_CSV_V1"
+        snapshot["snapshot_hash"] = historical_market_data_snapshot_hash(
+            snapshot
+        )
+        attestation = historical_market_data_snapshot_attestation_hash(snapshot)
+
+        self.assertEqual(
+            historical_market_data_snapshot_reasons(
+                snapshot,
+                trusted_snapshot_attestation_hashes={attestation},
+            ),
+            (),
+        )
+
     def test_snapshot_replay_rejects_coordinated_archive_identity_mutation(self):
         snapshot = self.build()
         mutated = json.loads(json.dumps(snapshot))

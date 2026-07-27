@@ -222,6 +222,14 @@ class ResearchCorpusStateTests(unittest.TestCase):
         source_path = self.output_root / "source/ETH_SPOT_4H/2023-01.json"
         self.assertTrue(source_path.is_file())
         self.assertEqual(os.stat(source_path).st_mode & 0o777, 0o600)
+        self.assertEqual(
+            os.stat(self.root).st_mode & 0o777,
+            0o700,
+        )
+        self.assertEqual(
+            os.stat(self.output_root / "source").st_mode & 0o777,
+            0o700,
+        )
         source = json.loads(source_path.read_text(encoding="utf-8"))
         self.assertEqual(source["request"], self.plan["items"][0]["request"])
         published = (

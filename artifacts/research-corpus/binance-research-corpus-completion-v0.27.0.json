@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-research-corpus-completion-v0.27.0",
+  "release_candidate": "0.27.0",
+  "status": "PASS_COMPLETE_WITH_EXPLICIT_OFFICIAL_DAILY_REPAIRS",
+  "plan": {
+    "plan_id": "historical-research-corpus-202301-202606",
+    "plan_hash": "1a00b56ebb1ebe89340a31665103eb60f631992b31170d26568e1011f06c086d",
+    "month_count": 42,
+    "fold_count": 8,
+    "stream_count": 4,
+    "item_count": 168
+  },
+  "base_corpus": {
+    "snapshot_id": "research_corpus_snapshot_cc4bb7f500d9046cb434c5b2336ce11fe58ac06df2ef29bd157ce640e6a4cf8b",
+    "snapshot_hash": "138375b0f7cc88beffa9306f20c21d7d1ce6d6f1d91b8bd205703c6e33b315c6",
+    "event_chain_end_hash": "7e8f1addc53981e0e2cee710562cd1d945ac2a5da5216dab1bf08089a5da0c82",
+    "event_count": 338,
+    "physical_get_count": 338,
+    "planned_item_count": 168,
+    "succeeded_item_count": 168,
+    "pending_item_count": 0,
+    "failed_item_count": 0,
+    "degraded_item_count": 2,
+    "source_snapshot_file_count": 168,
+    "external_corpus_size_kib": 61812,
+    "state_integrity": "VERIFIED_APPEND_ONLY_WAL_AND_SOURCE_BYTES",
+    "research_training_readiness": "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD_WITH_SOURCE_GAPS"
+  },
+  "explicit_daily_repairs": {
+    "repair_bundle_id": "corpus_repair_bundle_351e9aa3a63e1aff9a47db7ec6f5109cce0e94908f8d93a6db52cc7d07cde5ee",
+    "repair_bundle_hash": "4a7112cf14e8d6fd96cc0ec30c8df63494655b3e728d855b705febf3bbb1d557",
+    "repair_count": 2,
+    "patch_snapshot_count": 2,
+    "missing_interval_count": 12,
+    "repaired_interval_count": 12,
+    "unresolved_interval_count": 0,
+    "physical_get_count": 4,
+    "repairs": [
+      {
+        "stream_id": "ETH_MARK_4H",
+        "month": "2023-02",
+        "period": "2023-02-24",
+        "row_count": 6,
+        "archive_sha256": "b9b9aa4d57370a1e469c4218dcbcf2e2a4856e823809fd9688e9e6058bad94b8",
+        "checksum_file_sha256": "34f0738b7c57e12e92798672acc4796afa2b82620dcc4c41f79060c4f976e79d",
+        "snapshot_hash": "b60d6229daa5906dc056ffc2f2c732a1883bd9b348830eb33b1f6154dcb6ff3f",
+        "expected_attestation_hash": "0a35004c880e1b97fbe874425f88927adbbd47edccef87c17f7a6892bc8d8211",
+        "combined_interval_count": 168,
+        "combined_coverage_root_hash": "cdf2420c9bcfa7b1a89b6c6c9b62628ef054a9ef4bcc74726386256d981c4fc7"
+      },
+      {
+        "stream_id": "ETH_MARK_4H",
+        "month": "2026-06",
+        "period": "2026-06-29",
+        "row_count": 6,
+        "archive_sha256": "e19b2ee3401a1ad2a5d4e173feab1e94bd900163f6823b95c0c70ba4a1e54a68",
+        "checksum_file_sha256": "ecbfa0561d4a7305a6a543333ffd1c473cb4bbbe8fba692c16251366d6c96a7b",
+        "snapshot_hash": "5f11c214dfff7df83fb9a0200de8b9f76584af315f83c91dc38d7ee86d110ed0",
+        "expected_attestation_hash": "5f012b1d4634d0927e80f404fcb6ee8ef3056a03583ce638c2fbd07ffe0f3139",
+        "combined_interval_count": 180,
+        "combined_coverage_root_hash": "81846010ce6e69efffef93460c70d8e25282bacfc5345460ccb4c949e8543446"
+      }
+    ]
+  },
+  "independent_offline_replay": {
+    "process_isolation": "NEW_PYTHON_PROCESS",
+    "network_calls": 0,
+    "semantic_validation_reasons": [],
+    "bundle_exact_rebuild_match": true,
+    "owner_only_permission_failures": []
+  },
+  "final_boundaries": {
+    "research_training_readiness": "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD_WITH_EXPLICIT_DAILY_REPAIRS",
+    "formal_pit_eligibility": "INELIGIBLE_ARCHIVE_REPLAY",
+    "release_oos_eligibility": "INELIGIBLE",
+    "profitability_eligibility": "INELIGIBLE",
+    "model_training_status": "NOT_STARTED"
+  },
+  "notes": [
+    "All 168 monthly source snapshots and durable state remain outside Git in an owner-only local corpus directory.",
+    "The two monthly Mark gaps are filled only by checksum-verified official daily archives for the exact missing UTC days.",
+    "No REST interpolation, synthetic row, future fill, credential, Broker, order submission or model training was used.",
+    "Archive replay is suitable for research feature construction but cannot prove point-in-time availability or profitability."
+  ]
+}

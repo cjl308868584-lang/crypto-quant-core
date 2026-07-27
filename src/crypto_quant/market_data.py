@@ -44,8 +44,12 @@ _FACT_ID = re.compile(r"^mdf_[a-f0-9]{64}$")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _KLINE_INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "4h": 14_400_000, "1d": 86_400_000}
 _SPOT_MICROSECOND_BOUNDARY = datetime(2025, 1, 1, tzinfo=timezone.utc)
-_PARSER_VERSION = "BINANCE_CSV_V1"
+_PARSER_VERSION = "BINANCE_CSV_V2"
+_SUPPORTED_PARSER_VERSIONS = frozenset(
+    ("BINANCE_CSV_V1", "BINANCE_CSV_V2")
+)
 _AVAILABILITY_BASIS = "OFFLINE_ARCHIVE_OBSERVED_AT_INGESTION"
+_FUNDING_SCHEDULE_JITTER = timedelta(seconds=1)
 _SNAPSHOT_ATTESTATION_TYPE = "HISTORICAL_MARKET_DATA_SNAPSHOT_ATTESTATION"
 _SNAPSHOT_ATTESTATION_SCHEMA_VERSION = "1.0.0"
 _FAMILY_SPECS = {
@@ -467,6 +471,8 @@ def fetch_historical_market_data(
     request: HistoricalArchiveRequest,
     transport: PublicArchiveTransport,
     retrieved_at: str,
+    *,
+    allow_research_degraded: bool = False,
 ) -> Dict[str, Any]:
     """Fetch, authenticate, parse, and freeze one allowlisted archive snapshot."""
 
@@ -486,17 +492,32 @@ def fetch_historical_market_data(
         archive_response.body,
         checksum_response.body,
     )
-    return build_historical_market_data_snapshot(
-        snapshot_id=_fetched_snapshot_id(request),
-        verified_archive=verified_archive,
-        retrieved_at=retrieved_at,
-        ingested_at=retrieved_at,
-        recorded_at=retrieved_at,
-        source_etag_or_null=_response_header(archive_response.headers, "ETag"),
-        source_last_modified_at_or_null=_response_header(
-            archive_response.headers, "Last-Modified"
+    fields = {
+        "snapshot_id": _fetched_snapshot_id(request),
+        "verified_archive": verified_archive,
+        "retrieved_at": retrieved_at,
+        "ingested_at": retrieved_at,
+        "recorded_at": retrieved_at,
+        "source_etag_or_null": _response_header(
+            archive_response.headers,
+            "ETag",
         ),
-    )
+        "source_last_modified_at_or_null": _response_header(
+            archive_response.headers,
+            "Last-Modified",
+        ),
+    }
+    try:
+        return build_historical_market_data_snapshot(**fields)
+    except MarketDataError as error:
+        if (
+            not allow_research_degraded
+            or error.reason_code != "MARKET_DATA_QUALITY_BLOCKING"
+        ):
+            raise
+        return build_research_degraded_historical_market_data_snapshot(
+            **fields
+        )
 
 
 def _validate_zip_member(
@@ -545,6 +566,46 @@ _CSV_HEADERS = {
         "taker buy quote asset volume", "ignore",
     ),
     "FUNDING_RATE": ("calc_time", "funding_interval_hours", "last_funding_rate"),
+}
+_CSV_HEADER_ALIASES = {
+    "KLINES": frozenset(
+        (
+            (
+                "open_time",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "close_time",
+                "quote_volume",
+                "count",
+                "taker_buy_volume",
+                "taker_buy_quote_volume",
+                "ignore",
+            ),
+        )
+    ),
+    "MARK_PRICE_KLINES": frozenset(
+        (
+            (
+                "open_time",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "close_time",
+                "quote_volume",
+                "count",
+                "taker_buy_volume",
+                "taker_buy_quote_volume",
+                "ignore",
+            ),
+        )
+    ),
+    "AGG_TRADES": frozenset(),
+    "FUNDING_RATE": frozenset(),
 }
 
 
@@ -644,7 +705,7 @@ def _rows_for(request: HistoricalArchiveRequest, csv_bytes: bytes) -> Sequence[T
         raise _market_fact_error()
     expected = _CSV_HEADERS[request.data_family]
     first = tuple(rows[0])
-    if first == expected:
+    if first == expected or first in _CSV_HEADER_ALIASES[request.data_family]:
         rows = rows[1:]
         offset = 2
     else:
@@ -996,6 +1057,7 @@ def _quality_report(
     recorded_at: str,
 ) -> Dict[str, Any]:
     reasons = []
+    warning_findings = []
     try:
         ingested, _ = _utc_input(ingested_at)
         recorded, _ = _utc_input(recorded_at)
@@ -1097,37 +1159,27 @@ def _quality_report(
             except (KeyError, MarketDataError, TypeError, ValueError):
                 continue
         if funding_events:
-            first_event, first_interval_hours = funding_events[0]
-            if first_event != start:
-                first_interval = timedelta(hours=first_interval_hours)
-                first_delta = first_event - start
-                if first_delta > timedelta(0) and first_delta % first_interval == timedelta(0):
-                    missing_interval_count += int(first_delta / first_interval)
-                else:
-                    missing_interval_count += 1
-            for (event, interval_hours), (next_event, _) in zip(
-                funding_events,
-                funding_events[1:],
-            ):
+            scheduled = start
+            maximum_jitter = timedelta(0)
+            for event, interval_hours in funding_events:
                 interval = timedelta(hours=interval_hours)
-                delta = next_event - event
-                if delta != interval:
-                    if delta > interval and delta % interval == timedelta(0):
-                        missing_interval_count += int(delta / interval) - 1
-                    else:
-                        missing_interval_count += 1
-            final_event, final_interval_hours = funding_events[-1]
-            final_interval = timedelta(hours=final_interval_hours)
-            covered_until = final_event + final_interval
-            if covered_until != end:
-                final_delta = end - covered_until
-                if (
-                    final_delta > timedelta(0)
-                    and final_delta % final_interval == timedelta(0)
-                ):
-                    missing_interval_count += int(final_delta / final_interval)
-                else:
+                while event > scheduled + _FUNDING_SCHEDULE_JITTER:
                     missing_interval_count += 1
+                    scheduled += interval
+                jitter = abs(event - scheduled)
+                maximum_jitter = max(maximum_jitter, jitter)
+                if jitter > _FUNDING_SCHEDULE_JITTER:
+                    missing_interval_count += 1
+                scheduled += interval
+            while scheduled < end:
+                missing_interval_count += 1
+                scheduled += timedelta(hours=funding_events[-1][1])
+            if scheduled != end:
+                missing_interval_count += 1
+            if maximum_jitter > timedelta(0):
+                warning_findings.append(
+                    "FUNDING_CALC_TIME_JITTER_WITHIN_1S"
+                )
         else:
             missing_interval_count = 1
         expected_period_coverage = missing_interval_count == 0
@@ -1154,7 +1206,7 @@ def _quality_report(
         "rejected_row_count": 0,
         "checksum_pass": True,
         "expected_period_coverage": expected_period_coverage,
-        "warning_findings": [],
+        "warning_findings": sorted(set(warning_findings)),
         "blocking_findings": sorted(set(reasons)),
         "report_hash": "0" * 64,
     }
@@ -1222,7 +1274,7 @@ def historical_market_data_snapshot_attestation_envelope(
         or envelope["snapshot_schema"]
         != "./historical-market-data-snapshot-v1.schema.json"
         or envelope["snapshot_schema_version"] != "1.0.0"
-        or envelope["parser_version"] != _PARSER_VERSION
+        or envelope["parser_version"] not in _SUPPORTED_PARSER_VERSIONS
         or not isinstance(envelope["snapshot_id"], str)
         or _ID.fullmatch(envelope["snapshot_id"]) is None
         or not isinstance(envelope["receipt_hash"], str)
@@ -1312,7 +1364,7 @@ def historical_market_data_snapshot_reasons(
         reasons.append("MARKET_DATA_SCHEMA_INVALID")
     if snapshot.get("pit_eligibility") != "ARCHIVE_REPLAY_ONLY":
         reasons.append("MARKET_DATA_PIT_POLICY_INVALID")
-    if snapshot.get("parser_version") != _PARSER_VERSION:
+    if snapshot.get("parser_version") not in _SUPPORTED_PARSER_VERSIONS:
         reasons.append("MARKET_DATA_PARSER_VERSION_INVALID")
     if snapshot.get("availability_basis") != _AVAILABILITY_BASIS:
         reasons.append("MARKET_DATA_AVAILABILITY_BASIS_INVALID")

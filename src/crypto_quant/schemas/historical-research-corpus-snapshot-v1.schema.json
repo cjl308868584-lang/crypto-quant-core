@@ -56,7 +56,8 @@
     "research_training_readiness": {
       "enum": [
         "NOT_READY_INCOMPLETE_OR_INVALID",
-        "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD"
+        "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD",
+        "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD_WITH_SOURCE_GAPS"
       ]
     },
     "attestation_eligibility": {
@@ -136,7 +137,7 @@
         "snapshot_sha256_or_null": {"$ref": "#/$defs/nullableHash"},
         "snapshot_hash_or_null": {"$ref": "#/$defs/nullableHash"},
         "quality_eligibility_or_null": {
-          "enum": ["FORMAL_COMPLETE", null]
+          "enum": ["FORMAL_COMPLETE", "RESEARCH_ONLY_DEGRADED", null]
         },
         "expected_attestation_hash_or_null": {
           "$ref": "#/$defs/nullableHash"
@@ -183,9 +184,11 @@
         "expired_claim_item_count",
         "failed_item_count",
         "succeeded_item_count",
+        "degraded_item_count",
         "physical_get_count",
         "corpus_complete",
         "quality_complete",
+        "source_quality_acceptable",
         "attestation_anchoring_complete"
       ],
       "properties": {
@@ -203,9 +206,15 @@
           "minimum": 0,
           "maximum": 168
         },
+        "degraded_item_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 168
+        },
         "physical_get_count": {"type": "integer", "minimum": 0},
         "corpus_complete": {"type": "boolean"},
         "quality_complete": {"type": "boolean"},
+        "source_quality_acceptable": {"type": "boolean"},
         "attestation_anchoring_complete": {"type": "boolean"}
       }
     }

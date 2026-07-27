@@ -507,16 +507,43 @@ class HistoricalResearchCorpusState:
         expected_attestation = historical_market_data_snapshot_attestation_hash(
             snapshot
         )
+        snapshot_reasons = set(
+            historical_market_data_snapshot_reasons(
+                snapshot,
+                trusted_snapshot_attestation_hashes={expected_attestation},
+            )
+        )
+        quality_eligibility = snapshot.get("quality_eligibility")
+        if quality_eligibility == "FORMAL_COMPLETE":
+            quality_valid = not snapshot_reasons
+        elif quality_eligibility == "RESEARCH_ONLY_DEGRADED":
+            report = snapshot.get("quality_report")
+            blocking = (
+                set(report.get("blocking_findings", ()))
+                if isinstance(report, Mapping)
+                else set()
+            )
+            allowed_blocking = {
+                "MARKET_DATA_PERIOD_COVERAGE",
+                "MARKET_DATA_FUNDING_GAP",
+            }
+            allowed_reasons = blocking | {
+                "MARKET_DATA_QUALITY_BLOCKING",
+                "MARKET_DATA_RESEARCH_ONLY_DEGRADED",
+            }
+            quality_valid = (
+                bool(blocking)
+                and not (blocking - allowed_blocking)
+                and not (snapshot_reasons - allowed_reasons)
+            )
+        else:
+            quality_valid = False
         if (
             snapshot.get("snapshot_hash")
             != row["source_snapshot_hash_or_null"]
             or expected_attestation
             != row["expected_attestation_hash_or_null"]
-            or historical_market_data_snapshot_reasons(
-                snapshot,
-                trusted_snapshot_attestation_hashes={expected_attestation},
-            )
-            or snapshot.get("quality_eligibility") != "FORMAL_COMPLETE"
+            or not quality_valid
             or business_hash(snapshot.get("request"))
             != business_hash(item.get("request"))
         ):
@@ -915,6 +942,8 @@ def build_research_corpus_snapshot(
         "SUCCEEDED": 0,
     }
     quality_complete = True
+    source_quality_acceptable = True
+    degraded_item_count = 0
     attestation_complete = True
     item_lookup = {}
     for item in plan["items"]:
@@ -961,6 +990,15 @@ def build_research_corpus_snapshot(
                 quality_complete = quality_complete and (
                     source_snapshot["quality_eligibility"] == "FORMAL_COMPLETE"
                 )
+                source_quality_acceptable = source_quality_acceptable and (
+                    source_snapshot["quality_eligibility"]
+                    in ("FORMAL_COMPLETE", "RESEARCH_ONLY_DEGRADED")
+                )
+                if (
+                    source_snapshot["quality_eligibility"]
+                    == "RESEARCH_ONLY_DEGRADED"
+                ):
+                    degraded_item_count += 1
                 attestation_complete = attestation_complete and (
                     attestation_hash in trusted
                 )
@@ -972,6 +1010,7 @@ def build_research_corpus_snapshot(
         status_counts[status] += 1
         if status != "SUCCEEDED":
             quality_complete = False
+            source_quality_acceptable = False
             attestation_complete = False
         item_rows.append(row)
         item_lookup[(item["stream_id"], item["month"])] = row
@@ -1018,16 +1057,22 @@ def build_research_corpus_snapshot(
             "expired_claim_item_count": status_counts["CLAIM_EXPIRED"],
             "failed_item_count": status_counts["FAILED"],
             "succeeded_item_count": status_counts["SUCCEEDED"],
+            "degraded_item_count": degraded_item_count,
             "physical_get_count": replay["physical_get_count"],
             "corpus_complete": complete,
             "quality_complete": quality_complete,
+            "source_quality_acceptable": source_quality_acceptable,
             "attestation_anchoring_complete": attestation_complete,
         },
         "state_integrity": "VERIFIED_APPEND_ONLY_WAL_AND_SOURCE_BYTES",
         "research_training_readiness": (
             "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD"
             if complete and quality_complete
-            else "NOT_READY_INCOMPLETE_OR_INVALID"
+            else (
+                "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD_WITH_SOURCE_GAPS"
+                if complete and source_quality_acceptable
+                else "NOT_READY_INCOMPLETE_OR_INVALID"
+            )
         ),
         "attestation_eligibility": (
             "EXTERNALLY_ANCHORED"
@@ -1113,7 +1158,10 @@ def research_corpus_snapshot_reasons(
                             for value in hash_fields
                         )
                         or item.get("quality_eligibility_or_null")
-                        != "FORMAL_COMPLETE"
+                        not in (
+                            "FORMAL_COMPLETE",
+                            "RESEARCH_ONLY_DEGRADED",
+                        )
                         or item.get("last_error_code_or_null") is not None
                     ):
                         reasons.append("CORPUS_SNAPSHOT_ITEM_STATE_INVALID")
@@ -1156,6 +1204,16 @@ def research_corpus_snapshot_reasons(
                 item.get("quality_eligibility_or_null") == "FORMAL_COMPLETE"
                 for item in items
             )
+            source_quality_acceptable = complete and all(
+                item.get("quality_eligibility_or_null")
+                in ("FORMAL_COMPLETE", "RESEARCH_ONLY_DEGRADED")
+                for item in items
+            )
+            degraded_item_count = sum(
+                item.get("quality_eligibility_or_null")
+                == "RESEARCH_ONLY_DEGRADED"
+                for item in items
+            )
             attestation_complete = complete and all(
                 item.get("attestation_anchored") is True for item in items
             )
@@ -1163,15 +1221,24 @@ def research_corpus_snapshot_reasons(
                 reasons.append("CORPUS_SNAPSHOT_SUMMARY_MISMATCH")
             if (
                 summary.get("quality_complete") != quality_complete
+                or summary.get("source_quality_acceptable")
+                != source_quality_acceptable
+                or summary.get("degraded_item_count")
+                != degraded_item_count
                 or summary.get("attestation_anchoring_complete")
                 != attestation_complete
             ):
                 reasons.append("CORPUS_SNAPSHOT_SUMMARY_MISMATCH")
-            ready = (
-                snapshot.get("research_training_readiness")
-                == "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD"
+            expected_readiness = (
+                "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD"
+                if quality_complete
+                else (
+                    "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD_WITH_SOURCE_GAPS"
+                    if source_quality_acceptable
+                    else "NOT_READY_INCOMPLETE_OR_INVALID"
+                )
             )
-            if ready != quality_complete:
+            if snapshot.get("research_training_readiness") != expected_readiness:
                 reasons.append("CORPUS_SNAPSHOT_READINESS_MISMATCH")
             anchored = snapshot.get("attestation_eligibility") == "EXTERNALLY_ANCHORED"
             if anchored != attestation_complete:
@@ -1279,6 +1346,9 @@ def load_research_corpus_snapshot(
 
 
 def _publish_successful_sources(state: HistoricalResearchCorpusState) -> None:
+    source_root = state.output_root / "source"
+    source_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(source_root, 0o700)
     for item, data in state.successful_sources():
         _publish_exact(
             state.output_root
@@ -1297,6 +1367,22 @@ class _CountingTransport:
     def get(self, url):
         self.count += 1
         return self._transport.get(url)
+
+
+def _prepare_managed_root(state_path: Path, output_root: Path) -> None:
+    state_parent = Path(state_path).expanduser().resolve().parent
+    resolved_output = Path(output_root).expanduser().resolve()
+    common = Path(os.path.commonpath((str(state_parent), str(resolved_output))))
+    broad_roots = {
+        Path("/"),
+        Path("/tmp"),
+        Path("/var"),
+        Path("/Users"),
+        Path.home().resolve(),
+    }
+    if common not in broad_roots:
+        common.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(common, 0o700)
 
 
 def run_historical_research_corpus(
@@ -1327,6 +1413,7 @@ def run_historical_research_corpus(
         lambda: utc_datetime(datetime.now(timezone.utc))
     )
     transport = transport or PublicArchiveTransport()
+    _prepare_managed_root(Path(state_path), Path(output_root))
     with HistoricalResearchCorpusState(
         Path(state_path),
         plan=plan,
@@ -1350,6 +1437,7 @@ def run_historical_research_corpus(
                     request,
                     counting,
                     clock(),
+                    allow_research_degraded=True,
                 )
                 state.succeed(
                     corpus_item_id=item["corpus_item_id"],

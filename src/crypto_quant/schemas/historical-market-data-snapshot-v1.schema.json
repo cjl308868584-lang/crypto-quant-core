@@ -29,7 +29,9 @@
     "snapshot_hash": {"$ref": "#/$defs/hash"},
     "hash_algorithm": {"const": "SHA-256"},
     "canonicalization": {"const": "RFC8785_JCS"},
-    "parser_version": {"const": "BINANCE_CSV_V1"},
+    "parser_version": {
+      "enum": ["BINANCE_CSV_V1", "BINANCE_CSV_V2"]
+    },
     "availability_basis": {"const": "OFFLINE_ARCHIVE_OBSERVED_AT_INGESTION"},
     "pit_eligibility": {"const": "ARCHIVE_REPLAY_ONLY"},
     "quality_eligibility": {

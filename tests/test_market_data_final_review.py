@@ -199,7 +199,7 @@ class ProvenanceAndApprovedContractTests(unittest.TestCase):
         self.assertEqual(fact["volume"], "12")
         self.assertEqual(fact["quote_asset_volume"], "1218")
         self.assertEqual(fact["number_of_trades"], 7)
-        self.assertEqual(snapshot["parser_version"], "BINANCE_CSV_V1")
+        self.assertEqual(snapshot["parser_version"], "BINANCE_CSV_V2")
         self.assertEqual(
             snapshot["availability_basis"],
             "OFFLINE_ARCHIVE_OBSERVED_AT_INGESTION",
