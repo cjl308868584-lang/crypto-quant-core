@@ -298,6 +298,18 @@ class EvaluatorBuildTests(unittest.TestCase):
             "artifacts/market-data/binance-public-data-smoke-v0.16.0.json",
             expected,
         )
+        self.assertIn(
+            "config/contemporaneous-capture-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "src/crypto_quant/schemas/contemporaneous-capture-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "artifacts/market-data/binance-contemporaneous-smoke-v0.17.0.json",
+            expected,
+        )
         self.assertIn("setup.py", expected)
 
     def test_manifest_binds_complete_evaluator_file_set(self):
@@ -337,9 +349,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.11.0")
-        self.assertEqual(manifest["package_version"], "0.16.0")
-        self.assertEqual(crypto_quant.__version__, "0.16.0")
+        self.assertEqual(manifest["manifest_version"], "1.12.0")
+        self.assertEqual(manifest["package_version"], "0.17.0")
+        self.assertEqual(crypto_quant.__version__, "0.17.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
