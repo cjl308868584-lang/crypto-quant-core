@@ -25,6 +25,8 @@ _FROZEN_CONFIG_PATHS = (
     "config/estimator-registry-v1.schema.json",
     "config/evaluator-build-manifest-v1.schema.json",
     "config/experiment-manifest-v1.1.schema.json",
+    "config/fee-schedule-snapshot-v1.schema.json",
+    "config/historical-market-data-snapshot-v1.schema.json",
     "config/model-bundle-v1.1.schema.json",
     "config/paired-risk-evaluation-snapshot-v1.schema.json",
     "config/recipe-release-v1.1.schema.json",
@@ -39,6 +41,10 @@ _FROZEN_CONFIG_PATHS = (
     "config/trade-replay-snapshot-v1.schema.json",
     "pyproject.toml",
     "requirements.lock",
+    "setup.py",
+)
+_FROZEN_ARTIFACT_PATHS = (
+    "artifacts/market-data/binance-public-data-smoke-v0.16.0.json",
 )
 
 
@@ -58,7 +64,20 @@ class EvaluatorBuild:
             str(path.relative_to(workspace_root))
             for path in (workspace_root / "src" / "crypto_quant").glob("*.py")
         )
-        return tuple(sorted(source + list(_FROZEN_CONFIG_PATHS)))
+        package_resources = sorted(
+            str(path.relative_to(workspace_root))
+            for path in (workspace_root / "src" / "crypto_quant" / "schemas").glob(
+                "*.json"
+            )
+        )
+        return tuple(
+            sorted(
+                source
+                + package_resources
+                + list(_FROZEN_CONFIG_PATHS)
+                + list(_FROZEN_ARTIFACT_PATHS)
+            )
+        )
 
     @staticmethod
     def file_hashes(

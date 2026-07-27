@@ -283,6 +283,23 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         cls.registry = EstimatorRegistry.load(ROOT / "config", catalog)
 
+    def test_expected_file_paths_bind_market_data_resources_and_smoke(self):
+        expected = set(EvaluatorBuild.expected_file_paths(ROOT))
+
+        self.assertIn(
+            "config/historical-market-data-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "src/crypto_quant/schemas/historical-market-data-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "artifacts/market-data/binance-public-data-smoke-v0.16.0.json",
+            expected,
+        )
+        self.assertIn("setup.py", expected)
+
     def test_manifest_binds_complete_evaluator_file_set(self):
         build = EvaluatorBuild.load(ROOT, self.registry)
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
@@ -306,11 +323,27 @@ class EvaluatorBuildTests(unittest.TestCase):
             "config/paired-risk-evaluation-snapshot-v1.schema.json",
             expected,
         )
+        self.assertIn(
+            "config/historical-market-data-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "src/crypto_quant/schemas/historical-market-data-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "artifacts/market-data/binance-public-data-smoke-v0.16.0.json",
+            expected,
+        )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.8.0")
-        self.assertEqual(manifest["package_version"], "0.15.0")
-        self.assertEqual(crypto_quant.__version__, "0.15.0")
+        self.assertEqual(manifest["manifest_version"], "1.9.0")
+        self.assertEqual(manifest["package_version"], "0.16.0")
+        self.assertEqual(crypto_quant.__version__, "0.16.0")
+        self.assertEqual(
+            manifest["file_set_policy"],
+            "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
+        )
         self.assertEqual(manifest["metric_catalog_version"], "1.1.6")
         self.assertEqual(manifest["golden_vector_count"], 41)
         self.assertEqual(build.executable_estimator_count, 26)

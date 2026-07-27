@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-public-data-smoke-v0.16.0",
+  "status": "PASS",
+  "retrieval_mode": "PUBLIC_GET_ONLY",
+  "point_in_time_policy": "ARCHIVE_REPLAY_ONLY",
+  "retrieved_at": "2026-07-27T01:11:39.641996Z",
+  "request": {
+    "provider": "BINANCE_PUBLIC_DATA",
+    "market": "SPOT",
+    "data_family": "KLINES",
+    "symbol": "ETHUSDT",
+    "interval_or_null": "4h",
+    "period_kind": "DAILY",
+    "period": "2026-07-25"
+  },
+  "http_evidence": {
+    "archive": {
+      "requested_url": "https://data.binance.vision/data/spot/daily/klines/ETHUSDT/4h/ETHUSDT-4h-2026-07-25.zip",
+      "final_url": "https://data.binance.vision/data/spot/daily/klines/ETHUSDT/4h/ETHUSDT-4h-2026-07-25.zip",
+      "status": 200,
+      "content_length_bytes": 506,
+      "etag": "\"cbc72817e886639cc48397c0290934bb\"",
+      "last_modified": "Sun, 26 Jul 2026 02:41:56 GMT"
+    },
+    "official_checksum": {
+      "requested_url": "https://data.binance.vision/data/spot/daily/klines/ETHUSDT/4h/ETHUSDT-4h-2026-07-25.zip.CHECKSUM",
+      "final_url": "https://data.binance.vision/data/spot/daily/klines/ETHUSDT/4h/ETHUSDT-4h-2026-07-25.zip.CHECKSUM",
+      "status": 200,
+      "content_length_bytes": 91,
+      "etag": "\"bf585b05971bcc333679ab3b78424524\"",
+      "last_modified": "Sun, 26 Jul 2026 02:41:56 GMT"
+    }
+  },
+  "hash_evidence": {
+    "official_checksum_record_archive_sha256": "a1f42574c036d4ae7670bb163dc1b787acf20f06bee958c32e736186757dc08b",
+    "archive_sha256": "a1f42574c036d4ae7670bb163dc1b787acf20f06bee958c32e736186757dc08b",
+    "checksum_sha256": "2413eb36a0d9f1fa90bea973bdf0c8dd0e15e4306c21427b5f543f09ceb55897",
+    "receipt_hash": "cf55a569987aea60d967692cdb9f1f016bfaa205bb1af2813a8e28f37568053b",
+    "quality_report_hash": "4022ead3b3df6b21c57760ef10c35522d44a4dfb7da8c9cfe05c2baeb96a0746",
+    "snapshot_hash": "4061d3286e682a7c199dcca3949aae4bd6d95cc6c0b2b38d13f4a3c03765aabd"
+  },
+  "snapshot_id": "historical-20d5e9be0f30295b89345ec5f68625f90d100bc00911414753909f87ff99db64",
+  "row_count": 6,
+  "quality": {
+    "blocking_findings": [],
+    "warning_findings": []
+  },
+  "independent_verification": {
+    "verified_at": "2026-07-27T01:17:41.323923Z",
+    "official_checksum_redownload_status": 200,
+    "official_checksum_redownload_sha256": "2413eb36a0d9f1fa90bea973bdf0c8dd0e15e4306c21427b5f543f09ceb55897",
+    "official_checksum_matches_archive": true,
+    "receipt_hash_matches_replay": true,
+    "row_count_matches_replay": true,
+    "quality_report_hash_matches_replay": true,
+    "snapshot_hash_matches_replay": true
+  },
+  "retention": {
+    "raw_archive_committed": false,
+    "normalized_rows_committed": false,
+    "temporary_raw_data_deleted_after_verification": true
+  }
+}

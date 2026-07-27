@@ -99,7 +99,7 @@
       "minimum": 0
     },
     "file_set_policy": {
-      "const": "ALL_PACKAGE_PYTHON_PLUS_FROZEN_RELEASE_CONFIG"
+      "const": "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS"
     },
     "file_hashes": {
       "type": "object",
