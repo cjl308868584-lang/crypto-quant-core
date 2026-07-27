@@ -134,10 +134,24 @@ def _read_existing_artifact(directory_fd: int, name: str, expected_size: int):
             remaining -= len(chunk)
         return b"".join(chunks)
     finally:
+        _close_without_reversing_result(descriptor)
+
+
+def _close_without_reversing_result(descriptor: int) -> None:
+    try:
         os.close(descriptor)
+    except OSError:
+        pass
 
 
-def _open_temporary_artifact(directory_fd: int) -> Tuple[str, int]:
+def _discard_created_temporary(directory_fd: int, name: str) -> None:
+    entry = _regular_stat(directory_fd, name)
+    if entry is not None:
+        _unlink_own_name(directory_fd, name, (entry.st_dev, entry.st_ino))
+        os.fsync(directory_fd)
+
+
+def _open_temporary_artifact(directory_fd: int) -> Tuple[str, int, Tuple[int, int]]:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     for _ in range(32):
         name = _TEMPORARY_PREFIX + secrets.token_hex(16)
@@ -145,15 +159,23 @@ def _open_temporary_artifact(directory_fd: int) -> Tuple[str, int]:
             descriptor = os.open(name, flags, 0o600, dir_fd=directory_fd)
         except FileExistsError:
             continue
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
-            os.close(descriptor)
-            raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
-        return name, descriptor
+        try:
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+                raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+            return name, descriptor, (opened.st_dev, opened.st_ino)
+        except (MarketDataError, OSError):
+            _close_without_reversing_result(descriptor)
+            _discard_created_temporary(directory_fd, name)
+            raise
     raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
 
 
-def _write_and_sync(descriptor: int, payload: bytes) -> Tuple[int, int]:
+def _write_and_sync(
+    descriptor: int,
+    payload: bytes,
+    identity: Tuple[int, int],
+) -> None:
     offset = 0
     while offset < len(payload):
         written = os.write(descriptor, payload[offset:])
@@ -162,9 +184,12 @@ def _write_and_sync(descriptor: int, payload: bytes) -> Tuple[int, int]:
         offset += written
     os.fsync(descriptor)
     written_stat = os.fstat(descriptor)
-    if not stat.S_ISREG(written_stat.st_mode) or written_stat.st_nlink != 1:
+    if (
+        not stat.S_ISREG(written_stat.st_mode)
+        or written_stat.st_nlink != 1
+        or (written_stat.st_dev, written_stat.st_ino) != identity
+    ):
         raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
-    return written_stat.st_dev, written_stat.st_ino
 
 
 def _unlink_own_name(directory_fd: int, name: str, identity: Tuple[int, int]) -> None:
@@ -202,6 +227,7 @@ def _publish_in_directory(
     existing = _read_existing_artifact(directory_fd, artifact_name, len(payload))
     if existing is not None:
         if existing == payload:
+            _require_attached_directory(root_fd, directory_fd)
             return False
         raise MarketDataError("ARTIFACT_CONFLICT")
 
@@ -210,8 +236,8 @@ def _publish_in_directory(
     identity = None
     published = False
     try:
-        temporary_name, temporary_fd = _open_temporary_artifact(directory_fd)
-        identity = _write_and_sync(temporary_fd, payload)
+        temporary_name, temporary_fd, identity = _open_temporary_artifact(directory_fd)
+        _write_and_sync(temporary_fd, payload, identity)
         os.close(temporary_fd)
         temporary_fd = None
         _require_attached_directory(root_fd, directory_fd)
@@ -228,6 +254,7 @@ def _publish_in_directory(
             if existing == payload:
                 _unlink_own_name(directory_fd, temporary_name, identity)
                 os.fsync(directory_fd)
+                _require_attached_directory(root_fd, directory_fd)
                 return False
             raise MarketDataError("ARTIFACT_CONFLICT")
         published = True
@@ -240,7 +267,7 @@ def _publish_in_directory(
         return True
     except (MarketDataError, OSError) as error:
         if temporary_fd is not None:
-            os.close(temporary_fd)
+            _close_without_reversing_result(temporary_fd)
             temporary_fd = None
         try:
             if identity is not None:
@@ -258,7 +285,7 @@ def _publish_in_directory(
         raise MarketDataError("ARTIFACT_PUBLISH_FAILED") from error
     finally:
         if temporary_fd is not None:
-            os.close(temporary_fd)
+            _close_without_reversing_result(temporary_fd)
 
 
 def _publish_immutable(root: Path, artifact_name: str, payload: bytes) -> bool:
@@ -271,8 +298,8 @@ def _publish_immutable(root: Path, artifact_name: str, payload: bytes) -> bool:
         return _publish_in_directory(root_fd, directory_fd, artifact_name, payload)
     finally:
         if directory_fd is not None:
-            os.close(directory_fd)
-        os.close(root_fd)
+            _close_without_reversing_result(directory_fd)
+        _close_without_reversing_result(root_fd)
 
 
 def main(
@@ -303,8 +330,8 @@ def main(
         )
         root = _selected_root_path(arguments.output_root)
         artifact_name = snapshot["snapshot_id"] + ".json"
-        created = _publish_immutable(root, artifact_name, _artifact_bytes(snapshot))
         artifact = root.resolve() / _OUTPUT_DIRECTORY / artifact_name
+        created = _publish_immutable(root, artifact_name, _artifact_bytes(snapshot))
     except SystemExit as error:
         return int(error.code)
     except (MarketDataError, OSError, TypeError, ValueError) as error:

@@ -332,11 +332,11 @@ class MarketDataCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             first = self.invoke(root)
+            artifact = Path(json.loads(first[1])["artifact_path"])
+            first_inode = artifact.stat().st_ino
             second = self.invoke(root)
             self.assertEqual(first[0], 0)
             self.assertEqual(second[0], 0)
-            artifact = Path(json.loads(first[1])["artifact_path"])
-            first_inode = artifact.stat().st_ino
             self.assertFalse(json.loads(second[1])["created"])
             self.assertEqual(artifact.stat().st_ino, first_inode)
             artifact.write_bytes(b"conflicting")
@@ -456,3 +456,129 @@ class MarketDataCliTests(unittest.TestCase):
                 output = root / "market-data"
                 if output.exists():
                     self.assertEqual(list(output.iterdir()), [])
+
+    def test_idempotent_returns_recheck_the_attached_directory_after_existing_and_collision_paths(self):
+        import crypto_quant.market_data_cli as cli
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            root.mkdir()
+            first = self.invoke(root)
+            artifact = Path(json.loads(first[1])["artifact_path"])
+            original_read = cli._read_existing_artifact
+            replaced = False
+
+            def replace_after_existing_read(*args, **kwargs):
+                nonlocal replaced
+                value = original_read(*args, **kwargs)
+                if value is not None and not replaced:
+                    replaced = True
+                    (root / "market-data").rename(root / "market-data-replaced")
+                    (root / "market-data").mkdir()
+                return value
+
+            with patch(
+                "crypto_quant.market_data_cli._read_existing_artifact",
+                side_effect=replace_after_existing_read,
+            ):
+                status, _, _ = self.invoke(root)
+            self.assertNotEqual(status, 0)
+            self.assertTrue((root / "market-data-replaced" / artifact.name).exists())
+            self.assertEqual(list((root / "market-data").iterdir()), [])
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            root.mkdir()
+            snapshot = fetch_historical_market_data(
+                self.request, self.transport, "2026-07-27T00:00:01Z"
+            )
+            payload = cli._artifact_bytes(snapshot)
+            artifact_name = snapshot["snapshot_id"] + ".json"
+            original_read = cli._read_existing_artifact
+            reads = 0
+
+            def missing_then_real(*args, **kwargs):
+                nonlocal reads
+                reads += 1
+                return None if reads == 1 else original_read(*args, **kwargs)
+
+            def collide_and_replace(*args, **kwargs):
+                destination = root / "market-data" / artifact_name
+                destination.write_bytes(payload)
+                (root / "market-data").rename(root / "market-data-replaced")
+                (root / "market-data").mkdir()
+                raise FileExistsError
+
+            with patch("crypto_quant.market_data_cli._read_existing_artifact", side_effect=missing_then_real), patch(
+                "crypto_quant.market_data_cli.os.link", side_effect=collide_and_replace
+            ):
+                status, _, _ = self.invoke(root)
+            self.assertNotEqual(status, 0)
+            self.assertTrue((root / "market-data-replaced" / artifact_name).exists())
+            self.assertEqual(list((root / "market-data").iterdir()), [])
+
+    def test_precommit_failures_remove_their_temporary_inode(self):
+        import crypto_quant.market_data_cli as cli
+
+        for fault in ("write", "file_fsync", "initial_fstat", "post_write_fstat"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary) / "root"
+                root.mkdir()
+                original_write = cli.os.write
+                original_fsync = cli.os.fsync
+                original_fstat = cli.os.fstat
+                fstat_calls = 0
+
+                def fail_write(*args, **kwargs):
+                    if fault == "write":
+                        raise OSError("write failed")
+                    return original_write(*args, **kwargs)
+
+                def fail_fsync(fd):
+                    if fault == "file_fsync":
+                        raise OSError("file fsync failed")
+                    return original_fsync(fd)
+
+                def fail_fstat(fd):
+                    nonlocal fstat_calls
+                    fstat_calls += 1
+                    if (fault == "initial_fstat" and fstat_calls == 2) or (
+                        fault == "post_write_fstat" and fstat_calls == 3
+                    ):
+                        raise OSError("fstat failed")
+                    return original_fstat(fd)
+
+                with patch("crypto_quant.market_data_cli.os.write", side_effect=fail_write), patch(
+                    "crypto_quant.market_data_cli.os.fsync", side_effect=fail_fsync
+                ), patch("crypto_quant.market_data_cli.os.fstat", side_effect=fail_fstat):
+                    status, _, _ = self.invoke(root)
+
+                self.assertNotEqual(status, 0)
+                self.assertEqual(list((root / "market-data").iterdir()), [])
+
+    def test_post_commit_close_errors_do_not_report_failure_and_resolve_runs_before_publish(self):
+        import crypto_quant.market_data_cli as cli
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            original_close = cli.os.close
+            close_calls = 0
+
+            def fail_directory_closes(fd):
+                nonlocal close_calls
+                close_calls += 1
+                if close_calls >= 2:
+                    raise OSError("post-commit close failed")
+                return original_close(fd)
+
+            with patch("crypto_quant.market_data_cli.os.close", side_effect=fail_directory_closes):
+                status, stdout, _ = self.invoke(root)
+            self.assertEqual(status, 0)
+            self.assertTrue(Path(json.loads(stdout)["artifact_path"]).exists())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            with patch("crypto_quant.market_data_cli.Path.resolve", side_effect=OSError("resolve failed")):
+                status, _, _ = self.invoke(root)
+            self.assertNotEqual(status, 0)
+            self.assertFalse((root / "market-data").exists())
