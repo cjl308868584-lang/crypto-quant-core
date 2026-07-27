@@ -110,8 +110,9 @@ def _read_existing_artifact(directory_fd: int, name: str, expected_size: int):
     entry = _regular_stat(directory_fd, name)
     if entry is None:
         return None
+    identity = (entry.st_dev, entry.st_ino)
     if entry.st_size != expected_size:
-        return b""
+        return b"", identity
     try:
         descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
     except OSError as error:
@@ -121,7 +122,7 @@ def _read_existing_artifact(directory_fd: int, name: str, expected_size: int):
         if (
             not stat.S_ISREG(opened.st_mode)
             or opened.st_nlink != 1
-            or (opened.st_dev, opened.st_ino) != (entry.st_dev, entry.st_ino)
+            or (opened.st_dev, opened.st_ino) != identity
         ):
             raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
         chunks = []
@@ -132,7 +133,15 @@ def _read_existing_artifact(directory_fd: int, name: str, expected_size: int):
                 raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
             chunks.append(chunk)
             remaining -= len(chunk)
-        return b"".join(chunks)
+        payload = b"".join(chunks)
+        final_entry = _regular_stat(directory_fd, name)
+        if (
+            final_entry is None
+            or (final_entry.st_dev, final_entry.st_ino) != identity
+            or final_entry.st_size != expected_size
+        ):
+            raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+        return payload, identity
     finally:
         _close_without_reversing_result(descriptor)
 
@@ -232,6 +241,21 @@ def _rollback_publication(
     os.fsync(directory_fd)
 
 
+def _require_same_final_artifact_at_commit(
+    directory_fd: int,
+    artifact_name: str,
+    payload: bytes,
+    identity: Tuple[int, int],
+) -> None:
+    committed = _read_existing_artifact(
+        directory_fd,
+        artifact_name,
+        len(payload),
+    )
+    if committed is None or committed != (payload, identity):
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+
+
 def _publish_in_directory(
     root_fd: int,
     directory_fd: int,
@@ -241,8 +265,15 @@ def _publish_in_directory(
     _require_attached_directory(root_fd, directory_fd)
     existing = _read_existing_artifact(directory_fd, artifact_name, len(payload))
     if existing is not None:
-        if existing == payload:
+        existing_payload, existing_identity = existing
+        if existing_payload == payload:
             _require_attached_directory(root_fd, directory_fd)
+            _require_same_final_artifact_at_commit(
+                directory_fd,
+                artifact_name,
+                payload,
+                existing_identity,
+            )
             return False
         raise MarketDataError("ARTIFACT_CONFLICT")
 
@@ -266,10 +297,17 @@ def _publish_in_directory(
             )
         except FileExistsError:
             existing = _read_existing_artifact(directory_fd, artifact_name, len(payload))
-            if existing == payload:
+            if existing is not None and existing[0] == payload:
+                existing_identity = existing[1]
                 _unlink_own_name(directory_fd, temporary_name, identity)
                 os.fsync(directory_fd)
                 _require_attached_directory(root_fd, directory_fd)
+                _require_same_final_artifact_at_commit(
+                    directory_fd,
+                    artifact_name,
+                    payload,
+                    existing_identity,
+                )
                 return False
             raise MarketDataError("ARTIFACT_CONFLICT")
         published = True

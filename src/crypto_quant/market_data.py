@@ -44,7 +44,8 @@ _FACT_ID = re.compile(r"^mdf_[a-f0-9]{64}$")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _KLINE_INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "4h": 14_400_000, "1d": 86_400_000}
 _SPOT_MICROSECOND_BOUNDARY = datetime(2025, 1, 1, tzinfo=timezone.utc)
-_USD_M_FUNDING_INTERVAL_HOURS = 8
+_PARSER_VERSION = "BINANCE_CSV_V1"
+_AVAILABILITY_BASIS = "OFFLINE_ARCHIVE_OBSERVED_AT_INGESTION"
 _FAMILY_SPECS = {
     ("SPOT", "KLINES"): ("spot", "daily", "klines", True),
     ("SPOT", "AGG_TRADES"): ("spot", "daily", "aggTrades", False),
@@ -303,6 +304,8 @@ class _VerifiedArchive:
 
     _request: HistoricalArchiveRequest
     _archive_bytes: bytes
+    _checksum_bytes: bytes
+    _official_sha256: str
 
     def __init__(self, *args, **kwargs):
         raise TypeError("verified archives are issued by checksum validation")
@@ -313,12 +316,16 @@ class _VerifiedArchive:
         token: object,
         request: HistoricalArchiveRequest,
         archive_bytes: bytes,
+        checksum_bytes: bytes,
+        official_sha256: str,
     ) -> "_VerifiedArchive":
         if token is not _VERIFIED_ARCHIVE_TOKEN:
             raise TypeError("verified archives are issued by checksum validation")
         verified = object.__new__(cls)
         object.__setattr__(verified, "_request", request)
         object.__setattr__(verified, "_archive_bytes", archive_bytes)
+        object.__setattr__(verified, "_checksum_bytes", checksum_bytes)
+        object.__setattr__(verified, "_official_sha256", official_sha256)
         return verified
 
 
@@ -351,6 +358,8 @@ def verify_official_checksum(
         _VERIFIED_ARCHIVE_TOKEN,
         request,
         archive_bytes,
+        checksum_bytes,
+        expected_digest.lower(),
     )
 
 
@@ -462,14 +471,10 @@ def fetch_historical_market_data(
         archive_response.body,
         checksum_response.body,
     )
-    csv_bytes = extract_expected_csv(request, verified_archive)
-    facts = parse_market_facts(request, csv_bytes, retrieved_at)
     return build_historical_market_data_snapshot(
         snapshot_id=_fetched_snapshot_id(request),
-        request=request,
-        facts=facts,
-        archive_sha256=hashlib.sha256(archive_response.body).hexdigest(),
-        checksum_sha256=hashlib.sha256(checksum_response.body).hexdigest(),
+        verified_archive=verified_archive,
+        retrieved_at=retrieved_at,
         ingested_at=retrieved_at,
         recorded_at=retrieved_at,
         source_etag_or_null=_response_header(archive_response.headers, "ETag"),
@@ -656,6 +661,31 @@ def _fact_id(
     )
 
 
+_FACT_PROVENANCE_FIELDS = frozenset(
+    (
+        "fact_id",
+        "source_row_fact_id",
+        "source_row",
+        "source_row_hash",
+        "payload_hash",
+        "source_row_number",
+    )
+)
+
+
+def _normalized_fact_payload(fact: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in fact.items()
+        if key not in _FACT_PROVENANCE_FIELDS
+    }
+
+
+def _finalize_parsed_fact(fact: Dict[str, Any]) -> Dict[str, Any]:
+    fact["payload_hash"] = business_hash(_normalized_fact_payload(fact))
+    return fact
+
+
 def _base_fact(
     request: HistoricalArchiveRequest,
     source_row_number: int,
@@ -666,9 +696,12 @@ def _base_fact(
     source_row: Sequence[str],
 ) -> Dict[str, Any]:
     source_row_fact_id = _fact_id(request, source_row_number, business_key, source_row)
+    source_row_values = list(source_row)
     return {
         "fact_id": source_row_fact_id,
         "source_row_fact_id": source_row_fact_id,
+        "source_row": source_row_values,
+        "source_row_hash": business_hash(source_row_values),
         "fact_type": fact_type,
         "provider": request.provider,
         "market": request.market,
@@ -678,6 +711,7 @@ def _base_fact(
         "source_row_number": source_row_number,
         "event_time": event_time,
         "available_at": ingested_at,
+        "ingested_at": ingested_at,
     }
 
 
@@ -722,8 +756,23 @@ def _parse_kline(
         "KLINE" if request.market == "SPOT" else "MARK_PRICE_KLINE",
         row,
     )
-    fact.update({"open": open_price, "high": high, "low": low, "close": close_price})
-    return fact
+    fact.update(
+        {
+            "open_time": event_text,
+            "close_time": close_text,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close_price,
+            "volume": _nonnegative_decimal(row[5]),
+            "quote_asset_volume": _nonnegative_decimal(row[7]),
+            "number_of_trades": _integer(row[8]),
+            "taker_buy_base_asset_volume": _nonnegative_decimal(row[9]),
+            "taker_buy_quote_asset_volume": _nonnegative_decimal(row[10]),
+            "ignore": _integer(row[11]),
+        }
+    )
+    return _finalize_parsed_fact(fact)
 
 
 def _parse_agg_trade(
@@ -748,7 +797,7 @@ def _parse_agg_trade(
         "is_buyer_maker": _boolean(row[6]),
         "is_best_match": _boolean(row[7]),
     })
-    return fact
+    return _finalize_parsed_fact(fact)
 
 
 def _parse_funding_rate(
@@ -758,14 +807,15 @@ def _parse_funding_rate(
     ingested_at: str,
 ) -> Dict[str, Any]:
     event, event_text = _timestamp(row[0], unit="ms")
+    funding_interval_hours = _integer(row[1], positive=True)
     if (
         not _request_period_contains(request, event)
-        or _integer(row[1], positive=True) != _USD_M_FUNDING_INTERVAL_HOURS
+        or funding_interval_hours > 24
     ):
         raise _market_fact_error()
     fact = _base_fact(request, row_number, request.symbol + ":" + event_text, event_text, ingested_at, "FUNDING_RATE", row)
-    fact.update({"funding_interval_hours": _USD_M_FUNDING_INTERVAL_HOURS, "funding_rate": _decimal(row[2])})
-    return fact
+    fact.update({"funding_interval_hours": funding_interval_hours, "funding_rate": _decimal(row[2])})
+    return _finalize_parsed_fact(fact)
 
 
 def parse_market_facts(
@@ -802,7 +852,7 @@ def parse_market_facts(
 
 
 def _request_payload(request: HistoricalArchiveRequest) -> Dict[str, Any]:
-    payload = {
+    return {
         "schema_version": request.schema_version,
         "provider": request.provider,
         "market": request.market,
@@ -812,18 +862,32 @@ def _request_payload(request: HistoricalArchiveRequest) -> Dict[str, Any]:
         "period_kind": request.period_kind,
         "period": request.period,
     }
-    if request.data_family == "FUNDING_RATE":
-        payload["funding_interval_hours"] = _USD_M_FUNDING_INTERVAL_HOURS
-    return payload
 
 
 _FACT_BASE_FIELDS = frozenset((
-    "fact_id", "source_row_fact_id", "fact_type", "provider", "market", "data_family", "symbol",
-    "business_key", "source_row_number", "event_time", "available_at",
+    "fact_id", "source_row_fact_id", "source_row", "source_row_hash", "payload_hash",
+    "fact_type", "provider", "market", "data_family", "symbol", "business_key",
+    "source_row_number", "event_time", "available_at", "ingested_at",
 ))
+_KLINE_PAYLOAD_FIELDS = frozenset(
+    (
+        "open_time",
+        "close_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_asset_volume",
+        "number_of_trades",
+        "taker_buy_base_asset_volume",
+        "taker_buy_quote_asset_volume",
+        "ignore",
+    )
+)
 _FACT_FIELDS = {
-    "KLINES": ("KLINE", _FACT_BASE_FIELDS | frozenset(("open", "high", "low", "close"))),
-    "MARK_PRICE_KLINES": ("MARK_PRICE_KLINE", _FACT_BASE_FIELDS | frozenset(("open", "high", "low", "close"))),
+    "KLINES": ("KLINE", _FACT_BASE_FIELDS | _KLINE_PAYLOAD_FIELDS),
+    "MARK_PRICE_KLINES": ("MARK_PRICE_KLINE", _FACT_BASE_FIELDS | _KLINE_PAYLOAD_FIELDS),
     "AGG_TRADES": ("AGG_TRADE", _FACT_BASE_FIELDS | frozenset(("aggregate_trade_id", "price", "quantity", "first_trade_id", "last_trade_id", "is_buyer_maker", "is_best_match"))),
     "FUNDING_RATE": ("FUNDING_RATE", _FACT_BASE_FIELDS | frozenset(("funding_interval_hours", "funding_rate"))),
 }
@@ -839,15 +903,35 @@ def _valid_fact_payload(request: HistoricalArchiveRequest, fact: Mapping[str, An
             or _FACT_ID.fullmatch(fact["fact_id"]) is None
             or not isinstance(fact["source_row_fact_id"], str)
             or _FACT_ID.fullmatch(fact["source_row_fact_id"]) is None
+            or not isinstance(fact["source_row"], list)
+            or not fact["source_row"]
+            or any(not isinstance(value, str) for value in fact["source_row"])
+            or not isinstance(fact["source_row_hash"], str)
+            or _SHA256.fullmatch(fact["source_row_hash"]) is None
+            or fact["source_row_hash"] != business_hash(fact["source_row"])
+            or not isinstance(fact["payload_hash"], str)
+            or _SHA256.fullmatch(fact["payload_hash"]) is None
+            or fact["payload_hash"] != business_hash(_normalized_fact_payload(fact))
             or not isinstance(fact["business_key"], str)
             or not fact["business_key"]
             or not isinstance(fact["source_row_number"], int)
             or fact["source_row_number"] < 1
         ):
             return False
+        _utc_input(fact["ingested_at"])
         if request.data_family in ("KLINES", "MARK_PRICE_KLINES"):
             open_price, high, low, close = (Decimal(_decimal(fact[name], positive=True)) for name in ("open", "high", "low", "close"))
-            return low <= min(open_price, close) <= max(open_price, close) <= high
+            return (
+                low <= min(open_price, close) <= max(open_price, close) <= high
+                and _nonnegative_decimal(fact["volume"]) == fact["volume"]
+                and _nonnegative_decimal(fact["quote_asset_volume"]) == fact["quote_asset_volume"]
+                and _integer(str(fact["number_of_trades"])) == fact["number_of_trades"]
+                and _nonnegative_decimal(fact["taker_buy_base_asset_volume"])
+                == fact["taker_buy_base_asset_volume"]
+                and _nonnegative_decimal(fact["taker_buy_quote_asset_volume"])
+                == fact["taker_buy_quote_asset_volume"]
+                and fact["ignore"] == 0
+            )
         if request.data_family == "AGG_TRADES":
             return (
                 _integer(str(fact["aggregate_trade_id"]), positive=True) > 0
@@ -858,32 +942,53 @@ def _valid_fact_payload(request: HistoricalArchiveRequest, fact: Mapping[str, An
                 and isinstance(fact["is_best_match"], bool)
             )
         return (
-            fact["funding_interval_hours"] == _USD_M_FUNDING_INTERVAL_HOURS
+            isinstance(fact["funding_interval_hours"], int)
+            and 1 <= fact["funding_interval_hours"] <= 24
             and _decimal(fact["funding_rate"]) == fact["funding_rate"]
         )
     except (MarketDataError, TypeError, ValueError, InvalidOperation):
         return False
 
 
-def _quality_reasons(
+def _expected_kline_events(request: HistoricalArchiveRequest) -> set:
+    start = datetime.strptime(request.period, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    interval = timedelta(milliseconds=_KLINE_INTERVAL_MS[request.interval_or_null or ""])
+    uses_microseconds = request.market == "SPOT" and start >= _SPOT_MICROSECOND_BOUNDARY
+    closing_precision = timedelta(microseconds=1 if uses_microseconds else 1_000)
+    return {
+        start + (index + 1) * interval - closing_precision
+        for index in range(int(timedelta(days=1) / interval))
+    }
+
+
+def _quality_report(
     request: HistoricalArchiveRequest,
     facts: Sequence[Mapping[str, Any]],
     ingested_at: str,
     recorded_at: str,
-) -> Tuple[str, ...]:
+) -> Dict[str, Any]:
     reasons = []
     try:
         ingested, _ = _utc_input(ingested_at)
         recorded, _ = _utc_input(recorded_at)
     except MarketDataError:
-        return ("MARKET_DATA_TIME_INVALID",)
+        ingested = recorded = datetime.min.replace(tzinfo=timezone.utc)
+        reasons.append("MARKET_DATA_TIME_INVALID")
     if ingested > recorded:
         reasons.append("MARKET_DATA_TIME_ORDER")
+    source_facts = sorted(
+        (fact for fact in facts if isinstance(fact, Mapping)),
+        key=lambda fact: fact.get("source_row_number", -1)
+        if isinstance(fact.get("source_row_number"), int)
+        else -1,
+    )
     seen_ids, seen_keys = set(), set()
     previous_row = None
     previous_event = None
     event_times = []
-    for fact in facts:
+    duplicate_count = 0
+    source_order_regression_count = 0
+    for fact in source_facts:
         if not isinstance(fact, Mapping):
             reasons.append("MARKET_DATA_FACT_INVALID")
             continue
@@ -895,6 +1000,7 @@ def _quality_reasons(
             key = fact["business_key"]
             event, _ = _utc_input(fact["event_time"])
             available, _ = _utc_input(fact["available_at"])
+            fact_ingested, _ = _utc_input(fact["ingested_at"])
         except (KeyError, MarketDataError):
             reasons.append("MARKET_DATA_FACT_INVALID")
             continue
@@ -907,16 +1013,20 @@ def _quality_reasons(
             reasons.append("MARKET_DATA_FACT_SCOPE")
         if not isinstance(row_number, int) or row_number < 1:
             reasons.append("MARKET_DATA_SOURCE_ORDER")
-        elif previous_row is not None and row_number != previous_row + 1:
+        elif previous_row is not None and row_number <= previous_row:
             reasons.append("MARKET_DATA_SOURCE_ORDER")
+            source_order_regression_count += 1
         previous_row = row_number
         if fact_id in seen_ids or key in seen_keys:
             reasons.append("MARKET_DATA_DUPLICATE")
+            duplicate_count += 1
         seen_ids.add(fact_id)
         seen_keys.add(key)
         if event > available or available != ingested:
             reasons.append("MARKET_DATA_AVAILABILITY_ORDER")
-        if available > ingested or ingested > recorded:
+        if available != fact_ingested or fact_ingested != ingested:
+            reasons.append("MARKET_DATA_FACT_TIME_CROSSLINK")
+        if available > fact_ingested or fact_ingested > recorded:
             reasons.append("MARKET_DATA_TIME_ORDER")
         if not _request_period_contains(request, event):
             reasons.append("MARKET_DATA_PERIOD_SCOPE")
@@ -926,33 +1036,115 @@ def _quality_reasons(
         event_times.append(event)
     if not facts:
         reasons.append("MARKET_DATA_PERIOD_COVERAGE")
+    missing_interval_count = 0
+    expected_period_coverage = bool(facts)
     if request.data_family in ("KLINES", "MARK_PRICE_KLINES"):
-        start = datetime.strptime(request.period, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        interval = timedelta(milliseconds=_KLINE_INTERVAL_MS[request.interval_or_null or ""])
-        uses_microseconds = request.market == "SPOT" and start >= _SPOT_MICROSECOND_BOUNDARY
-        closing_precision = timedelta(microseconds=1 if uses_microseconds else 1_000)
-        expected = {
-            start + (index + 1) * interval - closing_precision
-            for index in range(int(timedelta(days=1) / interval))
-        }
-        if set(event_times) != expected or len(event_times) != len(expected):
+        expected = _expected_kline_events(request)
+        missing_interval_count = len(expected - set(event_times))
+        expected_period_coverage = (
+            set(event_times) == expected and len(event_times) == len(expected)
+        )
+        if not expected_period_coverage:
             reasons.append("MARKET_DATA_PERIOD_COVERAGE")
     elif request.data_family == "FUNDING_RATE":
-        start = datetime.strptime(request.period, "%Y-%m").replace(tzinfo=timezone.utc)
+        start = datetime.strptime(request.period, "%Y-%m").replace(
+            tzinfo=timezone.utc
+        )
         end = (
             start.replace(year=start.year + 1, month=1)
             if start.month == 12
             else start.replace(month=start.month + 1)
         )
-        interval = timedelta(hours=_USD_M_FUNDING_INTERVAL_HOURS)
-        expected = set()
-        current = start
-        while current < end:
-            expected.add(current)
-            current += interval
-        if set(event_times) != expected or len(event_times) != len(expected):
+        funding_events = []
+        for fact in source_facts:
+            try:
+                event, _ = _utc_input(fact["event_time"])
+                interval_hours = fact["funding_interval_hours"]
+                if (
+                    not isinstance(interval_hours, int)
+                    or not 1 <= interval_hours <= 24
+                ):
+                    raise ValueError("funding interval")
+                funding_events.append((event, interval_hours))
+            except (KeyError, MarketDataError, TypeError, ValueError):
+                continue
+        if funding_events:
+            first_event, first_interval_hours = funding_events[0]
+            if first_event != start:
+                first_interval = timedelta(hours=first_interval_hours)
+                first_delta = first_event - start
+                if first_delta > timedelta(0) and first_delta % first_interval == timedelta(0):
+                    missing_interval_count += int(first_delta / first_interval)
+                else:
+                    missing_interval_count += 1
+            for (event, interval_hours), (next_event, _) in zip(
+                funding_events,
+                funding_events[1:],
+            ):
+                interval = timedelta(hours=interval_hours)
+                delta = next_event - event
+                if delta != interval:
+                    if delta > interval and delta % interval == timedelta(0):
+                        missing_interval_count += int(delta / interval) - 1
+                    else:
+                        missing_interval_count += 1
+            final_event, final_interval_hours = funding_events[-1]
+            final_interval = timedelta(hours=final_interval_hours)
+            covered_until = final_event + final_interval
+            if covered_until != end:
+                final_delta = end - covered_until
+                if (
+                    final_delta > timedelta(0)
+                    and final_delta % final_interval == timedelta(0)
+                ):
+                    missing_interval_count += int(final_delta / final_interval)
+                else:
+                    missing_interval_count += 1
+        else:
+            missing_interval_count = 1
+        expected_period_coverage = missing_interval_count == 0
+        if not expected_period_coverage:
+            reasons.append("MARKET_DATA_FUNDING_GAP")
             reasons.append("MARKET_DATA_PERIOD_COVERAGE")
-    return tuple(sorted(set(reasons)))
+    ordered_event_times = sorted(event_times)
+    report = {
+        "row_count": len(facts),
+        "first_event_time": (
+            ordered_event_times[0].isoformat().replace("+00:00", "Z")
+            if ordered_event_times
+            else None
+        ),
+        "last_event_time": (
+            ordered_event_times[-1].isoformat().replace("+00:00", "Z")
+            if ordered_event_times
+            else None
+        ),
+        "duplicate_business_key_count": duplicate_count,
+        "source_order_regression_count": source_order_regression_count,
+        "missing_interval_count": missing_interval_count,
+        "malformed_row_count": 0,
+        "rejected_row_count": 0,
+        "checksum_pass": True,
+        "expected_period_coverage": expected_period_coverage,
+        "warning_findings": [],
+        "blocking_findings": sorted(set(reasons)),
+        "report_hash": "0" * 64,
+    }
+    report["report_hash"] = artifact_self_hash(report, "report_hash")
+    return report
+
+
+def _quality_reasons(
+    request: HistoricalArchiveRequest,
+    facts: Sequence[Mapping[str, Any]],
+    ingested_at: str,
+    recorded_at: str,
+) -> Tuple[str, ...]:
+    return tuple(
+        _quality_report(request, facts, ingested_at, recorded_at)[
+            "blocking_findings"
+        ]
+    )
 
 
 def _archive_bound_fact_id(
@@ -975,7 +1167,56 @@ def historical_market_data_snapshot_hash(snapshot: Mapping[str, Any]) -> str:
     return artifact_self_hash(snapshot, "snapshot_hash")
 
 
-def historical_market_data_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tuple[str, ...]:
+def _facts_root_hash(facts: Sequence[Mapping[str, Any]]) -> str:
+    return business_hash([dict(fact) for fact in facts])
+
+
+def _source_rows_root_hash(facts: Sequence[Mapping[str, Any]]) -> str:
+    return business_hash(
+        [
+            {
+                "source_row_number": fact["source_row_number"],
+                "source_row_hash": fact["source_row_hash"],
+            }
+            for fact in sorted(facts, key=lambda item: item["source_row_number"])
+        ]
+    )
+
+
+def _bind_fact_to_archive(
+    fact: Mapping[str, Any],
+    archive_sha256: str,
+) -> Dict[str, Any]:
+    bound = dict(fact)
+    bound["source_row"] = list(fact["source_row"])
+    bound["fact_id"] = _archive_bound_fact_id(
+        archive_sha256,
+        fact["source_row_fact_id"],
+        fact["business_key"],
+    )
+    return bound
+
+
+def _parse_one_fact(
+    request: HistoricalArchiveRequest,
+    row_number: int,
+    source_row: Sequence[str],
+    ingested_at: str,
+) -> Dict[str, Any]:
+    parser = {
+        "KLINES": _parse_kline,
+        "AGG_TRADES": _parse_agg_trade,
+        "MARK_PRICE_KLINES": _parse_kline,
+        "FUNDING_RATE": _parse_funding_rate,
+    }[request.data_family]
+    return parser(request, row_number, tuple(source_row), ingested_at)
+
+
+def historical_market_data_snapshot_reasons(
+    snapshot: Mapping[str, Any],
+    *,
+    trusted_receipt_hashes: Optional[Sequence[str]] = None,
+) -> Tuple[str, ...]:
     """Fail closed when a replayed archive artifact is not self-consistent."""
 
     if not isinstance(snapshot, Mapping):
@@ -987,13 +1228,31 @@ def historical_market_data_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tupl
         reasons.append("MARKET_DATA_SCHEMA_INVALID")
     if snapshot.get("schema_version") != "1.0.0":
         reasons.append("MARKET_DATA_SCHEMA_INVALID")
-    if snapshot.get("point_in_time_policy") != "ARCHIVE_REPLAY_ONLY":
+    if snapshot.get("pit_eligibility") != "ARCHIVE_REPLAY_ONLY":
         reasons.append("MARKET_DATA_PIT_POLICY_INVALID")
+    if snapshot.get("parser_version") != _PARSER_VERSION:
+        reasons.append("MARKET_DATA_PARSER_VERSION_INVALID")
+    if snapshot.get("availability_basis") != _AVAILABILITY_BASIS:
+        reasons.append("MARKET_DATA_AVAILABILITY_BASIS_INVALID")
+    if snapshot.get("quality_eligibility") == "RESEARCH_ONLY_DEGRADED":
+        reasons.append("MARKET_DATA_RESEARCH_ONLY_DEGRADED")
+    elif snapshot.get("quality_eligibility") != "FORMAL_COMPLETE":
+        reasons.append("MARKET_DATA_QUALITY_ELIGIBILITY_INVALID")
     try:
         if snapshot.get("snapshot_hash") != historical_market_data_snapshot_hash(snapshot):
             reasons.append("SNAPSHOT_HASH_MISMATCH")
         receipt = snapshot["source_receipt"]
         report = snapshot["quality_report"]
+        receipt_hash = receipt.get("receipt_hash")
+        if trusted_receipt_hashes is None:
+            reasons.append("TRUSTED_RECEIPT_ATTESTATION_REQUIRED")
+        else:
+            try:
+                trusted_hashes = set(trusted_receipt_hashes)
+            except TypeError:
+                trusted_hashes = set()
+            if receipt_hash not in trusted_hashes:
+                reasons.append("TRUSTED_RECEIPT_ATTESTATION_MISMATCH")
         if receipt.get("receipt_hash") != artifact_self_hash(receipt, "receipt_hash"):
             reasons.append("RECEIPT_HASH_MISMATCH")
         if report.get("report_hash") != artifact_self_hash(report, "report_hash"):
@@ -1006,89 +1265,224 @@ def historical_market_data_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tupl
         )
         if dict(request_fields) != _request_payload(request):
             reasons.append("REQUEST_CROSSLINK_MISMATCH")
+        expected_receipt_fields = {
+            "request",
+            "archive_url",
+            "checksum_url",
+            "retrieved_at",
+            "archive_size_bytes",
+            "checksum_size_bytes",
+            "official_sha256",
+            "archive_sha256",
+            "checksum_file_sha256",
+            "csv_member",
+            "csv_sha256",
+            "source_rows_root_hash",
+            "facts_root_hash",
+            "source_etag_or_null",
+            "source_last_modified_at_or_null",
+            "receipt_hash",
+        }
         if (
-            receipt.get("provider") != request.provider
-            or receipt.get("available_at") != snapshot["ingested_at"]
-            or receipt.get("ingested_at") != snapshot["ingested_at"]
+            set(receipt) != expected_receipt_fields
+            or receipt.get("request") != _request_payload(request)
+            or receipt.get("archive_url") != request.archive_url
+            or receipt.get("checksum_url") != request.checksum_url
+            or receipt.get("csv_member") != request.expected_csv_name
+            or receipt.get("retrieved_at") != snapshot["retrieved_at"]
+            or not isinstance(receipt.get("archive_size_bytes"), int)
+            or receipt.get("archive_size_bytes", 0) <= 0
+            or not isinstance(receipt.get("checksum_size_bytes"), int)
+            or receipt.get("checksum_size_bytes", 0) <= 0
             or not isinstance(receipt.get("archive_sha256"), str)
             or _SHA256.fullmatch(receipt["archive_sha256"]) is None
-            or not isinstance(receipt.get("checksum_sha256"), str)
-            or _SHA256.fullmatch(receipt["checksum_sha256"]) is None
+            or receipt.get("official_sha256") != receipt.get("archive_sha256")
+            or not isinstance(receipt.get("checksum_file_sha256"), str)
+            or _SHA256.fullmatch(receipt["checksum_file_sha256"]) is None
+            or not isinstance(receipt.get("csv_sha256"), str)
+            or _SHA256.fullmatch(receipt["csv_sha256"]) is None
             or not isinstance(receipt.get("source_etag_or_null"), (str, type(None)))
             or not isinstance(receipt.get("source_last_modified_at_or_null"), (str, type(None)))
         ):
             reasons.append("RECEIPT_CROSSLINK_MISMATCH")
         if not isinstance(snapshot.get("snapshot_id"), str) or _ID.fullmatch(snapshot["snapshot_id"]) is None:
             reasons.append("MARKET_DATA_SCHEMA_INVALID")
-        for fact in snapshot["facts"]:
-            if not isinstance(fact, Mapping) or fact.get("fact_id") != _archive_bound_fact_id(
-                receipt["archive_sha256"], fact.get("source_row_fact_id", ""), fact.get("business_key", "")
+        facts = snapshot["facts"]
+        if not isinstance(facts, list):
+            raise TypeError("facts")
+        expected_order = sorted(
+            facts,
+            key=lambda fact: (
+                fact.get("event_time", ""),
+                fact.get("source_row_number", -1),
+                fact.get("fact_id", ""),
+            ),
+        )
+        if facts != expected_order:
+            reasons.append("MARKET_DATA_FACT_ORDER_INVALID")
+        for fact in facts:
+            if not isinstance(fact, Mapping):
+                reasons.append("MARKET_DATA_FACT_INVALID")
+                continue
+            if fact.get("fact_id") != _archive_bound_fact_id(
+                receipt["archive_sha256"],
+                fact.get("source_row_fact_id", ""),
+                fact.get("business_key", ""),
             ):
                 reasons.append("ARCHIVE_FACT_ID_MISMATCH")
-        reasons.extend(_quality_reasons(
-            request, snapshot["facts"], snapshot["ingested_at"], snapshot["recorded_at"]
-        ))
+            try:
+                replayed = _parse_one_fact(
+                    request,
+                    fact["source_row_number"],
+                    fact["source_row"],
+                    snapshot["ingested_at"],
+                )
+                replayed = _bind_fact_to_archive(
+                    replayed,
+                    receipt["archive_sha256"],
+                )
+                if replayed != dict(fact):
+                    reasons.append("FACT_SOURCE_ROW_REPLAY_MISMATCH")
+            except (KeyError, TypeError, MarketDataError, ValueError):
+                reasons.append("FACT_SOURCE_ROW_REPLAY_MISMATCH")
+        if receipt.get("source_rows_root_hash") != _source_rows_root_hash(facts):
+            reasons.append("RECEIPT_SOURCE_ROWS_ROOT_MISMATCH")
+        if receipt.get("facts_root_hash") != _facts_root_hash(facts):
+            reasons.append("RECEIPT_FACTS_ROOT_MISMATCH")
+        expected_report = _quality_report(
+            request,
+            sorted(facts, key=lambda fact: fact["source_row_number"]),
+            snapshot["ingested_at"],
+            snapshot["recorded_at"],
+        )
+        if report != expected_report:
+            reasons.append("QUALITY_REPORT_REPLAY_MISMATCH")
+        reasons.extend(expected_report["blocking_findings"])
         if report.get("blocking_findings"):
             reasons.append("MARKET_DATA_QUALITY_BLOCKING")
-    except (KeyError, TypeError, MarketDataError, ValueError):
+        retrieved, _ = _utc_input(snapshot["retrieved_at"])
+        ingested, _ = _utc_input(snapshot["ingested_at"])
+        recorded, _ = _utc_input(snapshot["recorded_at"])
+        if retrieved > ingested or ingested > recorded:
+            reasons.append("MARKET_DATA_TIME_ORDER")
+    except (KeyError, TypeError, MarketDataError, ValueError, AttributeError):
         reasons.append("MARKET_DATA_SNAPSHOT_INVALID")
     return tuple(sorted(set(reasons)))
 
 
-def build_historical_market_data_snapshot(
+def _validated_verified_archive(
+    verified_archive: object,
+) -> Tuple[HistoricalArchiveRequest, bytes, bytes]:
+    if not isinstance(verified_archive, _VerifiedArchive):
+        raise MarketDataError("ARCHIVE_UNVERIFIED")
+    request = verified_archive._request
+    archive_bytes = verified_archive._archive_bytes
+    checksum_bytes = verified_archive._checksum_bytes
+    if (
+        not isinstance(request, HistoricalArchiveRequest)
+        or not isinstance(archive_bytes, bytes)
+        or not isinstance(checksum_bytes, bytes)
+    ):
+        raise MarketDataError("ARCHIVE_UNVERIFIED")
+    reverified = verify_official_checksum(request, archive_bytes, checksum_bytes)
+    if (
+        reverified._official_sha256 != verified_archive._official_sha256
+        or reverified._archive_bytes != archive_bytes
+        or reverified._checksum_bytes != checksum_bytes
+    ):
+        raise MarketDataError("ARCHIVE_UNVERIFIED")
+    return request, archive_bytes, checksum_bytes
+
+
+def _build_historical_market_data_snapshot(
     *,
     snapshot_id: str,
-    request: HistoricalArchiveRequest,
-    facts: Sequence[Mapping[str, Any]],
-    archive_sha256: str,
-    checksum_sha256: str,
+    verified_archive: _VerifiedArchive,
+    retrieved_at: str,
     ingested_at: str,
     recorded_at: str,
     source_etag_or_null: Optional[str] = None,
     source_last_modified_at_or_null: Optional[str] = None,
+    quality_eligibility: str,
 ) -> Dict[str, Any]:
     """Build a self-verifying, archive-only market-data artifact."""
 
     if (
         not isinstance(snapshot_id, str)
         or _ID.fullmatch(snapshot_id) is None
-        or not isinstance(request, HistoricalArchiveRequest)
-        or not isinstance(archive_sha256, str)
-        or not isinstance(checksum_sha256, str)
-        or _SHA256.fullmatch(archive_sha256) is None
-        or _SHA256.fullmatch(checksum_sha256) is None
         or not isinstance(source_etag_or_null, (str, type(None)))
         or not isinstance(source_last_modified_at_or_null, (str, type(None)))
     ):
         raise MarketDataError("MARKET_DATA_QUALITY_BLOCKING")
-    copied_facts = [dict(fact) for fact in facts]
-    blocking = _quality_reasons(request, copied_facts, ingested_at, recorded_at)
-    if blocking:
+    request, archive_bytes, checksum_bytes = _validated_verified_archive(
+        verified_archive
+    )
+    try:
+        retrieved, _ = _utc_input(retrieved_at)
+        ingested, _ = _utc_input(ingested_at)
+        recorded, _ = _utc_input(recorded_at)
+    except MarketDataError as error:
+        raise MarketDataError("MARKET_DATA_QUALITY_BLOCKING") from error
+    if retrieved > ingested or ingested > recorded:
         raise MarketDataError("MARKET_DATA_QUALITY_BLOCKING")
-    archive_bound_facts = []
-    for fact in copied_facts:
-        bound = dict(fact)
-        bound["fact_id"] = _archive_bound_fact_id(
-            archive_sha256, fact["source_row_fact_id"], fact["business_key"]
-        )
-        archive_bound_facts.append(bound)
+    csv_bytes = extract_expected_csv(request, verified_archive)
+    parsed_facts = parse_market_facts(request, csv_bytes, ingested_at)
+    archive_sha256 = hashlib.sha256(archive_bytes).hexdigest()
+    archive_bound_facts = sorted(
+        (
+            _bind_fact_to_archive(fact, archive_sha256)
+            for fact in parsed_facts
+        ),
+        key=lambda fact: (
+            fact["event_time"],
+            fact["source_row_number"],
+            fact["fact_id"],
+        ),
+    )
+    report = _quality_report(
+        request,
+        parsed_facts,
+        ingested_at,
+        recorded_at,
+    )
+    degraded_allowed_findings = {
+        "MARKET_DATA_PERIOD_COVERAGE",
+        "MARKET_DATA_FUNDING_GAP",
+    }
+    if (
+        quality_eligibility == "FORMAL_COMPLETE"
+        and report["blocking_findings"]
+    ):
+        raise MarketDataError("MARKET_DATA_QUALITY_BLOCKING")
+    if (
+        quality_eligibility == "RESEARCH_ONLY_DEGRADED"
+        and set(report["blocking_findings"]) - degraded_allowed_findings
+    ):
+        raise MarketDataError("MARKET_DATA_QUALITY_BLOCKING")
+    if quality_eligibility not in (
+        "FORMAL_COMPLETE",
+        "RESEARCH_ONLY_DEGRADED",
+    ):
+        raise MarketDataError("MARKET_DATA_QUALITY_BLOCKING")
     receipt = {
-        "provider": request.provider,
+        "request": _request_payload(request),
+        "archive_url": request.archive_url,
+        "checksum_url": request.checksum_url,
+        "retrieved_at": retrieved_at,
+        "archive_size_bytes": len(archive_bytes),
+        "checksum_size_bytes": len(checksum_bytes),
+        "official_sha256": verified_archive._official_sha256,
         "archive_sha256": archive_sha256,
-        "checksum_sha256": checksum_sha256,
-        "available_at": ingested_at,
-        "ingested_at": ingested_at,
+        "checksum_file_sha256": hashlib.sha256(checksum_bytes).hexdigest(),
+        "csv_member": request.expected_csv_name,
+        "csv_sha256": hashlib.sha256(csv_bytes).hexdigest(),
+        "source_rows_root_hash": _source_rows_root_hash(archive_bound_facts),
+        "facts_root_hash": _facts_root_hash(archive_bound_facts),
         "source_etag_or_null": source_etag_or_null,
         "source_last_modified_at_or_null": source_last_modified_at_or_null,
         "receipt_hash": "0" * 64,
     }
     receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
-    report = {
-        "blocking_findings": [],
-        "warning_findings": [],
-        "report_hash": "0" * 64,
-    }
-    report["report_hash"] = artifact_self_hash(report, "report_hash")
     snapshot = {
         "$schema": "./historical-market-data-snapshot-v1.schema.json",
         "schema_version": "1.0.0",
@@ -1096,31 +1490,105 @@ def build_historical_market_data_snapshot(
         "snapshot_hash": "0" * 64,
         "hash_algorithm": "SHA-256",
         "canonicalization": "RFC8785_JCS",
-        "point_in_time_policy": "ARCHIVE_REPLAY_ONLY",
+        "parser_version": _PARSER_VERSION,
+        "availability_basis": _AVAILABILITY_BASIS,
+        "pit_eligibility": "ARCHIVE_REPLAY_ONLY",
+        "quality_eligibility": quality_eligibility,
         "request": _request_payload(request),
         "source_receipt": receipt,
         "quality_report": report,
         "facts": archive_bound_facts,
+        "retrieved_at": retrieved_at,
         "ingested_at": ingested_at,
         "recorded_at": recorded_at,
     }
     snapshot["snapshot_hash"] = historical_market_data_snapshot_hash(snapshot)
-    reasons = historical_market_data_snapshot_reasons(snapshot)
-    if reasons:
+    reasons = historical_market_data_snapshot_reasons(
+        snapshot,
+        trusted_receipt_hashes={receipt["receipt_hash"]},
+    )
+    allowed_degraded_reasons = set(report["blocking_findings"]) | {
+        "MARKET_DATA_QUALITY_BLOCKING",
+        "MARKET_DATA_RESEARCH_ONLY_DEGRADED",
+    }
+    if (
+        quality_eligibility == "FORMAL_COMPLETE"
+        and reasons
+    ) or (
+        quality_eligibility == "RESEARCH_ONLY_DEGRADED"
+        and set(reasons) - allowed_degraded_reasons
+    ):
         raise MarketDataError("MARKET_DATA_QUALITY_BLOCKING")
     return snapshot
+
+
+def build_historical_market_data_snapshot(
+    *,
+    snapshot_id: str,
+    verified_archive: _VerifiedArchive,
+    retrieved_at: str,
+    ingested_at: str,
+    recorded_at: str,
+    source_etag_or_null: Optional[str] = None,
+    source_last_modified_at_or_null: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build a strict complete snapshot from a verified archive capability."""
+
+    return _build_historical_market_data_snapshot(
+        snapshot_id=snapshot_id,
+        verified_archive=verified_archive,
+        retrieved_at=retrieved_at,
+        ingested_at=ingested_at,
+        recorded_at=recorded_at,
+        source_etag_or_null=source_etag_or_null,
+        source_last_modified_at_or_null=source_last_modified_at_or_null,
+        quality_eligibility="FORMAL_COMPLETE",
+    )
+
+
+def build_research_degraded_historical_market_data_snapshot(
+    *,
+    snapshot_id: str,
+    verified_archive: _VerifiedArchive,
+    retrieved_at: str,
+    ingested_at: str,
+    recorded_at: str,
+    source_etag_or_null: Optional[str] = None,
+    source_last_modified_at_or_null: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Preserve valid-but-gapped rows for research without formal eligibility."""
+
+    return _build_historical_market_data_snapshot(
+        snapshot_id=snapshot_id,
+        verified_archive=verified_archive,
+        retrieved_at=retrieved_at,
+        ingested_at=ingested_at,
+        recorded_at=recorded_at,
+        source_etag_or_null=source_etag_or_null,
+        source_last_modified_at_or_null=source_last_modified_at_or_null,
+        quality_eligibility="RESEARCH_ONLY_DEGRADED",
+    )
 
 
 def fee_schedule_snapshot_hash(snapshot: Mapping[str, Any]) -> str:
     """Return the independent Fee Schedule self-hash."""
 
-    return artifact_self_hash(snapshot, "fee_schedule_hash")
+    return artifact_self_hash(snapshot, "content_hash")
 
 
 def _approved(approval: Any) -> bool:
-    if not isinstance(approval, Mapping) or not isinstance(approval.get("approved_by"), str):
+    if (
+        not isinstance(approval, Mapping)
+        or set(approval)
+        != {"approved_by", "approved_at", "approval_reference"}
+        or not isinstance(approval.get("approved_by"), str)
+        or not isinstance(approval.get("approval_reference"), str)
+    ):
         return False
-    if not approval.get("approved_by"):
+    if (
+        _ID.fullmatch(approval["approved_by"]) is None
+        or not approval["approval_reference"]
+    ):
         return False
     try:
         _utc_input(approval.get("approved_at"))
@@ -1141,7 +1609,7 @@ def fee_schedule_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tuple[str, ...
         reasons.append("FEE_SCHEDULE_INVALID")
     try:
         allowed_snapshot_fields = {
-            "$schema", "schema_version", "fee_schedule_id", "fee_schedule_hash",
+            "$schema", "schema_version", "fee_schedule_id", "content_hash",
             "hash_algorithm", "canonicalization", "usage_environment", "schedules",
             "production_approval",
         }
@@ -1154,34 +1622,53 @@ def fee_schedule_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tuple[str, ...
             or snapshot.get("usage_environment") not in ("RESEARCH", "PRODUCTION")
         ):
             reasons.append("FEE_SCHEDULE_INVALID")
-        if snapshot.get("fee_schedule_hash") != fee_schedule_snapshot_hash(snapshot):
+        if snapshot.get("content_hash") != fee_schedule_snapshot_hash(snapshot):
             reasons.append("FEE_SCHEDULE_HASH_MISMATCH")
         schedules = snapshot["schedules"]
         if not isinstance(schedules, list) or not schedules:
             raise ValueError("schedules")
-        grouped: Dict[Tuple[Any, Any], list] = {}
+        grouped: Dict[Tuple[Any, Any, Any, Any], list] = {}
         for item in schedules:
             required_fields = {
-                "fee_id", "market", "symbol", "effective_at", "expires_at", "maker_rate",
-                "taker_rate", "lifecycle", "approval",
+                "fee_id",
+                "venue",
+                "product",
+                "account_tier",
+                "symbol",
+                "maker_rate",
+                "taker_rate",
+                "effective_from",
+                "effective_to_or_null",
+                "source_reference",
+                "recorded_at",
+                "lifecycle",
+                "approval",
             }
             if not isinstance(item, Mapping) or set(item) != required_fields:
                 raise ValueError("schedule")
             if (
-                not isinstance(item["fee_id"], str) or not item["fee_id"]
-                or item["market"] not in ("SPOT", "USD_M")
+                not isinstance(item["fee_id"], str)
+                or _ID.fullmatch(item["fee_id"]) is None
+                or item["venue"] != "BINANCE"
+                or item["product"] not in ("SPOT", "USD_M_PERPETUAL")
+                or not isinstance(item["account_tier"], str)
+                or _ID.fullmatch(item["account_tier"]) is None
                 or item["symbol"] not in _ALLOWED_SYMBOLS
+                or not isinstance(item["source_reference"], str)
+                or not item["source_reference"]
             ):
                 reasons.append("FEE_SCHEDULE_INVALID")
-            start, _ = _utc_input(item["effective_at"])
+            start, _ = _utc_input(item["effective_from"])
             end = None
-            if item.get("expires_at") is not None:
-                end, _ = _utc_input(item["expires_at"])
+            if item.get("effective_to_or_null") is not None:
+                end, _ = _utc_input(item["effective_to_or_null"])
                 if end <= start:
                     reasons.append("FEE_SCHEDULE_EFFECTIVE_INTERVAL_INVALID")
+            _utc_input(item["recorded_at"])
             for rate in (item.get("maker_rate"), item.get("taker_rate")):
                 try:
-                    if Decimal(_decimal(rate)) < 0:
+                    rendered = _decimal(rate)
+                    if Decimal(rendered) < 0 or rendered != rate:
                         reasons.append("FEE_SCHEDULE_INVALID_DECIMAL")
                 except MarketDataError:
                     reasons.append("FEE_SCHEDULE_INVALID_DECIMAL")
@@ -1189,20 +1676,26 @@ def fee_schedule_snapshot_reasons(snapshot: Mapping[str, Any]) -> Tuple[str, ...
             if lifecycle not in ("DRAFT", "APPROVED", "RETIRED"):
                 reasons.append("FEE_SCHEDULE_LIFECYCLE_INVALID")
             approval = item.get("approval")
-            if not _approved(approval):
+            if lifecycle == "DRAFT" and approval is not None:
                 reasons.append("FEE_SCHEDULE_APPROVAL_INVALID")
-            grouped.setdefault((item.get("market"), item.get("symbol")), []).append((start, end))
+            elif lifecycle in ("APPROVED", "RETIRED") and not _approved(approval):
+                reasons.append("FEE_SCHEDULE_APPROVAL_INVALID")
+            grouped.setdefault(
+                (
+                    item.get("venue"),
+                    item.get("product"),
+                    item.get("account_tier"),
+                    item.get("symbol"),
+                ),
+                [],
+            ).append((start, end))
         for intervals in grouped.values():
             intervals.sort(key=lambda value: value[0])
             for (_, previous_end), (current_start, _) in zip(intervals, intervals[1:]):
                 if previous_end is None or current_start < previous_end:
                     reasons.append("FEE_SCHEDULE_EFFECTIVE_INTERVAL_OVERLAP")
         if snapshot.get("usage_environment") == "PRODUCTION":
-            approval = snapshot.get("production_approval")
-            if not _approved(approval):
-                reasons.append("FEE_SCHEDULE_PRODUCTION_UNAPPROVED")
-            if any(item.get("lifecycle") != "APPROVED" for item in schedules):
-                reasons.append("FEE_SCHEDULE_PRODUCTION_UNAPPROVED")
+            reasons.append("FEE_SCHEDULE_PRODUCTION_UNSUPPORTED")
     except (KeyError, TypeError, ValueError, MarketDataError):
         reasons.append("FEE_SCHEDULE_INVALID")
     return tuple(sorted(set(reasons)))

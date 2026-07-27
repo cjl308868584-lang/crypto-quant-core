@@ -3,14 +3,103 @@
   "$id": "fee-schedule-snapshot-v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "fee_schedule_id", "fee_schedule_hash", "hash_algorithm", "canonicalization", "usage_environment", "schedules"],
+  "required": [
+    "$schema",
+    "schema_version",
+    "fee_schedule_id",
+    "content_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "usage_environment",
+    "schedules"
+  ],
   "properties": {
-    "$schema": {"const": "./fee-schedule-snapshot-v1.schema.json"}, "schema_version": {"const": "1.0.0"}, "fee_schedule_id": {"$ref": "#/$defs/id"}, "fee_schedule_hash": {"$ref": "#/$defs/hash"}, "hash_algorithm": {"const": "SHA-256"}, "canonicalization": {"const": "RFC8785_JCS"}, "usage_environment": {"enum": ["RESEARCH", "PRODUCTION"]}, "production_approval": {"$ref": "#/$defs/approval"}, "schedules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fee"}}
+    "$schema": {"const": "./fee-schedule-snapshot-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "fee_schedule_id": {"$ref": "#/$defs/id"},
+    "content_hash": {"$ref": "#/$defs/hash"},
+    "hash_algorithm": {"const": "SHA-256"},
+    "canonicalization": {"const": "RFC8785_JCS"},
+    "usage_environment": {"enum": ["RESEARCH", "PRODUCTION"]},
+    "production_approval": {"$ref": "#/$defs/approval"},
+    "schedules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/fee"}
+    }
   },
-  "allOf": [{"if": {"properties": {"usage_environment": {"const": "PRODUCTION"}}, "required": ["usage_environment"]}, "then": {"required": ["production_approval"]}}],
   "$defs": {
-    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}, "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$", "format": "date-time"}, "decimal": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
-    "approval": {"type": "object", "additionalProperties": false, "required": ["approved_by", "approved_at"], "properties": {"approved_by": {"$ref": "#/$defs/id"}, "approved_at": {"$ref": "#/$defs/time"}}},
-    "fee": {"type": "object", "additionalProperties": false, "required": ["fee_id", "market", "symbol", "effective_at", "expires_at", "maker_rate", "taker_rate", "lifecycle", "approval"], "properties": {"fee_id": {"$ref": "#/$defs/id"}, "market": {"enum": ["SPOT", "USD_M"]}, "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]}, "effective_at": {"$ref": "#/$defs/time"}, "expires_at": {"oneOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]}, "maker_rate": {"$ref": "#/$defs/decimal"}, "taker_rate": {"$ref": "#/$defs/decimal"}, "lifecycle": {"enum": ["DRAFT", "APPROVED", "RETIRED"]}, "approval": {"$ref": "#/$defs/approval"}}}
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "time": {
+      "type": "string",
+      "pattern": "^(?:(?:[0-9]{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12][0-9]|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))|(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,6})?Z$",
+      "format": "date-time"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved_by", "approved_at", "approval_reference"],
+      "properties": {
+        "approved_by": {"$ref": "#/$defs/id"},
+        "approved_at": {"$ref": "#/$defs/time"},
+        "approval_reference": {"type": "string", "minLength": 1}
+      }
+    },
+    "fee": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fee_id",
+        "venue",
+        "product",
+        "account_tier",
+        "symbol",
+        "maker_rate",
+        "taker_rate",
+        "effective_from",
+        "effective_to_or_null",
+        "source_reference",
+        "recorded_at",
+        "lifecycle",
+        "approval"
+      ],
+      "properties": {
+        "fee_id": {"$ref": "#/$defs/id"},
+        "venue": {"const": "BINANCE"},
+        "product": {"enum": ["SPOT", "USD_M_PERPETUAL"]},
+        "account_tier": {"$ref": "#/$defs/id"},
+        "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]},
+        "maker_rate": {"$ref": "#/$defs/decimal"},
+        "taker_rate": {"$ref": "#/$defs/decimal"},
+        "effective_from": {"$ref": "#/$defs/time"},
+        "effective_to_or_null": {
+          "oneOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]
+        },
+        "source_reference": {"type": "string", "minLength": 1},
+        "recorded_at": {"$ref": "#/$defs/time"},
+        "lifecycle": {"enum": ["DRAFT", "APPROVED", "RETIRED"]},
+        "approval": {
+          "oneOf": [{"$ref": "#/$defs/approval"}, {"type": "null"}]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"lifecycle": {"const": "DRAFT"}},
+            "required": ["lifecycle"]
+          },
+          "then": {"properties": {"approval": {"type": "null"}}},
+          "else": {"properties": {"approval": {"$ref": "#/$defs/approval"}}}
+        }
+      ]
+    }
   }
 }

@@ -3,7 +3,25 @@
   "$id": "historical-market-data-snapshot-v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "snapshot_id", "snapshot_hash", "hash_algorithm", "canonicalization", "point_in_time_policy", "request", "source_receipt", "quality_report", "facts", "ingested_at", "recorded_at"],
+  "required": [
+    "$schema",
+    "schema_version",
+    "snapshot_id",
+    "snapshot_hash",
+    "hash_algorithm",
+    "canonicalization",
+    "parser_version",
+    "availability_basis",
+    "pit_eligibility",
+    "quality_eligibility",
+    "request",
+    "source_receipt",
+    "quality_report",
+    "facts",
+    "retrieved_at",
+    "ingested_at",
+    "recorded_at"
+  ],
   "properties": {
     "$schema": {"const": "./historical-market-data-snapshot-v1.schema.json"},
     "schema_version": {"const": "1.0.0"},
@@ -11,87 +29,352 @@
     "snapshot_hash": {"$ref": "#/$defs/hash"},
     "hash_algorithm": {"const": "SHA-256"},
     "canonicalization": {"const": "RFC8785_JCS"},
-    "point_in_time_policy": {"const": "ARCHIVE_REPLAY_ONLY"},
+    "parser_version": {"const": "BINANCE_CSV_V1"},
+    "availability_basis": {"const": "OFFLINE_ARCHIVE_OBSERVED_AT_INGESTION"},
+    "pit_eligibility": {"const": "ARCHIVE_REPLAY_ONLY"},
+    "quality_eligibility": {
+      "enum": ["FORMAL_COMPLETE", "RESEARCH_ONLY_DEGRADED"]
+    },
     "request": {"$ref": "#/$defs/request"},
     "source_receipt": {"$ref": "#/$defs/receipt"},
     "quality_report": {"$ref": "#/$defs/report"},
-    "facts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fact"}},
+    "facts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/fact"}
+    },
+    "retrieved_at": {"$ref": "#/$defs/time"},
     "ingested_at": {"$ref": "#/$defs/time"},
     "recorded_at": {"$ref": "#/$defs/time"}
   },
   "$defs": {
-    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
     "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-    "time": {"type": "string", "pattern": "^(?:(?:[0-9]{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12][0-9]|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))|(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,6})?Z$", "format": "date-time"},
-    "decimal": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
+    "time": {
+      "type": "string",
+      "pattern": "^(?:(?:[0-9]{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12][0-9]|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))|(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,6})?Z$",
+      "format": "date-time"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
     "requestBase": {
       "type": "object",
-      "required": ["schema_version", "provider", "market", "data_family", "symbol", "interval_or_null", "period_kind", "period"],
+      "required": [
+        "schema_version",
+        "provider",
+        "market",
+        "data_family",
+        "symbol",
+        "interval_or_null",
+        "period_kind",
+        "period"
+      ],
       "properties": {
-        "schema_version": {"const": "1.0.0"}, "provider": {"const": "BINANCE_PUBLIC_DATA"},
-        "market": {"enum": ["SPOT", "USD_M"]}, "data_family": {"enum": ["KLINES", "AGG_TRADES", "MARK_PRICE_KLINES", "FUNDING_RATE"]},
-        "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]}, "interval_or_null": {"type": ["string", "null"]},
-        "period_kind": {"enum": ["DAILY", "MONTHLY"]}, "period": {"type": "string"}, "funding_interval_hours": {"const": 8}
+        "schema_version": {"const": "1.0.0"},
+        "provider": {"const": "BINANCE_PUBLIC_DATA"},
+        "market": {"enum": ["SPOT", "USD_M"]},
+        "data_family": {
+          "enum": ["KLINES", "AGG_TRADES", "MARK_PRICE_KLINES", "FUNDING_RATE"]
+        },
+        "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]},
+        "interval_or_null": {"type": ["string", "null"]},
+        "period_kind": {"enum": ["DAILY", "MONTHLY"]},
+        "period": {"type": "string"}
       }
     },
     "request": {
       "allOf": [
         {"$ref": "#/$defs/requestBase"},
-        {"oneOf": [
-          {"properties": {"market": {"const": "SPOT"}, "data_family": {"const": "KLINES"}, "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]}, "period_kind": {"const": "DAILY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}, "not": {"required": ["funding_interval_hours"]}},
-          {"properties": {"market": {"const": "SPOT"}, "data_family": {"const": "AGG_TRADES"}, "interval_or_null": {"type": "null"}, "period_kind": {"const": "DAILY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}, "not": {"required": ["funding_interval_hours"]}},
-          {"properties": {"market": {"const": "USD_M"}, "data_family": {"const": "MARK_PRICE_KLINES"}, "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]}, "period_kind": {"const": "DAILY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}, "not": {"required": ["funding_interval_hours"]}},
-          {"properties": {"market": {"const": "USD_M"}, "data_family": {"const": "FUNDING_RATE"}, "interval_or_null": {"type": "null"}, "period_kind": {"const": "MONTHLY"}, "period": {"pattern": "^[0-9]{4}-[0-9]{2}$"}}, "required": ["funding_interval_hours"]}
-        ]}
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "market": {"const": "SPOT"},
+                "data_family": {"const": "KLINES"},
+                "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]},
+                "period_kind": {"const": "DAILY"},
+                "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+              }
+            },
+            {
+              "properties": {
+                "market": {"const": "SPOT"},
+                "data_family": {"const": "AGG_TRADES"},
+                "interval_or_null": {"type": "null"},
+                "period_kind": {"const": "DAILY"},
+                "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+              }
+            },
+            {
+              "properties": {
+                "market": {"const": "USD_M"},
+                "data_family": {"const": "MARK_PRICE_KLINES"},
+                "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]},
+                "period_kind": {"const": "DAILY"},
+                "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+              }
+            },
+            {
+              "properties": {
+                "market": {"const": "USD_M"},
+                "data_family": {"const": "FUNDING_RATE"},
+                "interval_or_null": {"type": "null"},
+                "period_kind": {"const": "MONTHLY"},
+                "period": {"pattern": "^[0-9]{4}-[0-9]{2}$"}
+              }
+            }
+          ]
+        }
       ],
       "unevaluatedProperties": false
     },
     "receipt": {
-      "type": "object", "additionalProperties": false,
-      "required": ["provider", "archive_sha256", "checksum_sha256", "available_at", "ingested_at", "source_etag_or_null", "source_last_modified_at_or_null", "receipt_hash"],
-      "properties": {"provider": {"const": "BINANCE_PUBLIC_DATA"}, "archive_sha256": {"$ref": "#/$defs/hash"}, "checksum_sha256": {"$ref": "#/$defs/hash"}, "available_at": {"$ref": "#/$defs/time"}, "ingested_at": {"$ref": "#/$defs/time"}, "source_etag_or_null": {"type": ["string", "null"]}, "source_last_modified_at_or_null": {"type": ["string", "null"]}, "receipt_hash": {"$ref": "#/$defs/hash"}}
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request",
+        "archive_url",
+        "checksum_url",
+        "retrieved_at",
+        "archive_size_bytes",
+        "checksum_size_bytes",
+        "official_sha256",
+        "archive_sha256",
+        "checksum_file_sha256",
+        "csv_member",
+        "csv_sha256",
+        "source_rows_root_hash",
+        "facts_root_hash",
+        "source_etag_or_null",
+        "source_last_modified_at_or_null",
+        "receipt_hash"
+      ],
+      "properties": {
+        "request": {"$ref": "#/$defs/request"},
+        "archive_url": {
+          "type": "string",
+          "pattern": "^https://data\\.binance\\.vision/data/"
+        },
+        "checksum_url": {
+          "type": "string",
+          "pattern": "^https://data\\.binance\\.vision/data/.*\\.CHECKSUM$"
+        },
+        "retrieved_at": {"$ref": "#/$defs/time"},
+        "archive_size_bytes": {"type": "integer", "minimum": 1},
+        "checksum_size_bytes": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "official_sha256": {"$ref": "#/$defs/hash"},
+        "archive_sha256": {"$ref": "#/$defs/hash"},
+        "checksum_file_sha256": {"$ref": "#/$defs/hash"},
+        "csv_member": {"type": "string", "pattern": "^[^/]+\\.csv$"},
+        "csv_sha256": {"$ref": "#/$defs/hash"},
+        "source_rows_root_hash": {"$ref": "#/$defs/hash"},
+        "facts_root_hash": {"$ref": "#/$defs/hash"},
+        "source_etag_or_null": {"type": ["string", "null"]},
+        "source_last_modified_at_or_null": {"type": ["string", "null"]},
+        "receipt_hash": {"$ref": "#/$defs/hash"}
+      }
     },
     "report": {
-      "type": "object", "additionalProperties": false,
-      "required": ["blocking_findings", "warning_findings", "report_hash"],
-      "properties": {"blocking_findings": {"type": "array", "items": {"type": "string"}}, "warning_findings": {"type": "array", "items": {"type": "string"}}, "report_hash": {"$ref": "#/$defs/hash"}}
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "row_count",
+        "first_event_time",
+        "last_event_time",
+        "duplicate_business_key_count",
+        "source_order_regression_count",
+        "missing_interval_count",
+        "malformed_row_count",
+        "rejected_row_count",
+        "checksum_pass",
+        "expected_period_coverage",
+        "warning_findings",
+        "blocking_findings",
+        "report_hash"
+      ],
+      "properties": {
+        "row_count": {"type": "integer", "minimum": 0},
+        "first_event_time": {
+          "oneOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]
+        },
+        "last_event_time": {
+          "oneOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]
+        },
+        "duplicate_business_key_count": {"type": "integer", "minimum": 0},
+        "source_order_regression_count": {"type": "integer", "minimum": 0},
+        "missing_interval_count": {"type": "integer", "minimum": 0},
+        "malformed_row_count": {"type": "integer", "minimum": 0},
+        "rejected_row_count": {"type": "integer", "minimum": 0},
+        "checksum_pass": {"type": "boolean"},
+        "expected_period_coverage": {"type": "boolean"},
+        "warning_findings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "blocking_findings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "report_hash": {"$ref": "#/$defs/hash"}
+      }
     },
     "factBase": {
       "type": "object",
-      "required": ["fact_id", "source_row_fact_id", "fact_type", "provider", "market", "data_family", "symbol", "business_key", "source_row_number", "event_time", "available_at"],
+      "required": [
+        "fact_id",
+        "source_row_fact_id",
+        "source_row",
+        "source_row_hash",
+        "payload_hash",
+        "fact_type",
+        "provider",
+        "market",
+        "data_family",
+        "symbol",
+        "business_key",
+        "source_row_number",
+        "event_time",
+        "available_at",
+        "ingested_at"
+      ],
       "properties": {
-        "fact_id": {"type": "string", "pattern": "^mdf_[a-f0-9]{64}$"}, "source_row_fact_id": {"type": "string", "pattern": "^mdf_[a-f0-9]{64}$"},
-        "fact_type": {"enum": ["KLINE", "AGG_TRADE", "MARK_PRICE_KLINE", "FUNDING_RATE"]}, "provider": {"const": "BINANCE_PUBLIC_DATA"},
-        "market": {"enum": ["SPOT", "USD_M"]}, "data_family": {"enum": ["KLINES", "AGG_TRADES", "MARK_PRICE_KLINES", "FUNDING_RATE"]},
-        "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]}, "business_key": {"type": "string", "minLength": 1},
-        "source_row_number": {"type": "integer", "minimum": 1}, "event_time": {"$ref": "#/$defs/time"}, "available_at": {"$ref": "#/$defs/time"}
+        "fact_id": {"type": "string", "pattern": "^mdf_[a-f0-9]{64}$"},
+        "source_row_fact_id": {
+          "type": "string",
+          "pattern": "^mdf_[a-f0-9]{64}$"
+        },
+        "source_row": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string"}
+        },
+        "source_row_hash": {"$ref": "#/$defs/hash"},
+        "payload_hash": {"$ref": "#/$defs/hash"},
+        "fact_type": {
+          "enum": ["KLINE", "AGG_TRADE", "MARK_PRICE_KLINE", "FUNDING_RATE"]
+        },
+        "provider": {"const": "BINANCE_PUBLIC_DATA"},
+        "market": {"enum": ["SPOT", "USD_M"]},
+        "data_family": {
+          "enum": ["KLINES", "AGG_TRADES", "MARK_PRICE_KLINES", "FUNDING_RATE"]
+        },
+        "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]},
+        "business_key": {"type": "string", "minLength": 1},
+        "source_row_number": {"type": "integer", "minimum": 1},
+        "event_time": {"$ref": "#/$defs/time"},
+        "available_at": {"$ref": "#/$defs/time"},
+        "ingested_at": {"$ref": "#/$defs/time"}
       }
     },
+    "klinePayload": {
+      "properties": {
+        "open_time": {"$ref": "#/$defs/time"},
+        "close_time": {"$ref": "#/$defs/time"},
+        "open": {"$ref": "#/$defs/decimal"},
+        "high": {"$ref": "#/$defs/decimal"},
+        "low": {"$ref": "#/$defs/decimal"},
+        "close": {"$ref": "#/$defs/decimal"},
+        "volume": {"$ref": "#/$defs/decimal"},
+        "quote_asset_volume": {"$ref": "#/$defs/decimal"},
+        "number_of_trades": {"type": "integer", "minimum": 0},
+        "taker_buy_base_asset_volume": {"$ref": "#/$defs/decimal"},
+        "taker_buy_quote_asset_volume": {"$ref": "#/$defs/decimal"},
+        "ignore": {"const": 0}
+      },
+      "required": [
+        "open_time",
+        "close_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_asset_volume",
+        "number_of_trades",
+        "taker_buy_base_asset_volume",
+        "taker_buy_quote_asset_volume",
+        "ignore"
+      ]
+    },
     "klineFields": {
-      "properties": {"fact_type": {"const": "KLINE"}, "market": {"const": "SPOT"}, "data_family": {"const": "KLINES"}, "open": {"$ref": "#/$defs/decimal"}, "high": {"$ref": "#/$defs/decimal"}, "low": {"$ref": "#/$defs/decimal"}, "close": {"$ref": "#/$defs/decimal"}},
-      "required": ["open", "high", "low", "close"]
+      "allOf": [
+        {"$ref": "#/$defs/klinePayload"},
+        {
+          "properties": {
+            "fact_type": {"const": "KLINE"},
+            "market": {"const": "SPOT"},
+            "data_family": {"const": "KLINES"}
+          }
+        }
+      ]
     },
     "markKlineFields": {
-      "properties": {"fact_type": {"const": "MARK_PRICE_KLINE"}, "market": {"const": "USD_M"}, "data_family": {"const": "MARK_PRICE_KLINES"}, "open": {"$ref": "#/$defs/decimal"}, "high": {"$ref": "#/$defs/decimal"}, "low": {"$ref": "#/$defs/decimal"}, "close": {"$ref": "#/$defs/decimal"}},
-      "required": ["open", "high", "low", "close"]
+      "allOf": [
+        {"$ref": "#/$defs/klinePayload"},
+        {
+          "properties": {
+            "fact_type": {"const": "MARK_PRICE_KLINE"},
+            "market": {"const": "USD_M"},
+            "data_family": {"const": "MARK_PRICE_KLINES"}
+          }
+        }
+      ]
     },
     "aggTradeFields": {
-      "properties": {"fact_type": {"const": "AGG_TRADE"}, "market": {"const": "SPOT"}, "data_family": {"const": "AGG_TRADES"}, "aggregate_trade_id": {"type": "integer", "minimum": 1}, "price": {"$ref": "#/$defs/decimal"}, "quantity": {"$ref": "#/$defs/decimal"}, "first_trade_id": {"type": "integer", "minimum": 1}, "last_trade_id": {"type": "integer", "minimum": 1}, "is_buyer_maker": {"type": "boolean"}, "is_best_match": {"type": "boolean"}},
-      "required": ["aggregate_trade_id", "price", "quantity", "first_trade_id", "last_trade_id", "is_buyer_maker", "is_best_match"]
+      "properties": {
+        "fact_type": {"const": "AGG_TRADE"},
+        "market": {"const": "SPOT"},
+        "data_family": {"const": "AGG_TRADES"},
+        "aggregate_trade_id": {"type": "integer", "minimum": 1},
+        "price": {"$ref": "#/$defs/decimal"},
+        "quantity": {"$ref": "#/$defs/decimal"},
+        "first_trade_id": {"type": "integer", "minimum": 1},
+        "last_trade_id": {"type": "integer", "minimum": 1},
+        "is_buyer_maker": {"type": "boolean"},
+        "is_best_match": {"type": "boolean"}
+      },
+      "required": [
+        "aggregate_trade_id",
+        "price",
+        "quantity",
+        "first_trade_id",
+        "last_trade_id",
+        "is_buyer_maker",
+        "is_best_match"
+      ]
     },
     "fundingFields": {
-      "properties": {"fact_type": {"const": "FUNDING_RATE"}, "market": {"const": "USD_M"}, "data_family": {"const": "FUNDING_RATE"}, "funding_interval_hours": {"const": 8}, "funding_rate": {"$ref": "#/$defs/decimal"}},
+      "properties": {
+        "fact_type": {"const": "FUNDING_RATE"},
+        "market": {"const": "USD_M"},
+        "data_family": {"const": "FUNDING_RATE"},
+        "funding_interval_hours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        },
+        "funding_rate": {"$ref": "#/$defs/decimal"}
+      },
       "required": ["funding_interval_hours", "funding_rate"]
     },
     "fact": {
       "allOf": [
         {"$ref": "#/$defs/factBase"},
-        {"oneOf": [
-          {"$ref": "#/$defs/klineFields"},
-          {"$ref": "#/$defs/markKlineFields"},
-          {"$ref": "#/$defs/aggTradeFields"},
-          {"$ref": "#/$defs/fundingFields"}
-        ]}
+        {
+          "oneOf": [
+            {"$ref": "#/$defs/klineFields"},
+            {"$ref": "#/$defs/markKlineFields"},
+            {"$ref": "#/$defs/aggTradeFields"},
+            {"$ref": "#/$defs/fundingFields"}
+          ]
+        }
       ],
       "unevaluatedProperties": false
     }

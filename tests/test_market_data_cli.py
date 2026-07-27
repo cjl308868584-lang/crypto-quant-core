@@ -109,7 +109,7 @@ class FetchWorkflowTests(unittest.TestCase):
             "Tue, 02 Jan 2024 00:00:00 GMT",
         )
         self.assertEqual(snapshot["ingested_at"], self.retrieved_at)
-        self.assertEqual(snapshot["point_in_time_policy"], "ARCHIVE_REPLAY_ONLY")
+        self.assertEqual(snapshot["pit_eligibility"], "ARCHIVE_REPLAY_ONLY")
 
     def test_rejects_redirect_to_a_host_outside_the_public_archive_allowlist(self):
         archive = archive_bytes(self.request)

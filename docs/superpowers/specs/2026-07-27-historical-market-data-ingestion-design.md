@@ -118,10 +118,14 @@ FeeScheduleSnapshot (manual, effective-dated, separately approved)
 - `official_sha256`；
 - `archive_sha256`、`checksum_file_sha256`；
 - ZIP 内唯一 CSV member 名；
+- CSV bytes SHA-256、source-row root 和 normalized-facts root；
 - `source_last_modified_at_or_null`、`source_etag_or_null`；
 - `receipt_hash`。
 
 哈希使用现有 canonical business hash 规则。URL 相同但字节变化时必须生成不同 receipt。
+`receipt_hash` 只是内容地址，不是独立信任来源。完整 PASS 必须由调用方从
+受信获取边界另行保存并显式传入该 receipt hash；不能从待验证 Artifact
+自身读取 receipt hash 后把它当作 attestation。
 
 ### 6.3 `MarketDataFact`
 
@@ -134,10 +138,15 @@ FeeScheduleSnapshot (manual, effective-dated, separately approved)
 - `available_at`；
 - `ingested_at`；
 - `source_row_number`；
+- 可重放的严格 `source_row`、`source_row_hash`；
 - 数据族专属 payload；
 - `payload_hash`。
 
 所有数值保留为严格 Decimal 字符串，不允许 float。所有时间转换为 UTC。
+验证器必须用 request、`ingested_at`、source row number 和保存的
+`source_row` 重新调用同一 family parser，并逐字段比较规范化 payload、
+业务键、时间和身份。Kline payload 保留 open/close time、OHLC、volume、
+quote volume、trade count、taker base/quote volume 与已验证 ignore 字段。
 
 ### 6.4 `HistoricalMarketDataSnapshot`
 
@@ -150,15 +159,20 @@ FeeScheduleSnapshot (manual, effective-dated, separately approved)
 - 有序 facts；
 - `quality_report`；
 - `pit_eligibility`；
+- `quality_eligibility`；
 - `snapshot_hash`。
 
 事实按 `(event_time, source_row_number, fact_id)` 排序。相同输入、相同 `retrieved_at` 和相同解析器版本必须得到相同哈希。
+生产 fetch 和两个 snapshot builder 都只能消费 opaque `VerifiedArchive`
+capability；不能接受 caller 提供的 facts、archive hash 或 checksum hash
+拼装快照。离线 `historical_market_data_snapshot_reasons` 默认没有独立
+receipt attestation 时必须失败关闭。
 
 ### 6.5 `FeeScheduleSnapshot`
 
 手续费不是公开行情事实。单独保存：
 
-- venue、product、account_tier；
+- venue、product、account_tier、symbol；
 - maker/taker Decimal rate；
 - `effective_from`、`effective_to_or_null`；
 - source reference、recorded_at；
@@ -166,6 +180,10 @@ FeeScheduleSnapshot (manual, effective-dated, separately approved)
 - content hash。
 
 未批准费率不得进入正式经济 PnL。v0.16 只冻结契约和验证，不将当前网页费率反推到历史。
+overlap 按 `(venue, product, account_tier, symbol)` 分组。由于 v0.16
+没有外部签名批准器，`usage_environment=PRODUCTION` 无条件返回
+`FEE_SCHEDULE_PRODUCTION_UNSUPPORTED`；caller 自填姓名、时间并重算 content
+hash 不能晋级。结构有效的 `RESEARCH` 合约仍可用于研究。
 
 ## 7. 时间与 PIT 语义
 
@@ -222,6 +240,15 @@ FeeScheduleSnapshot (manual, effective-dated, separately approved)
 
 任何 malformed row、重复业务键、时间倒退、校验失败都会阻断快照。Kline gap 显式记录并阻断正式数据资格；研究快照仍可由策略明确选择是否接受，但不能升级 Release Gate。
 
+Funding Rate 不假设固定 8 小时。每行
+`funding_interval_hours` 必须是 `1..24` 的严格正整数；连续性由当前行事件
+时间加当前行 source interval 推导下一事件，因此允许月内 schedule
+change。月首和月尾采用保守覆盖检查。Funding gap 进入
+`missing_interval_count` 与 blocking findings；默认 strict builder 拒绝。
+单独的 research-degraded builder 只允许 coverage/gap 类降级，输出
+`quality_eligibility=RESEARCH_ONLY_DEGRADED`，且验证结果永远包含明确降级
+reason，不能成为 formal/PIT/pass 数据。
+
 ## 9. 获取行为
 
 命令行入口只接受结构化参数，不接受 URL：
@@ -242,6 +269,10 @@ python -m crypto_quant.market_data fetch \
 - 哈希和期望一致：幂等成功；
 - 不一致：拒绝并要求新目录，保留两个版本的证据；
 - 不自动删除、不静默替换。
+
+幂等成功的 commit point 必须再次打开 final name，验证它仍指向初次读取的
+同一 inode 且 bytes 完全一致；仅验证父目录仍 attached 不足以阻止并发
+rename/replacement。
 
 网络错误、429、5xx、超时或内容超限均失败，不重试订单类请求（本模块不存在订单类请求）；公开 GET 最多按固定策略重试，测试中可禁用。
 

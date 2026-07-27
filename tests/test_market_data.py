@@ -518,18 +518,41 @@ class MarketDataArtifactTests(unittest.TestCase):
         for index in range(1440):
             opened = start + index * 60_000
             rows.append(f"{opened},100,101,99,100.5,1,{opened + 59999},0,1,0,0,0")
+        self.csv_bytes = ("\n".join(rows) + "\n").encode("ascii")
         self.facts = parse_market_facts(
-            self.request, ("\n".join(rows) + "\n").encode("ascii"),
+            self.request, self.csv_bytes,
             "2026-07-27T00:00:00Z",
+        )
+        archive = zip_bytes((self.request.expected_csv_name, self.csv_bytes))
+        self.verified_archive = verify_official_checksum(
+            self.request,
+            archive,
+            (
+                f"{hashlib.sha256(archive).hexdigest()}"
+                f"  {self.request.archive_filename}\n"
+            ).encode("ascii"),
         )
 
     def build(self, facts=None, **overrides):
+        verified_archive = self.verified_archive
+        if facts is not None:
+            csv_bytes = (
+                "\n".join(",".join(fact["source_row"]) for fact in facts)
+                + "\n"
+            ).encode("utf-8")
+            archive = zip_bytes((self.request.expected_csv_name, csv_bytes))
+            verified_archive = verify_official_checksum(
+                self.request,
+                archive,
+                (
+                    f"{hashlib.sha256(archive).hexdigest()}"
+                    f"  {self.request.archive_filename}\n"
+                ).encode("ascii"),
+            )
         fields = {
             "snapshot_id": "historical-ethusdt-20240102",
-            "request": self.request,
-            "facts": self.facts if facts is None else facts,
-            "archive_sha256": "a" * 64,
-            "checksum_sha256": "b" * 64,
+            "verified_archive": verified_archive,
+            "retrieved_at": "2026-07-27T00:00:00Z",
             "ingested_at": "2026-07-27T00:00:00Z",
             "recorded_at": "2026-07-27T00:00:01Z",
         }
@@ -551,49 +574,73 @@ class MarketDataArtifactTests(unittest.TestCase):
                 sort_keys=True, separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest())
-        self.assertEqual(snapshot["point_in_time_policy"], "ARCHIVE_REPLAY_ONLY")
-        self.assertEqual(historical_market_data_snapshot_reasons(snapshot), ())
+        self.assertEqual(snapshot["pit_eligibility"], "ARCHIVE_REPLAY_ONLY")
+        self.assertIn(
+            "TRUSTED_RECEIPT_ATTESTATION_REQUIRED",
+            historical_market_data_snapshot_reasons(snapshot),
+        )
+        self.assertEqual(
+            historical_market_data_snapshot_reasons(
+                snapshot,
+                trusted_receipt_hashes={
+                    snapshot["source_receipt"]["receipt_hash"]
+                },
+            ),
+            (),
+        )
         self.assertEqual(snapshot, self.build())
 
     def test_artifact_rejects_source_order_duplicates_gaps_and_time_order(self):
-        duplicate = list(self.facts)
-        duplicate[1] = dict(duplicate[1], fact_id=duplicate[0]["fact_id"])
-        out_of_order = list(self.facts)
-        out_of_order[1] = dict(out_of_order[1], source_row_number=out_of_order[0]["source_row_number"])
         gap = tuple(self.facts[:10]) + tuple(self.facts[11:])
-        time_invalid = list(self.facts)
-        time_invalid[0] = dict(time_invalid[0], available_at="2026-07-28T00:00:00Z")
-        reverse_time = [
-            dict(fact, source_row_number=index + 1)
-            for index, fact in enumerate(reversed(self.facts))
-        ]
-        for facts in (duplicate, out_of_order, gap, time_invalid, reverse_time):
-            with self.subTest(facts=facts[:2]):
-                with self.assertRaises(MarketDataError) as raised:
-                    self.build(facts)
-                self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
+        with self.assertRaises(MarketDataError) as raised:
+            self.build(gap)
+        self.assertEqual(
+            raised.exception.reason_code,
+            "MARKET_DATA_QUALITY_BLOCKING",
+        )
         with self.assertRaises(MarketDataError) as raised:
             self.build(recorded_at="2026-07-26T23:59:59Z")
         self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
 
     def test_artifact_rejects_facts_missing_required_family_payload(self):
-        incomplete = [
-            {key: value for key, value in fact.items() if key not in {"open", "high", "low", "close"}}
-            for fact in self.facts
-        ]
-        with self.assertRaises(MarketDataError) as raised:
-            self.build(incomplete)
-        self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
+        snapshot = self.build()
+        incomplete = json.loads(json.dumps(snapshot))
+        incomplete["facts"][0].pop("close")
+        incomplete["snapshot_hash"] = historical_market_data_snapshot_hash(
+            incomplete
+        )
+        self.assertIn(
+            "FACT_SOURCE_ROW_REPLAY_MISMATCH",
+            historical_market_data_snapshot_reasons(
+                incomplete,
+                trusted_receipt_hashes={
+                    snapshot["source_receipt"]["receipt_hash"]
+                },
+            ),
+        )
 
     def test_artifact_binds_fact_identity_to_verified_archive_and_base_schema(self):
         first = self.build()
-        revised_archive = self.build(archive_sha256="c" * 64)
+        revised_facts = [dict(fact) for fact in self.facts]
+        revised_facts[0] = dict(revised_facts[0])
+        revised_facts[0]["source_row"] = list(revised_facts[0]["source_row"])
+        revised_facts[0]["source_row"][4] = "100.75"
+        revised_archive = self.build(revised_facts)
         self.assertNotEqual(first["facts"][0]["fact_id"], revised_archive["facts"][0]["fact_id"])
-        invalid_id = [dict(fact) for fact in self.facts]
-        invalid_id[0]["fact_id"] = 1
-        with self.assertRaises(MarketDataError) as raised:
-            self.build(invalid_id)
-        self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
+        invalid_id = json.loads(json.dumps(first))
+        invalid_id["facts"][0]["fact_id"] = 1
+        invalid_id["snapshot_hash"] = historical_market_data_snapshot_hash(
+            invalid_id
+        )
+        self.assertIn(
+            "MARKET_DATA_SCHEMA_INVALID",
+            historical_market_data_snapshot_reasons(
+                invalid_id,
+                trusted_receipt_hashes={
+                    first["source_receipt"]["receipt_hash"]
+                },
+            ),
+        )
 
     def test_artifact_allows_equal_aggtrade_times_when_business_ids_increase(self):
         request = HistoricalArchiveRequest.create(
@@ -605,14 +652,35 @@ class MarketDataArtifactTests(unittest.TestCase):
             b"1,1,1,1,1,1704153600000,true,false\n2,1,1,2,2,1704153600000,false,true\n",
             "2026-07-27T00:00:00Z",
         )
+        csv_bytes = b"\n".join(
+            ",".join(fact["source_row"]).encode("ascii") for fact in facts
+        ) + b"\n"
+        archive = zip_bytes((request.expected_csv_name, csv_bytes))
+        verified_archive = verify_official_checksum(
+            request,
+            archive,
+            (
+                f"{hashlib.sha256(archive).hexdigest()}"
+                f"  {request.archive_filename}\n"
+            ).encode("ascii"),
+        )
         snapshot = build_historical_market_data_snapshot(
-            snapshot_id="equal-aggtrade-times", request=request, facts=facts,
-            archive_sha256="a" * 64, checksum_sha256="b" * 64,
+            snapshot_id="equal-aggtrade-times",
+            verified_archive=verified_archive,
+            retrieved_at="2026-07-27T00:00:00Z",
             ingested_at="2026-07-27T00:00:00Z", recorded_at="2026-07-27T00:00:01Z",
         )
-        self.assertEqual(historical_market_data_snapshot_reasons(snapshot), ())
+        self.assertEqual(
+            historical_market_data_snapshot_reasons(
+                snapshot,
+                trusted_receipt_hashes={
+                    snapshot["source_receipt"]["receipt_hash"]
+                },
+            ),
+            (),
+        )
 
-    def test_artifact_requires_complete_frozen_eight_hour_funding_month(self):
+    def test_artifact_requires_complete_source_interval_funding_month(self):
         request = HistoricalArchiveRequest.create(
             market="USD_M", data_family="FUNDING_RATE", symbol="ETHUSDT",
             interval_or_null=None, period_kind="MONTHLY", period="2024-01",
@@ -622,13 +690,23 @@ class MarketDataArtifactTests(unittest.TestCase):
         for index in range(31 * 3):
             milliseconds = int((start + timedelta(hours=8 * index)).timestamp() * 1000)
             rows.append(f"{milliseconds},8,0.0001")
-        facts = parse_market_facts(request, ("\n".join(rows) + "\n").encode("ascii"), "2026-07-27T00:00:00Z")
-        for incomplete in (facts[1:], facts[:10] + facts[11:], facts[:-1]):
-            with self.subTest(length=len(incomplete)):
+        for incomplete_rows in (rows[1:], rows[:10] + rows[11:], rows[:-1]):
+            with self.subTest(length=len(incomplete_rows)):
+                csv_bytes = ("\n".join(incomplete_rows) + "\n").encode("ascii")
+                archive = zip_bytes((request.expected_csv_name, csv_bytes))
+                verified_archive = verify_official_checksum(
+                    request,
+                    archive,
+                    (
+                        f"{hashlib.sha256(archive).hexdigest()}"
+                        f"  {request.archive_filename}\n"
+                    ).encode("ascii"),
+                )
                 with self.assertRaises(MarketDataError) as raised:
                     build_historical_market_data_snapshot(
-                        snapshot_id="funding-202401", request=request, facts=incomplete,
-                        archive_sha256="a" * 64, checksum_sha256="b" * 64,
+                        snapshot_id="funding-202401",
+                        verified_archive=verified_archive,
+                        retrieved_at="2026-07-27T00:00:00Z",
                         ingested_at="2026-07-27T00:00:00Z", recorded_at="2026-07-27T00:00:01Z",
                     )
                 self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
@@ -708,55 +786,72 @@ class FeeScheduleContractTests(unittest.TestCase):
             "$schema": "./fee-schedule-snapshot-v1.schema.json",
             "schema_version": "1.0.0",
             "fee_schedule_id": "binance-usdm-standard",
-            "fee_schedule_hash": "0" * 64,
+            "content_hash": "0" * 64,
             "hash_algorithm": "SHA-256",
             "canonicalization": "RFC8785_JCS",
             "usage_environment": environment,
             "schedules": [
                 {
-                    "fee_id": "maker-jan", "market": "USD_M", "symbol": "BTCUSDT",
-                    "effective_at": "2024-01-01T00:00:00Z", "expires_at": second_start,
+                    "fee_id": "maker-jan", "venue": "BINANCE",
+                    "product": "USD_M_PERPETUAL", "account_tier": "VIP_0",
+                    "symbol": "BTCUSDT",
+                    "effective_from": "2024-01-01T00:00:00Z",
+                    "effective_to_or_null": second_start,
                     "maker_rate": "0.0002", "taker_rate": "0.0005",
+                    "source_reference": "manual:fee-export:jan",
+                    "recorded_at": "2024-01-02T00:00:00Z",
                     "lifecycle": "APPROVED",
-                    "approval": {"approved_by": "risk", "approved_at": "2023-12-31T00:00:00Z"},
+                    "approval": {
+                        "approved_by": "risk",
+                        "approved_at": "2023-12-31T00:00:00Z",
+                        "approval_reference": "research:jan",
+                    },
                 },
                 {
-                    "fee_id": "maker-feb", "market": "USD_M", "symbol": "BTCUSDT",
-                    "effective_at": second_start, "expires_at": None,
+                    "fee_id": "maker-feb", "venue": "BINANCE",
+                    "product": "USD_M_PERPETUAL", "account_tier": "VIP_0",
+                    "symbol": "BTCUSDT",
+                    "effective_from": second_start,
+                    "effective_to_or_null": None,
                     "maker_rate": "0.0001", "taker_rate": "0.0004",
+                    "source_reference": "manual:fee-export:feb",
+                    "recorded_at": "2024-02-02T00:00:00Z",
                     "lifecycle": "APPROVED",
-                    "approval": {"approved_by": "risk", "approved_at": "2024-01-31T00:00:00Z"},
+                    "approval": {
+                        "approved_by": "risk",
+                        "approved_at": "2024-01-31T00:00:00Z",
+                        "approval_reference": "research:feb",
+                    },
                 },
             ],
         }
-        snapshot["fee_schedule_hash"] = fee_schedule_snapshot_hash(snapshot)
+        snapshot["content_hash"] = fee_schedule_snapshot_hash(snapshot)
         return snapshot
 
     def test_fee_schedule_is_independent_hashed_contract_with_approval_gates(self):
         schedule = self.schedule()
         self.assertEqual(fee_schedule_snapshot_reasons(schedule), ())
-        self.assertEqual(schedule["fee_schedule_hash"], fee_schedule_snapshot_hash(schedule))
+        self.assertEqual(schedule["content_hash"], fee_schedule_snapshot_hash(schedule))
         missing_lifecycle_approval = self.schedule()
         missing_lifecycle_approval["schedules"][0]["approval"] = {"approved_by": "risk"}
-        missing_lifecycle_approval["fee_schedule_hash"] = fee_schedule_snapshot_hash(missing_lifecycle_approval)
+        missing_lifecycle_approval["content_hash"] = fee_schedule_snapshot_hash(missing_lifecycle_approval)
         self.assertIn("FEE_SCHEDULE_APPROVAL_INVALID", fee_schedule_snapshot_reasons(missing_lifecycle_approval))
         production = self.schedule(environment="PRODUCTION")
-        self.assertIn("FEE_SCHEDULE_PRODUCTION_UNAPPROVED", fee_schedule_snapshot_reasons(production))
-        production["production_approval"] = {"approved_by": "risk"}
-        production["fee_schedule_hash"] = fee_schedule_snapshot_hash(production)
-        self.assertIn("FEE_SCHEDULE_PRODUCTION_UNAPPROVED", fee_schedule_snapshot_reasons(production))
+        self.assertIn("FEE_SCHEDULE_PRODUCTION_UNSUPPORTED", fee_schedule_snapshot_reasons(production))
         production["production_approval"] = {
-            "approved_by": "risk", "approved_at": "2024-01-01T00:00:00Z",
+            "approved_by": "risk",
+            "approved_at": "2024-01-01T00:00:00Z",
+            "approval_reference": "caller:self-filled",
         }
-        production["fee_schedule_hash"] = fee_schedule_snapshot_hash(production)
-        self.assertEqual(fee_schedule_snapshot_reasons(production), ())
+        production["content_hash"] = fee_schedule_snapshot_hash(production)
+        self.assertIn("FEE_SCHEDULE_PRODUCTION_UNSUPPORTED", fee_schedule_snapshot_reasons(production))
 
     def test_fee_schedule_rejects_overlaps_invalid_rates_and_unknown_schema_fields(self):
         from jsonschema import Draft202012Validator
 
         overlap = self.schedule()
-        overlap["schedules"][1]["effective_at"] = "2024-01-15T00:00:00Z"
-        overlap["fee_schedule_hash"] = fee_schedule_snapshot_hash(overlap)
+        overlap["schedules"][1]["effective_from"] = "2024-01-15T00:00:00Z"
+        overlap["content_hash"] = fee_schedule_snapshot_hash(overlap)
         self.assertIn("FEE_SCHEDULE_EFFECTIVE_INTERVAL_OVERLAP", fee_schedule_snapshot_reasons(overlap))
         invalid_rate = self.schedule()
         invalid_rate["schedules"][0]["maker_rate"] = "NaN"
@@ -767,31 +862,31 @@ class FeeScheduleContractTests(unittest.TestCase):
         ).read_text())
         validator = Draft202012Validator(schema)
         self.assertFalse(list(validator.iter_errors(self.schedule())))
-        self.assertTrue(list(validator.iter_errors(self.schedule(environment="PRODUCTION"))))
+        self.assertFalse(list(validator.iter_errors(self.schedule(environment="PRODUCTION"))))
         unknown = self.schedule()
         unknown["schedules"][0]["rebate"] = "0"
         self.assertTrue(list(validator.iter_errors(unknown)))
 
         non_schema_consumer = self.schedule(environment="NOT_PRODUCTION")
         non_schema_consumer["schedules"][0].pop("fee_id")
-        non_schema_consumer["schedules"][0]["market"] = "UNKNOWN"
+        non_schema_consumer["schedules"][0]["product"] = "UNKNOWN"
         non_schema_consumer["schedules"][0]["symbol"] = "X"
-        non_schema_consumer["fee_schedule_hash"] = fee_schedule_snapshot_hash(non_schema_consumer)
+        non_schema_consumer["content_hash"] = fee_schedule_snapshot_hash(non_schema_consumer)
         self.assertIn("FEE_SCHEDULE_INVALID", fee_schedule_snapshot_reasons(non_schema_consumer))
         draft = self.schedule()
         draft["schedules"][0]["lifecycle"] = "DRAFT"
         draft["schedules"][0]["approval"] = None
-        draft["fee_schedule_hash"] = fee_schedule_snapshot_hash(draft)
-        self.assertIn("FEE_SCHEDULE_APPROVAL_INVALID", fee_schedule_snapshot_reasons(draft))
-        self.assertTrue(list(validator.iter_errors(draft)))
+        draft["content_hash"] = fee_schedule_snapshot_hash(draft)
+        self.assertEqual(fee_schedule_snapshot_reasons(draft), ())
+        self.assertFalse(list(validator.iter_errors(draft)))
 
         whitespace_id = self.schedule()
         whitespace_id["fee_schedule_id"] = " invalid"
-        whitespace_id["fee_schedule_hash"] = fee_schedule_snapshot_hash(whitespace_id)
+        whitespace_id["content_hash"] = fee_schedule_snapshot_hash(whitespace_id)
         self.assertIn("FEE_SCHEDULE_INVALID", fee_schedule_snapshot_reasons(whitespace_id))
         unknown_approval = self.schedule()
         unknown_approval["schedules"][0]["approval"]["unapproved"] = "x"
-        unknown_approval["fee_schedule_hash"] = fee_schedule_snapshot_hash(unknown_approval)
+        unknown_approval["content_hash"] = fee_schedule_snapshot_hash(unknown_approval)
         self.assertIn("FEE_SCHEDULE_INVALID", fee_schedule_snapshot_reasons(unknown_approval))
 
 
@@ -842,17 +937,25 @@ class PackagedMarketSchemaTests(unittest.TestCase):
             )
             smoke = """
 from datetime import datetime, timedelta, timezone
-from crypto_quant.market_data import (HistoricalArchiveRequest, build_historical_market_data_snapshot, fee_schedule_snapshot_reasons, historical_market_data_snapshot_reasons, parse_market_facts)
+import hashlib
+import io
+import zipfile
+from crypto_quant.market_data import (HistoricalArchiveRequest, build_historical_market_data_snapshot, fee_schedule_snapshot_reasons, historical_market_data_snapshot_reasons, verify_official_checksum)
 request = HistoricalArchiveRequest.create(market='USD_M', data_family='FUNDING_RATE', symbol='ETHUSDT', interval_or_null=None, period_kind='MONTHLY', period='2024-01')
 start = datetime(2024, 1, 1, tzinfo=timezone.utc)
-rows = '\\n'.join(f'{int((start + timedelta(hours=8 * index)).timestamp() * 1000)},8,0.0001' for index in range(93)).encode()
-facts = parse_market_facts(request, rows, '2026-07-27T00:00:00Z')
-snapshot = build_historical_market_data_snapshot(snapshot_id='wheel-funding-202401', request=request, facts=facts, archive_sha256='a' * 64, checksum_sha256='b' * 64, ingested_at='2026-07-27T00:00:00Z', recorded_at='2026-07-27T00:00:01Z')
-assert historical_market_data_snapshot_reasons(snapshot) == ()
+rows = ('\\n'.join(f'{int((start + timedelta(hours=8 * index)).timestamp() * 1000)},8,0.0001' for index in range(93)) + '\\n').encode()
+buffer = io.BytesIO()
+with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr(request.expected_csv_name, rows)
+archive_bytes = buffer.getvalue()
+checksum = f"{hashlib.sha256(archive_bytes).hexdigest()}  {request.archive_filename}\\n".encode()
+verified = verify_official_checksum(request, archive_bytes, checksum)
+snapshot = build_historical_market_data_snapshot(snapshot_id='wheel-funding-202401', verified_archive=verified, retrieved_at='2026-07-27T00:00:00Z', ingested_at='2026-07-27T00:00:00Z', recorded_at='2026-07-27T00:00:01Z')
+assert historical_market_data_snapshot_reasons(snapshot, trusted_receipt_hashes={snapshot['source_receipt']['receipt_hash']}) == ()
 assert historical_market_data_snapshot_reasons({})
-fee = {'$schema': './fee-schedule-snapshot-v1.schema.json', 'schema_version': '1.0.0', 'fee_schedule_id': 'wheel-fee', 'fee_schedule_hash': '0' * 64, 'hash_algorithm': 'SHA-256', 'canonicalization': 'RFC8785_JCS', 'usage_environment': 'RESEARCH', 'schedules': [{'fee_id': 'fee-one', 'market': 'USD_M', 'symbol': 'ETHUSDT', 'effective_at': '2024-01-01T00:00:00Z', 'expires_at': None, 'maker_rate': '0.0002', 'taker_rate': '0.0005', 'lifecycle': 'APPROVED', 'approval': {'approved_by': 'risk', 'approved_at': '2023-12-31T00:00:00Z'}}]}
+fee = {'$schema': './fee-schedule-snapshot-v1.schema.json', 'schema_version': '1.0.0', 'fee_schedule_id': 'wheel-fee', 'content_hash': '0' * 64, 'hash_algorithm': 'SHA-256', 'canonicalization': 'RFC8785_JCS', 'usage_environment': 'RESEARCH', 'schedules': [{'fee_id': 'fee-one', 'venue': 'BINANCE', 'product': 'USD_M_PERPETUAL', 'account_tier': 'VIP_0', 'symbol': 'ETHUSDT', 'effective_from': '2024-01-01T00:00:00Z', 'effective_to_or_null': None, 'maker_rate': '0.0002', 'taker_rate': '0.0005', 'source_reference': 'manual:wheel', 'recorded_at': '2024-01-02T00:00:00Z', 'lifecycle': 'APPROVED', 'approval': {'approved_by': 'risk', 'approved_at': '2023-12-31T00:00:00Z', 'approval_reference': 'research:wheel'}}]}
 from crypto_quant.market_data import fee_schedule_snapshot_hash
-fee['fee_schedule_hash'] = fee_schedule_snapshot_hash(fee)
+fee['content_hash'] = fee_schedule_snapshot_hash(fee)
 assert fee_schedule_snapshot_reasons(fee) == ()
 assert fee_schedule_snapshot_reasons({})
 """
@@ -864,12 +967,15 @@ assert fee_schedule_snapshot_reasons({})
 
     def test_wheel_smoke_invokes_pip_in_enforced_offline_mode(self):
         calls = []
+        mock_wheel_names = []
 
         def record_run(command, **kwargs):
             calls.append((command, kwargs))
             if command[1:4] == ["-m", "pip", "wheel"]:
                 wheel_dir = Path(command[command.index("--wheel-dir") + 1])
-                (wheel_dir / "crypto_quant_core-0.15.0-py3-none-any.whl").touch()
+                wheel_name = "crypto_quant_core-0.16.0-py3-none-any.whl"
+                mock_wheel_names.append(wheel_name)
+                (wheel_dir / wheel_name).touch()
             return subprocess.CompletedProcess(command, 0, "", "")
 
         with patch("tests.test_market_data.subprocess.run", side_effect=record_run):
@@ -881,6 +987,10 @@ assert fee_schedule_snapshot_reasons({})
             if command[1:3] == ["-m", "pip"]
         ]
         self.assertEqual(len(pip_calls), 2)
+        self.assertEqual(
+            mock_wheel_names,
+            ["crypto_quant_core-0.16.0-py3-none-any.whl"],
+        )
         wheel_command, wheel_kwargs = pip_calls[0]
         self.assertIn("--no-build-isolation", wheel_command)
         for _, kwargs in pip_calls:

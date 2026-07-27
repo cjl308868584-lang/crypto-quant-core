@@ -4,7 +4,7 @@
 
 **Goal:** Add a public-only, fail-closed Binance historical archive ingestion pipeline that verifies official checksums, normalizes real market/cost facts, records deterministic provenance and makes archive-only PIT limitations machine-enforceable.
 
-**Architecture:** A strict `HistoricalArchiveRequest` generates allowlisted Binance public-data paths; an injectable GET-only fetch boundary returns raw ZIP and CHECKSUM responses; safety and checksum validation occur before exact family parsers normalize Decimal/UTC facts. `PublicArchiveReceipt`, `DataQualityReport`, and `HistoricalMarketDataSnapshot` form a self-hashed evidence chain. Archive snapshots always remain `ARCHIVE_REPLAY_ONLY`; account-specific fee schedules stay separate and effective-dated.
+**Architecture:** A strict `HistoricalArchiveRequest` generates allowlisted Binance public-data paths; an injectable GET-only fetch boundary returns raw ZIP and CHECKSUM responses; safety and checksum validation issue an opaque `VerifiedArchive` before exact family parsers normalize Decimal/UTC facts. `PublicArchiveReceipt`, `DataQualityReport`, and `HistoricalMarketDataSnapshot` form a content-addressed evidence chain, but complete validation additionally requires an independently supplied trusted receipt hash. Archive snapshots always remain `ARCHIVE_REPLAY_ONLY`; account-specific fee schedules stay separate and effective-dated.
 
 **Tech Stack:** Python 3.9+, standard-library `urllib`, `zipfile`, `csv`, `Decimal`, `datetime`, existing canonical SHA-256 helpers, JSON Schema Draft 2020-12, `unittest`.
 
@@ -22,6 +22,35 @@
 - No API key, signed endpoint, account, Broker, order, or deployment capability is added.
 - Existing Release Gates remain unchanged and fail closed.
 - Final package version is `0.16.0`.
+
+## Final-review security amendments
+
+These amendments resolve the final security review and override any earlier
+step wording that allowed caller-assembled snapshots:
+
+- `build_historical_market_data_snapshot` and the explicit research-degraded
+  builder accept only opaque `VerifiedArchive`; caller-supplied facts and
+  archive/checksum hashes are not a supported construction path.
+- Every fact retains strict source-row fields plus source-row and normalized
+  payload hashes, and carries a fact-level `ingested_at`. Archive facts enforce
+  `available_at == fact.ingested_at == snapshot.ingested_at`. Replay validation
+  invokes the family parser again with the request, ingested time and row
+  number, then compares every normalized field.
+- The receipt binds the full request/URLs/times/sizes/digests/member, CSV hash,
+  source-row root and facts root. Self-hashes are integrity checks, not trust
+  anchors: the reasons API defaults to fail-closed without an independently
+  supplied trusted receipt hash.
+- Kline facts retain all validated volume/trade/taker/open/close fields, and
+  quality reports expose all approved counters, coverage and findings.
+- Funding intervals come from each row as strict integers in `1..24`;
+  continuity uses the current row's interval and permits schedule changes.
+  Gap-only artifacts require the explicit
+  `RESEARCH_ONLY_DEGRADED` path and can never validate as formal/PIT/pass.
+- Fee overlap scope is `(venue, product, account_tier, symbol)`.
+  `usage_environment=PRODUCTION` is unconditionally unsupported in v0.16
+  because no external approval verifier exists.
+- Every idempotent CLI success revalidates final-name inode and bytes at its
+  commit point, including the concurrent collision branch.
 
 ## File Structure
 

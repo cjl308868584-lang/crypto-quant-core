@@ -1,11 +1,15 @@
 {
   "schema_version": "1.0.0",
   "evidence_id": "binance-public-data-smoke-v0.16.0",
-  "status": "PASS",
+  "status": "PASS_WITH_INDEPENDENT_RECEIPT_ATTESTATION",
   "retrieval_mode": "PUBLIC_GET_ONLY",
-  "point_in_time_policy": "ARCHIVE_REPLAY_ONLY",
-  "retrieved_at": "2026-07-27T01:11:39.641996Z",
+  "parser_version": "BINANCE_CSV_V1",
+  "availability_basis": "OFFLINE_ARCHIVE_OBSERVED_AT_INGESTION",
+  "pit_eligibility": "ARCHIVE_REPLAY_ONLY",
+  "quality_eligibility": "FORMAL_COMPLETE",
+  "retrieved_at": "2026-07-27T10:21:28.953355Z",
   "request": {
+    "schema_version": "1.0.0",
     "provider": "BINANCE_PUBLIC_DATA",
     "market": "SPOT",
     "data_family": "KLINES",
@@ -27,38 +31,55 @@
       "requested_url": "https://data.binance.vision/data/spot/daily/klines/ETHUSDT/4h/ETHUSDT-4h-2026-07-25.zip.CHECKSUM",
       "final_url": "https://data.binance.vision/data/spot/daily/klines/ETHUSDT/4h/ETHUSDT-4h-2026-07-25.zip.CHECKSUM",
       "status": 200,
-      "content_length_bytes": 91,
-      "etag": "\"bf585b05971bcc333679ab3b78424524\"",
-      "last_modified": "Sun, 26 Jul 2026 02:41:56 GMT"
+      "content_length_bytes": 91
     }
   },
   "hash_evidence": {
     "official_checksum_record_archive_sha256": "a1f42574c036d4ae7670bb163dc1b787acf20f06bee958c32e736186757dc08b",
     "archive_sha256": "a1f42574c036d4ae7670bb163dc1b787acf20f06bee958c32e736186757dc08b",
-    "checksum_sha256": "2413eb36a0d9f1fa90bea973bdf0c8dd0e15e4306c21427b5f543f09ceb55897",
-    "receipt_hash": "cf55a569987aea60d967692cdb9f1f016bfaa205bb1af2813a8e28f37568053b",
-    "quality_report_hash": "4022ead3b3df6b21c57760ef10c35522d44a4dfb7da8c9cfe05c2baeb96a0746",
-    "snapshot_hash": "4061d3286e682a7c199dcca3949aae4bd6d95cc6c0b2b38d13f4a3c03765aabd"
+    "checksum_file_sha256": "2413eb36a0d9f1fa90bea973bdf0c8dd0e15e4306c21427b5f543f09ceb55897",
+    "csv_sha256": "d132b8175bdf452165af93d0cd63e7cd2cf20bf40955218fc050ade702ca6935",
+    "source_rows_root_hash": "9f8a6349342061ce65bea467bd5f1ac1619e481fed945c852ad15ad81eb70cbf",
+    "facts_root_hash": "08376604eb228fe3465695615cf6be35aec1d037dfab2abd3dddeb5606f90a56",
+    "trusted_receipt_hash": "1a350b35803b2a2250fc8bf1af549cea858dc7f11fb00fe14bd5d455fb24f9bb",
+    "quality_report_hash": "6e1a9aab31fbdae54fbac2fd34fc366d2f09bca546574a178feb4c7e46351b60",
+    "snapshot_hash": "744d53c36d66488cb05e4eb68be744ac365d432234408b08ab909d4fa752e34e"
   },
   "snapshot_id": "historical-20d5e9be0f30295b89345ec5f68625f90d100bc00911414753909f87ff99db64",
-  "row_count": 6,
   "quality": {
+    "row_count": 6,
+    "first_event_time": "2026-07-25T03:59:59.999999Z",
+    "last_event_time": "2026-07-25T23:59:59.999999Z",
+    "duplicate_business_key_count": 0,
+    "source_order_regression_count": 0,
+    "missing_interval_count": 0,
+    "malformed_row_count": 0,
+    "rejected_row_count": 0,
+    "checksum_pass": true,
+    "expected_period_coverage": true,
     "blocking_findings": [],
     "warning_findings": []
   },
   "independent_verification": {
-    "verified_at": "2026-07-27T01:17:41.323923Z",
-    "official_checksum_redownload_status": 200,
+    "verified_at": "2026-07-27T10:22:04.998786Z",
+    "archive_redownload_sha256": "a1f42574c036d4ae7670bb163dc1b787acf20f06bee958c32e736186757dc08b",
     "official_checksum_redownload_sha256": "2413eb36a0d9f1fa90bea973bdf0c8dd0e15e4306c21427b5f543f09ceb55897",
     "official_checksum_matches_archive": true,
     "receipt_hash_matches_replay": true,
-    "row_count_matches_replay": true,
+    "source_rows_root_hash_matches_replay": true,
+    "facts_root_hash_matches_replay": true,
     "quality_report_hash_matches_replay": true,
-    "snapshot_hash_matches_replay": true
+    "snapshot_hash_matches_replay": true,
+    "snapshot_bytes_equivalent": true,
+    "fact_ingested_at_crosslink_pass": true,
+    "trusted_validation_reasons": [],
+    "unanchored_validation_reasons": [
+      "TRUSTED_RECEIPT_ATTESTATION_REQUIRED"
+    ]
   },
   "retention": {
     "raw_archive_committed": false,
     "normalized_rows_committed": false,
-    "temporary_raw_data_deleted_after_verification": true
+    "temporary_full_snapshot_deleted_after_verification": true
   }
 }
