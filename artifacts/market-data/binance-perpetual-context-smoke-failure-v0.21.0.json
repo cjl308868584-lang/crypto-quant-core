@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-perpetual-context-smoke-failure-v0.21.0",
+  "release_candidate": "0.21.0",
+  "attempt_completed_at": "2026-07-27T15:59:03.000Z",
+  "command": "PYTHONPATH=src python3 -m crypto_quant.perpetual_context_cli --output-root /tmp/crypto-quant-v021-smoke",
+  "outcome": "FAILED_CLOSED",
+  "reason_code": "PERPETUAL_TRANSPORT_FAILURE",
+  "plan_hash": "28860ff456476d052530563cc035d4e6b7a510aea7320996119fd7b25750bcc6",
+  "failed_request": {
+    "family": "MARK_INDEX_FUNDING",
+    "method": "GET",
+    "url": "https://fapi.binance.com/fapi/v1/premiumIndex?symbol=ETHUSDT",
+    "security_type": "NONE_PUBLIC"
+  },
+  "network": {
+    "server_time_probe_completed": true,
+    "server_time_request_count": 3,
+    "futures_request_attempt_count": 1,
+    "futures_receipt_count": 0,
+    "remaining_futures_requests_skipped": 4,
+    "automatic_retry_count": 0
+  },
+  "security_boundary": {
+    "credentials_read": false,
+    "account_endpoints_called": false,
+    "orders_submitted": false,
+    "proxy_used": false,
+    "substitute_source_used": false
+  },
+  "eligibility": "REAL_FUTURES_SMOKE_NOT_CAPTURED_NETWORK_UNREACHABLE",
+  "notes": [
+    "The healthy three-sample server-time gate completed before the first Futures request.",
+    "The first official Futures request failed before a valid HTTP receipt existed.",
+    "No third-party or alternate-exchange response was substituted."
+  ]
+}

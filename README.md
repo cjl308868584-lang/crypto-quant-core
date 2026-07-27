@@ -63,6 +63,10 @@
 55. [时钟健康门决策 ADR-0020](docs/adr/0020-server-time-runtime-health.md)
 56. [Binance Runtime Smoke Evidence v0.20.0](artifacts/runtime/v0.20-smoke/)
 57. [实施追踪 v0.20.0](docs/implementation-status-v0.20.0.md)
+58. [Perpetual Context Snapshot Schema](config/perpetual-context-snapshot-v1.schema.json)
+59. [当前永续上下文决策 ADR-0021](docs/adr/0021-current-perpetual-context.md)
+60. [Binance Futures 直连失败证据 v0.21.0](artifacts/market-data/binance-perpetual-context-smoke-failure-v0.21.0.json)
+61. [实施追踪 v0.21.0](docs/implementation-status-v0.21.0.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -77,7 +81,7 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.20.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度，以及三样本交易所时钟纠偏、append-only心跳和本地机器告警。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
+Git中的设计基线已冻结，当前代码版本为 `0.21.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏和当前永续 Mark/Index/Premium/OI/Funding 上下文。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
 
 当前58个Catalog算法中有26个Estimator可执行，其余32个明确Fail-Closed。公开历史归档的结构化请求只能访问ETHUSDT/BTCUSDT的allowlisted数据族；生产transport只执行无凭据GET，必须在解压前通过官方checksum，并将来源、质量和快照绑定到哈希。真实smoke已验证2026-07-25 ETHUSDT Spot daily 4h归档，但全部事后归档固定为`ARCHIVE_REPLAY_ONLY`：URL不是Artifact身份，也不能证明历史决策时点的数据可用性。Fee Schedule因产品、账户层级、折扣和生效期而独立冻结，不能从行情或当前网页费率反填历史。
 
@@ -89,7 +93,9 @@ v0.19把cycle放入固定UTC 4h槽位：close后5分钟到期，15分钟租约�
 
 v0.20在每次新周期前固定执行三个Binance public server-time GET，用保守offset interval交集区分aligned、可校正和blocked。真实smoke发现本机约慢2.51秒，使用monotonic anchor安全校正后首次执行为3个时间请求+4个行情请求；同槽位第二次为3+0，bomb行情transport调用为0。每次结果进入独立append-only WAL心跳链，保存gap和告警转换；外部告警投递仍未配置。
 
-仓库仍没有真实账户费用/真实成交/实际滑点、操作系统调度或连续90天Paper证据，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。AI臂因没有批准模型固定为`NOT_RUN_NO_APPROVED_MODEL`、零成交和统计不合格；没有用启发式信号冒充AI。Funding gap只允许显式`RESEARCH_ONLY_DEGRADED`研究快照；FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、交易所账户Adapter、API密钥读取或真实下单能力。下一步优先增加永续Mark/Index/Premium/OI、Funding和真实账户成本上下文，再配置外部one-shot调度并累计至少90天。详细完成度见[实施追踪 v0.20.0](docs/implementation-status-v0.20.0.md)，边界见[ADR-0020](docs/adr/0020-server-time-runtime-health.md)。
+v0.21固定五个Binance USDⓈ-M public GET，在健康纠偏时钟之后捕获Mark、Index、Premium、OI和Funding；从原始receipt重建基差、4h OI变化和每1000 USDT SHORT Funding压力场景。只有历史Funding间隔一致时才计算24h场景，且明确不是预测或已实现收益。当前网络对官方Futures host的第一个请求仍失败关闭，因此真实快照尚未进入长期Paper，未使用替代来源。
+
+仓库仍没有真实账户费用/真实成交/实际滑点、操作系统调度或连续90天Paper证据，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。AI臂因没有批准模型固定为`NOT_RUN_NO_APPROVED_MODEL`、零成交和统计不合格；没有用启发式信号冒充AI。FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、交易所账户Adapter、API密钥读取或真实下单能力。下一步优先接入真实账户成本上下文并让永续官方host的one-shot捕获进入长期Paper，再累计至少90天。详细完成度见[实施追踪 v0.21.0](docs/implementation-status-v0.21.0.md)，边界见[ADR-0021](docs/adr/0021-current-perpetual-context.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
