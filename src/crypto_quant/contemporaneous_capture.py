@@ -441,6 +441,18 @@ def _observation(
     ingested_at: str,
     recorded_at: str,
 ) -> Dict[str, Any]:
+    event_dt, event_text = _utc(event_time)
+    receive_dt, receive_text = _utc(receipt["response_received_at"])
+    ingested_dt, ingested_text = _utc(ingested_at)
+    recorded_dt, recorded_text = _utc(recorded_at)
+    logical_available = max(event_dt, receive_dt)
+    logical_ingested = max(ingested_dt, logical_available)
+    logical_recorded = max(recorded_dt, logical_ingested)
+    availability_basis = (
+        "SOURCE_EVENT_TIME_CLOCK_FLOOR"
+        if event_dt > receive_dt
+        else "CLIENT_RECEIVE_TIME"
+    )
     observation = {
         "observation_id": "cmo_" + business_hash(
             {
@@ -454,11 +466,12 @@ def _observation(
         "symbol": request.symbol,
         "interval_or_null": request.interval_or_null,
         "business_key": dict(business_key),
-        "event_time": event_time,
+        "event_time": event_text,
         "event_time_basis": event_time_basis,
-        "available_at": receipt["response_received_at"],
-        "ingested_at": ingested_at,
-        "recorded_at": recorded_at,
+        "availability_basis": availability_basis,
+        "available_at": _utc(logical_available.isoformat())[1],
+        "ingested_at": _utc(logical_ingested.isoformat())[1],
+        "recorded_at": _utc(logical_recorded.isoformat())[1],
         "response_receipt_hash": receipt["receipt_hash"],
         "source_index": source_index,
         "source_payload": source_payload,
@@ -780,7 +793,29 @@ def _quality_report(
         end, _ = _utc(receipt["response_received_at"])
         latencies.append(int((end - start).total_seconds() * 1000))
     event_times = [item["event_time"] for item in observations]
-    receive_times = [item["available_at"] for item in raw_observations]
+    receive_times = [item["response_received_at"] for item in receipts]
+    clock_ahead = []
+    for item in raw_observations:
+        event, _ = _utc(item["event_time"])
+        client_receive, _ = _utc(
+            next(
+                receipt["response_received_at"]
+                for receipt in receipts
+                if receipt["receipt_hash"] == item["response_receipt_hash"]
+            )
+        )
+        if event > client_receive:
+            clock_ahead.append(
+                int((event - client_receive).total_seconds() * 1000)
+            )
+    warnings = [
+        "ACCOUNT_COSTS_AND_FILLS_NOT_CAPTURED",
+        "BBO_SEQUENCE_UNOBSERVABLE_REST_SNAPSHOT",
+        "CAPTURE_DURATION_BELOW_PAPER_MINIMUM",
+        "PERPETUAL_CONTEXT_NOT_CAPTURED",
+    ]
+    if clock_ahead:
+        warnings.append("SOURCE_CLOCK_FLOOR_APPLIED")
     report = {
         "response_count": len(receipts),
         "raw_observation_count": len(raw_observations),
@@ -793,12 +828,9 @@ def _quality_report(
         **dict(counters),
         "agg_trade_gap_count": gaps,
         "max_response_latency_ms": max(latencies),
-        "warnings": [
-            "ACCOUNT_COSTS_AND_FILLS_NOT_CAPTURED",
-            "BBO_SEQUENCE_UNOBSERVABLE_REST_SNAPSHOT",
-            "CAPTURE_DURATION_BELOW_PAPER_MINIMUM",
-            "PERPETUAL_CONTEXT_NOT_CAPTURED",
-        ],
+        "source_clock_floor_count": len(clock_ahead),
+        "max_source_clock_ahead_ms": max(clock_ahead, default=0),
+        "warnings": warnings,
         "blocking_findings": [],
     }
     report["report_hash"] = artifact_self_hash(report, "report_hash")
@@ -825,12 +857,20 @@ def build_capture_session(
     recorded_dt, recorded_text = _utc(recorded_at)
     receipts = [dict(item) for batch in batches for item in batch.receipts]
     raw = [dict(item) for batch in batches for item in batch.observations]
-    if any(_utc(item["recorded_at"])[0] > recorded_dt for item in raw):
+    receipt_recorded = max(
+        _utc(item["recorded_at"])[0] for item in receipts
+    )
+    if recorded_dt < receipt_recorded:
         raise CaptureError("CAPTURE_CLOCK_INVALID")
     receipts.sort(key=lambda item: (
         item["request_started_at"], item["request_id"], item["receipt_hash"]
     ))
     observations, counters = _canonicalize_observations(raw)
+    logical_recorded = max(
+        [recorded_dt]
+        + [_utc(item["recorded_at"])[0] for item in observations]
+    )
+    recorded_text = _utc(logical_recorded.isoformat())[1]
     report = _quality_report(receipts, raw, observations, counters)
     snapshot = {
         "$schema": "./contemporaneous-capture-snapshot-v1.schema.json",
@@ -1099,3 +1139,41 @@ def capture_snapshot_reasons(
     except (CaptureError, KeyError, TypeError, ValueError):
         reasons.append("CAPTURE_SNAPSHOT_INVALID")
     return tuple(dict.fromkeys(reasons))
+
+
+def replay_single_capture_batch(
+    snapshot: Mapping[str, Any],
+    *,
+    trusted_snapshot_attestation_hash: str,
+) -> VerifiedCaptureBatch:
+    """Reissue an opaque single-round batch after complete offline verification."""
+
+    reasons = capture_snapshot_reasons(
+        snapshot,
+        trusted_snapshot_attestation_hashes=[
+            trusted_snapshot_attestation_hash
+        ],
+    )
+    if reasons or snapshot.get("response_count") != 4:
+        raise CaptureError("CAPTURE_BATCH_REPLAY_INVALID")
+    plan = ContemporaneousCapturePlan.create(snapshot["plan"]["symbol"])
+    requests = {item.request_id: item for item in capture_requests(plan)}
+    raw = []
+    receipts = [dict(item) for item in snapshot["response_receipts"]]
+    for receipt in receipts:
+        request = requests[receipt["request_id"]]
+        raw.extend(
+            _parse(
+                request,
+                receipt,
+                receipt["response_body_utf8"].encode("utf-8"),
+                receipt["ingested_at"],
+                receipt["recorded_at"],
+            )
+        )
+    return VerifiedCaptureBatch(
+        plan=plan,
+        receipts=receipts,
+        observations=raw,
+        _token=_BATCH_TOKEN,
+    )

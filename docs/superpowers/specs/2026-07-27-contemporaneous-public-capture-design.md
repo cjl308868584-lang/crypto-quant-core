@@ -150,6 +150,7 @@ self-hash 只能证明内部完整性，不是信任锚。
 - `business_key`
 - `event_time`
 - `event_time_basis`
+- `availability_basis`
 - `available_at`
 - `ingested_at`
 - `recorded_at`
@@ -177,6 +178,19 @@ family 语义：
   `event_time=available_at=response_received_at`，
   `event_time_basis=CLIENT_RECEIVE_TIME_PROXY`。禁止将其升级为交易所事件
   时间。
+
+交易所源时钟与捕获主机时钟不是同一时钟。若 Kline/AggTrade 的源事件时刻
+略晚于客户端实际接收时刻，不能放宽全局时间不变量，也不能假装客户端时钟
+就是交易所时钟。此时：
+
+- receipt 仍保留未经改写的客户端 `response_received_at`；
+- observation 的逻辑 `available_at=max(source event time, client receive time)`；
+- `availability_basis=SOURCE_EVENT_TIME_CLOCK_FLOOR`；
+- `ingested_at/recorded_at` 同样保守地不早于逻辑 `available_at`；
+- quality report 记录应用次数和最大领先毫秒数。
+
+这是一种向后取时的保守 PIT 降级，不是时钟同步。后续长期服务应增加独立
+NTP/交易所 server-time 偏移监测。
 
 ### 6.4 修订、重复与缺口
 

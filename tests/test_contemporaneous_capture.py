@@ -14,6 +14,7 @@ from crypto_quant.contemporaneous_capture import (
     capture_snapshot_attestation_hash,
     capture_snapshot_hash,
     capture_snapshot_reasons,
+    replay_single_capture_batch,
 )
 
 
@@ -205,6 +206,35 @@ class ObservationAndSessionTests(unittest.TestCase):
         self.assertGreaterEqual(report["agg_trade_duplicate_count"], 2)
         self.assertEqual(report["bbo_duplicate_count"], 1)
 
+    def test_verified_single_round_can_be_reissued_for_offline_session_replay(self):
+        plan = ContemporaneousCapturePlan.create("ETHUSDT")
+        batch = capture_once(
+            plan,
+            FakeTransport(_responses()),
+            recorded_at="2026-04-01T00:01:00.200Z",
+        )
+        first = build_capture_session(
+            [batch],
+            session_id="first-round",
+            recorded_at="2026-04-01T00:01:00.300Z",
+        )
+        anchor = capture_snapshot_attestation_hash(first)
+        replayed = replay_single_capture_batch(
+            first, trusted_snapshot_attestation_hash=anchor
+        )
+        rebuilt = build_capture_session(
+            [replayed],
+            session_id="first-round",
+            recorded_at="2026-04-01T00:01:00.300Z",
+        )
+        self.assertEqual(first, rebuilt)
+        with self.assertRaisesRegex(
+            CaptureError, "CAPTURE_BATCH_REPLAY_INVALID"
+        ):
+            replay_single_capture_batch(
+                first, trusted_snapshot_attestation_hash="0" * 64
+            )
+
     def test_aggtrade_gap_is_explicit_and_bbo_limitation_is_mandatory(self):
         plan = ContemporaneousCapturePlan.create("ETHUSDT")
         batch = capture_once(
@@ -225,6 +255,43 @@ class ObservationAndSessionTests(unittest.TestCase):
         )
         self.assertEqual(snapshot["pit_eligibility"], "CONTEMPORANEOUS_RESEARCH_ONLY")
         self.assertEqual(snapshot["paper_eligibility"], "CAPTURE_REPLAY_ONLY")
+
+    def test_source_clock_ahead_uses_conservative_availability_floor(self):
+        plan = ContemporaneousCapturePlan.create("ETHUSDT")
+        payloads = _responses()
+        payloads[2][0]["T"] = 1_775_001_661_500
+        batch = capture_once(
+            plan,
+            FakeTransport(payloads),
+            recorded_at="2026-04-01T00:01:00.200Z",
+        )
+        snapshot = build_capture_session(
+            [batch],
+            session_id="clock-floor",
+            recorded_at="2026-04-01T00:01:00.300Z",
+        )
+        floored = next(
+            item for item in snapshot["observations"]
+            if item["fact_type"] == "SPOT_AGG_TRADE"
+            and item["payload"]["aggregate_trade_id"] == 100
+        )
+        self.assertEqual(
+            floored["availability_basis"],
+            "SOURCE_EVENT_TIME_CLOCK_FLOOR",
+        )
+        self.assertEqual(floored["available_at"], floored["event_time"])
+        self.assertEqual(
+            snapshot["quality_report"]["source_clock_floor_count"],
+            1,
+        )
+        self.assertEqual(
+            snapshot["quality_report"]["max_source_clock_ahead_ms"],
+            1400,
+        )
+        self.assertIn(
+            "SOURCE_CLOCK_FLOOR_APPLIED",
+            snapshot["quality_report"]["warnings"],
+        )
 
     def test_external_attestation_and_replay_detect_all_mutations(self):
         plan = ContemporaneousCapturePlan.create("ETHUSDT")

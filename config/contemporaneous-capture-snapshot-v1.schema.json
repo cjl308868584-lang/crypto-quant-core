@@ -257,6 +257,7 @@
         "business_key",
         "event_time",
         "event_time_basis",
+        "availability_basis",
         "available_at",
         "ingested_at",
         "recorded_at",
@@ -298,6 +299,12 @@
             "SOURCE_OPEN_TIME",
             "SOURCE_TRADE_TIME",
             "CLIENT_RECEIVE_TIME_PROXY"
+          ]
+        },
+        "availability_basis": {
+          "enum": [
+            "CLIENT_RECEIVE_TIME",
+            "SOURCE_EVENT_TIME_CLOCK_FLOOR"
           ]
         },
         "available_at": {
@@ -515,6 +522,8 @@
         "bbo_duplicate_count",
         "agg_trade_gap_count",
         "max_response_latency_ms",
+        "source_clock_floor_count",
+        "max_source_clock_ahead_ms",
         "warnings",
         "blocking_findings",
         "report_hash"
@@ -538,6 +547,8 @@
         "bbo_duplicate_count": {"type": "integer", "minimum": 0},
         "agg_trade_gap_count": {"type": "integer", "minimum": 0},
         "max_response_latency_ms": {"type": "integer", "minimum": 0},
+        "source_clock_floor_count": {"type": "integer", "minimum": 0},
+        "max_source_clock_ahead_ms": {"type": "integer", "minimum": 0},
         "warnings": {
           "type": "array",
           "minItems": 4,
