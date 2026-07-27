@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/paper-account-cost-binding-v1.schema.json",
+  "title": "Paper Account Cost Binding v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "binding_id",
+    "binding_hash",
+    "created_at",
+    "source_attestations",
+    "offline_paper_run",
+    "account_commission_snapshot",
+    "pit_binding",
+    "fee_policy",
+    "baseline_cost_replay",
+    "ai_cost_replay",
+    "security_boundary",
+    "paper_eligibility",
+    "production_eligibility",
+    "profitability_eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./paper-account-cost-binding-v1.schema.json"
+    },
+    "schema_version": {"const": "1.0.0"},
+    "binding_id": {"$ref": "#/$defs/id"},
+    "binding_hash": {"$ref": "#/$defs/hash"},
+    "created_at": {"$ref": "#/$defs/timestamp"},
+    "source_attestations": {"$ref": "#/$defs/sourceAttestations"},
+    "offline_paper_run": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "account_commission_snapshot": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "pit_binding": {"$ref": "#/$defs/pitBinding"},
+    "fee_policy": {"$ref": "#/$defs/feePolicy"},
+    "baseline_cost_replay": {"$ref": "#/$defs/baselineReplay"},
+    "ai_cost_replay": {"$ref": "#/$defs/aiReplay"},
+    "security_boundary": {"$ref": "#/$defs/security"},
+    "paper_eligibility": {
+      "const": "COST_REPLAY_ONLY_NOT_LONGITUDINAL"
+    },
+    "production_eligibility": {"const": "NOT_APPROVED"},
+    "profitability_eligibility": {
+      "const": "INSUFFICIENT_DURATION_EXECUTION_AND_AI"
+    },
+    "warnings": {
+      "const": [
+        "ACCOUNT_COMMISSION_CURRENT_ONLY_NO_HISTORICAL_BACKFILL",
+        "EXTERNAL_SOURCE_ATTESTATIONS_REQUIRED",
+        "COST_ONLY_REPLAY_NOT_NEW_MARKET_OBSERVATION",
+        "SIGNAL_FILL_SLIPPAGE_AND_QUANTITY_UNCHANGED",
+        "BNB_DISCOUNT_NOT_APPLIED",
+        "AI_MODEL_NOT_RUN",
+        "PAPER_DURATION_BELOW_90_DAYS",
+        "PROFITABILITY_NOT_PROVEN"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$"
+    },
+    "sourceAttestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "offline_paper_trusted_attestation_hash",
+        "account_commission_trusted_attestation_hash",
+        "copies_are_lineage_not_independent_proof"
+      ],
+      "properties": {
+        "offline_paper_trusted_attestation_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "account_commission_trusted_attestation_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "copies_are_lineage_not_independent_proof": {"const": true}
+      }
+    },
+    "pitBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "account_observed_at",
+        "paper_decision_time",
+        "paper_run_end",
+        "account_valid_until",
+        "observed_no_later_than_decision",
+        "valid_through_run_end",
+        "historical_backfill_used"
+      ],
+      "properties": {
+        "status": {"const": "PASS"},
+        "account_observed_at": {"$ref": "#/$defs/timestamp"},
+        "paper_decision_time": {"$ref": "#/$defs/timestamp"},
+        "paper_run_end": {"$ref": "#/$defs/timestamp"},
+        "account_valid_until": {"$ref": "#/$defs/timestamp"},
+        "observed_no_later_than_decision": {"const": true},
+        "valid_through_run_end": {"const": true},
+        "historical_backfill_used": {"const": false}
+      }
+    },
+    "feePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_version",
+        "source",
+        "assumed_taker_rate_per_side",
+        "account_taker_buy_rate",
+        "account_taker_sell_rate",
+        "bnb_discount_applied",
+        "bnb_discount_scenario_present",
+        "signal_changed",
+        "fill_changed",
+        "slippage_changed",
+        "quantity_changed"
+      ],
+      "properties": {
+        "policy_version": {
+          "const": "PAPER_ACCOUNT_COMMISSION_NO_DISCOUNT_REBASE_V1"
+        },
+        "source": {
+          "const": "ACCOUNT_COMMISSION_AUTHORITATIVE_NO_DISCOUNT_RATES"
+        },
+        "assumed_taker_rate_per_side": {"const": "0.0015"},
+        "account_taker_buy_rate": {"$ref": "#/$defs/decimal"},
+        "account_taker_sell_rate": {"$ref": "#/$defs/decimal"},
+        "bnb_discount_applied": {"const": false},
+        "bnb_discount_scenario_present": {"type": "boolean"},
+        "signal_changed": {"const": false},
+        "fill_changed": {"const": false},
+        "slippage_changed": {"const": false},
+        "quantity_changed": {"const": false}
+      }
+    },
+    "baselineReplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "source_fill_status",
+        "source_market_hash",
+        "source_prediction_business_hash",
+        "entry_notional_usdt",
+        "conservative_exit_notional_usdt",
+        "assumed_entry_fee_usdt",
+        "assumed_exit_fee_usdt",
+        "assumed_total_fee_usdt",
+        "account_entry_fee_usdt",
+        "account_exit_fee_usdt",
+        "account_total_fee_usdt",
+        "account_minus_assumed_fee_usdt",
+        "original_starting_liquidation_equity_usdt",
+        "original_ending_liquidation_equity_usdt",
+        "account_costed_ending_liquidation_equity_usdt",
+        "original_liquidation_net_change_usdt",
+        "account_costed_liquidation_net_change_usdt",
+        "only_fee_values_changed",
+        "realized_pnl_claimed"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["REPLAYED_FILLED", "REPLAYED_NO_TRADE"]
+        },
+        "source_fill_status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "source_market_hash": {"$ref": "#/$defs/hash"},
+        "source_prediction_business_hash": {"$ref": "#/$defs/hash"},
+        "entry_notional_usdt": {"$ref": "#/$defs/decimal"},
+        "conservative_exit_notional_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "assumed_entry_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "assumed_exit_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "assumed_total_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "account_entry_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "account_exit_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "account_total_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "account_minus_assumed_fee_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "original_starting_liquidation_equity_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "original_ending_liquidation_equity_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "account_costed_ending_liquidation_equity_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "original_liquidation_net_change_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "account_costed_liquidation_net_change_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "only_fee_values_changed": {"const": true},
+        "realized_pnl_claimed": {"const": false}
+      }
+    },
+    "aiReplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "fee_replay_performed",
+        "paired_increment_claimed"
+      ],
+      "properties": {
+        "status": {"const": "NOT_RUN_NO_APPROVED_MODEL"},
+        "fee_replay_performed": {"const": false},
+        "paired_increment_claimed": {"const": false}
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "network_requests_made",
+        "credentials_read",
+        "account_balances_read",
+        "orders_submitted",
+        "source_signal_changed",
+        "source_fill_changed",
+        "source_market_changed"
+      ],
+      "properties": {
+        "network_requests_made": {"const": 0},
+        "credentials_read": {"const": false},
+        "account_balances_read": {"const": false},
+        "orders_submitted": {"const": false},
+        "source_signal_changed": {"const": false},
+        "source_fill_changed": {"const": false},
+        "source_market_changed": {"const": false}
+      }
+    }
+  }
+}

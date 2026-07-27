@@ -353,6 +353,20 @@ class EvaluatorBuildTests(unittest.TestCase):
             expected,
         )
         self.assertIn(
+            "config/paper-account-cost-binding-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "src/crypto_quant/schemas/"
+            "paper-account-cost-binding-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "artifacts/paper-cost/"
+            "binance-paper-account-cost-binding-not-run-v0.23.0.json",
+            expected,
+        )
+        self.assertIn(
             "src/crypto_quant/schemas/"
             "perpetual-context-snapshot-v1.schema.json",
             expected,
@@ -419,9 +433,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.17.0")
-        self.assertEqual(manifest["package_version"], "0.22.0")
-        self.assertEqual(crypto_quant.__version__, "0.22.0")
+        self.assertEqual(manifest["manifest_version"], "1.18.0")
+        self.assertEqual(manifest["package_version"], "0.23.0")
+        self.assertEqual(crypto_quant.__version__, "0.23.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",

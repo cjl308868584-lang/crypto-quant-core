@@ -71,6 +71,10 @@
 63. [只读账户费率证据决策 ADR-0022](docs/adr/0022-read-only-account-commission-evidence.md)
 64. [Binance 账户费率未运行证据 v0.22.0](artifacts/account-cost/binance-account-commission-smoke-not-run-v0.22.0.json)
 65. [实施追踪 v0.22.0](docs/implementation-status-v0.22.0.md)
+66. [Paper Account Cost Binding Schema](config/paper-account-cost-binding-v1.schema.json)
+67. [PIT Paper 账户成本绑定决策 ADR-0023](docs/adr/0023-pit-paper-account-cost-binding.md)
+68. [Paper 账户成本绑定未运行证据 v0.23.0](artifacts/paper-cost/binance-paper-account-cost-binding-not-run-v0.23.0.json)
+69. [实施追踪 v0.23.0](docs/implementation-status-v0.23.0.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -85,7 +89,7 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.22.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文，以及当前账户 Spot/USDⓈ-M commission 的只读取证边界。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
+Git中的设计基线已冻结，当前代码版本为 `0.23.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文、当前账户 Spot/USDⓈ-M commission 的只读取证边界，以及账户费率与Paper经济结果的PIT费用重放绑定。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
 
 当前58个Catalog算法中有26个Estimator可执行，其余32个明确Fail-Closed。公开历史归档的结构化请求只能访问ETHUSDT/BTCUSDT的allowlisted数据族；生产transport只执行无凭据GET，必须在解压前通过官方checksum，并将来源、质量和快照绑定到哈希。真实smoke已验证2026-07-25 ETHUSDT Spot daily 4h归档，但全部事后归档固定为`ARCHIVE_REPLAY_ONLY`：URL不是Artifact身份，也不能证明历史决策时点的数据可用性。Fee Schedule因产品、账户层级、折扣和生效期而独立冻结，不能从行情或当前网页费率反填历史。
 
@@ -101,7 +105,9 @@ v0.21固定五个Binance USDⓈ-M public GET，在健康纠偏时钟之后捕获
 
 v0.22固定三个USER_DATA signed GET，先证明API key为只读且IP-restricted，再读取当前ETHUSDT Spot与USDⓈ-M账户费率；任何额外true权限都会在commission请求前阻断。Spot权威成本保守使用standard/special/tax的no-discount总和，BNB折扣仅作非权威情景。由于没有合规credential文件，真实signed smoke按设计未运行，没有用fixture或平台默认费率冒充账户证据。
 
-仓库仍没有真实账户费率响应、真实成交/实际滑点、操作系统调度或连续90天Paper证据，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。AI臂因没有批准模型固定为`NOT_RUN_NO_APPROVED_MODEL`、零成交和统计不合格；没有用启发式信号冒充AI。FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、余额读取或真实下单能力；凭据模块仅允许one-shot只读费率取证。下一步是在本地安全准备合规只读凭据后捕获账户成本，让永续官方host的one-shot捕获进入长期Paper，再累计至少90天。详细完成度见[实施追踪 v0.22.0](docs/implementation-status-v0.22.0.md)，边界见[ADR-0022](docs/adr/0022-read-only-account-commission-evidence.md)。
+v0.23把完整Paper run、完整account commission snapshot及两个外部attestation做PIT绑定；只有账户费率在决策前可用并覆盖run end时，才用no-discount taker-buy/sell重算费用和保守清算权益。信号、成交、数量、价格和滑点保持不变。fixture重放显示旧15bps假设更保守，但成本调整后净变化仍为负；这不是实盘账户或盈利证据。
+
+仓库仍没有真实账户费率响应、真实成交/实际滑点、操作系统调度或连续90天Paper证据，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。AI臂因没有批准模型固定为`NOT_RUN_NO_APPROVED_MODEL`、零成交和统计不合格；没有用启发式信号冒充AI。FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、余额读取或真实下单能力；凭据模块仅允许one-shot只读费率取证。下一步是在本地安全准备合规只读凭据后捕获真实账户成本，把账户成本与永续上下文纳入每个4h长期Paper周期，再累计至少90天。详细完成度见[实施追踪 v0.23.0](docs/implementation-status-v0.23.0.md)，边界见[ADR-0023](docs/adr/0023-pit-paper-account-cost-binding.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
