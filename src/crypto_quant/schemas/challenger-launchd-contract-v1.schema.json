@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-launchd-contract-v1.schema.json",
+  "title": "Challenger Launchd Contract V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "created_at", "platform", "label", "repository_root", "runtime_root", "python_executable", "system_timezone", "cadence", "program_arguments", "environment_variable_names", "launchd_plist_sha256", "installation_status", "security_boundary", "warnings"],
+  "properties": {
+    "$schema": {"const": "./challenger-launchd-contract-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "contract_id": {"type": "string", "pattern": "^challenger_launchd_contract_[0-9a-f]{64}$"},
+    "contract_hash": {"$ref": "#/$defs/hash"},
+    "created_at": {"$ref": "#/$defs/time"},
+    "platform": {"const": "MACOS_LAUNCHD"},
+    "label": {"const": "local.crypto-quant.challenger-forward"},
+    "repository_root": {"type": "string", "pattern": "^/"},
+    "runtime_root": {"type": "string", "pattern": "^/"},
+    "python_executable": {"type": "string", "pattern": "^/"},
+    "system_timezone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iana_name", "utc_offset_seconds", "daylight_saving_time_active"],
+      "properties": {
+        "iana_name": {"const": "Asia/Shanghai"},
+        "utc_offset_seconds": {"const": 28800},
+        "daylight_saving_time_active": {"const": false}
+      }
+    },
+    "cadence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time_basis", "utc_slot_hours", "local_launch_hours", "minute", "run_at_load"],
+      "properties": {
+        "time_basis": {"const": "SYSTEM_LOCAL_ASIA_SHANGHAI_UTC_PLUS_08"},
+        "utc_slot_hours": {"const": [0, 4, 8, 12, 16, 20]},
+        "local_launch_hours": {"const": [0, 4, 8, 12, 16, 20]},
+        "minute": {"const": 2},
+        "run_at_load": {"const": true}
+      }
+    },
+    "program_arguments": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "prefixItems": [
+        {"type": "string", "pattern": "^/"},
+        {"const": "-m"},
+        {"const": "crypto_quant.challenger_forward_runner_cli"},
+        {"const": "--state-path"},
+        {"type": "string", "pattern": "^/.+/state/challenger-forward\\.sqlite$"},
+        {"const": "--output-root"},
+        {"type": "string", "pattern": "^/.+/artifacts$"}
+      ],
+      "items": false
+    },
+    "environment_variable_names": {"const": ["PYTHONPATH"]},
+    "launchd_plist_sha256": {"$ref": "#/$defs/hash"},
+    "installation_status": {"const": "NOT_INSTALLED_NO_EXTERNAL_RECEIPT"},
+    "security_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential_paths_present", "credential_values_present", "shell_invoked", "arbitrary_command_allowed", "launchctl_invoked", "network_scope", "broker_access", "orders_submitted"],
+      "properties": {
+        "credential_paths_present": {"const": false},
+        "credential_values_present": {"const": false},
+        "shell_invoked": {"const": false},
+        "arbitrary_command_allowed": {"const": false},
+        "launchctl_invoked": {"const": false},
+        "network_scope": {"const": "BINANCE_PUBLIC_DATA_ONLY"},
+        "broker_access": {"const": false},
+        "orders_submitted": {"const": false}
+      }
+    },
+    "warnings": {"const": ["LAUNCHAGENT_NOT_INSTALLED", "INSTALLATION_LOAD_AND_RUNTIME_RECEIPTS_REQUIRED", "SYSTEM_TIMEZONE_CHANGE_CAN_BREAK_UTC_ALIGNMENT", "BINANCE_TIME_RECEIPT_IS_NOT_INDEPENDENT_PUBLICATION", "NO_PROFITABILITY_CLAIM"]}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"}
+  }
+}

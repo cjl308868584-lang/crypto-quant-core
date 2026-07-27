@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "challenger-launchd-not-installed-v0.32.0",
+  "release_candidate": "0.32.0",
+  "recorded_at": "2026-07-27T22:16:47.022Z",
+  "status": "GENERATED_NOT_INSTALLED",
+  "actual_contract": {
+    "contract_id": "challenger_launchd_contract_c13bc8c0c86845d929623c4c9b74127458a5f44086656edd93d2de488323a920",
+    "contract_hash": "ac1d58ebe5d7b99bdebe7f33dd674d7c60099c52068ea096314608ebc1ce0fe7",
+    "contract_trust_hash": "1a35cd9d3bfe763a41161da090ffc2fdf33a320bb8850b05440dfe8e94c6146d",
+    "launchd_plist_sha256": "a86f69f87e767198a9582ad27c44e850a092e8589bf42b7a05e1e22fdab19cfb",
+    "repository_root": "/Users/chenm4/Documents/虚拟货币",
+    "runtime_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-forward-v1",
+    "python_executable": "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3",
+    "system_timezone": "Asia/Shanghai",
+    "installation_status": "NOT_INSTALLED_NO_EXTERNAL_RECEIPT"
+  },
+  "filesystem": {
+    "runtime_directory_mode": "0700",
+    "state_directory_mode": "0700",
+    "log_directory_mode": "0700",
+    "artifact_directory_mode": "0700",
+    "contract_file_mode": "0600",
+    "plist_file_mode": "0600",
+    "contract_and_plist_outside_git": true
+  },
+  "real_execution": {
+    "launchctl_invoked": false,
+    "launchagent_copied_to_user_domain": false,
+    "launchagent_loaded": false,
+    "server_time_request_count": 0,
+    "kline_request_count": 0,
+    "decision_count": 0,
+    "broker_request_count": 0,
+    "order_submission_count": 0
+  },
+  "fixture_validation": {
+    "focused_test_count": 9,
+    "deterministic_rebuild_count": 100,
+    "schema_mirror_exact": true,
+    "plist_semantic_replay_verified": true,
+    "timezone_fail_closed_verified": true,
+    "path_and_permission_fail_closed_verified": true,
+    "eligible_as_installation_receipt": false
+  },
+  "eligibility": {
+    "operating_system_scheduling": "INELIGIBLE_NOT_INSTALLED",
+    "forward_evidence": "INELIGIBLE_NO_REAL_DECISIONS",
+    "release_oos": "INELIGIBLE_FORWARD_COLLECTION_NOT_STARTED",
+    "profitability": "INELIGIBLE"
+  },
+  "warnings": [
+    "GENERATED_PLIST_IS_NOT_INSTALLATION_OR_LOAD_EVIDENCE",
+    "THE_REGISTERED_FORWARD_START_HAS_NOT_OCCURRED_AT_RECORDING_TIME",
+    "NO_REAL_NETWORK_REQUEST_WAS_MADE",
+    "NO_HISTORICAL_BACKFILL",
+    "NO_OUTCOME_OR_PROFITABILITY_CLAIM"
+  ]
+}

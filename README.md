@@ -112,6 +112,10 @@
 104. [Challenger 实时只读 Runner ADR-0031](docs/adr/0031-challenger-public-live-runner.md)
 105. [Challenger Live Runner 未运行证据 v0.31.0](artifacts/challenger-forward/binance-challenger-live-runner-not-run-v0.31.0.json)
 106. [实施追踪 v0.31.0](docs/implementation-status-v0.31.0.md)
+107. [Challenger Launchd Contract Schema](config/challenger-launchd-contract-v1.schema.json)
+108. [Challenger LaunchAgent 合同 ADR-0032](docs/adr/0032-challenger-launchagent-contract.md)
+109. [Challenger LaunchAgent 未安装证据 v0.32.0](artifacts/challenger-forward/challenger-launchd-not-installed-v0.32.0.json)
+110. [实施追踪 v0.32.0](docs/implementation-status-v0.32.0.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -126,7 +130,7 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.31.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文、当前账户 Spot/USDⓈ-M commission 的只读取证边界、账户费率与Paper经济结果的PIT费用重放绑定、账户成本/永续同槽位的context-complete可恢复侧车、共享可信时钟与保留决策前账户证据的可恢复完整周期编排、42个完整月与显式日档修复的完整研究语料、官方1m执行代理、严格因果event-based标签、固定低维Logistic档案研究、固定分组的简单基线失败归因、仅前向challenger事件流状态机与不可回填记录器，以及固定3+1公共请求边界的实时只读runner与source bundle。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
+Git中的设计基线已冻结，当前代码版本为 `0.32.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文、当前账户 Spot/USDⓈ-M commission 的只读取证边界、账户费率与Paper经济结果的PIT费用重放绑定、账户成本/永续同槽位的context-complete可恢复侧车、共享可信时钟与保留决策前账户证据的可恢复完整周期编排、42个完整月与显式日档修复的完整研究语料、官方1m执行代理、严格因果event-based标签、固定低维Logistic档案研究、固定分组的简单基线失败归因、仅前向challenger事件流状态机与不可回填记录器、固定3+1公共请求边界的实时只读runner与source bundle，以及无凭据且只渲染不安装的macOS LaunchAgent合同。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
 
 当前58个Catalog算法中有26个Estimator可执行，其余32个明确Fail-Closed。公开历史归档的结构化请求只能访问ETHUSDT/BTCUSDT的allowlisted数据族；生产transport只执行无凭据GET，必须在解压前通过官方checksum，并将来源、质量和快照绑定到哈希。真实smoke已验证2026-07-25 ETHUSDT Spot daily 4h归档，但全部事后归档固定为`ARCHIVE_REPLAY_ONLY`：URL不是Artifact身份，也不能证明历史决策时点的数据可用性。Fee Schedule因产品、账户层级、折扣和生效期而独立冻结，不能从行情或当前网页费率反填历史。
 
@@ -160,7 +164,9 @@ v0.30把唯一预注册challenger实现为确定性4h事件流状态机：21根�
 
 v0.31把记录器接到最小实时公共输入：每轮先用3个Binance server-time响应打开可信时钟门，只有当前槽位等于下一必需槽位时才执行1个由slot派生、禁止覆盖的ETHUSDT Spot 4h Kline GET。完整raw body、HTTP receipt、探针和candidate decision先组成owner-only source bundle，再追加state；早到与漏槽都产生0个行情请求。20根重叠Kline必须沿用首次availability，任何闭合行修订失败。CLI只接受state/output路径，不接受URL、时间、symbol、凭据或订单参数。版本冻结时仍早于首槽，因此真实网络请求和真实decision均为0。
 
-仓库仍没有真实账户费率响应、成功的真实Futures上下文、真实成交/实际滑点、已安装的操作系统调度、批准模型或连续90天Paper证据，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。AI臂仍没有批准模型，不能进入发布或下单链。FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、余额读取或真实下单能力；凭据模块仅允许one-shot只读费率取证。下一步是在首槽前生成并审查无凭据LaunchAgent合同，随后按时启动真实runner；Binance time receipt仍不是独立第三方publication。详细完成度见[实施追踪 v0.31.0](docs/implementation-status-v0.31.0.md)，工程裁决见[ADR-0031](docs/adr/0031-challenger-public-live-runner.md)。
+v0.32固定并在仓库外真实生成`local.crypto-quant.challenger-forward` LaunchAgent合同：Asia/Shanghai +08:00无DST，本地0/4/8/12/16/20点02分触发，与UTC 4h网格一致；程序参数只包含runner module、state path和output root，环境变量只含PYTHONPATH，无credential、shell、URL或order。runtime与发布目录为0700，plist/合同为0600。生成器明确没有调用`launchctl`，因此状态仍是`NOT_INSTALLED_NO_EXTERNAL_RECEIPT`。
+
+仓库仍没有真实账户费率响应、成功的真实Futures上下文、真实成交/实际滑点、已安装的操作系统调度、批准模型或连续90天Paper证据，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。AI臂仍没有批准模型，不能进入发布或下单链。FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、余额读取或真实下单能力；凭据模块仅允许one-shot只读费率取证。下一步是审查后安装/加载该LaunchAgent并保存外部receipt；仅有plist不能证明任务运行。详细完成度见[实施追踪 v0.32.0](docs/implementation-status-v0.32.0.md)，工程裁决见[ADR-0032](docs/adr/0032-challenger-launchagent-contract.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
