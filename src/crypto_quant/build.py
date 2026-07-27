@@ -30,6 +30,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/historical-market-data-snapshot-v1.schema.json",
     "config/model-bundle-v1.1.schema.json",
     "config/offline-paper-run-v1.schema.json",
+    "config/paper-runtime-snapshot-v1.schema.json",
     "config/paper-schedule-snapshot-v1.schema.json",
     "config/paired-risk-evaluation-snapshot-v1.schema.json",
     "config/recipe-release-v1.1.schema.json",
@@ -41,6 +42,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/supporting-observation-bundle-v1.schema.json",
     "config/statistical-series-snapshot-v1.schema.json",
     "config/statistical-decision-snapshot-v1.schema.json",
+    "config/server-time-probe-v1.schema.json",
     "config/trade-replay-snapshot-v1.schema.json",
     "pyproject.toml",
     "requirements.lock",
@@ -52,6 +54,10 @@ _FROZEN_ARTIFACT_PATHS = (
     "artifacts/paper/binance-offline-paper-smoke-v0.18.0.json",
     "artifacts/paper/paper-schedule-ethusdt_20260727t120000z.json",
     "artifacts/paper/paper-slot-ethusdt_20260727t120000z.json",
+    "artifacts/runtime/v0.20-smoke/paper/paper-schedule-ethusdt_20260727t120000z.json",
+    "artifacts/runtime/v0.20-smoke/paper/paper-slot-ethusdt_20260727t120000z.json",
+    "artifacts/runtime/v0.20-smoke/runtime/paper-runtime-runtime_event_827acba8afd454ae735cd0c0d157b76beb125466a243b30159e2ee7233283f2c.json",
+    "artifacts/runtime/v0.20-smoke/runtime/paper-runtime-runtime_event_ea4452a8f11abc78d4e8df0a02f57554e2ec918567b9bedb7c5df20d47b3e34e.json",
 )
 
 

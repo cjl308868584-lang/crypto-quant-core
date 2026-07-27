@@ -27,6 +27,12 @@ from crypto_quant.runtime_health import (
     server_time_probe_trust_hash,
 )
 from crypto_quant.runtime_health_cli import main
+from crypto_quant.offline_paper import (
+    offline_paper_run_reasons,
+)
+from crypto_quant.paper_scheduler import (
+    schedule_snapshot_reasons,
+)
 from tests.test_paper_scheduler import BombTransport, paper_transport
 
 
@@ -425,6 +431,80 @@ class RuntimeStateTests(unittest.TestCase):
 
 
 class RuntimeWrapperTests(unittest.TestCase):
+    def test_frozen_real_smoke_replays_with_external_attestations(self):
+        root = (
+            Path(__file__).resolve().parents[1]
+            / "artifacts"
+            / "runtime"
+            / "v0.20-smoke"
+        )
+        runtime_attestations = {
+            "paper-runtime-runtime_event_ea4452a8f11abc78d4e8df0a02f57554"
+            "e2ec918567b9bedb7c5df20d47b3e34e.json":
+                "4a418154c8fa7ca5f106f2827a5a251152297a28e2fc75c266a6e84"
+                "ef5df86f8",
+            "paper-runtime-runtime_event_827acba8afd454ae735cd0c0d157b76"
+            "beb125466a243b30159e2ee7233283f2c.json":
+                "06a0b68f8ea4a9ebe33df0383920dde733754c8cfd42e78307d0239"
+                "d1f1b6586",
+        }
+        for name, attestation in runtime_attestations.items():
+            snapshot = json.loads(
+                (root / "runtime" / name).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                runtime_snapshot_reasons(snapshot, attestation), ()
+            )
+
+        cycle = json.loads(
+            (
+                root
+                / "paper"
+                / "paper-slot-ethusdt_20260727t120000z.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            offline_paper_run_reasons(
+                cycle,
+                "32c77947715ea09287d327af5abe15fb2822bf4865b1cdeb809a658"
+                "3438b2760",
+            ),
+            (),
+        )
+        schedule = json.loads(
+            (
+                root
+                / "paper"
+                / "paper-schedule-ethusdt_20260727t120000z.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            schedule_snapshot_reasons(
+                schedule,
+                "7854ef09c33ae0468170c994e7f0c6e97072319a77d150a6b5e9bf"
+                "160a87a61b",
+            ),
+            (),
+        )
+        latest = json.loads(
+            (
+                root
+                / "runtime"
+                / (
+                    "paper-runtime-runtime_event_827acba8afd454ae735cd0c0"
+                    "d157b76beb125466a243b30159e2ee7233283f2c.json"
+                )
+            ).read_text(encoding="utf-8")
+        )
+        latest_payload = latest["events"][-1]["payload"]
+        self.assertEqual(
+            latest_payload["scheduler"]["outcome"], "ALREADY_SUCCEEDED"
+        )
+        self.assertEqual(
+            latest_payload["network"]["paper_market_request_count"], 0
+        )
+        self.assertEqual(latest_payload["alerts"]["active"], [])
+
     def test_blocked_probe_never_calls_paper_transport(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

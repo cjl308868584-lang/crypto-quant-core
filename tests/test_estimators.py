@@ -327,6 +327,14 @@ class EvaluatorBuildTests(unittest.TestCase):
             expected,
         )
         self.assertIn(
+            "config/paper-runtime-snapshot-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
+            "config/server-time-probe-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
             "src/crypto_quant/schemas/paper-schedule-snapshot-v1.schema.json",
             expected,
         )
@@ -336,6 +344,12 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn(
             "artifacts/paper/paper-schedule-ethusdt_20260727t120000z.json",
+            expected,
+        )
+        self.assertIn(
+            "artifacts/runtime/v0.20-smoke/runtime/"
+            "paper-runtime-runtime_event_827acba8afd454ae735cd0c0d157b76"
+            "beb125466a243b30159e2ee7233283f2c.json",
             expected,
         )
         self.assertIn("setup.py", expected)
@@ -377,9 +391,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.14.0")
-        self.assertEqual(manifest["package_version"], "0.19.0")
-        self.assertEqual(crypto_quant.__version__, "0.19.0")
+        self.assertEqual(manifest["manifest_version"], "1.15.0")
+        self.assertEqual(manifest["package_version"], "0.20.0")
+        self.assertEqual(crypto_quant.__version__, "0.20.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
