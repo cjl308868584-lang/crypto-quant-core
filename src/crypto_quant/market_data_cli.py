@@ -144,11 +144,24 @@ def _close_without_reversing_result(descriptor: int) -> None:
         pass
 
 
-def _discard_created_temporary(directory_fd: int, name: str) -> None:
-    entry = _regular_stat(directory_fd, name)
-    if entry is not None:
-        _unlink_own_name(directory_fd, name, (entry.st_dev, entry.st_ino))
-        os.fsync(directory_fd)
+def _discard_created_temporary(
+    directory_fd: int,
+    name: str,
+    identity: Optional[Tuple[int, int]],
+) -> None:
+    if identity is None:
+        entry = _regular_stat(directory_fd, name)
+        if entry is None:
+            return
+        identity = (entry.st_dev, entry.st_ino)
+    try:
+        entry = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if (entry.st_dev, entry.st_ino) != identity:
+        raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+    os.unlink(name, dir_fd=directory_fd)
+    os.fsync(directory_fd)
 
 
 def _open_temporary_artifact(directory_fd: int) -> Tuple[str, int, Tuple[int, int]]:
@@ -159,14 +172,16 @@ def _open_temporary_artifact(directory_fd: int) -> Tuple[str, int, Tuple[int, in
             descriptor = os.open(name, flags, 0o600, dir_fd=directory_fd)
         except FileExistsError:
             continue
+        identity = None
         try:
             opened = os.fstat(descriptor)
+            identity = (opened.st_dev, opened.st_ino)
             if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
                 raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
-            return name, descriptor, (opened.st_dev, opened.st_ino)
+            return name, descriptor, identity
         except (MarketDataError, OSError):
             _close_without_reversing_result(descriptor)
-            _discard_created_temporary(directory_fd, name)
+            _discard_created_temporary(directory_fd, name, identity)
             raise
     raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
 

@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import os
+import stat
 import tempfile
 import unittest
 import zipfile
@@ -555,6 +556,43 @@ class MarketDataCliTests(unittest.TestCase):
 
                 self.assertNotEqual(status, 0)
                 self.assertEqual(list((root / "market-data").iterdir()), [])
+
+    def test_initial_temporary_validation_discards_its_own_invalid_inode(self):
+        import crypto_quant.market_data_cli as cli
+
+        for invalid in ("hardlinked", "non_regular"):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                descriptor = os.open(str(directory), cli._directory_flags())
+                original_fstat = cli.os.fstat
+                original_stat = cli.os.stat
+
+                def invalid_stat(result):
+                    values = list(result)
+                    if invalid == "hardlinked":
+                        values[3] = 2
+                    else:
+                        values[0] = stat.S_IFIFO | 0o600
+                    return os.stat_result(values)
+
+                def report_invalid_fstat(fd):
+                    return invalid_stat(original_fstat(fd))
+
+                def report_invalid_temp_stat(name, *args, **kwargs):
+                    result = original_stat(name, *args, **kwargs)
+                    if str(name).startswith(".market-data-"):
+                        return invalid_stat(result)
+                    return result
+
+                try:
+                    with patch("crypto_quant.market_data_cli.os.fstat", side_effect=report_invalid_fstat), patch(
+                        "crypto_quant.market_data_cli.os.stat", side_effect=report_invalid_temp_stat
+                    ):
+                        with self.assertRaises(MarketDataError):
+                            cli._open_temporary_artifact(descriptor)
+                finally:
+                    os.close(descriptor)
+                self.assertEqual(list(directory.iterdir()), [])
 
     def test_post_commit_close_errors_do_not_report_failure_and_resolve_runs_before_publish(self):
         import crypto_quant.market_data_cli as cli
