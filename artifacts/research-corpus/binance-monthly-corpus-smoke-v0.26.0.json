@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "binance-monthly-corpus-smoke-v0.26.0",
+  "release_candidate": "0.26.0",
+  "status": "PASS_SINGLE_ITEM_WITH_INDEPENDENT_REDOWNLOAD",
+  "plan": {
+    "plan_id": "historical-research-corpus-202301-202606",
+    "plan_hash": "1a00b56ebb1ebe89340a31665103eb60f631992b31170d26568e1011f06c086d",
+    "month_count": 42,
+    "fold_count": 8,
+    "stream_count": 4,
+    "item_count": 168,
+    "expected_full_corpus_physical_get_count": 336
+  },
+  "smoke_request": {
+    "market": "SPOT",
+    "data_family": "KLINES",
+    "symbol": "ETHUSDT",
+    "interval": "4h",
+    "period_kind": "MONTHLY",
+    "period": "2023-01",
+    "archive_url": "https://data.binance.vision/data/spot/monthly/klines/ETHUSDT/4h/ETHUSDT-4h-2023-01.zip",
+    "checksum_url": "https://data.binance.vision/data/spot/monthly/klines/ETHUSDT/4h/ETHUSDT-4h-2023-01.zip.CHECKSUM"
+  },
+  "first_retrieval": {
+    "retrieved_at": "2026-07-27T19:04:33.828Z",
+    "physical_get_count": 2,
+    "archive_sha256": "5ef9f01e728f0cc9f154aeb8d9febfa8a72fd0817aca80d7358db5aef134ba6e",
+    "checksum_file_sha256": "f045392b8fa6c5328380d76c939cf2235dd43724e6b7e1fb3b6b1e7c5383052f",
+    "csv_sha256": "5f26a5bbfb0fe85284203ca08ddb9e38e542493e50d8ec37951257311f81d2ca",
+    "source_rows_root_hash": "a07f6f828c3aa5b066384929cfe63fcb2b736e8db1e8ec362f4e96136182df92",
+    "facts_root_hash": "a2d1c44f5f9c9c0b65516878e62751bd69b45394ffa86c761afd5c80813761ef",
+    "receipt_hash": "057e09afbc1765cf98dccdcd8e145f1b242b788932c93874c3bbbe8c523759d8",
+    "quality_report_hash": "62449b365fd7c9cb0e6c8ec307b2cc7fc2c352dfb68a3eb2ff8c9969c16717ca",
+    "snapshot_hash": "5a747ef98298381c7b69dcf3a845425ac2f64ab67b896dcf592a4136b0542ba2",
+    "expected_attestation_hash": "3ad282d09129c7c541f355fd06c28fbb6bdbcba80952bc8cfce17ddcd2cb1547",
+    "row_count": 186,
+    "first_event_time": "2023-01-01T03:59:59.999000Z",
+    "last_event_time": "2023-01-31T23:59:59.999000Z",
+    "quality_eligibility": "FORMAL_COMPLETE"
+  },
+  "independent_redownload": {
+    "retrieved_at": "2026-07-27T19:04:55.005Z",
+    "physical_get_count": 2,
+    "archive_sha256_match": true,
+    "checksum_file_sha256_match": true,
+    "csv_sha256_match": true,
+    "source_rows_root_hash_match": true,
+    "facts_root_hash_match": false,
+    "facts_root_difference_reason": "EXPECTED_INGESTION_TIME_BINDING",
+    "second_snapshot_hash": "869a9dd7b40e492d5048e2de580b3327ff56bac33fbc7736a40739941030291b",
+    "second_facts_root_hash": "abe1fef24aaa9811ad1cf9b4db881aee60ef86d0c8485ef565397d6b27dd4538"
+  },
+  "full_corpus_status": {
+    "downloaded_item_count": 1,
+    "remaining_item_count": 167,
+    "repository_raw_archive_count": 0,
+    "repository_full_snapshot_count": 0,
+    "research_training_readiness": "NOT_READY_INCOMPLETE_OR_INVALID",
+    "attestation_eligibility": "UNANCHORED_ARCHIVE_RESEARCH",
+    "formal_pit_eligibility": "INELIGIBLE_ARCHIVE_REPLAY",
+    "release_oos_eligibility": "INELIGIBLE",
+    "profitability_eligibility": "INELIGIBLE"
+  },
+  "notes": [
+    "The smoke used four total public GET requests across two independent runs.",
+    "The full 42-month corpus was deliberately not downloaded during release validation.",
+    "Archive/checksum/CSV/source-row roots are stable across redownloads.",
+    "Fact roots intentionally bind retrieval-specific ingestion and availability times.",
+    "No credential, account endpoint, Broker, order submission or model training was used."
+  ]
+}

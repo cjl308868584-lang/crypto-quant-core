@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/historical-research-corpus-snapshot-v1.schema.json",
+  "title": "Historical Research Corpus Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "snapshot_id",
+    "snapshot_hash",
+    "recorded_at",
+    "plan_id",
+    "plan_hash",
+    "event_count",
+    "event_chain_end_hash",
+    "items",
+    "coverage",
+    "summary",
+    "state_integrity",
+    "research_training_readiness",
+    "attestation_eligibility",
+    "formal_pit_eligibility",
+    "release_oos_eligibility",
+    "profitability_eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./historical-research-corpus-snapshot-v1.schema.json"
+    },
+    "schema_version": {"const": "1.0.0"},
+    "snapshot_id": {"$ref": "#/$defs/id"},
+    "snapshot_hash": {"$ref": "#/$defs/hash"},
+    "recorded_at": {"$ref": "#/$defs/time"},
+    "plan_id": {"const": "historical-research-corpus-202301-202606"},
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "event_count": {"type": "integer", "minimum": 0},
+    "event_chain_end_hash": {"$ref": "#/$defs/hash"},
+    "items": {
+      "type": "array",
+      "minItems": 168,
+      "maxItems": 168,
+      "items": {"$ref": "#/$defs/item"}
+    },
+    "coverage": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"$ref": "#/$defs/coverage"}
+    },
+    "summary": {"$ref": "#/$defs/summary"},
+    "state_integrity": {
+      "const": "VERIFIED_APPEND_ONLY_WAL_AND_SOURCE_BYTES"
+    },
+    "research_training_readiness": {
+      "enum": [
+        "NOT_READY_INCOMPLETE_OR_INVALID",
+        "READY_FOR_ARCHIVE_RESEARCH_FEATURE_BUILD"
+      ]
+    },
+    "attestation_eligibility": {
+      "enum": [
+        "UNANCHORED_ARCHIVE_RESEARCH",
+        "EXTERNALLY_ANCHORED"
+      ]
+    },
+    "formal_pit_eligibility": {"const": "INELIGIBLE_ARCHIVE_REPLAY"},
+    "release_oos_eligibility": {"const": "INELIGIBLE"},
+    "profitability_eligibility": {"const": "INELIGIBLE"},
+    "warnings": {
+      "const": [
+        "ARCHIVE_REPLAY_IS_NOT_POINT_IN_TIME_EVIDENCE",
+        "NO_EXECUTION_LABELS_OR_REAL_FILLS",
+        "NO_MODEL_TRAINED_OR_APPROVED",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "month": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"},
+    "streamId": {
+      "enum": [
+        "ETH_SPOT_4H",
+        "BTC_CONTEXT_4H",
+        "ETH_MARK_4H",
+        "ETH_FUNDING"
+      ]
+    },
+    "status": {
+      "enum": [
+        "PENDING",
+        "CLAIMED",
+        "CLAIM_EXPIRED",
+        "FAILED",
+        "SUCCEEDED"
+      ]
+    },
+    "nullableHash": {
+      "oneOf": [
+        {"$ref": "#/$defs/hash"},
+        {"type": "null"}
+      ]
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corpus_item_id",
+        "stream_id",
+        "month",
+        "status",
+        "attempt_count",
+        "snapshot_sha256_or_null",
+        "snapshot_hash_or_null",
+        "quality_eligibility_or_null",
+        "expected_attestation_hash_or_null",
+        "attestation_anchored",
+        "last_error_code_or_null"
+      ],
+      "properties": {
+        "corpus_item_id": {"$ref": "#/$defs/id"},
+        "stream_id": {"$ref": "#/$defs/streamId"},
+        "month": {"$ref": "#/$defs/month"},
+        "status": {"$ref": "#/$defs/status"},
+        "attempt_count": {"type": "integer", "minimum": 0},
+        "snapshot_sha256_or_null": {"$ref": "#/$defs/nullableHash"},
+        "snapshot_hash_or_null": {"$ref": "#/$defs/nullableHash"},
+        "quality_eligibility_or_null": {
+          "enum": ["FORMAL_COMPLETE", null]
+        },
+        "expected_attestation_hash_or_null": {
+          "$ref": "#/$defs/nullableHash"
+        },
+        "attestation_anchored": {"type": "boolean"},
+        "last_error_code_or_null": {
+          "oneOf": [
+            {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "monthStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["month", "status"],
+      "properties": {
+        "month": {"$ref": "#/$defs/month"},
+        "status": {"$ref": "#/$defs/status"}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stream_id", "months"],
+      "properties": {
+        "stream_id": {"$ref": "#/$defs/streamId"},
+        "months": {
+          "type": "array",
+          "minItems": 42,
+          "maxItems": 42,
+          "items": {"$ref": "#/$defs/monthStatus"}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_item_count",
+        "pending_item_count",
+        "claimed_item_count",
+        "expired_claim_item_count",
+        "failed_item_count",
+        "succeeded_item_count",
+        "physical_get_count",
+        "corpus_complete",
+        "quality_complete",
+        "attestation_anchoring_complete"
+      ],
+      "properties": {
+        "planned_item_count": {"const": 168},
+        "pending_item_count": {"type": "integer", "minimum": 0, "maximum": 168},
+        "claimed_item_count": {"type": "integer", "minimum": 0, "maximum": 168},
+        "expired_claim_item_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 168
+        },
+        "failed_item_count": {"type": "integer", "minimum": 0, "maximum": 168},
+        "succeeded_item_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 168
+        },
+        "physical_get_count": {"type": "integer", "minimum": 0},
+        "corpus_complete": {"type": "boolean"},
+        "quality_complete": {"type": "boolean"},
+        "attestation_anchoring_complete": {"type": "boolean"}
+      }
+    }
+  }
+}

@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/historical-research-corpus-plan-v1.schema.json",
+  "title": "Historical Research Corpus Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "plan_id",
+    "plan_hash",
+    "provider",
+    "corpus_start",
+    "corpus_end_exclusive",
+    "oos_start",
+    "oos_end_exclusive",
+    "months",
+    "streams",
+    "folds",
+    "items",
+    "summary",
+    "pit_eligibility",
+    "usage_eligibility",
+    "prohibited_uses",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./historical-research-corpus-plan-v1.schema.json"
+    },
+    "schema_version": {"const": "1.0.0"},
+    "plan_id": {"const": "historical-research-corpus-202301-202606"},
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "provider": {"const": "BINANCE_PUBLIC_DATA"},
+    "corpus_start": {"const": "2023-01-01T00:00:00.000Z"},
+    "corpus_end_exclusive": {"const": "2026-07-01T00:00:00.000Z"},
+    "oos_start": {"const": "2024-07-01T00:00:00.000Z"},
+    "oos_end_exclusive": {"const": "2026-07-01T00:00:00.000Z"},
+    "months": {
+      "type": "array",
+      "minItems": 42,
+      "maxItems": 42,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/month"}
+    },
+    "streams": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"$ref": "#/$defs/stream"}
+    },
+    "folds": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {"$ref": "#/$defs/fold"}
+    },
+    "items": {
+      "type": "array",
+      "minItems": 168,
+      "maxItems": 168,
+      "items": {"$ref": "#/$defs/item"}
+    },
+    "summary": {"$ref": "#/$defs/summary"},
+    "pit_eligibility": {"const": "ARCHIVE_REPLAY_ONLY"},
+    "usage_eligibility": {"const": "RESEARCH_DEVELOPMENT_ONLY"},
+    "prohibited_uses": {
+      "const": [
+        "FORMAL_PIT_OOS",
+        "RELEASE_AUDIT_PASS",
+        "MODEL_AUTO_ACTIVATION",
+        "PROFITABILITY_CLAIM"
+      ]
+    },
+    "warnings": {
+      "const": [
+        "ARCHIVE_REPLAY_IS_NOT_POINT_IN_TIME_EVIDENCE",
+        "NO_EXECUTION_LABELS_OR_REAL_FILLS",
+        "NO_MODEL_TRAINED_OR_APPROVED",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.000Z$"
+    },
+    "month": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"},
+    "streamId": {
+      "enum": [
+        "ETH_SPOT_4H",
+        "BTC_CONTEXT_4H",
+        "ETH_MARK_4H",
+        "ETH_FUNDING"
+      ]
+    },
+    "stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stream_id",
+        "market",
+        "data_family",
+        "symbol",
+        "interval_or_null",
+        "purpose"
+      ],
+      "properties": {
+        "stream_id": {"$ref": "#/$defs/streamId"},
+        "market": {"enum": ["SPOT", "USD_M"]},
+        "data_family": {
+          "enum": ["KLINES", "MARK_PRICE_KLINES", "FUNDING_RATE"]
+        },
+        "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]},
+        "interval_or_null": {"enum": ["4h", null]},
+        "purpose": {
+          "enum": [
+            "BASE_PROPOSAL_AND_PRICE_VOLUME_FEATURES",
+            "CONTEXT_ONLY_NO_BTC_ORDERS",
+            "PERPETUAL_MARK_AND_BASIS_RESEARCH",
+            "FUNDING_CONTEXT_RESEARCH"
+          ]
+        }
+      }
+    },
+    "fold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fold_id",
+        "fold_index",
+        "training_window_start",
+        "training_window_end_exclusive",
+        "fit_window_start",
+        "fit_window_end_exclusive",
+        "calibration_window_start",
+        "calibration_window_end_exclusive",
+        "purge_duration_hours",
+        "embargo_duration_hours",
+        "oos_window_start",
+        "oos_window_end_exclusive",
+        "eligibility"
+      ],
+      "properties": {
+        "fold_id": {"$ref": "#/$defs/id"},
+        "fold_index": {"type": "integer", "minimum": 1, "maximum": 8},
+        "training_window_start": {"$ref": "#/$defs/time"},
+        "training_window_end_exclusive": {"$ref": "#/$defs/time"},
+        "fit_window_start": {"$ref": "#/$defs/time"},
+        "fit_window_end_exclusive": {"$ref": "#/$defs/time"},
+        "calibration_window_start": {"$ref": "#/$defs/time"},
+        "calibration_window_end_exclusive": {"$ref": "#/$defs/time"},
+        "purge_duration_hours": {"const": 24},
+        "embargo_duration_hours": {"const": 24},
+        "oos_window_start": {"$ref": "#/$defs/time"},
+        "oos_window_end_exclusive": {"$ref": "#/$defs/time"},
+        "eligibility": {"const": "RESEARCH_ARCHIVE_FOLD"}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "provider",
+        "market",
+        "data_family",
+        "symbol",
+        "interval_or_null",
+        "period_kind",
+        "period"
+      ],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "provider": {"const": "BINANCE_PUBLIC_DATA"},
+        "market": {"enum": ["SPOT", "USD_M"]},
+        "data_family": {
+          "enum": ["KLINES", "MARK_PRICE_KLINES", "FUNDING_RATE"]
+        },
+        "symbol": {"enum": ["ETHUSDT", "BTCUSDT"]},
+        "interval_or_null": {"enum": ["4h", null]},
+        "period_kind": {"const": "MONTHLY"},
+        "period": {"$ref": "#/$defs/month"}
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corpus_item_id",
+        "stream_id",
+        "month",
+        "request",
+        "request_hash"
+      ],
+      "properties": {
+        "corpus_item_id": {"$ref": "#/$defs/id"},
+        "stream_id": {"$ref": "#/$defs/streamId"},
+        "month": {"$ref": "#/$defs/month"},
+        "request": {"$ref": "#/$defs/request"},
+        "request_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "month_count",
+        "stream_count",
+        "fold_count",
+        "item_count",
+        "expected_physical_get_count",
+        "requests_root_hash"
+      ],
+      "properties": {
+        "month_count": {"const": 42},
+        "stream_count": {"const": 4},
+        "fold_count": {"const": 8},
+        "item_count": {"const": 168},
+        "expected_physical_get_count": {"const": 336},
+        "requests_root_hash": {"$ref": "#/$defs/hash"}
+      }
+    }
+  }
+}

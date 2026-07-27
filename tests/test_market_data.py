@@ -92,6 +92,39 @@ class HistoricalArchiveRequestTests(unittest.TestCase):
             "ETHUSDT/4h/ETHUSDT-4h-2024-01-02.zip.CHECKSUM",
         )
 
+    def test_monthly_kline_requests_have_exact_official_urls(self):
+        cases = (
+            (
+                {
+                    "market": "SPOT",
+                    "data_family": "KLINES",
+                    "symbol": "ETHUSDT",
+                    "interval_or_null": "4h",
+                    "period_kind": "MONTHLY",
+                    "period": "2024-02",
+                },
+                "https://data.binance.vision/data/spot/monthly/klines/"
+                "ETHUSDT/4h/ETHUSDT-4h-2024-02.zip",
+            ),
+            (
+                {
+                    "market": "USD_M",
+                    "data_family": "MARK_PRICE_KLINES",
+                    "symbol": "ETHUSDT",
+                    "interval_or_null": "4h",
+                    "period_kind": "MONTHLY",
+                    "period": "2024-02",
+                },
+                "https://data.binance.vision/data/futures/um/monthly/"
+                "markPriceKlines/ETHUSDT/4h/ETHUSDT-4h-2024-02.zip",
+            ),
+        )
+        for fields, expected_url in cases:
+            with self.subTest(fields=fields):
+                request = HistoricalArchiveRequest.create(**fields)
+                self.assertEqual(request.archive_url, expected_url)
+                self.assertEqual(request.checksum_url, expected_url + ".CHECKSUM")
+
     def test_monthly_usdm_funding_request_has_exact_urls_without_interval(self):
         request = HistoricalArchiveRequest.create(
             market="USD_M",
@@ -711,6 +744,66 @@ class MarketDataArtifactTests(unittest.TestCase):
                         ingested_at="2026-07-27T00:00:00Z", recorded_at="2026-07-27T00:00:01Z",
                     )
                 self.assertEqual(raised.exception.reason_code, "MARKET_DATA_QUALITY_BLOCKING")
+
+    def test_monthly_kline_coverage_handles_leap_month_and_spot_microseconds(self):
+        cases = (
+            ("2024-02", 29, "ms"),
+            ("2025-01", 31, "us"),
+        )
+        for period, day_count, timestamp_unit in cases:
+            with self.subTest(period=period):
+                request = HistoricalArchiveRequest.create(
+                    market="SPOT",
+                    data_family="KLINES",
+                    symbol="ETHUSDT",
+                    interval_or_null="4h",
+                    period_kind="MONTHLY",
+                    period=period,
+                )
+                start = datetime.strptime(period, "%Y-%m").replace(
+                    tzinfo=timezone.utc
+                )
+                rows = []
+                for index in range(day_count * 6):
+                    opened = start + timedelta(hours=4 * index)
+                    if timestamp_unit == "us":
+                        open_stamp = int(opened.timestamp() * 1_000_000)
+                        close_stamp = open_stamp + 4 * 60 * 60 * 1_000_000 - 1
+                    else:
+                        open_stamp = int(opened.timestamp() * 1_000)
+                        close_stamp = open_stamp + 4 * 60 * 60 * 1_000 - 1
+                    rows.append(
+                        f"{open_stamp},100,101,99,100.5,1,{close_stamp},"
+                        "100.5,1,0.5,50.25,0"
+                    )
+                csv_bytes = ("\n".join(rows) + "\n").encode("ascii")
+                archive = zip_bytes((request.expected_csv_name, csv_bytes))
+                verified_archive = verify_official_checksum(
+                    request,
+                    archive,
+                    (
+                        f"{hashlib.sha256(archive).hexdigest()}"
+                        f"  {request.archive_filename}\n"
+                    ).encode("ascii"),
+                )
+                snapshot = build_historical_market_data_snapshot(
+                    snapshot_id=f"monthly-{period.replace('-', '')}",
+                    verified_archive=verified_archive,
+                    retrieved_at="2026-07-28T00:00:00Z",
+                    ingested_at="2026-07-28T00:00:00Z",
+                    recorded_at="2026-07-28T00:00:01Z",
+                )
+                self.assertEqual(
+                    snapshot["quality_report"]["row_count"],
+                    day_count * 6,
+                )
+                self.assertTrue(
+                    snapshot["quality_report"]["expected_period_coverage"]
+                )
+                self.assertEqual(
+                    snapshot["quality_report"]["missing_interval_count"],
+                    0,
+                )
 
     def test_snapshot_replay_rejects_coordinated_archive_identity_mutation(self):
         snapshot = self.build()

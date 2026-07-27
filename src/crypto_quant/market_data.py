@@ -49,17 +49,27 @@ _AVAILABILITY_BASIS = "OFFLINE_ARCHIVE_OBSERVED_AT_INGESTION"
 _SNAPSHOT_ATTESTATION_TYPE = "HISTORICAL_MARKET_DATA_SNAPSHOT_ATTESTATION"
 _SNAPSHOT_ATTESTATION_SCHEMA_VERSION = "1.0.0"
 _FAMILY_SPECS = {
-    ("SPOT", "KLINES"): ("spot", "daily", "klines", True),
-    ("SPOT", "AGG_TRADES"): ("spot", "daily", "aggTrades", False),
+    ("SPOT", "KLINES"): (
+        "spot",
+        frozenset(("daily", "monthly")),
+        "klines",
+        True,
+    ),
+    ("SPOT", "AGG_TRADES"): (
+        "spot",
+        frozenset(("daily",)),
+        "aggTrades",
+        False,
+    ),
     ("USD_M", "MARK_PRICE_KLINES"): (
         "futures/um",
-        "daily",
+        frozenset(("daily", "monthly")),
         "markPriceKlines",
         True,
     ),
     ("USD_M", "FUNDING_RATE"): (
         "futures/um",
-        "monthly",
+        frozenset(("monthly",)),
         "fundingRate",
         False,
     ),
@@ -211,8 +221,11 @@ class HistoricalArchiveRequest:
         spec = _FAMILY_SPECS.get((market, data_family))
         if spec is None or symbol not in _ALLOWED_SYMBOLS:
             raise MarketDataError("REQUEST_INVALID")
-        _, expected_kind, _, needs_interval = spec
-        if period_kind != expected_kind.upper():
+        _, allowed_period_kinds, _, needs_interval = spec
+        if (
+            not isinstance(period_kind, str)
+            or period_kind.lower() not in allowed_period_kinds
+        ):
             raise MarketDataError("REQUEST_INVALID")
         if needs_interval:
             if interval_or_null not in _ALLOWED_INTERVALS:
@@ -274,10 +287,10 @@ class HistoricalArchiveRequest:
 
     @property
     def archive_url(self) -> str:
-        root, period_kind, directory, needs_interval = _FAMILY_SPECS[
+        root, _, directory, needs_interval = _FAMILY_SPECS[
             (self.market, self.data_family)
         ]
-        path = [root, period_kind, directory, self.symbol]
+        path = [root, self.period_kind.lower(), directory, self.symbol]
         if needs_interval:
             path.append(self.interval_or_null or "")
         path.append(self.archive_filename)
@@ -953,13 +966,26 @@ def _valid_fact_payload(request: HistoricalArchiveRequest, fact: Mapping[str, An
 
 
 def _expected_kline_events(request: HistoricalArchiveRequest) -> set:
-    start = datetime.strptime(request.period, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    if request.period_kind == "DAILY":
+        start = datetime.strptime(request.period, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        )
+        end = start + timedelta(days=1)
+    else:
+        start = datetime.strptime(request.period, "%Y-%m").replace(
+            tzinfo=timezone.utc
+        )
+        end = (
+            start.replace(year=start.year + 1, month=1)
+            if start.month == 12
+            else start.replace(month=start.month + 1)
+        )
     interval = timedelta(milliseconds=_KLINE_INTERVAL_MS[request.interval_or_null or ""])
     uses_microseconds = request.market == "SPOT" and start >= _SPOT_MICROSECOND_BOUNDARY
     closing_precision = timedelta(microseconds=1 if uses_microseconds else 1_000)
     return {
         start + (index + 1) * interval - closing_precision
-        for index in range(int(timedelta(days=1) / interval))
+        for index in range(int((end - start) / interval))
     }
 
 

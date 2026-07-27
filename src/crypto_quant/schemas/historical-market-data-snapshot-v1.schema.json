@@ -104,6 +104,15 @@
             {
               "properties": {
                 "market": {"const": "SPOT"},
+                "data_family": {"const": "KLINES"},
+                "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]},
+                "period_kind": {"const": "MONTHLY"},
+                "period": {"pattern": "^[0-9]{4}-[0-9]{2}$"}
+              }
+            },
+            {
+              "properties": {
+                "market": {"const": "SPOT"},
                 "data_family": {"const": "AGG_TRADES"},
                 "interval_or_null": {"type": "null"},
                 "period_kind": {"const": "DAILY"},
@@ -117,6 +126,15 @@
                 "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]},
                 "period_kind": {"const": "DAILY"},
                 "period": {"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+              }
+            },
+            {
+              "properties": {
+                "market": {"const": "USD_M"},
+                "data_family": {"const": "MARK_PRICE_KLINES"},
+                "interval_or_null": {"enum": ["1m", "15m", "4h", "1d"]},
+                "period_kind": {"const": "MONTHLY"},
+                "period": {"pattern": "^[0-9]{4}-[0-9]{2}$"}
               }
             },
             {
