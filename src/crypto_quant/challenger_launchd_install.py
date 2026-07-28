@@ -249,6 +249,7 @@ def _source_preflight(
             )
     environment = {
         "HOME": str(Path.home()),
+        "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPATH": str(
             Path(contract["repository_root"]) / "src"
         ),

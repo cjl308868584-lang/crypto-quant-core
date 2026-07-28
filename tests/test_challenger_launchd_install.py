@@ -4,12 +4,14 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from crypto_quant.challenger_launchd import (
     load_challenger_launchd_contract,
@@ -148,7 +150,24 @@ class ChallengerLaunchdInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             contract, target, runner, values = self.install_inputs(root)
-            result = install_challenger_launchd(**values)
+            real_run = subprocess.run
+            with patch(
+                "crypto_quant.challenger_launchd_install.subprocess.run",
+                wraps=real_run,
+            ) as preflight_run:
+                result = install_challenger_launchd(**values)
+            self.assertEqual(preflight_run.call_count, 1)
+            self.assertEqual(
+                preflight_run.call_args.kwargs["env"],
+                {
+                    "HOME": str(Path.home()),
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "PYTHONPATH": str(
+                        Path(contract["repository_root"]) / "src"
+                    ),
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                },
+            )
             receipt_path = Path(result["receipt_path"])
             receipt = load_challenger_install_receipt(
                 receipt_path=receipt_path,

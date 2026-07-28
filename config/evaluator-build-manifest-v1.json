@@ -110,7 +110,7 @@
     "src/crypto_quant/challenger_forward_runner_cli.py": "7c2267904be6bea9d1b62560a16d12fb7433e25e79c4c716d72ab98a99ec1919",
     "src/crypto_quant/challenger_launchd.py": "f1b239167880338f6b4c472fb4bea04403e37447937c4e119aa0d468c329e54f",
     "src/crypto_quant/challenger_launchd_cli.py": "bab678ca17bab45393af77e8576071a414f0b8153470bc087863ff0270108e09",
-    "src/crypto_quant/challenger_launchd_install.py": "2b91f9a3efa044646b74572b552ab733cea15761dd0736986dfe1ed648c96182",
+    "src/crypto_quant/challenger_launchd_install.py": "08c630e8409a7d5e355f9bda33466cecd16f8ddc4e61d3de15f71a103cbb3301",
     "src/crypto_quant/challenger_launchd_install_cli.py": "acc479aa6d5feffe9d297b21a91f1d0b701835c760910151b1225bf546a299ac",
     "src/crypto_quant/contemporaneous_capture.py": "dd1ee4d7e7ad1033d7a641d2a2666ed478bcc49c4e77c04b1399a259827dabf3",
     "src/crypto_quant/context_cycle_orchestrator.py": "b4172ca6a1ca23bb91083188082f909246f6d4e6f6605748b802b9908c254639",
@@ -183,7 +183,7 @@
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335"
   },
-  "build_input_tree_hash": "90c6f18927b7236e4f5800b0406e7cbd4570ebb64debd6b7f690f5ff4c54da42",
+  "build_input_tree_hash": "e1069e617ec3bea1f745f6975c63f1e281804c311bf19131d21bd9202ab86d96",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -191,5 +191,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "cc1d188ce1e24e68458a82ccfb203f3db109fe57eff890ef7567a19d5143cf04"
+  "manifest_hash": "4f782d9d519a1aa7719284be8881bea8edaebfe8ad93eb11efd04cbc04456300"
 }
