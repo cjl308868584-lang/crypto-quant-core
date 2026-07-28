@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-launchd-install-receipt-v1.schema.json",
+  "title": "Challenger Launchd Install Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "receipt_id",
+    "receipt_hash",
+    "installed_at",
+    "verified_at",
+    "source_contract",
+    "domain",
+    "service",
+    "target_path",
+    "target_stat",
+    "install_action",
+    "preflight_print",
+    "bootstrap_or_null",
+    "verified_print",
+    "installation_status",
+    "run_at_load_status",
+    "security_boundary",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-launchd-install-receipt-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^challenger_launchd_install_receipt_[0-9a-f]{64}$"
+    },
+    "receipt_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "installed_at": {
+      "$ref": "#/$defs/utc"
+    },
+    "verified_at": {
+      "$ref": "#/$defs/utc"
+    },
+    "source_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_id",
+        "contract_hash",
+        "contract_trust_hash",
+        "launchd_plist_sha256",
+        "execution_snapshot"
+      ],
+      "properties": {
+        "contract_id": {
+          "type": "string",
+          "pattern": "^challenger_launchd_contract_[0-9a-f]{64}$"
+        },
+        "contract_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "contract_trust_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "launchd_plist_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "execution_snapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository_root",
+            "file_count",
+            "total_bytes",
+            "tree_hash"
+          ],
+          "properties": {
+            "repository_root": {
+              "type": "string",
+              "pattern": "^/.*/deployment/[^/]+$"
+            },
+            "file_count": {
+              "type": "integer",
+              "minimum": 4,
+              "maximum": 1000
+            },
+            "total_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 33554432
+            },
+            "tree_hash": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      }
+    },
+    "domain": {
+      "type": "string",
+      "pattern": "^gui/[1-9][0-9]*$"
+    },
+    "service": {
+      "type": "string",
+      "pattern": "^gui/[1-9][0-9]*/local\\.crypto-quant\\.challenger-forward$"
+    },
+    "target_path": {
+      "type": "string",
+      "pattern": "^/.*/Library/LaunchAgents/local\\.crypto-quant\\.challenger-forward\\.plist$"
+    },
+    "target_stat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device",
+        "inode",
+        "owner_uid",
+        "mode_octal",
+        "link_count",
+        "size_bytes",
+        "sha256"
+      ],
+      "properties": {
+        "device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "owner_uid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode_octal": {
+          "const": "0600"
+        },
+        "link_count": {
+          "const": 1
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "install_action": {
+      "enum": [
+        "INSTALLED_AND_BOOTSTRAPPED",
+        "EXISTING_FILE_BOOTSTRAPPED",
+        "ALREADY_INSTALLED_AND_LOADED"
+      ]
+    },
+    "preflight_print": {
+      "$ref": "#/$defs/commandEvidence"
+    },
+    "bootstrap_or_null": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/commandEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verified_print": {
+      "$ref": "#/$defs/commandEvidence"
+    },
+    "installation_status": {
+      "const": "INSTALLED_AND_LOADED"
+    },
+    "run_at_load_status": {
+      "const": "NOT_OBSERVED_BY_INSTALL_RECEIPT"
+    },
+    "security_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credential_count",
+        "broker_request_count",
+        "order_submission_count",
+        "shell_invoked",
+        "arbitrary_command_allowed",
+        "launchctl_command_count"
+      ],
+      "properties": {
+        "credential_count": {
+          "const": 0
+        },
+        "broker_request_count": {
+          "const": 0
+        },
+        "order_submission_count": {
+          "const": 0
+        },
+        "shell_invoked": {
+          "const": false
+        },
+        "arbitrary_command_allowed": {
+          "const": false
+        },
+        "launchctl_command_count": {
+          "enum": [
+            2,
+            3
+          ]
+        }
+      }
+    },
+    "warnings": {
+      "const": [
+        "INSTALLATION_RECEIPT_DOES_NOT_PROVE_RUN_AT_LOAD_SUCCESS",
+        "RUNNER_HAS_PUBLIC_MARKET_DATA_ACCESS_ONLY",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "commandEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "argv",
+        "return_code",
+        "stdout_utf8",
+        "stderr_utf8",
+        "stdout_size_bytes",
+        "stderr_size_bytes",
+        "stdout_sha256",
+        "stderr_sha256",
+        "command_evidence_hash"
+      ],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "return_code": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "stdout_utf8": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "stderr_utf8": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "stdout_size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "stderr_size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "stdout_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "stderr_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "command_evidence_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

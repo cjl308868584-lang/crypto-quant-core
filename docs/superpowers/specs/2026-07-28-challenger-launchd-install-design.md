@@ -2,7 +2,7 @@
 
 日期：2026-07-28
 
-状态：冻结
+状态：冻结；真实 RunAtLoad 后增加部署快照修订
 
 ## 1. 目标
 
@@ -29,6 +29,9 @@ macOS 用户 LaunchAgents 域，执行固定 `launchctl bootstrap` 与 `print`�
 - contract 状态必须是 `NOT_INSTALLED_NO_EXTERNAL_RECEIPT`；
 - source plist mode 0600；
 - repository/runtime/python 路径仍存在；
+- repository 必须是 runtime 下 `deployment/<revision>` 的 owner-only 私有
+  执行快照，禁止直接从 `~/Documents` 开发目录运行；
+- receipt 必须绑定执行快照的逐文件相对路径、大小、SHA-256 汇总树哈希；
 - Python 在最小 HOME/PYTHONPATH 环境可导入 `jsonschema` 与 `crypto_quant`；
 - target 不存在，或存在完全相同 bytes；
 - target 若不同，失败且不覆盖。
@@ -81,6 +84,18 @@ Receipt 自哈希、严格 Schema、semantic replay 后发布为 owner-only 文�
 - 已加载相同服务幂等；
 - print 缺失任何固定绑定失败；
 - receipt Schema/self-hash/target stat/hash/semantic replay 通过；
+- 修改执行快照任一文件后 receipt 复核失败；
+- 开发目录合同必须在调用 launchctl 前失败关闭；
 - CLI 无任意命令、target、domain、credential、URL、order 参数；
 - 全量验证后执行真实安装，保存 receipt；
 - 提交、合并并标记 `v0.33.0`。
+
+## 8. 真实运行修订
+
+首次真实安装证明 macOS LaunchAgent 虽能显示开发目录 `PYTHONPATH`，后台进程
+仍无法从 `~/Documents` 导入项目模块，RunAtLoad 退出码为 1。该失败配置、日志
+与 receipt 均被移动到 owner-only 归档，未删除。
+
+修订后的合同改用 Application Support 内由已提交 `b96955a` 生成的私有执行
+快照。重装后的 RunAtLoad 退出码为 0，返回 `NOT_DUE`。因此“终端最小环境可
+导入”不再被视为充分条件；部署位置与逐文件树哈希成为安装 receipt 的强制绑定。

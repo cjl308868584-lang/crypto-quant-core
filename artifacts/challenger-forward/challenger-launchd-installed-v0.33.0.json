@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "challenger-launchd-installed-v0.33.0",
+  "release_candidate": "0.33.0",
+  "recorded_at": "2026-07-28T08:04:11.186Z",
+  "status": "INSTALLED_LOADED_RUN_AT_LOAD_NOT_DUE",
+  "execution_snapshot": {
+    "source_commit": "b96955a",
+    "package_version": "0.32.0",
+    "repository_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-forward-v1/deployment/b96955a",
+    "file_count": 82,
+    "total_bytes": 1687320,
+    "tree_hash": "10695e7ab2cf1fe2a284cfd2429dcd512b72b3d76cc03c09c27543a062f2e11c",
+    "owner_only": true
+  },
+  "actual_contract": {
+    "contract_id": "challenger_launchd_contract_101a0a0aca340df5c7de9a84e62a88c76ccf370ded93aeebf8d3ebcdb169efa9",
+    "contract_hash": "6b02a7b9e636420983b1fd47b6264962daaebdaaee66ef8e42d263bd0493d138",
+    "contract_trust_hash": "9e592203c27ffb8e4d6884c1f45bf892c60f7ee92afa7285e9cdcdbb29dea92b",
+    "launchd_plist_sha256": "f6b2283ad4c01ee6e7dc8e954bdcb29dd221d5b79d4a04b69618af1d26182b53"
+  },
+  "hardened_install_receipt": {
+    "receipt_id": "challenger_launchd_install_receipt_d9f8b99b5aeef80bd7627fda751d856ce64b1e68bd016cf538dfe707b154260e",
+    "receipt_hash": "e160a7f4603e45751e2618b9132adf5050e88c382e08a135f789a115de93b65c",
+    "installed_at": "2026-07-28T08:04:11.183Z",
+    "verified_at": "2026-07-28T08:04:11.186Z",
+    "install_action": "ALREADY_INSTALLED_AND_LOADED",
+    "domain": "gui/501",
+    "service": "gui/501/local.crypto-quant.challenger-forward",
+    "target_path": "/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-forward.plist",
+    "target_mode": "0600",
+    "target_owner_uid": 501,
+    "target_inode": 13229927,
+    "launchctl_command_count": 2
+  },
+  "run_at_load_observation": {
+    "launchd_runs": 2,
+    "successful_log_record_count": 2,
+    "last_exit_code": 0,
+    "status": "NOT_DUE",
+    "current_slot": "2026-07-28T08:00:00.000Z",
+    "next_required_slot": "2026-07-29T00:00:00.000Z",
+    "server_time_request_count_per_run": 3,
+    "aggregate_server_time_request_count": 6,
+    "kline_request_count": 0,
+    "decision_count": 0,
+    "broker_request_count": 0,
+    "order_submission_count": 0,
+    "trigger_attribution": "UNPROVEN_RUN_AT_LOAD_VS_CALENDAR_MINUTE"
+  },
+  "failed_attempt_preserved": {
+    "reason": "MACOS_BACKGROUND_PROCESS_COULD_NOT_IMPORT_FROM_DOCUMENTS",
+    "last_exit_code": 1,
+    "archive_path": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-forward-v1/control/failed-run-20260728-documents-tcc",
+    "deleted": false
+  },
+  "eligibility": {
+    "operating_system_scheduling": "ELIGIBLE_INSTALLED_AND_LOADED",
+    "run_at_load": "ELIGIBLE_EXIT_ZERO",
+    "forward_evidence": "INELIGIBLE_NO_DUE_DECISION_YET",
+    "release_oos": "INELIGIBLE_FORWARD_COLLECTION_NOT_STARTED",
+    "profitability": "INELIGIBLE"
+  },
+  "warnings": [
+    "INSTALLATION_AND_RUN_AT_LOAD_DO_NOT_PROVE_PROFITABILITY",
+    "TWO_SUCCESSFUL_STARTS_OCCURRED_IN_THE_CALENDAR_TRIGGER_MINUTE",
+    "EXACT_RUN_AT_LOAD_VS_CALENDAR_TRIGGER_ATTRIBUTION_IS_UNPROVEN",
+    "THE_REGISTERED_FORWARD_START_HAS_NOT_OCCURRED",
+    "BINANCE_TIME_RECEIPT_IS_NOT_INDEPENDENT_PUBLICATION",
+    "NO_HISTORICAL_BACKFILL",
+    "NO_BROKER_OR_ORDER_AUTHORITY"
+  ]
+}
