@@ -38,7 +38,9 @@ LaunchAgent、SQLite 首条 decision、source bundle 和 stdout 记录彼此完�
 
 - state path 固定来自合同 ProgramArguments；
 - state 必须是 uid 当前用户、mode 0600、link count 1 的普通文件；
-- 观察时不得存在 `-wal` 或 `-shm`，否则视为运行中/未完成 checkpoint；
+- `-wal` 若存在必须为 owner-only 且 size 0；非空 WAL 视为运行中或尚未
+  checkpoint；
+- `-shm` 可由已关闭的 WAL 数据库合法保留，但必须 owner-only；
 - 使用 SQLite `mode=ro&immutable=1` 与 `PRAGMA query_only=ON`；
 - metadata 必须等于当前 Challenger policy/registration；
 - decision bytes 必须 canonical JSON，并逐条 semantic replay；
@@ -76,7 +78,7 @@ Receipt 绑定：
 - 相同 receipt bytes 可幂等返回；
 - 相同 receipt id 的不同 bytes 冲突；
 - 多个首槽 bundle、多条匹配 RECORDED、decision/bundle/log 任一不一致均失败；
-- state WAL/SHM 存在时不抢锁、不等待、不复制半完成状态；
+- state WAL 非空或 sidecar 权限异常时不抢锁、不等待、不复制半完成状态；
 - receipt 复核允许 state decision chain 与 stdout 在已绑定 prefix 后合法追加；
 - 首条 decision、metadata、stdout prefix、目标、执行快照或 immutable bundle
   发生变化必须失败。

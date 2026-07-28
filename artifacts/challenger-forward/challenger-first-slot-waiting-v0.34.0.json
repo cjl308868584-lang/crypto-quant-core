@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "challenger-first-slot-waiting-v0.34.0",
+  "release_candidate": "0.34.0",
+  "recorded_at": "2026-07-28T09:00:27.036Z",
+  "status": "WAITING_BEFORE_FIRST_SLOT",
+  "schedule": {
+    "forward_start": "2026-07-29T00:00:00.000Z",
+    "record_deadline": "2026-07-29T04:00:00.000Z",
+    "local_launch_time": "2026-07-29T08:02:00+08:00"
+  },
+  "source_install_receipt": {
+    "receipt_id": "challenger_launchd_install_receipt_d9f8b99b5aeef80bd7627fda751d856ce64b1e68bd016cf538dfe707b154260e",
+    "receipt_hash": "e160a7f4603e45751e2618b9132adf5050e88c382e08a135f789a115de93b65c",
+    "service": "gui/501/local.crypto-quant.challenger-forward",
+    "target_sha256": "f6b2283ad4c01ee6e7dc8e954bdcb29dd221d5b79d4a04b69618af1d26182b53"
+  },
+  "state_observation": {
+    "path": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-forward-v1/state/challenger-forward.sqlite",
+    "owner_uid": 501,
+    "mode": "0600",
+    "inode": 13229934,
+    "size_bytes": 24576,
+    "sha256": "c71bc440e69b35716e9938300ca2b9052ae96b095e522c1811e0d360a3ac8157",
+    "wal_size_bytes": 0,
+    "shm_size_bytes": 32768,
+    "policy_hash": "2ef83c7c73fff8b163d9bad8527921bd0d87e60595680236e936254536c800e4",
+    "registration_hash": "885b33d3a91eae1d5822fe12c16773a446c23e702f9a4110ef32f474157fa27f",
+    "decision_count": 0,
+    "source_bundle_count": 0
+  },
+  "log_observation": {
+    "stdout_record_count": 2,
+    "stdout_statuses": [
+      "NOT_DUE",
+      "NOT_DUE"
+    ],
+    "stderr_size_bytes": 0
+  },
+  "observer_execution": {
+    "receipt_published": false,
+    "launchctl_command_count": 0,
+    "network_request_count": 0,
+    "broker_request_count": 0,
+    "order_submission_count": 0,
+    "state_write_count": 0
+  },
+  "fixture_validation": {
+    "focused_test_count": 8,
+    "adjacent_regression_test_count": 27,
+    "before_start_verified": true,
+    "within_deadline_pending_verified": true,
+    "missed_slot_verified": true,
+    "successful_cross_binding_verified": true,
+    "append_only_log_extension_verified": true,
+    "state_bundle_log_and_service_tamper_verified": true,
+    "schema_mirror_exact": true
+  },
+  "eligibility": {
+    "first_slot_receipt": "INELIGIBLE_NOT_STARTED",
+    "forward_evidence": "INELIGIBLE_NO_REAL_DECISION",
+    "release_oos": "INELIGIBLE_FORWARD_COLLECTION_NOT_STARTED",
+    "profitability": "INELIGIBLE"
+  },
+  "warnings": [
+    "TOOL_READY_IS_NOT_FIRST_SLOT_SUCCESS",
+    "NO_SUCCESS_RECEIPT_WAS_PUBLISHED",
+    "THE_REGISTERED_FORWARD_START_HAS_NOT_OCCURRED",
+    "NO_HISTORICAL_BACKFILL",
+    "NO_PROFITABILITY_CLAIM"
+  ]
+}
