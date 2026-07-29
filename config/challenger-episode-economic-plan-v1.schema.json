@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-episode-economic-plan-v1.schema.json",
+  "title": "Challenger Episode Economic Measurement Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "plan_id",
+    "plan_hash",
+    "registered_at",
+    "design_commit",
+    "package_baseline",
+    "source_first_slot_receipt",
+    "first_episode",
+    "source_contract",
+    "economic_policy",
+    "calculation_order",
+    "status",
+    "authority",
+    "eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-episode-economic-plan-v1.schema.json"
+    },
+    "schema_version": {"const": "1.0.0"},
+    "plan_id": {
+      "type": "string",
+      "pattern": "^challenger_episode_economic_plan_[0-9a-f]{64}$"
+    },
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "registered_at": {"$ref": "#/$defs/time"},
+    "design_commit": {"const": "dd3ab06"},
+    "package_baseline": {"const": "0.36.0"},
+    "source_first_slot_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "receipt_hash",
+        "file_sha256",
+        "observed_at"
+      ],
+      "properties": {
+        "receipt_id": {
+          "const": "challenger_first_slot_receipt_fcc86fe447ab8b2728a9bcd80371c26c9a30f59cec0b01306b278392b28d3c2b"
+        },
+        "receipt_hash": {
+          "const": "76acd1f21dbd0f4c71b45213a4d4d3983f7c3707ac77006b56da2675ecfa9521"
+        },
+        "file_sha256": {
+          "const": "b1b03bbe584386d3199cef3561fe22b4c92c3f359429ec43838d2b00a9566e43"
+        },
+        "observed_at": {"const": "2026-07-29T00:15:46.913Z"}
+      }
+    },
+    "first_episode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "episode_id",
+        "entry_decision_id",
+        "entry_decision_hash",
+        "entry_scheduled_for",
+        "entry_recorded_at",
+        "entry_execution_minute",
+        "minimum_hold_until",
+        "vertical_exit_at",
+        "exit_execution_minute_rule"
+      ],
+      "properties": {
+        "episode_id": {
+          "const": "challenger_episode_45c86b2c0c1610d890c2d956915803c4b375b2838a66215f3f87311c8342be91"
+        },
+        "entry_decision_id": {
+          "const": "challenger_decision_7108b0226b32c858217ce3668d69b8cbb3efea614091a632f1c709afb80b4106"
+        },
+        "entry_decision_hash": {
+          "const": "c7ee6bfac0ac1da6986a9eb5089cc6cc8e2de520937935edbb8df45731b34ac7"
+        },
+        "entry_scheduled_for": {
+          "const": "2026-07-29T00:00:00.000Z"
+        },
+        "entry_recorded_at": {"const": "2026-07-29T00:02:06.752Z"},
+        "entry_execution_minute": {
+          "const": "2026-07-29T00:03:00.000Z"
+        },
+        "minimum_hold_until": {
+          "const": "2026-07-29T08:00:00.000Z"
+        },
+        "vertical_exit_at": {
+          "const": "2026-07-30T00:00:00.000Z"
+        },
+        "exit_execution_minute_rule": {
+          "const": "FIRST_WHOLE_UTC_MINUTE_STRICTLY_AFTER_DECISION_RECORDED_AT"
+        }
+      }
+    },
+    "source_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_constructor",
+        "archive_base",
+        "archive_and_checksum_required",
+        "complete_daily_row_count",
+        "exact_selected_raw_row_required",
+        "third_party_or_rest_fallback_allowed",
+        "entry_exit_same_day_source_count",
+        "entry_exit_cross_day_source_count"
+      ],
+      "properties": {
+        "request_constructor": {
+          "const": "ALLOWLISTED_HISTORICAL_ARCHIVE_REQUEST"
+        },
+        "archive_base": {
+          "const": "https://data.binance.vision/data/spot/daily/klines/ETHUSDT/1m/"
+        },
+        "archive_and_checksum_required": {"const": true},
+        "complete_daily_row_count": {"const": 1440},
+        "exact_selected_raw_row_required": {"const": true},
+        "third_party_or_rest_fallback_allowed": {"const": false},
+        "entry_exit_same_day_source_count": {"const": 1},
+        "entry_exit_cross_day_source_count": {"const": 2}
+      }
+    },
+    "economic_policy": {"$ref": "#/$defs/economicPolicy"},
+    "calculation_order": {
+      "const": [
+        "ENTRY_EXECUTION_MINUTE",
+        "EXIT_EXECUTION_MINUTE",
+        "ENTRY_FILL",
+        "EXIT_FILL",
+        "QUANTITY",
+        "ENTRY_NOTIONAL",
+        "EXIT_NOTIONAL",
+        "ENTRY_FEE",
+        "EXIT_FEE",
+        "GROSS_PNL",
+        "NET_PNL",
+        "NET_RETURN",
+        "POSITIVE_LABEL"
+      ]
+    },
+    "status": {
+      "const": "PREREGISTERED_WAITING_FIRST_EPISODE_COMPLETION_AND_DAILY_ARCHIVE"
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "market_request_count",
+        "broker_request_count",
+        "order_submission_count",
+        "state_write_count",
+        "price_override_allowed",
+        "time_override_allowed",
+        "fee_override_allowed"
+      ],
+      "properties": {
+        "market_request_count": {"const": 0},
+        "broker_request_count": {"const": 0},
+        "order_submission_count": {"const": 0},
+        "state_write_count": {"const": 0},
+        "price_override_allowed": {"const": false},
+        "time_override_allowed": {"const": false},
+        "fee_override_allowed": {"const": false}
+      }
+    },
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "measurement_plan",
+        "execution",
+        "paper",
+        "release_oos",
+        "profitability"
+      ],
+      "properties": {
+        "measurement_plan": {"const": "PREREGISTERED_BEFORE_OUTCOME"},
+        "execution": {"const": "INELIGIBLE_PROXY_NOT_REAL_FILL"},
+        "paper": {"const": "INELIGIBLE_NO_COMPLETED_EPISODE"},
+        "release_oos": {
+          "const": "INELIGIBLE_FORWARD_COLLECTION_ONLY"
+        },
+        "profitability": {"const": "INELIGIBLE"}
+      }
+    },
+    "warnings": {
+      "const": [
+        "NO_OUTCOME_OR_EXIT_PRICE_WAS_OBSERVED",
+        "NO_MARKET_REQUEST_WAS_MADE",
+        "DAILY_ARCHIVE_ROWS_WILL_BE_EXECUTION_PROXIES_NOT_REAL_FILLS",
+        "ARCHIVE_OUTCOME_SOURCE_IS_NOT_PIT_MARKET_INPUT",
+        "SINGLE_EPISODE_CANNOT_ESTABLISH_EDGE",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "economicPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_version",
+        "direction",
+        "provider",
+        "market",
+        "symbol",
+        "interval",
+        "archive_period_kind",
+        "execution_minute_rule",
+        "entry_source_field",
+        "exit_source_field",
+        "reference_capital_usdt",
+        "price_tick_usdt",
+        "quantity_step_eth",
+        "slippage_rate_per_side",
+        "assumed_taker_fee_rate_per_side",
+        "fill_policy",
+        "cost_policy",
+        "entry_fill_formula",
+        "exit_fill_formula",
+        "quantity_formula",
+        "entry_fee_formula",
+        "exit_fee_formula",
+        "gross_pnl_formula",
+        "net_pnl_formula",
+        "net_return_formula",
+        "positive_label_rule",
+        "decimal_arithmetic_only",
+        "binary_float_allowed",
+        "historical_fallback_allowed",
+        "policy_hash"
+      ],
+      "properties": {
+        "policy_version": {
+          "const": "CHALLENGER_EPISODE_ECONOMIC_PROXY_V1"
+        },
+        "direction": {"const": "LONG"},
+        "provider": {"const": "BINANCE_PUBLIC_DATA"},
+        "market": {"const": "SPOT"},
+        "symbol": {"const": "ETHUSDT"},
+        "interval": {"const": "1m"},
+        "archive_period_kind": {"const": "DAILY"},
+        "execution_minute_rule": {
+          "const": "FIRST_WHOLE_UTC_MINUTE_STRICTLY_AFTER_DECISION_RECORDED_AT"
+        },
+        "entry_source_field": {"const": "high"},
+        "exit_source_field": {"const": "low"},
+        "reference_capital_usdt": {"const": "1000"},
+        "price_tick_usdt": {"const": "0.01"},
+        "quantity_step_eth": {"const": "0.0001"},
+        "slippage_rate_per_side": {"const": "0.001"},
+        "assumed_taker_fee_rate_per_side": {"const": "0.0015"},
+        "fill_policy": {
+          "const": "OFFICIAL_DAILY_1M_WORST_BAR_PLUS_10BPS_V1"
+        },
+        "cost_policy": {
+          "const": "ASSUMED_TAKER_15BPS_PER_SIDE_V1"
+        },
+        "entry_fill_formula": {
+          "const": "ROUND_UP(entry_minute_high*(1+0.001),0.01)"
+        },
+        "exit_fill_formula": {
+          "const": "ROUND_DOWN(exit_minute_low*(1-0.001),0.01)"
+        },
+        "quantity_formula": {
+          "const": "ROUND_DOWN(1000/entry_fill,0.0001)"
+        },
+        "entry_fee_formula": {
+          "const": "entry_fill*quantity*0.0015"
+        },
+        "exit_fee_formula": {
+          "const": "exit_fill*quantity*0.0015"
+        },
+        "gross_pnl_formula": {
+          "const": "(exit_fill-entry_fill)*quantity"
+        },
+        "net_pnl_formula": {
+          "const": "gross_pnl-entry_fee-exit_fee"
+        },
+        "net_return_formula": {"const": "net_pnl/1000"},
+        "positive_label_rule": {
+          "const": "1_IF_NET_RETURN_STRICTLY_GREATER_THAN_0"
+        },
+        "decimal_arithmetic_only": {"const": true},
+        "binary_float_allowed": {"const": false},
+        "historical_fallback_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    }
+  }
+}
