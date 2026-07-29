@@ -537,6 +537,10 @@ class EvaluatorBuildTests(unittest.TestCase):
             expected,
         )
         self.assertIn(
+            "config/challenger-episode-economic-result-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
             "config/challenger-episode-economic-plan-v1.schema.json",
             expected,
         )
@@ -589,9 +593,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.32.0")
-        self.assertEqual(manifest["package_version"], "0.37.0")
-        self.assertEqual(crypto_quant.__version__, "0.37.0")
+        self.assertEqual(manifest["manifest_version"], "1.33.0")
+        self.assertEqual(manifest["package_version"], "0.38.0")
+        self.assertEqual(crypto_quant.__version__, "0.38.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",

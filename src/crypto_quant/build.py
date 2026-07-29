@@ -18,6 +18,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/approved-fallback-registry-v1.1.schema.json",
     "config/baseline-failure-attribution-v1.schema.json",
     "config/causal-feature-label-dataset-v1.schema.json",
+    "config/challenger-episode-economic-result-v1.schema.json",
     "config/challenger-prequential-snapshot-v1.schema.json",
     "config/challenger-episode-economic-plan-v1.schema.json",
     "config/challenger-forward-source-bundle-v1.schema.json",
