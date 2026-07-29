@@ -2,11 +2,11 @@
   "$schema": "./evaluator-build-manifest-v1.schema.json",
   "schema_version": "1.0.0",
   "manifest_id": "release-evaluator-build-v1",
-  "manifest_version": "1.29.0",
+  "manifest_version": "1.30.0",
   "status": "BUILD_CANDIDATE",
   "evaluator_id": "release-gate-evaluator-v1",
   "package_name": "crypto-quant-core",
-  "package_version": "0.34.0",
+  "package_version": "0.35.0",
   "python_requires": ">=3.9",
   "metric_catalog_id": "release-metrics-v1.1",
   "metric_catalog_version": "1.1.6",
@@ -26,6 +26,7 @@
     "artifacts/baseline-research/binance-baseline-failure-attribution-v0.29.0.json": "b3bb875e6f21b2477f99ac32e6b84404fde0e6b02e14aebaf0b0f5def783038d",
     "artifacts/challenger-forward/binance-challenger-forward-not-run-v0.30.0.json": "79e614c9d876fff65d317952b7cb4b226b50f3bd31f9e398a360434a3752cc84",
     "artifacts/challenger-forward/binance-challenger-live-runner-not-run-v0.31.0.json": "ed114b936c3a774a1bddce6a5b4f08a4d5b6e5caf2eb1dcb2a14dcb7e4f03ab7",
+    "artifacts/challenger-forward/challenger-first-slot-receipt-v0.35.0.json": "b1b03bbe584386d3199cef3561fe22b4c92c3f359429ec43838d2b00a9566e43",
     "artifacts/challenger-forward/challenger-first-slot-waiting-v0.34.0.json": "ff8e8e3683095c4df63a813e9cf1c5b9874cec77f12de9bebf8c8c9e8bb07b8b",
     "artifacts/challenger-forward/challenger-launchd-installed-v0.33.0.json": "88bb048610af08d0e65eadd7b11dc860f9e625eb2ad252fcf4dc7fca050b37d5",
     "artifacts/challenger-forward/challenger-launchd-not-installed-v0.32.0.json": "e9000a623cb426fdd2feb831368ab3c4c54338a69cbf6425de535b0b9ee42556",
@@ -92,14 +93,14 @@
     "config/statistical-series-snapshot-v1.schema.json": "3ef36d8465aa4978b178a3b07ffb5f5c877e5921af1d4e4f17ef2bac6260caff",
     "config/supporting-observation-bundle-v1.schema.json": "559b92cf5545b40035c8f30db95c8df7351a2e320f87b7d2572a0e47e830eec0",
     "config/trade-replay-snapshot-v1.schema.json": "d45dfaaf86f2dbdcd83109fd3b329aca6f455812df0022652129079555b8546f",
-    "pyproject.toml": "802339794c4d5ed6008874ad5aa46c27e2caaf876a753a1b4279c2097c1815d8",
+    "pyproject.toml": "63453fd822c606bc83cd3a4b1cc008209b8d14a3c11bf8f57dfdbbb960191e60",
     "requirements.lock": "71aa777f1717f056886f3de1fb2e1013a5dec5210d681ed30943056edf7ccbed",
-    "setup.py": "6f0384a729330297061d12da8841135580d31c83dc6c52d8bf18efd4eea1e9fa",
-    "src/crypto_quant/__init__.py": "0817be445891377a8edb7d7041a711169874d893a15e9dbd40cf6cab67e8e864",
+    "setup.py": "ec08ee493edc0a5eead047ed3fa726698b477c7dcb67f8f51ae34dd53c97d1fc",
+    "src/crypto_quant/__init__.py": "f2ac26a1c5fecf2c897a7f89b7750e955450d4648bb5b8a5dfdfebbcb91ec9da",
     "src/crypto_quant/account_commission.py": "7ce2db8d648f8e0208951caf866d914854d244e469c9a86a27b1ee14ff84c9f4",
     "src/crypto_quant/account_commission_cli.py": "993e6cb903673bc6781ca0a74494bfc149cea73c4d5a47576a3384e052652076",
     "src/crypto_quant/baseline_attribution.py": "cb72d295c26b05f5205643adc7403b127ac6a174d4e198b06d025661967060dd",
-    "src/crypto_quant/build.py": "97f44c4bf870bd7bd397bd08f0c7f9abf112d1bf8f85ef08938751590af8e3ca",
+    "src/crypto_quant/build.py": "2625eb405b5a582a58620357e97118d79abaf01bd29368de2a276684e2073d4b",
     "src/crypto_quant/canonical.py": "29bca29c775ec8f6734c5676fc0682d402b0659a2250902de68fb7c477891120",
     "src/crypto_quant/capture_cli.py": "d542e062327c3c2f17bf3484a020b5e38d5f07027be12e0bd78cc2c975629bb0",
     "src/crypto_quant/causal_research.py": "20f0065df15988f4bb1838b21b1e955bf5b3053d41547d2e478c91df78bedfd1",
@@ -183,7 +184,7 @@
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335"
   },
-  "build_input_tree_hash": "e1069e617ec3bea1f745f6975c63f1e281804c311bf19131d21bd9202ab86d96",
+  "build_input_tree_hash": "d34632f2a2dd62f0929a8ba6ec4e127549bf2a2ce8c840d6ed56d9a3a111e6ae",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -191,5 +192,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "4f782d9d519a1aa7719284be8881bea8edaebfe8ad93eb11efd04cbc04456300"
+  "manifest_hash": "04baefa0db832b22bcf61106da07158514b06d71756e48b8d46099ac233406c9"
 }

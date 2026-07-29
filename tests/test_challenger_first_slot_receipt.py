@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import io
 import json
 import os
@@ -11,6 +12,8 @@ import unittest
 from contextlib import redirect_stderr
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from jsonschema import Draft202012Validator
 
 from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_first_slot_receipt import (
@@ -474,6 +477,75 @@ class ChallengerFirstSlotReceiptTests(unittest.TestCase):
                 io.StringIO()
             ):
                 self.assertEqual(observer_main([forbidden, "x"]), 2)
+
+    def test_committed_v035_receipt_is_canonical_and_frozen(self):
+        artifact_path = (
+            ROOT
+            / "artifacts"
+            / "challenger-forward"
+            / "challenger-first-slot-receipt-v0.35.0.json"
+        )
+        artifact_bytes = artifact_path.read_bytes()
+        receipt = json.loads(artifact_bytes)
+        schema = json.loads(
+            (
+                ROOT
+                / "config"
+                / "challenger-first-slot-receipt-v1.schema.json"
+            ).read_bytes()
+        )
+        self.assertEqual(
+            artifact_bytes,
+            canonical_json(receipt).encode("utf-8"),
+        )
+        self.assertFalse(
+            tuple(Draft202012Validator(schema).iter_errors(receipt))
+        )
+        self.assertEqual(
+            hashlib.sha256(artifact_bytes).hexdigest(),
+            "b1b03bbe584386d3199cef3561fe22b4c"
+            "92c3f359429ec43838d2b00a9566e43",
+        )
+        self.assertEqual(
+            receipt["receipt_id"],
+            "challenger_first_slot_receipt_"
+            "fcc86fe447ab8b2728a9bcd80371c26c9"
+            "a30f59cec0b01306b278392b28d3c2b",
+        )
+        self.assertEqual(
+            receipt["receipt_hash"],
+            challenger_first_slot_receipt_hash(receipt),
+        )
+        self.assertEqual(
+            receipt["observation_status"],
+            "FIRST_SLOT_RECORDED_VERIFIED",
+        )
+        self.assertEqual(
+            receipt["state"]["first_decision"]["scheduled_for"],
+            "2026-07-29T00:00:00.000Z",
+        )
+        self.assertEqual(
+            receipt["state"]["first_decision"]["decision_eligibility"],
+            "LOCAL_PREQUENTIAL_RESEARCH_ONLY",
+        )
+        self.assertEqual(
+            receipt["state"]["first_decision"]["broker_eligibility"],
+            "INELIGIBLE_NO_BROKER_ACCESS",
+        )
+        self.assertEqual(
+            receipt["security_boundary"],
+            {
+                "arbitrary_command_allowed": False,
+                "broker_request_count": 0,
+                "launchctl_print_count": 1,
+                "network_request_count": 0,
+                "order_submission_count": 0,
+                "shell_invoked": False,
+                "state_write_count": 0,
+            },
+        )
+        self.assertEqual(receipt["eligibility"]["profitability"], "INELIGIBLE")
+        self.assertIn("NO_PROFITABILITY_CLAIM", receipt["warnings"])
 
 
 if __name__ == "__main__":
