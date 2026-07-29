@@ -473,6 +473,22 @@ def _receipt_reasons(
             or receipt["state"]["path"] != state["path"]
             or receipt["state"]["metadata"] != state["metadata"]
             or receipt["state"]["total_decision_count_observed"] < count
+            or len(decisions)
+            < receipt["state"]["total_decision_count_observed"]
+            or receipt["state"]["observed_decisions_root_hash"]
+            != business_hash(
+                list(
+                    decisions[
+                        : receipt["state"][
+                            "total_decision_count_observed"
+                        ]
+                    ]
+                )
+            )
+            or receipt["state"]["observed_state_chain_end_hash"]
+            != decisions[
+                receipt["state"]["total_decision_count_observed"] - 1
+            ]["decision_hash"]
             or receipt["state"]["decisions_root_hash"]
             != business_hash(receipt["state"]["decisions"])
             or receipt["state"]["decision_chain_end_hash"]
@@ -762,6 +778,12 @@ def observe_challenger_first_episode(
             "metadata": state_evidence["metadata"],
             "total_decision_count_observed": state_evidence[
                 "decision_count"
+            ],
+            "observed_decisions_root_hash": business_hash(
+                list(decisions)
+            ),
+            "observed_state_chain_end_hash": state_evidence[
+                "decision_chain_end_hash_or_null"
             ],
             "episode_decision_count": len(prefix),
             "decisions": list(prefix),

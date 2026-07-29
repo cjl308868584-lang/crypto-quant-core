@@ -96,6 +96,8 @@
         "observed_file_stat",
         "metadata",
         "total_decision_count_observed",
+        "observed_decisions_root_hash",
+        "observed_state_chain_end_hash",
         "episode_decision_count",
         "decisions",
         "decisions_root_hash",
@@ -117,6 +119,8 @@
           "type": "integer",
           "minimum": 3
         },
+        "observed_decisions_root_hash": {"$ref": "#/$defs/sha256"},
+        "observed_state_chain_end_hash": {"$ref": "#/$defs/sha256"},
         "episode_decision_count": {
           "type": "integer",
           "minimum": 3,

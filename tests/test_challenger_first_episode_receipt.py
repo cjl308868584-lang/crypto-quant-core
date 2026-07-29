@@ -25,9 +25,7 @@ from crypto_quant.challenger_first_episode_receipt_cli import (
 from crypto_quant.challenger_forward_runner import (
     run_challenger_forward_cycle,
 )
-from tests.test_challenger_first_slot_receipt import (
-    ChallengerFirstSlotReceiptTests,
-)
+from tests import test_challenger_first_slot_receipt as first_slot_tests
 from tests.test_challenger_forward_runner import (
     KlineTransport,
     gate_at,
@@ -41,7 +39,7 @@ START = datetime(2026, 7, 29, tzinfo=timezone.utc)
 
 class ChallengerFirstEpisodeReceiptTests(unittest.TestCase):
     def environment(self, root):
-        helper = ChallengerFirstSlotReceiptTests()
+        helper = first_slot_tests.ChallengerFirstSlotReceiptTests()
         environment = helper.environment(root)
         environment["receipt_output_root"] = root / "episode-receipts"
         return environment
@@ -332,6 +330,52 @@ class ChallengerFirstEpisodeReceiptTests(unittest.TestCase):
                 io.StringIO()
             ):
                 self.assertEqual(observer_main([forbidden, "x"]), 2)
+
+    def test_committed_v036_in_progress_evidence_is_frozen(self):
+        artifact_path = (
+            ROOT
+            / "artifacts"
+            / "challenger-forward"
+            / "challenger-first-episode-in-progress-v0.36.0.json"
+        )
+        artifact_bytes = artifact_path.read_bytes()
+        artifact = json.loads(artifact_bytes)
+        self.assertEqual(
+            hashlib.sha256(artifact_bytes).hexdigest(),
+            "9be7781856e9d6f3270b9ee1f78a69da"
+            "5c1a0adbbb65bd7d72d5b4cd44fcfcce",
+        )
+        self.assertEqual(
+            artifact["status"],
+            "FIRST_EPISODE_IN_PROGRESS_VERIFIED",
+        )
+        self.assertEqual(artifact["episode"]["decision_count"], 1)
+        self.assertFalse(
+            artifact["observer_execution"]["receipt_published"]
+        )
+        self.assertEqual(
+            artifact["observer_execution"],
+            {
+                "receipt_published": False,
+                "launchctl_command_count": 1,
+                "network_request_count": 0,
+                "broker_request_count": 0,
+                "order_submission_count": 0,
+                "state_write_count": 0,
+            },
+        )
+        self.assertEqual(
+            artifact["source_integrity"]["state"]["sha256_before"],
+            artifact["source_integrity"]["state"]["sha256_after"],
+        )
+        self.assertEqual(
+            artifact["source_integrity"]["stdout"]["sha256_before"],
+            artifact["source_integrity"]["stdout"]["sha256_after"],
+        )
+        self.assertEqual(
+            artifact["eligibility"]["profitability"],
+            "INELIGIBLE",
+        )
 
 
 if __name__ == "__main__":
