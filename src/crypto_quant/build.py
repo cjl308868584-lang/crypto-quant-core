@@ -19,6 +19,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/baseline-failure-attribution-v1.schema.json",
     "config/causal-feature-label-dataset-v1.schema.json",
     "config/challenger-cohort-daily-archive-receipt-v1.schema.json",
+    "config/challenger-cohort-cumulative-evaluation-v1.schema.json",
     "config/challenger-cohort-economic-result-index-v1.schema.json",
     "config/challenger-cohort-episode-economic-result-v1.schema.json",
     "config/challenger-cohort-evaluation-plan-v1.schema.json",
