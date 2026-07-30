@@ -15,6 +15,10 @@ from .challenger_cohort_evidence_maintenance_first_run import (
 
 
 _MAX_RECEIPT_BYTES = 8 * 1024 * 1024
+_ARTIFACT_NAME = (
+    "challenger-cohort-evidence-maintenance-first-run-receipt-"
+    "v0.53.0.json"
+)
 
 
 class ChallengerCohortEvidenceMaintenanceFirstRunReleaseError(ValueError):
@@ -100,7 +104,7 @@ def _target(path: Path) -> Path:
         ):
             raise ValueError
         resolved = parent / selected.name
-        if resolved == Path("/") or not selected.name.endswith(".json"):
+        if resolved == Path("/") or selected.name != _ARTIFACT_NAME:
             raise ValueError
     except (OSError, ValueError) as error:
         raise ChallengerCohortEvidenceMaintenanceFirstRunReleaseError(
@@ -227,6 +231,8 @@ def release_challenger_cohort_evidence_maintenance_first_run_receipt(
         or source_bytes != canonical_json(receipt).encode("utf-8")
         or receipt.get("observation_status")
         != "FIRST_NATURAL_MAINTENANCE_RUN_COMPLETED_VERIFIED"
+        or source_path.parent.name != "maintenance-first-run-receipts"
+        or source_path.name != f"{receipt.get('receipt_id')}.json"
     ):
         raise ChallengerCohortEvidenceMaintenanceFirstRunReleaseError(
             "CHALLENGER_COHORT_MAINTENANCE_FIRST_RUN_RELEASE_RECEIPT_INVALID"

@@ -1,4 +1,5 @@
 import hashlib
+import ast
 import json
 import os
 import stat
@@ -42,8 +43,10 @@ class FirstNaturalMaintenanceRunReleaseTests(unittest.TestCase):
         }
 
     def environment(self, root: Path, *, canonical=True):
-        runtime = root / "runtime.json"
         receipt = self.receipt()
+        runtime_parent = root / "maintenance-first-run-receipts"
+        runtime_parent.mkdir(mode=0o700, parents=True)
+        runtime = runtime_parent / f"{receipt['receipt_id']}.json"
         if canonical:
             body = canonical_json(receipt).encode()
         else:
@@ -51,10 +54,14 @@ class FirstNaturalMaintenanceRunReleaseTests(unittest.TestCase):
         runtime.write_bytes(body)
         runtime.chmod(0o600)
         artifact_parent = root / "artifact"
-        artifact_parent.mkdir(mode=0o700)
+        artifact_parent.mkdir(mode=0o700, parents=True)
         return {
             "runtime": runtime,
-            "artifact": artifact_parent / "receipt.json",
+            "artifact": (
+                artifact_parent
+                / "challenger-cohort-evidence-maintenance-first-run-"
+                "receipt-v0.53.0.json"
+            ),
             "receipt": receipt,
             "body": body,
         }
@@ -180,7 +187,11 @@ class FirstNaturalMaintenanceRunReleaseTests(unittest.TestCase):
             root = Path(directory)
             parent = root / "artifact"
             parent.mkdir(mode=0o700)
-            artifact = parent / "receipt.json"
+            artifact = (
+                parent
+                / "challenger-cohort-evidence-maintenance-first-run-"
+                "receipt-v0.53.0.json"
+            )
             output = StringIO()
             errors = StringIO()
             with redirect_stdout(output), redirect_stderr(errors):
@@ -212,6 +223,76 @@ class FirstNaturalMaintenanceRunReleaseTests(unittest.TestCase):
                 },
             )
             self.assertFalse(artifact.exists())
+
+    def test_wrong_runtime_identity_or_artifact_name_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = self.environment(root)
+            wrong_runtime = root / "wrong.json"
+            environment["runtime"].replace(wrong_runtime)
+            environment["runtime"] = wrong_runtime
+            with self.assertRaisesRegex(
+                ChallengerCohortEvidenceMaintenanceFirstRunReleaseError,
+                "RECEIPT_INVALID",
+            ):
+                self.release(environment)
+            environment = self.environment(root / "second")
+            environment["artifact"] = (
+                environment["artifact"].parent / "wrong-name.json"
+            )
+            with self.assertRaisesRegex(
+                ChallengerCohortEvidenceMaintenanceFirstRunReleaseError,
+                "TARGET_INVALID",
+            ):
+                self.release(environment)
+
+    def test_source_imports_have_no_runtime_or_network_authority(self):
+        root = Path(__file__).resolve().parents[1]
+        sources = [
+            root
+            / "src"
+            / "crypto_quant"
+            / "challenger_cohort_evidence_maintenance_first_run_release.py",
+            root
+            / "src"
+            / "crypto_quant"
+            / (
+                "challenger_cohort_evidence_maintenance_first_run_"
+                "release_cli.py"
+            ),
+        ]
+        imported = set()
+        texts = []
+        for source in sources:
+            text = source.read_text(encoding="utf-8")
+            texts.append(text)
+            tree = ast.parse(text)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported.add(node.module)
+        self.assertFalse(
+            imported
+            & {
+                "subprocess",
+                "urllib",
+                "urllib.request",
+                "requests",
+                "socket",
+                "crypto_quant.challenger_cohort_evidence_maintenance",
+                "crypto_quant.challenger_forward_runner",
+            }
+        )
+        joined = "\n".join(texts)
+        for forbidden in (
+            "/bin/launchctl",
+            "kickstart",
+            "bootstrap",
+            "2026-07-31T00:10:00.000Z",
+            "/Users/chenm4/Library/Application Support/CryptoQuant",
+        ):
+            self.assertNotIn(forbidden, joined)
 
     def test_cli_authority_has_no_runtime_trigger_or_selectors(self):
         actions = {action.dest for action in _parser()._actions}
