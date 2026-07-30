@@ -142,7 +142,8 @@ renderer 创建：
   environment、日志或安全计数均由 semantic replay 拒绝；
 - timezone、repository、runtime、Python、信任文件权限/symlink 错误失败；
 - CLI 不暴露 install/load/launchctl/label/schedule/URL/credential/order/state；
-- renderer 不 import Runner、Broker、credential、order 或 installation module；
+- renderer CLI 不 import Runner、Broker、credential、order 或 installation
+  module；core 只允许复用 installation receipt 的只读 production loader；
 - 真实 renderer 运行前后策略 state/stdout/stderr hash 不变，且
   `launchctl` 调用为 0；
 - 聚焦、相邻、全量测试、compileall 和 evaluator build 全部通过。

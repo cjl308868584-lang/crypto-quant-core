@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-cohort-evidence-maintenance-launchd-contract-v1.schema.json",
+  "title": "Challenger Cohort Evidence Maintenance Launchd Contract V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "created_at", "platform", "label", "repository_root", "runtime_root", "python_executable", "system_timezone", "cadence", "plans", "strategy_trust", "program_arguments", "environment_variable_names", "log_paths", "launchd_plist_sha256", "installation_status", "security_boundary", "warnings"],
+  "properties": {
+    "$schema": {"const": "./challenger-cohort-evidence-maintenance-launchd-contract-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "contract_id": {"type": "string", "pattern": "^challenger_cohort_evidence_maintenance_launchd_contract_[0-9a-f]{64}$"},
+    "contract_hash": {"$ref": "#/$defs/hash"},
+    "created_at": {"$ref": "#/$defs/time"},
+    "platform": {"const": "MACOS_LAUNCHD"},
+    "label": {"const": "local.crypto-quant.challenger-cohort-evidence-maintenance"},
+    "repository_root": {"$ref": "#/$defs/absolute_path"},
+    "runtime_root": {"$ref": "#/$defs/absolute_path"},
+    "python_executable": {"$ref": "#/$defs/absolute_path"},
+    "system_timezone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iana_name", "utc_offset_seconds", "daylight_saving_time_active"],
+      "properties": {
+        "iana_name": {"const": "Asia/Shanghai"},
+        "utc_offset_seconds": {"const": 28800},
+        "daylight_saving_time_active": {"const": false}
+      }
+    },
+    "cadence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time_basis", "local_launch_hour", "local_launch_minute", "utc_launch_hour", "utc_launch_minute", "run_at_load"],
+      "properties": {
+        "time_basis": {"const": "SYSTEM_LOCAL_ASIA_SHANGHAI_UTC_PLUS_08"},
+        "local_launch_hour": {"const": 8},
+        "local_launch_minute": {"const": 10},
+        "utc_launch_hour": {"const": 0},
+        "utc_launch_minute": {"const": 10},
+        "run_at_load": {"const": false}
+      }
+    },
+    "plans": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cohort_plan_path", "cohort_plan_file_sha256", "economic_plan_path", "economic_plan_file_sha256"],
+      "properties": {
+        "cohort_plan_path": {"type": "string", "pattern": "^/.+/artifacts/challenger-forward/challenger-episode-cohort-plan-v0\\.43\\.0\\.json$"},
+        "cohort_plan_file_sha256": {"$ref": "#/$defs/hash"},
+        "economic_plan_path": {"type": "string", "pattern": "^/.+/artifacts/challenger-forward/challenger-episode-economic-plan-v0\\.37\\.0\\.json$"},
+        "economic_plan_file_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "strategy_trust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["install_receipt_path", "install_receipt_file_sha256", "install_receipt_id", "install_receipt_hash", "strategy_contract_path", "strategy_contract_file_sha256", "strategy_contract_id", "strategy_contract_hash", "strategy_contract_trust_hash", "strategy_plist_path", "strategy_plist_file_sha256"],
+      "properties": {
+        "install_receipt_path": {"$ref": "#/$defs/absolute_path"},
+        "install_receipt_file_sha256": {"$ref": "#/$defs/hash"},
+        "install_receipt_id": {"type": "string", "pattern": "^challenger_launchd_install_receipt_[0-9a-f]{64}$"},
+        "install_receipt_hash": {"$ref": "#/$defs/hash"},
+        "strategy_contract_path": {"$ref": "#/$defs/absolute_path"},
+        "strategy_contract_file_sha256": {"$ref": "#/$defs/hash"},
+        "strategy_contract_id": {"type": "string", "pattern": "^challenger_launchd_contract_[0-9a-f]{64}$"},
+        "strategy_contract_hash": {"$ref": "#/$defs/hash"},
+        "strategy_contract_trust_hash": {"$ref": "#/$defs/hash"},
+        "strategy_plist_path": {"$ref": "#/$defs/absolute_path"},
+        "strategy_plist_file_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "program_arguments": {
+      "type": "array",
+      "minItems": 19,
+      "maxItems": 19,
+      "prefixItems": [
+        {"$ref": "#/$defs/absolute_path"},
+        {"const": "-m"},
+        {"const": "crypto_quant.challenger_cohort_evidence_maintenance_cli"},
+        {"const": "--cohort-plan-path"},
+        {"type": "string", "pattern": "^/.+/challenger-episode-cohort-plan-v0\\.43\\.0\\.json$"},
+        {"const": "--economic-plan-path"},
+        {"type": "string", "pattern": "^/.+/challenger-episode-economic-plan-v0\\.37\\.0\\.json$"},
+        {"const": "--episode-receipt-output-root"},
+        {"type": "string", "pattern": "^/.+/cohort-receipts$"},
+        {"const": "--install-receipt-path"},
+        {"$ref": "#/$defs/absolute_path"},
+        {"const": "--contract-path"},
+        {"$ref": "#/$defs/absolute_path"},
+        {"const": "--plist-path"},
+        {"$ref": "#/$defs/absolute_path"},
+        {"const": "--archive-output-root"},
+        {"type": "string", "pattern": "^/.+/cohort-archives$"},
+        {"const": "--result-output-root"},
+        {"type": "string", "pattern": "^/.+/cohort-results$"}
+      ],
+      "items": false
+    },
+    "environment_variable_names": {"const": ["PYTHONPATH"]},
+    "log_paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stdout", "stderr"],
+      "properties": {
+        "stdout": {"type": "string", "pattern": "^/.+/log/challenger-cohort-evidence-maintenance\\.stdout\\.log$"},
+        "stderr": {"type": "string", "pattern": "^/.+/log/challenger-cohort-evidence-maintenance\\.stderr\\.log$"}
+      }
+    },
+    "launchd_plist_sha256": {"$ref": "#/$defs/hash"},
+    "installation_status": {"const": "NOT_INSTALLED_NO_EXTERNAL_RECEIPT"},
+    "security_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential_paths_present", "credential_values_present", "shell_invoked", "arbitrary_command_allowed", "launchctl_invoked", "render_network_request_count", "maintenance_network_scope", "broker_access", "orders_submitted", "strategy_state_write_count", "runner_invocation_count", "cumulative_evaluation_invocation_count"],
+      "properties": {
+        "credential_paths_present": {"const": false},
+        "credential_values_present": {"const": false},
+        "shell_invoked": {"const": false},
+        "arbitrary_command_allowed": {"const": false},
+        "launchctl_invoked": {"const": false},
+        "render_network_request_count": {"const": 0},
+        "maintenance_network_scope": {"const": "BINANCE_OFFICIAL_DAILY_ARCHIVES_TIME_GATED_ONLY"},
+        "broker_access": {"const": false},
+        "orders_submitted": {"const": false},
+        "strategy_state_write_count": {"const": 0},
+        "runner_invocation_count": {"const": 0},
+        "cumulative_evaluation_invocation_count": {"const": 0}
+      }
+    },
+    "warnings": {"const": ["LAUNCHAGENT_NOT_INSTALLED", "INSTALLATION_PRIVATE_SNAPSHOT_AND_RUNTIME_RECEIPTS_REQUIRED", "SYSTEM_TIMEZONE_CHANGE_CAN_BREAK_UTC_ALIGNMENT", "MAINTENANCE_RUN_DOES_NOT_TRIGGER_STRATEGY_RUNNER", "NO_PROFITABILITY_CLAIM", "NO_SYSTEM_PAPER_OR_AI_ADVANTAGE_CLAIM"]}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+    "absolute_path": {"type": "string", "pattern": "^/"}
+  }
+}
