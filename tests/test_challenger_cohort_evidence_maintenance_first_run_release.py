@@ -4,6 +4,8 @@ import os
 import stat
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from crypto_quant.canonical import canonical_json
@@ -13,6 +15,7 @@ from crypto_quant.challenger_cohort_evidence_maintenance_first_run_release impor
 )
 from crypto_quant.challenger_cohort_evidence_maintenance_first_run_release_cli import (
     _parser,
+    main,
 )
 
 
@@ -170,6 +173,45 @@ class FirstNaturalMaintenanceRunReleaseTests(unittest.TestCase):
                 "REPLAY_INVALID",
             ):
                 self.release(environment, loader=loader)
+            self.assertFalse(environment["artifact"].exists())
+
+    def test_cli_missing_runtime_receipt_is_structured_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent = root / "artifact"
+            parent.mkdir(mode=0o700)
+            artifact = parent / "receipt.json"
+            output = StringIO()
+            errors = StringIO()
+            with redirect_stdout(output), redirect_stderr(errors):
+                status = main(
+                    [
+                        "--runtime-receipt-path",
+                        str(root / "missing.json"),
+                        "--install-receipt-path",
+                        "/trust/install.json",
+                        "--manifest-path",
+                        "/trust/manifest.json",
+                        "--trusted-source-attestation-hash",
+                        SOURCE_TRUST,
+                        "--trusted-candidate-attestation-hash",
+                        CANDIDATE_TRUST,
+                        "--artifact-output-path",
+                        str(artifact),
+                    ]
+                )
+            self.assertEqual(status, 1)
+            self.assertEqual(output.getvalue(), "")
+            self.assertEqual(
+                json.loads(errors.getvalue()),
+                {
+                    "error": (
+                        "CHALLENGER_COHORT_MAINTENANCE_FIRST_RUN_"
+                        "RELEASE_SOURCE_INVALID"
+                    )
+                },
+            )
+            self.assertFalse(artifact.exists())
 
     def test_cli_authority_has_no_runtime_trigger_or_selectors(self):
         actions = {action.dest for action in _parser()._actions}

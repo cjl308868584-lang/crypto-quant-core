@@ -160,6 +160,29 @@ def _publish(path: Path, body: bytes) -> bool:
     return published
 
 
+def _rollback_created(path: Path, body: bytes) -> None:
+    try:
+        status = path.lstat()
+        if (
+            not stat.S_ISREG(status.st_mode)
+            or stat.S_ISLNK(status.st_mode)
+            or status.st_uid != os.getuid()
+            or status.st_nlink != 1
+            or path.read_bytes() != body
+        ):
+            raise ValueError
+        path.unlink()
+        directory_descriptor = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except (OSError, ValueError) as error:
+        raise ChallengerCohortEvidenceMaintenanceFirstRunReleaseError(
+            "CHALLENGER_COHORT_MAINTENANCE_FIRST_RUN_RELEASE_ROLLBACK_FAILED"
+        ) from error
+
+
 def release_challenger_cohort_evidence_maintenance_first_run_receipt(
     *,
     runtime_receipt_path: Path,
@@ -241,6 +264,8 @@ def release_challenger_cohort_evidence_maintenance_first_run_receipt(
         TypeError,
         ValueError,
     ) as error:
+        if created:
+            _rollback_created(target, source_bytes)
         raise ChallengerCohortEvidenceMaintenanceFirstRunReleaseError(
             "CHALLENGER_COHORT_MAINTENANCE_FIRST_RUN_RELEASE_REPLAY_INVALID"
         ) from error
