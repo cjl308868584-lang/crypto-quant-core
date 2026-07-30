@@ -78,6 +78,7 @@ _FROZEN_ARTIFACT_PATHS = (
     "artifacts/challenger-forward/binance-challenger-live-runner-not-run-v0.31.0.json",
     "artifacts/challenger-forward/challenger-episode-economic-plan-v0.37.0.json",
     "artifacts/challenger-forward/challenger-first-episode-in-progress-v0.36.0.json",
+    "artifacts/challenger-forward/challenger-first-episode-receipt-v0.41.0.json",
     "artifacts/challenger-forward/challenger-first-slot-waiting-v0.34.0.json",
     "artifacts/challenger-forward/challenger-first-slot-receipt-v0.35.0.json",
     "artifacts/challenger-forward/challenger-launchd-not-installed-v0.32.0.json",
