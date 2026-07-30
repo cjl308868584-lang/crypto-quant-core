@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-cohort-evaluation-plan-v1.schema.json",
+  "title": "Challenger Cohort Cumulative Evaluation Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "plan_id",
+    "plan_hash",
+    "registered_at",
+    "design_commit",
+    "package_baseline",
+    "source_cohort_plan",
+    "population_contract",
+    "time_blocks",
+    "primary_hypothesis",
+    "statistical_design",
+    "sample_gates",
+    "economic_gates",
+    "path_policy",
+    "stress_policy",
+    "leave_out_policy",
+    "final_state_machine",
+    "interim_policy",
+    "status",
+    "authority",
+    "eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./challenger-cohort-evaluation-plan-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "plan_id": {
+      "type": "string",
+      "pattern": "^challenger_cohort_evaluation_plan_[0-9a-f]{64}$"
+    },
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "registered_at": {"const": "2026-07-30T10:22:40.000Z"},
+    "design_commit": {"const": "cd3ad50"},
+    "package_baseline": {"const": "0.43.0"},
+    "source_cohort_plan": {
+      "const": {
+        "plan_id": "challenger_episode_cohort_plan_56fa3d25d37d5445e7c29ad7cda6cd4dac622e036ee0a017c5790fb33142ab1c",
+        "plan_hash": "20575f808b0e1bb4d1f26e01cd92acae59a77c1a28f28058a9d456cdabdf5201",
+        "file_sha256": "a431fe2d316d8c9a647a4c45de280644e60554719603b5506670cef8a02ee7ff",
+        "registered_at": "2026-07-30T09:10:00.000Z",
+        "start_inclusive": "2026-07-30T12:00:00.000Z",
+        "end_exclusive": "2026-10-28T12:00:00.000Z",
+        "observation_tail_end": "2026-10-29T12:00:00.000Z"
+      }
+    },
+    "population_contract": {"type": "object"},
+    "time_blocks": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"type": "object"}
+    },
+    "primary_hypothesis": {"type": "object"},
+    "statistical_design": {"type": "object"},
+    "sample_gates": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"type": "object"}
+    },
+    "economic_gates": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {"type": "object"}
+    },
+    "path_policy": {"type": "object"},
+    "stress_policy": {"type": "object"},
+    "leave_out_policy": {"type": "object"},
+    "final_state_machine": {"type": "object"},
+    "interim_policy": {"type": "object"},
+    "status": {
+      "const": "PREREGISTERED_BEFORE_CONFIRMATORY_COHORT_START"
+    },
+    "authority": {
+      "const": {
+        "runtime_state_read_count": 0,
+        "market_request_count": 0,
+        "runner_invocation_count": 0,
+        "broker_request_count": 0,
+        "order_submission_count": 0,
+        "state_write_count": 0,
+        "sample_override_allowed": false,
+        "threshold_override_allowed": false,
+        "economic_override_allowed": false
+      }
+    },
+    "eligibility": {
+      "const": {
+        "decision_scope": "RESEARCH_CONTINUATION_ONLY",
+        "profitability": "INELIGIBLE_RESEARCH_PROXY_NOT_SYSTEM_PAPER",
+        "release_oos": "INELIGIBLE_NO_SEALED_RELEASE_AUDIT",
+        "execution": "INELIGIBLE_PROXY_NOT_REAL_FILL",
+        "ai_comparison": "INELIGIBLE_NO_PAIRED_AI_COHORT"
+      }
+    },
+    "warnings": {
+      "const": [
+        "NO_CONFIRMATORY_OUTCOME_WAS_OBSERVED",
+        "NO_EARLY_SUCCESS_OR_OPTIONAL_STOPPING",
+        "PASS_WOULD_ONLY_ALLOW_NEXT_RESEARCH_PHASE",
+        "NOT_SYSTEM_PAPER_OR_RELEASE_AUDIT",
+        "NO_AI_ADVANTAGE_CLAIM",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
