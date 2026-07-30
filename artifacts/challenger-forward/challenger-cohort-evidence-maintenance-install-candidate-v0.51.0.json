@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "challenger-cohort-evidence-maintenance-install-candidate-v0.51.0",
+  "release_candidate": "0.51.0",
+  "implementation_commit": "7c363e4",
+  "recorded_at": "2026-07-30T20:16:46.081Z",
+  "status": "PREPARED_NOT_INSTALLED",
+  "source_contract": {
+    "contract_id": "challenger_cohort_evidence_maintenance_launchd_contract_52c0e521e9212f80b0cda98485eeaccf5acde66d1f29ab537ecaa6bcace74562",
+    "contract_hash": "e3612b64ea737227b79fce0094c390018a9627885f6ebd482d2767d714558d3b",
+    "contract_file_sha256": "a1b81ebfaf35174b8aaa9bb577427ac14bc6806fdc15a15e254bc4c06c239879",
+    "contract_trust_hash": "fd50f6b373b5d790d025f7e5be27211b1b7a9438254f6af1d255ca876e56ac2c",
+    "launchd_plist_sha256": "edfdc5bda907c265048652b2c9e69e0493473cdc06e14ed7df0d1a5bd3f099d1"
+  },
+  "deployment_manifest": {
+    "manifest_id": "challenger_cohort_evidence_maintenance_deployment_87a093d1c5eb986b9f8e459a19c3690fac9fca33adce14f48742f6b1a7a7c3fe",
+    "manifest_hash": "410d5f48b25b1cbb3a99589002834698f95946ca0c6f6a59e98ebe5cb0072795",
+    "manifest_file_sha256": "32cae6bfa72ee4c20bb700b9cddef913e5af15643415ccd8d51afc0532e112de",
+    "production_loader_verified": true
+  },
+  "execution_snapshot": {
+    "repository_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-forward-v1/deployment/challenger-cohort-evidence-maintenance/8ae7cfac351c56a3",
+    "file_count": 129,
+    "total_bytes": 2351237,
+    "tree_hash": "8ae7cfac351c56a3666c33b18748d67e67ae82be3298caf8eb64de0a9d8e5904",
+    "directory_mode": "0700",
+    "file_mode": "0600",
+    "owner_only": true
+  },
+  "install_candidate": {
+    "contract_id": "challenger_cohort_evidence_maintenance_launchd_contract_aeb839b634ade193931852eb18f054e43cd332c5fc79475aede9524624ab06c4",
+    "contract_hash": "397070772e6131e57a5b9d2ea590b50b98fd5a3d7f4169e14116625a48d70564",
+    "contract_file_sha256": "9b39f20d8755288460602c7e95004c610d3ce49d65a87f1156fb4043dd8e3170",
+    "contract_trust_hash": "9f7d6b7e2beb8103fb8cf1da1281d086a243bc63f3c5cc7992a8d4c0b878b83f",
+    "launchd_plist_sha256": "efd7070b185a7e6eca629f93502894b0c1def6a0277b9bb87c6a0c5c87a9d4e3",
+    "contract_file_mode": "0600",
+    "plist_file_mode": "0600",
+    "run_at_load": false,
+    "local_schedule": "08:10",
+    "utc_schedule": "00:10",
+    "installation_status": "NOT_INSTALLED_NO_EXTERNAL_RECEIPT"
+  },
+  "fixed_plans": {
+    "cohort_plan_file_sha256": "a431fe2d316d8c9a647a4c45de280644e60554719603b5506670cef8a02ee7ff",
+    "economic_plan_file_sha256": "f22cb582a7df38e14220fca75359f6290af2fdb5896e5829ba5d7fd805cf54da"
+  },
+  "pre_install_verification": {
+    "service_print_return_code": 113,
+    "user_launchagent_target_absent": true,
+    "strategy_state_sha256": "3765170895811cc24a51154eef4c742f23874a760ff24520df07e722241fb6aa",
+    "strategy_stdout_sha256": "1705c9e6f0d2171a3d4e055b30a0d02023c3e634fbee93a5b261b46391ca008d",
+    "strategy_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "real_execution": {
+    "snapshot_publish_count": 1,
+    "candidate_file_publish_count": 2,
+    "launchctl_command_count": 0,
+    "maintenance_invocation_count": 0,
+    "network_request_count": 0,
+    "broker_request_count": 0,
+    "order_submission_count": 0,
+    "strategy_state_write_count": 0,
+    "strategy_runner_invocation_count": 0
+  },
+  "failed_preparation_preserved": {
+    "reason": "CHALLENGER_COHORT_MAINTENANCE_DEPLOYMENT_TIME_INVALID",
+    "candidate_published": false,
+    "launchctl_invoked": false,
+    "orphan_snapshot_preserved": true
+  },
+  "eligibility": {
+    "installation": "ELIGIBLE_ONLY_WITH_FROZEN_EXTERNAL_CANDIDATE_TRUST",
+    "automatic_maintenance": "INELIGIBLE_NOT_INSTALLED",
+    "profitability": "INELIGIBLE_DEPLOYMENT_ONLY",
+    "system_paper": "INELIGIBLE",
+    "ai_advantage": "INELIGIBLE"
+  },
+  "warnings": [
+    "CANDIDATE_EVIDENCE_DOES_NOT_PROVE_INSTALLATION_OR_FIRST_NATURAL_RUN",
+    "INSTALLER_MUST_RECEIVE_THE_FROZEN_CANDIDATE_TRUST_HASH_EXPLICITLY",
+    "NO_MAINTENANCE_NETWORK_STRATEGY_RUNNER_BROKER_OR_ORDER_WAS_INVOKED",
+    "NO_PROFITABILITY_SYSTEM_PAPER_OR_AI_ADVANTAGE_CLAIM"
+  ]
+}
