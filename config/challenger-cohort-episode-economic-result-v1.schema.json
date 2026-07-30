@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-cohort-episode-economic-result-v1.schema.json",
+  "title": "Challenger Cohort Episode Economic Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "result_id",
+    "result_hash",
+    "evaluated_at",
+    "design_commit",
+    "package_baseline",
+    "cohort_plan",
+    "economic_plan",
+    "episode_receipt",
+    "episode",
+    "source_archives",
+    "execution_proxy",
+    "calculation_order",
+    "economics",
+    "status",
+    "security_boundary",
+    "eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./challenger-cohort-episode-economic-result-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "result_id": {
+      "type": "string",
+      "pattern": "^challenger_cohort_episode_economic_result_[0-9a-f]{64}$"
+    },
+    "result_hash": {"$ref": "#/$defs/hash"},
+    "evaluated_at": {"$ref": "#/$defs/time"},
+    "design_commit": {"const": "e687558"},
+    "package_baseline": {"const": "0.46.0"},
+    "cohort_plan": {"$ref": "#/$defs/cohortPlan"},
+    "economic_plan": {"$ref": "#/$defs/economicPlan"},
+    "episode_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "receipt_hash",
+        "receipt_file_sha256",
+        "ordinal",
+        "episode_id",
+        "entry_scheduled_for",
+        "validation_basis"
+      ],
+      "properties": {
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^challenger_cohort_episode_receipt_[0-9a-f]{64}$"
+        },
+        "receipt_hash": {"$ref": "#/$defs/hash"},
+        "receipt_file_sha256": {"$ref": "#/$defs/hash"},
+        "ordinal": {"type": "integer", "minimum": 1, "maximum": 540},
+        "episode_id": {
+          "type": "string",
+          "pattern": "^challenger_episode_[0-9a-f]{64}$"
+        },
+        "entry_scheduled_for": {"$ref": "#/$defs/time"},
+        "validation_basis": {"const": "V0_45_LOADER_AND_ALL_INCLUSIVE_PREFIX"}
+      }
+    },
+    "episode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_decision_id",
+        "entry_decision_hash",
+        "entry_recorded_at",
+        "entry_execution_minute",
+        "exit_decision_id",
+        "exit_decision_hash",
+        "exit_action",
+        "exit_recorded_at",
+        "exit_execution_minute"
+      ],
+      "properties": {
+        "entry_decision_id": {"$ref": "#/$defs/decisionId"},
+        "entry_decision_hash": {"$ref": "#/$defs/hash"},
+        "entry_recorded_at": {"$ref": "#/$defs/time"},
+        "entry_execution_minute": {"$ref": "#/$defs/time"},
+        "exit_decision_id": {"$ref": "#/$defs/decisionId"},
+        "exit_decision_hash": {"$ref": "#/$defs/hash"},
+        "exit_action": {"enum": ["EXIT_LONG_SMA20", "EXIT_LONG_VERTICAL_24H"]},
+        "exit_recorded_at": {"$ref": "#/$defs/time"},
+        "exit_execution_minute": {"$ref": "#/$defs/time"}
+      }
+    },
+    "source_archives": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/sourceArchive"}
+    },
+    "execution_proxy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_source_row_hash",
+        "exit_source_row_hash",
+        "entry_source_field",
+        "exit_source_field",
+        "real_fill_claimed"
+      ],
+      "properties": {
+        "entry_source_row_hash": {"$ref": "#/$defs/hash"},
+        "exit_source_row_hash": {"$ref": "#/$defs/hash"},
+        "entry_source_field": {"const": "high"},
+        "exit_source_field": {"const": "low"},
+        "real_fill_claimed": {"const": false}
+      }
+    },
+    "calculation_order": {
+      "const": [
+        "ENTRY_EXECUTION_MINUTE",
+        "EXIT_EXECUTION_MINUTE",
+        "ENTRY_FILL",
+        "EXIT_FILL",
+        "QUANTITY",
+        "ENTRY_NOTIONAL",
+        "EXIT_NOTIONAL",
+        "ENTRY_FEE",
+        "EXIT_FEE",
+        "GROSS_PNL",
+        "NET_PNL",
+        "NET_RETURN",
+        "POSITIVE_LABEL"
+      ]
+    },
+    "economics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_capital_usdt",
+        "entry_source_high",
+        "exit_source_low",
+        "entry_fill_price",
+        "exit_fill_price",
+        "filled_quantity_eth",
+        "entry_notional_usdt",
+        "exit_notional_usdt",
+        "entry_fee_usdt",
+        "exit_fee_usdt",
+        "gross_pnl_usdt",
+        "net_pnl_usdt",
+        "net_return",
+        "positive_label"
+      ],
+      "properties": {
+        "reference_capital_usdt": {"const": "1000"},
+        "entry_source_high": {"$ref": "#/$defs/decimal"},
+        "exit_source_low": {"$ref": "#/$defs/decimal"},
+        "entry_fill_price": {"$ref": "#/$defs/decimal"},
+        "exit_fill_price": {"$ref": "#/$defs/decimal"},
+        "filled_quantity_eth": {"$ref": "#/$defs/decimal"},
+        "entry_notional_usdt": {"$ref": "#/$defs/decimal"},
+        "exit_notional_usdt": {"$ref": "#/$defs/decimal"},
+        "entry_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "exit_fee_usdt": {"$ref": "#/$defs/decimal"},
+        "gross_pnl_usdt": {"$ref": "#/$defs/decimal"},
+        "net_pnl_usdt": {"$ref": "#/$defs/decimal"},
+        "net_return": {"$ref": "#/$defs/decimal"},
+        "positive_label": {"enum": [0, 1]}
+      }
+    },
+    "status": {"const": "DESCRIPTIVE_NO_EARLY_SUCCESS"},
+    "security_boundary": {
+      "const": {
+        "market_request_count": 0,
+        "broker_request_count": 0,
+        "order_submission_count": 0,
+        "state_write_count": 0,
+        "runner_invocation_count": 0,
+        "binary_float_allowed": false,
+        "economic_override_allowed": false,
+        "episode_selector_allowed": false
+      }
+    },
+    "eligibility": {
+      "const": {
+        "execution": "INELIGIBLE_PROXY_NOT_REAL_FILL",
+        "profitability": "INELIGIBLE_INTERIM_COHORT",
+        "paper": "INELIGIBLE_FORWARD_RESEARCH_ONLY",
+        "ai_comparison": "INELIGIBLE_NO_PAIRED_AI_EPISODE"
+      }
+    },
+    "warnings": {
+      "const": [
+        "ARCHIVE_FORWARD_OUTCOME_RESEARCH_ONLY",
+        "DAILY_ARCHIVE_ROWS_ARE_EXECUTION_PROXIES_NOT_REAL_FILLS",
+        "ASSUMED_TAKER_FEE_IS_NOT_ACCOUNT_ACTUAL_FEE",
+        "ALL_COMPLETED_EPISODES_MUST_BE_RETAINED",
+        "NO_EARLY_SUCCESS_OR_OPTIONAL_STOPPING",
+        "NO_AI_ADVANTAGE_CLAIM",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "decisionId": {
+      "type": "string",
+      "pattern": "^challenger_decision_[0-9a-f]{64}$"
+    },
+    "cohortPlan": {
+      "const": {
+        "plan_id": "challenger_episode_cohort_plan_56fa3d25d37d5445e7c29ad7cda6cd4dac622e036ee0a017c5790fb33142ab1c",
+        "plan_hash": "20575f808b0e1bb4d1f26e01cd92acae59a77c1a28f28058a9d456cdabdf5201",
+        "plan_file_sha256": "a431fe2d316d8c9a647a4c45de280644e60554719603b5506670cef8a02ee7ff"
+      }
+    },
+    "economicPlan": {
+      "const": {
+        "plan_id": "challenger_episode_economic_plan_e5c86696889d209373ce536ee0f54be72e59d7de96b6868cd5ab0358491985a4",
+        "plan_hash": "fa43e1bb24ac0e9d70c82a3d09f03ca43a5f99c429f43e6c67d6e68029732831",
+        "plan_file_sha256": "f22cb582a7df38e14220fca75359f6290af2fdb5896e5829ba5d7fd805cf54da",
+        "economic_policy_hash": "32c81160e936caf4253e0eabe46104fde5f6b747e0525fa2ea916c028dea82f9"
+      }
+    },
+    "selectedRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "open_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "source_row_number",
+        "source_row",
+        "source_row_hash"
+      ],
+      "properties": {
+        "open_time": {"$ref": "#/$defs/time"},
+        "open": {"$ref": "#/$defs/decimal"},
+        "high": {"$ref": "#/$defs/decimal"},
+        "low": {"$ref": "#/$defs/decimal"},
+        "close": {"$ref": "#/$defs/decimal"},
+        "source_row_number": {"type": "integer", "minimum": 1, "maximum": 1441},
+        "source_row": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": {"type": "string"}
+        },
+        "source_row_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "sourceArchive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "period",
+        "receipt_id",
+        "receipt_hash",
+        "receipt_file_sha256",
+        "retrieved_at",
+        "archive_sha256",
+        "checksum_file_sha256",
+        "csv_sha256",
+        "csv_row_count",
+        "source_rows_root_hash",
+        "selected_rows"
+      ],
+      "properties": {
+        "period": {"type": "string", "pattern": "^2026-(07|08|09|10)-[0-9]{2}$"},
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^challenger_cohort_daily_archive_receipt_[0-9a-f]{64}$"
+        },
+        "receipt_hash": {"$ref": "#/$defs/hash"},
+        "receipt_file_sha256": {"$ref": "#/$defs/hash"},
+        "retrieved_at": {"$ref": "#/$defs/time"},
+        "archive_sha256": {"$ref": "#/$defs/hash"},
+        "checksum_file_sha256": {"$ref": "#/$defs/hash"},
+        "csv_sha256": {"$ref": "#/$defs/hash"},
+        "csv_row_count": {"const": 1440},
+        "source_rows_root_hash": {"$ref": "#/$defs/hash"},
+        "selected_rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {"$ref": "#/$defs/selectedRow"}
+        }
+      }
+    }
+  }
+}
