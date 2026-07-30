@@ -847,7 +847,14 @@ def install_challenger_cohort_evidence_maintenance_launchd(
                 "CHALLENGER_COHORT_MAINTENANCE_INSTALL_BOOTSTRAP_FAILED"
             )
     installed_at = _utc(
-        (clock or (lambda: datetime.now(timezone.utc)))()
+        (
+            clock
+            or (
+                lambda: utc_datetime(
+                    datetime.now(timezone.utc)
+                )
+            )
+        )()
     )
     try:
         verified_result = runner(print_argv)
@@ -874,7 +881,14 @@ def install_challenger_cohort_evidence_maintenance_launchd(
             "CHALLENGER_COHORT_MAINTENANCE_INSTALL_PRINT_VERIFY_FAILED"
         )
     verified_at = _utc(
-        (clock or (lambda: datetime.now(timezone.utc)))()
+        (
+            clock
+            or (
+                lambda: utc_datetime(
+                    datetime.now(timezone.utc)
+                )
+            )
+        )()
     )
     target_stat = _target_stat(target, uid)
     verified = _command_evidence(print_argv, verified_result)

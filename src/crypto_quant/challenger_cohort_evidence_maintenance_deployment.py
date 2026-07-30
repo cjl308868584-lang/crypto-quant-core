@@ -601,7 +601,14 @@ def prepare_challenger_cohort_evidence_maintenance_deployment(
         data_by_path=data_by_path,
     )
     prepared_at = _utc(
-        (clock or (lambda: datetime.now(timezone.utc)))()
+        (
+            clock
+            or (
+                lambda: utc_datetime(
+                    datetime.now(timezone.utc)
+                )
+            )
+        )()
     )
     try:
         candidate_contract, candidate_plist_bytes = (

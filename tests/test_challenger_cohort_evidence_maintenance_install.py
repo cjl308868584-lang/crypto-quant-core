@@ -361,6 +361,30 @@ class ChallengerCohortEvidenceMaintenanceDeploymentTests(
                     stat.S_IMODE(Path(first[key]).stat().st_mode), 0o600
                 )
 
+    def test_default_clock_is_normalized_to_utc_milliseconds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _runtime, source = source_contract(root)
+            result = (
+                prepare_challenger_cohort_evidence_maintenance_deployment(
+                    source_contract_path=Path(source["contract_path"]),
+                    source_plist_path=Path(source["plist_path"]),
+                    trusted_source_attestation_hash=(
+                        source["contract_trust_hash"]
+                    ),
+                    output_root=root / "deployment-output",
+                    _strategy_loader=fixture_strategy_loader,
+                )
+            )
+            prepared_at = json.loads(
+                Path(result["manifest_path"]).read_text()
+            )["prepared_at"]
+            self.assertRegex(
+                prepared_at,
+                r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+                r"[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$",
+            )
+
     def test_external_trust_and_snapshot_tamper_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -504,6 +528,26 @@ class ChallengerCohortEvidenceMaintenanceInstallTests(
                 [call[1] for call in runner.calls],
                 ["print", "bootstrap", "print"],
             )
+
+    def test_install_default_clock_is_normalized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _manifest, _contract, _target, _runner, values = (
+                install_inputs(root)
+            )
+            del values["clock"]
+            result = (
+                install_challenger_cohort_evidence_maintenance_launchd(
+                    **values
+                )
+            )
+            receipt = json.loads(Path(result["receipt_path"]).read_text())
+            for field in ("installed_at", "verified_at"):
+                self.assertRegex(
+                    receipt[field],
+                    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+                    r"[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$",
+                )
 
     def test_loaded_exact_service_is_idempotent_without_bootstrap(self):
         with tempfile.TemporaryDirectory() as directory:
