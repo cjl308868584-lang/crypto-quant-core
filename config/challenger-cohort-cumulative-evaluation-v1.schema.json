@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-cohort-cumulative-evaluation-v1.schema.json",
+  "title": "Challenger cohort cumulative evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "evaluation_id",
+    "evaluation_hash",
+    "evaluated_at",
+    "design_commit",
+    "package_baseline",
+    "cohort_plan",
+    "evaluation_plan",
+    "economic_plan",
+    "pilot",
+    "continuity",
+    "economic_inventory",
+    "confirmatory_observations",
+    "confirmatory_statistics",
+    "leave_top_5",
+    "time_blocks",
+    "path",
+    "stress_1_5x",
+    "economic_gates",
+    "all_stream_descriptive",
+    "status",
+    "eligibility",
+    "security_boundary",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-cohort-cumulative-evaluation-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "evaluation_id": {
+      "type": "string",
+      "pattern": "^challenger_cohort_cumulative_evaluation_[0-9a-f]{64}$"
+    },
+    "evaluation_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "evaluated_at": {
+      "$ref": "#/$defs/time"
+    },
+    "design_commit": {
+      "const": "543684f"
+    },
+    "package_baseline": {
+      "const": "0.47.0"
+    },
+    "cohort_plan": {
+      "$ref": "#/$defs/planBinding"
+    },
+    "evaluation_plan": {
+      "$ref": "#/$defs/planBinding"
+    },
+    "economic_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan_id",
+        "plan_hash",
+        "plan_file_sha256",
+        "economic_policy_hash"
+      ],
+      "properties": {
+        "plan_id": {
+          "type": "string"
+        },
+        "plan_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "plan_file_sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "economic_policy_hash": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    },
+    "pilot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result_id",
+        "result_hash",
+        "result_file_sha256",
+        "net_pnl_usdt",
+        "net_return",
+        "confirmatory_eligible"
+      ],
+      "properties": {
+        "result_id": {
+          "type": "string"
+        },
+        "result_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "result_file_sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "net_pnl_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "net_return": {
+          "$ref": "#/$defs/decimal"
+        },
+        "confirmatory_eligible": {
+          "const": false
+        }
+      }
+    },
+    "continuity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window_slot_count",
+        "cohort_slot_count",
+        "slots_root_hash",
+        "completed_episode_count",
+        "completed_episode_ids_root_hash",
+        "active_episode_id_or_null",
+        "source_bundles_root_hash",
+        "stdout_records_root_hash",
+        "state_file_sha256",
+        "decision_chain_end_hash_or_null",
+        "launchctl_print_hash",
+        "continuity_root_hash"
+      ],
+      "properties": {
+        "window_slot_count": {
+          "const": 540
+        },
+        "cohort_slot_count": {
+          "type": "integer",
+          "minimum": 540,
+          "maximum": 546
+        },
+        "slots_root_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "completed_episode_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 180
+        },
+        "completed_episode_ids_root_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "active_episode_id_or_null": {
+          "type": "null"
+        },
+        "source_bundles_root_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "stdout_records_root_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "state_file_sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "decision_chain_end_hash_or_null": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/hash"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "launchctl_print_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "continuity_root_hash": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    },
+    "economic_inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result_count",
+        "latest_index_id_or_null",
+        "latest_index_hash",
+        "latest_index_file_sha256"
+      ],
+      "properties": {
+        "result_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 180
+        },
+        "latest_index_id_or_null": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latest_index_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "latest_index_file_sha256": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    },
+    "confirmatory_observations": {
+      "type": "array",
+      "maxItems": 180,
+      "items": {
+        "type": "object"
+      }
+    },
+    "confirmatory_statistics": {
+      "type": "object"
+    },
+    "leave_top_5": {
+      "type": "object"
+    },
+    "time_blocks": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object"
+      }
+    },
+    "path": {
+      "type": "object"
+    },
+    "stress_1_5x": {
+      "type": "object"
+    },
+    "economic_gates": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": [
+          "gate_id",
+          "value",
+          "comparator",
+          "threshold",
+          "passed"
+        ]
+      }
+    },
+    "all_stream_descriptive": {
+      "type": "object"
+    },
+    "status": {
+      "enum": [
+        "RESEARCH_CONTINUATION_GATE_PASS",
+        "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+        "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_scope",
+        "profitability",
+        "release_oos",
+        "execution",
+        "ai_comparison"
+      ],
+      "properties": {
+        "decision_scope": {
+          "const": "RESEARCH_CONTINUATION_ONLY"
+        },
+        "profitability": {
+          "const": "INELIGIBLE_RESEARCH_PROXY_NOT_SYSTEM_PAPER"
+        },
+        "release_oos": {
+          "const": "INELIGIBLE_NO_SEALED_RELEASE_AUDIT"
+        },
+        "execution": {
+          "const": "INELIGIBLE_PROXY_NOT_REAL_FILL"
+        },
+        "ai_comparison": {
+          "const": "INELIGIBLE_NO_PAIRED_AI_COHORT"
+        }
+      }
+    },
+    "security_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "market_request_count",
+        "broker_request_count",
+        "order_submission_count",
+        "state_write_count",
+        "runner_invocation_count",
+        "binary_float_allowed",
+        "sample_override_allowed",
+        "threshold_override_allowed",
+        "economic_override_allowed"
+      ],
+      "properties": {
+        "market_request_count": {
+          "const": 0
+        },
+        "broker_request_count": {
+          "const": 0
+        },
+        "order_submission_count": {
+          "const": 0
+        },
+        "state_write_count": {
+          "const": 0
+        },
+        "runner_invocation_count": {
+          "const": 0
+        },
+        "binary_float_allowed": {
+          "const": false
+        },
+        "sample_override_allowed": {
+          "const": false
+        },
+        "threshold_override_allowed": {
+          "const": false
+        },
+        "economic_override_allowed": {
+          "const": false
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "minItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "planBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan_id",
+        "plan_hash",
+        "plan_file_sha256"
+      ],
+      "properties": {
+        "plan_id": {
+          "type": "string"
+        },
+        "plan_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "plan_file_sha256": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    }
+  }
+}
