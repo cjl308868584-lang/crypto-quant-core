@@ -377,6 +377,92 @@ class ChallengerFirstEpisodeReceiptTests(unittest.TestCase):
             "INELIGIBLE",
         )
 
+    def test_committed_v041_completed_receipt_is_canonical_and_frozen(self):
+        artifact_path = (
+            ROOT
+            / "artifacts"
+            / "challenger-forward"
+            / "challenger-first-episode-receipt-v0.41.0.json"
+        )
+        artifact_bytes = artifact_path.read_bytes()
+        receipt = json.loads(artifact_bytes)
+        schema = json.loads(
+            (
+                ROOT
+                / "config"
+                / "challenger-first-episode-receipt-v1.schema.json"
+            ).read_bytes()
+        )
+        self.assertEqual(
+            artifact_bytes,
+            canonical_json(receipt).encode("utf-8"),
+        )
+        self.assertFalse(
+            tuple(Draft202012Validator(schema).iter_errors(receipt))
+        )
+        self.assertEqual(len(artifact_bytes), 66839)
+        self.assertEqual(
+            hashlib.sha256(artifact_bytes).hexdigest(),
+            "3c99f074df3029658d1a056941525925"
+            "0c2043718f75446345999160ff293a06",
+        )
+        self.assertEqual(
+            receipt["receipt_id"],
+            "challenger_first_episode_receipt_"
+            "ce39f2d82ee8eb116426e4073991c1af"
+            "08480ddf25529574e13a976dfe2a2ed5",
+        )
+        self.assertEqual(
+            receipt["receipt_hash"],
+            challenger_first_episode_receipt_hash(receipt),
+        )
+        self.assertEqual(
+            receipt["receipt_hash"],
+            "7c819d67693455c686d3f664290df6f8"
+            "5ed68887eefa917f564edd745e4fd8ff",
+        )
+        self.assertEqual(
+            receipt["observation_status"],
+            "FIRST_EPISODE_COMPLETED_VERIFIED",
+        )
+        self.assertEqual(receipt["state"]["episode_decision_count"], 5)
+        self.assertEqual(receipt["state"]["total_decision_count_observed"], 7)
+        self.assertEqual(len(receipt["source_bundles"]), 5)
+        self.assertEqual(
+            receipt["episode"]["exit_action"],
+            "EXIT_LONG_SMA20",
+        )
+        self.assertEqual(
+            receipt["episode"]["exit_scheduled_for"],
+            "2026-07-29T16:00:00.000Z",
+        )
+        self.assertEqual(
+            receipt["state"]["decisions"][-1]["state_after"][
+                "position_state"
+            ],
+            "FLAT",
+        )
+        self.assertEqual(
+            receipt["security_boundary"],
+            {
+                "arbitrary_command_allowed": False,
+                "broker_request_count": 0,
+                "launchctl_print_count": 1,
+                "network_request_count": 0,
+                "order_submission_count": 0,
+                "shell_invoked": False,
+                "state_write_count": 0,
+            },
+        )
+        self.assertEqual(
+            receipt["eligibility"]["profitability"],
+            "INELIGIBLE",
+        )
+        self.assertIn(
+            "SINGLE_EPISODE_CANNOT_ESTABLISH_EDGE",
+            receipt["warnings"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
