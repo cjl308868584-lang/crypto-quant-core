@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "challenger-cohort-evidence-maintenance-launchd-not-installed-v0.50.0",
+  "release_candidate": "0.50.0",
+  "recorded_at": "2026-07-30T19:14:38.104Z",
+  "status": "GENERATED_NOT_INSTALLED",
+  "actual_contract": {
+    "contract_id": "challenger_cohort_evidence_maintenance_launchd_contract_52c0e521e9212f80b0cda98485eeaccf5acde66d1f29ab537ecaa6bcace74562",
+    "contract_hash": "e3612b64ea737227b79fce0094c390018a9627885f6ebd482d2767d714558d3b",
+    "contract_file_sha256": "a1b81ebfaf35174b8aaa9bb577427ac14bc6806fdc15a15e254bc4c06c239879",
+    "contract_trust_hash": "fd50f6b373b5d790d025f7e5be27211b1b7a9438254f6af1d255ca876e56ac2c",
+    "launchd_plist_sha256": "edfdc5bda907c265048652b2c9e69e0493473cdc06e14ed7df0d1a5bd3f099d1",
+    "repository_root": "/Users/chenm4/Documents/虚拟货币",
+    "runtime_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-forward-v1",
+    "python_executable": "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
+    "system_timezone": "Asia/Shanghai",
+    "local_schedule": "08:10",
+    "utc_schedule": "00:10",
+    "run_at_load": false,
+    "installation_status": "NOT_INSTALLED_NO_EXTERNAL_RECEIPT"
+  },
+  "trusted_strategy": {
+    "install_receipt_id": "challenger_launchd_install_receipt_d9f8b99b5aeef80bd7627fda751d856ce64b1e68bd016cf538dfe707b154260e",
+    "install_receipt_hash": "e160a7f4603e45751e2618b9132adf5050e88c382e08a135f789a115de93b65c",
+    "strategy_contract_id": "challenger_launchd_contract_101a0a0aca340df5c7de9a84e62a88c76ccf370ded93aeebf8d3ebcdb169efa9",
+    "strategy_contract_hash": "6b02a7b9e636420983b1fd47b6264962daaebdaaee66ef8e42d263bd0493d138",
+    "strategy_contract_trust_hash": "9e592203c27ffb8e4d6884c1f45bf892c60f7ee92afa7285e9cdcdbb29dea92b",
+    "strategy_plist_sha256": "f6b2283ad4c01ee6e7dc8e954bdcb29dd221d5b79d4a04b69618af1d26182b53"
+  },
+  "filesystem": {
+    "output_root_mode": "0700",
+    "scheduler_directory_mode": "0700",
+    "contract_file_mode": "0600",
+    "plist_file_mode": "0600",
+    "contract_and_plist_outside_git": true,
+    "cohort_receipt_root_created": false,
+    "cohort_archive_root_created": false,
+    "cohort_result_root_created": false
+  },
+  "real_execution": {
+    "launchctl_invoked": false,
+    "launchagent_copied_to_user_domain": false,
+    "launchagent_loaded": false,
+    "render_network_request_count": 0,
+    "broker_request_count": 0,
+    "order_submission_count": 0,
+    "strategy_state_write_count": 0,
+    "runner_invocation_count": 0
+  },
+  "runtime_hashes_unchanged": {
+    "state_sha256": "4332717a4822b948defd1ea38e22b3a53ee3ca54ed460a9d16b61d436b15d44c",
+    "stdout_sha256": "c17c05dc18072417efcbba3b7d2d6ff912a0bbd38e9ee86aadef296ea8b61f43",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "fixture_validation": {
+    "focused_test_count": 11,
+    "deterministic_rebuild_count": 100,
+    "schema_mirror_exact": true,
+    "external_attestation_required": true,
+    "plist_semantic_replay_verified": true,
+    "timezone_path_permission_and_inventory_fail_closed_verified": true,
+    "eligible_as_installation_receipt": false
+  },
+  "eligibility": {
+    "automatic_maintenance": "INELIGIBLE_NOT_INSTALLED",
+    "profitability": "INELIGIBLE_CONTRACT_ONLY",
+    "system_paper": "INELIGIBLE",
+    "ai_advantage": "INELIGIBLE"
+  },
+  "warnings": [
+    "GENERATED_PLIST_IS_NOT_INSTALLATION_OR_RUNTIME_EVIDENCE",
+    "PRIVATE_EXECUTION_SNAPSHOT_NOT_YET_CREATED",
+    "NO_LAUNCHCTL_OR_NETWORK_REQUEST_WAS_MADE",
+    "NO_PROFITABILITY_SYSTEM_PAPER_OR_AI_ADVANTAGE_CLAIM"
+  ]
+}

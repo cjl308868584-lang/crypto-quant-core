@@ -573,6 +573,11 @@ class EvaluatorBuildTests(unittest.TestCase):
             expected,
         )
         self.assertIn(
+            "config/challenger-cohort-evidence-maintenance-"
+            "launchd-contract-v1.schema.json",
+            expected,
+        )
+        self.assertIn(
             "config/challenger-cohort-economic-result-index-v1.schema.json",
             expected,
         )
@@ -584,6 +589,12 @@ class EvaluatorBuildTests(unittest.TestCase):
         self.assertIn(
             "artifacts/challenger-forward/"
             "challenger-cohort-evaluation-plan-v0.44.0.json",
+            expected,
+        )
+        self.assertIn(
+            "artifacts/challenger-forward/"
+            "challenger-cohort-evidence-maintenance-"
+            "launchd-not-installed-v0.50.0.json",
             expected,
         )
         self.assertIn(
@@ -623,9 +634,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.44.0")
-        self.assertEqual(manifest["package_version"], "0.49.0")
-        self.assertEqual(crypto_quant.__version__, "0.49.0")
+        self.assertEqual(manifest["manifest_version"], "1.45.0")
+        self.assertEqual(manifest["package_version"], "0.50.0")
+        self.assertEqual(crypto_quant.__version__, "0.50.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
