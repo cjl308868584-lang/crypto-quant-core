@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-cohort-evidence-maintenance-deployment-manifest-v1.schema.json",
+  "title": "Challenger Cohort Evidence Maintenance Deployment Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "manifest_id",
+    "manifest_hash",
+    "prepared_at",
+    "source_contract",
+    "execution_snapshot",
+    "install_candidate",
+    "security_boundary",
+    "deployment_status",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-cohort-evidence-maintenance-deployment-manifest-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "manifest_id": {
+      "type": "string",
+      "pattern": "^challenger_cohort_evidence_maintenance_deployment_[0-9a-f]{64}$"
+    },
+    "manifest_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "prepared_at": {
+      "$ref": "#/$defs/utc"
+    },
+    "source_contract": {
+      "$ref": "#/$defs/sourceContract"
+    },
+    "execution_snapshot": {
+      "$ref": "#/$defs/executionSnapshot"
+    },
+    "install_candidate": {
+      "$ref": "#/$defs/installCandidate"
+    },
+    "security_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_publish_count",
+        "candidate_publish_count",
+        "network_request_count",
+        "launchctl_command_count",
+        "credential_count",
+        "broker_request_count",
+        "order_submission_count",
+        "strategy_state_write_count",
+        "strategy_runner_invocation_count",
+        "maintenance_invocation_count"
+      ],
+      "properties": {
+        "snapshot_publish_count": {
+          "enum": [0, 1]
+        },
+        "candidate_publish_count": {
+          "const": 2
+        },
+        "network_request_count": {
+          "const": 0
+        },
+        "launchctl_command_count": {
+          "const": 0
+        },
+        "credential_count": {
+          "const": 0
+        },
+        "broker_request_count": {
+          "const": 0
+        },
+        "order_submission_count": {
+          "const": 0
+        },
+        "strategy_state_write_count": {
+          "const": 0
+        },
+        "strategy_runner_invocation_count": {
+          "const": 0
+        },
+        "maintenance_invocation_count": {
+          "const": 0
+        }
+      }
+    },
+    "deployment_status": {
+      "const": "PREPARED_NOT_INSTALLED"
+    },
+    "warnings": {
+      "const": [
+        "DEPLOYMENT_MANIFEST_DOES_NOT_PROVE_INSTALLATION",
+        "MAINTENANCE_NOT_INVOKED",
+        "FIRST_NATURAL_SCHEDULE_RECEIPT_REQUIRED",
+        "NO_PROFITABILITY_CLAIM",
+        "NO_SYSTEM_PAPER_OR_AI_ADVANTAGE_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "absolutePath": {
+      "type": "string",
+      "pattern": "^/[^\\u0000]+$"
+    },
+    "sourceContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_path",
+        "contract_file_sha256",
+        "plist_path",
+        "plist_file_sha256",
+        "contract_id",
+        "contract_hash",
+        "contract_trust_hash",
+        "repository_root",
+        "runtime_root",
+        "python_executable"
+      ],
+      "properties": {
+        "contract_path": {
+          "$ref": "#/$defs/absolutePath"
+        },
+        "contract_file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plist_path": {
+          "$ref": "#/$defs/absolutePath"
+        },
+        "plist_file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "contract_id": {
+          "type": "string",
+          "pattern": "^challenger_cohort_evidence_maintenance_launchd_contract_[0-9a-f]{64}$"
+        },
+        "contract_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "contract_trust_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "repository_root": {
+          "$ref": "#/$defs/absolutePath"
+        },
+        "runtime_root": {
+          "$ref": "#/$defs/absolutePath"
+        },
+        "python_executable": {
+          "$ref": "#/$defs/absolutePath"
+        }
+      }
+    },
+    "fileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "size_bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[^/\\u0000][^\\u0000]*$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4194304
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "executionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_root",
+        "file_count",
+        "total_bytes",
+        "tree_hash",
+        "files"
+      ],
+      "properties": {
+        "repository_root": {
+          "type": "string",
+          "pattern": "^/.*/deployment/challenger-cohort-evidence-maintenance/[0-9a-f]{16}$"
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 1000
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 33554432
+        },
+        "tree_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/fileRecord"
+          }
+        }
+      }
+    },
+    "installCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_path",
+        "contract_file_sha256",
+        "plist_path",
+        "plist_file_sha256",
+        "contract_id",
+        "contract_hash",
+        "contract_trust_hash",
+        "launchd_plist_sha256"
+      ],
+      "properties": {
+        "contract_path": {
+          "$ref": "#/$defs/absolutePath"
+        },
+        "contract_file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plist_path": {
+          "$ref": "#/$defs/absolutePath"
+        },
+        "plist_file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "contract_id": {
+          "type": "string",
+          "pattern": "^challenger_cohort_evidence_maintenance_launchd_contract_[0-9a-f]{64}$"
+        },
+        "contract_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "contract_trust_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "launchd_plist_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

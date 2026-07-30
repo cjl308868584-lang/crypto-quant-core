@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-cohort-evidence-maintenance-launchd-install-receipt-v1.schema.json",
+  "title": "Challenger Cohort Evidence Maintenance Launchd Install Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "receipt_id",
+    "receipt_hash",
+    "installed_at",
+    "verified_at",
+    "source_deployment",
+    "source_contract",
+    "execution_snapshot",
+    "domain",
+    "service",
+    "target_path",
+    "target_stat",
+    "install_action",
+    "preflight_print",
+    "bootstrap_or_null",
+    "verified_print",
+    "installation_status",
+    "run_at_load",
+    "security_boundary",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-cohort-evidence-maintenance-launchd-install-receipt-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^challenger_cohort_evidence_maintenance_install_receipt_[0-9a-f]{64}$"
+    },
+    "receipt_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "installed_at": {
+      "$ref": "#/$defs/utc"
+    },
+    "verified_at": {
+      "$ref": "#/$defs/utc"
+    },
+    "source_deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_path",
+        "manifest_file_sha256",
+        "manifest_id",
+        "manifest_hash"
+      ],
+      "properties": {
+        "manifest_path": {
+          "$ref": "#/$defs/absolutePath"
+        },
+        "manifest_file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "manifest_id": {
+          "type": "string",
+          "pattern": "^challenger_cohort_evidence_maintenance_deployment_[0-9a-f]{64}$"
+        },
+        "manifest_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "source_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_id",
+        "contract_hash",
+        "contract_trust_hash",
+        "launchd_plist_sha256"
+      ],
+      "properties": {
+        "contract_id": {
+          "type": "string",
+          "pattern": "^challenger_cohort_evidence_maintenance_launchd_contract_[0-9a-f]{64}$"
+        },
+        "contract_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "contract_trust_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "launchd_plist_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "execution_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_root",
+        "file_count",
+        "total_bytes",
+        "tree_hash"
+      ],
+      "properties": {
+        "repository_root": {
+          "type": "string",
+          "pattern": "^/.*/deployment/challenger-cohort-evidence-maintenance/[0-9a-f]{16}$"
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 1000
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 33554432
+        },
+        "tree_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "domain": {
+      "type": "string",
+      "pattern": "^gui/[1-9][0-9]*$"
+    },
+    "service": {
+      "type": "string",
+      "pattern": "^gui/[1-9][0-9]*/local\\.crypto-quant\\.challenger-cohort-evidence-maintenance$"
+    },
+    "target_path": {
+      "type": "string",
+      "pattern": "^/.*/Library/LaunchAgents/local\\.crypto-quant\\.challenger-cohort-evidence-maintenance\\.plist$"
+    },
+    "target_stat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device",
+        "inode",
+        "owner_uid",
+        "mode_octal",
+        "link_count",
+        "size_bytes",
+        "sha256"
+      ],
+      "properties": {
+        "device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "owner_uid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode_octal": {
+          "const": "0600"
+        },
+        "link_count": {
+          "const": 1
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "install_action": {
+      "enum": [
+        "INSTALLED_AND_BOOTSTRAPPED",
+        "EXISTING_FILE_BOOTSTRAPPED",
+        "ALREADY_INSTALLED_AND_LOADED"
+      ]
+    },
+    "preflight_print": {
+      "$ref": "#/$defs/commandEvidence"
+    },
+    "bootstrap_or_null": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/commandEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verified_print": {
+      "$ref": "#/$defs/commandEvidence"
+    },
+    "installation_status": {
+      "const": "INSTALLED_AND_LOADED_WAITING_FOR_NATURAL_SCHEDULE"
+    },
+    "run_at_load": {
+      "const": false
+    },
+    "security_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credential_count",
+        "network_request_count",
+        "broker_request_count",
+        "order_submission_count",
+        "strategy_state_write_count",
+        "strategy_runner_invocation_count",
+        "maintenance_invocation_count",
+        "shell_invoked",
+        "arbitrary_command_allowed",
+        "launchctl_command_count"
+      ],
+      "properties": {
+        "credential_count": {
+          "const": 0
+        },
+        "network_request_count": {
+          "const": 0
+        },
+        "broker_request_count": {
+          "const": 0
+        },
+        "order_submission_count": {
+          "const": 0
+        },
+        "strategy_state_write_count": {
+          "const": 0
+        },
+        "strategy_runner_invocation_count": {
+          "const": 0
+        },
+        "maintenance_invocation_count": {
+          "const": 0
+        },
+        "shell_invoked": {
+          "const": false
+        },
+        "arbitrary_command_allowed": {
+          "const": false
+        },
+        "launchctl_command_count": {
+          "enum": [2, 3]
+        }
+      }
+    },
+    "warnings": {
+      "const": [
+        "INSTALLATION_DOES_NOT_PROVE_FIRST_NATURAL_SCHEDULE_RUN",
+        "MAINTENANCE_NOT_INVOKED_BY_INSTALLER",
+        "COHORT_COMPLETENESS_NOT_PROVEN",
+        "NO_PROFITABILITY_CLAIM",
+        "NO_SYSTEM_PAPER_OR_AI_ADVANTAGE_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "absolutePath": {
+      "type": "string",
+      "pattern": "^/[^\\u0000]+$"
+    },
+    "commandEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "argv",
+        "return_code",
+        "stdout_utf8",
+        "stderr_utf8",
+        "stdout_size_bytes",
+        "stderr_size_bytes",
+        "stdout_sha256",
+        "stderr_sha256",
+        "command_evidence_hash"
+      ],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "return_code": {
+          "type": "integer"
+        },
+        "stdout_utf8": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "stderr_utf8": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "stdout_size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "stderr_size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "stdout_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "stderr_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "command_evidence_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

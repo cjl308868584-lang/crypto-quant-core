@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_id": "challenger-cohort-evidence-maintenance-installed-v0.51.0",
+  "release_candidate": "0.51.0",
+  "candidate_freeze_commit": "12dafda8178e5d7a103db8bc3930fe88cfcf9275",
+  "installed_at": "2026-07-30T20:18:41.758Z",
+  "verified_at": "2026-07-30T20:18:41.761Z",
+  "status": "INSTALLED_AND_LOADED_WAITING_FOR_NATURAL_SCHEDULE",
+  "deployment_manifest": {
+    "manifest_id": "challenger_cohort_evidence_maintenance_deployment_87a093d1c5eb986b9f8e459a19c3690fac9fca33adce14f48742f6b1a7a7c3fe",
+    "manifest_hash": "410d5f48b25b1cbb3a99589002834698f95946ca0c6f6a59e98ebe5cb0072795",
+    "manifest_file_sha256": "32cae6bfa72ee4c20bb700b9cddef913e5af15643415ccd8d51afc0532e112de"
+  },
+  "candidate_contract": {
+    "contract_id": "challenger_cohort_evidence_maintenance_launchd_contract_aeb839b634ade193931852eb18f054e43cd332c5fc79475aede9524624ab06c4",
+    "contract_hash": "397070772e6131e57a5b9d2ea590b50b98fd5a3d7f4169e14116625a48d70564",
+    "contract_trust_hash": "9f7d6b7e2beb8103fb8cf1da1281d086a243bc63f3c5cc7992a8d4c0b878b83f",
+    "launchd_plist_sha256": "efd7070b185a7e6eca629f93502894b0c1def6a0277b9bb87c6a0c5c87a9d4e3",
+    "run_at_load": false,
+    "local_schedule": "08:10",
+    "utc_schedule": "00:10"
+  },
+  "execution_snapshot": {
+    "repository_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-forward-v1/deployment/challenger-cohort-evidence-maintenance/8ae7cfac351c56a3",
+    "file_count": 129,
+    "total_bytes": 2351237,
+    "tree_hash": "8ae7cfac351c56a3666c33b18748d67e67ae82be3298caf8eb64de0a9d8e5904"
+  },
+  "install_receipt": {
+    "receipt_id": "challenger_cohort_evidence_maintenance_install_receipt_22e924d97ad5edbd971791b1bfa4b6c53efa2ebf53ede0980af4ec24fb24aaba",
+    "receipt_hash": "ad39cc029d73c03656b20de7fa146d9acd3f963a5f9ef9f0eb6bb3417f1eff1b",
+    "receipt_file_sha256": "9fa27c102e46fc1dcf65876050537d08ac4358d492fb89ca71b971f61af8c321",
+    "production_loader_verified": true,
+    "install_action": "INSTALLED_AND_BOOTSTRAPPED"
+  },
+  "installed_target": {
+    "domain": "gui/501",
+    "service": "gui/501/local.crypto-quant.challenger-cohort-evidence-maintenance",
+    "path": "/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-cohort-evidence-maintenance.plist",
+    "device": 16777230,
+    "inode": 14074965,
+    "owner_uid": 501,
+    "mode": "0600",
+    "link_count": 1,
+    "size_bytes": 3499,
+    "sha256": "efd7070b185a7e6eca629f93502894b0c1def6a0277b9bb87c6a0c5c87a9d4e3"
+  },
+  "launchctl_evidence": {
+    "preflight_print_return_code": 113,
+    "preflight_print_evidence_hash": "6d75ce9ee7694c4c97201c30f7556f2489235e68158c4c5fc055a7bbee57b6f2",
+    "bootstrap_return_code": 0,
+    "bootstrap_evidence_hash": "f4039876b3fb7d4cf9be34c7dacce52626cca4f6eca8efb48d1950f07cf036ac",
+    "verified_print_return_code": 0,
+    "verified_print_evidence_hash": "28bc6eac91d3cdfd36eccc6310b8f3def6ff08f11fe671f63ad87efc1284c39f",
+    "post_install_state": "not running",
+    "post_install_runs": 0,
+    "post_install_last_exit_code": "never exited",
+    "launchctl_command_count": 3
+  },
+  "runtime_hashes_before_and_after_install": {
+    "state_sha256": "3765170895811cc24a51154eef4c742f23874a760ff24520df07e722241fb6aa",
+    "strategy_stdout_sha256": "1705c9e6f0d2171a3d4e055b30a0d02023c3e634fbee93a5b261b46391ca008d",
+    "strategy_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "all_unchanged": true
+  },
+  "installation_side_effects": {
+    "maintenance_stdout_created": false,
+    "maintenance_stderr_created": false,
+    "cohort_receipt_root_created": false,
+    "cohort_archive_root_created": false,
+    "cohort_result_root_created": false,
+    "maintenance_invocation_count": 0,
+    "network_request_count": 0,
+    "broker_request_count": 0,
+    "order_submission_count": 0,
+    "strategy_state_write_count": 0,
+    "strategy_runner_invocation_count": 0
+  },
+  "eligibility": {
+    "automatic_maintenance_schedule": "INSTALLED_WAITING_FOR_FIRST_NATURAL_RUN",
+    "first_natural_run": "INELIGIBLE_NOT_YET_OBSERVED",
+    "cohort_completeness": "INELIGIBLE",
+    "profitability": "INELIGIBLE_INSTALLATION_ONLY",
+    "system_paper": "INELIGIBLE",
+    "ai_advantage": "INELIGIBLE"
+  },
+  "warnings": [
+    "INSTALLATION_DOES_NOT_PROVE_FIRST_NATURAL_SCHEDULE_RUN",
+    "NO_RUNATLOAD_KICKSTART_OR_MANUAL_MAINTENANCE_INVOCATION_OCCURRED",
+    "COHORT_COMPLETENESS_AND_FIXED_TAIL_EVALUATION_REMAIN_REQUIRED",
+    "NO_PROFITABILITY_SYSTEM_PAPER_OR_AI_ADVANTAGE_CLAIM"
+  ]
+}
