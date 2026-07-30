@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-cohort-economic-result-index-v1.schema.json",
+  "title": "Challenger Cohort Economic Result Append-Only Index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "index_id",
+    "index_hash",
+    "design_commit",
+    "package_baseline",
+    "cohort_plan",
+    "economic_plan",
+    "entry_count",
+    "previous_index_hash",
+    "episode_receipts_root_hash",
+    "economic_results_root_hash",
+    "entries_root_hash",
+    "entries",
+    "status",
+    "eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./challenger-cohort-economic-result-index-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "index_id": {
+      "type": "string",
+      "pattern": "^challenger_cohort_economic_result_index_[0-9a-f]{64}$"
+    },
+    "index_hash": {"$ref": "#/$defs/hash"},
+    "design_commit": {"const": "e687558"},
+    "package_baseline": {"const": "0.46.0"},
+    "cohort_plan": {
+      "const": {
+        "plan_id": "challenger_episode_cohort_plan_56fa3d25d37d5445e7c29ad7cda6cd4dac622e036ee0a017c5790fb33142ab1c",
+        "plan_hash": "20575f808b0e1bb4d1f26e01cd92acae59a77c1a28f28058a9d456cdabdf5201",
+        "plan_file_sha256": "a431fe2d316d8c9a647a4c45de280644e60554719603b5506670cef8a02ee7ff"
+      }
+    },
+    "economic_plan": {
+      "const": {
+        "plan_id": "challenger_episode_economic_plan_e5c86696889d209373ce536ee0f54be72e59d7de96b6868cd5ab0358491985a4",
+        "plan_hash": "fa43e1bb24ac0e9d70c82a3d09f03ca43a5f99c429f43e6c67d6e68029732831",
+        "plan_file_sha256": "f22cb582a7df38e14220fca75359f6290af2fdb5896e5829ba5d7fd805cf54da",
+        "economic_policy_hash": "32c81160e936caf4253e0eabe46104fde5f6b747e0525fa2ea916c028dea82f9"
+      }
+    },
+    "entry_count": {"type": "integer", "minimum": 1, "maximum": 540},
+    "previous_index_hash": {"$ref": "#/$defs/hash"},
+    "episode_receipts_root_hash": {"$ref": "#/$defs/hash"},
+    "economic_results_root_hash": {"$ref": "#/$defs/hash"},
+    "entries_root_hash": {"$ref": "#/$defs/hash"},
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 540,
+      "items": {"$ref": "#/$defs/entry"}
+    },
+    "status": {"const": "DESCRIPTIVE_NO_EARLY_SUCCESS"},
+    "eligibility": {
+      "const": {
+        "profitability": "INELIGIBLE_INTERIM_COHORT",
+        "cumulative_evaluation": "INELIGIBLE_BEFORE_FIXED_TAIL_END"
+      }
+    },
+    "warnings": {
+      "const": [
+        "INDEX_IS_APPEND_ONLY_IMMUTABLE_CUMULATIVE_PREFIX",
+        "ALL_COMPLETED_EPISODES_MUST_BE_RETAINED",
+        "NO_EARLY_SUCCESS_OR_OPTIONAL_STOPPING",
+        "NO_AI_ADVANTAGE_CLAIM",
+        "NO_PROFITABILITY_CLAIM"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "episode_id",
+        "entry_scheduled_for",
+        "episode_receipt_id",
+        "episode_receipt_hash",
+        "episode_receipt_file_sha256",
+        "result_id",
+        "result_hash",
+        "result_file_sha256",
+        "net_pnl_usdt",
+        "net_return",
+        "positive_label"
+      ],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 1, "maximum": 540},
+        "episode_id": {
+          "type": "string",
+          "pattern": "^challenger_episode_[0-9a-f]{64}$"
+        },
+        "entry_scheduled_for": {"$ref": "#/$defs/time"},
+        "episode_receipt_id": {
+          "type": "string",
+          "pattern": "^challenger_cohort_episode_receipt_[0-9a-f]{64}$"
+        },
+        "episode_receipt_hash": {"$ref": "#/$defs/hash"},
+        "episode_receipt_file_sha256": {"$ref": "#/$defs/hash"},
+        "result_id": {
+          "type": "string",
+          "pattern": "^challenger_cohort_episode_economic_result_[0-9a-f]{64}$"
+        },
+        "result_hash": {"$ref": "#/$defs/hash"},
+        "result_file_sha256": {"$ref": "#/$defs/hash"},
+        "net_pnl_usdt": {"$ref": "#/$defs/decimal"},
+        "net_return": {"$ref": "#/$defs/decimal"},
+        "positive_label": {"enum": [0, 1]}
+      }
+    }
+  }
+}
