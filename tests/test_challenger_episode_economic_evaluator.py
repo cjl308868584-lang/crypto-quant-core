@@ -580,6 +580,102 @@ class ChallengerEpisodeEconomicEvaluatorTests(unittest.TestCase):
                     **arguments, output_path=path
                 )
 
+    def test_committed_v042_result_is_canonical_and_frozen(self):
+        artifact_path = (
+            ROOT
+            / "artifacts"
+            / "challenger-forward"
+            / "challenger-episode-economic-result-v0.42.0.json"
+        )
+        artifact_bytes = artifact_path.read_bytes()
+        result = json.loads(artifact_bytes)
+        schema = json.loads(
+            (
+                ROOT
+                / "config"
+                / "challenger-episode-economic-result-v1.schema.json"
+            ).read_bytes()
+        )
+        self.assertEqual(
+            artifact_bytes,
+            canonical_json(result).encode("utf-8"),
+        )
+        self.assertFalse(
+            tuple(Draft202012Validator(schema).iter_errors(result))
+        )
+        self.assertEqual(len(artifact_bytes), 5360)
+        self.assertEqual(
+            hashlib.sha256(artifact_bytes).hexdigest(),
+            "8627677275c31de573f1a59f638ba167"
+            "8772115dc6d932027a36e2f8b62d9fee",
+        )
+        self.assertEqual(
+            result["result_id"],
+            "challenger_episode_economic_result_"
+            "8f2b70abf6221dc2531ecd9e6b4ada97"
+            "32e8775d9673b67d4865fe7fa9b18723",
+        )
+        self.assertEqual(
+            result["result_hash"],
+            challenger_episode_economic_result_hash(result),
+        )
+        self.assertEqual(
+            result["result_hash"],
+            "2ac4e92fa32c3841548c433590cda3fe"
+            "a799702fdcda291d25866db2bd993fc4",
+        )
+        self.assertEqual(
+            result["status"],
+            "COMPLETED_ARCHIVE_FORWARD_ECONOMIC_PROXY",
+        )
+        self.assertEqual(
+            result["economics"],
+            {
+                "entry_fee_usdt": "1.4998392045",
+                "entry_fill_price": "1927.69",
+                "entry_notional_usdt": "999.892803",
+                "entry_source_high": "1925.76",
+                "exit_fee_usdt": "1.469098449",
+                "exit_fill_price": "1888.18",
+                "exit_notional_usdt": "979.398966",
+                "exit_source_low": "1890.08",
+                "filled_quantity_eth": "0.5187",
+                "gross_pnl_usdt": "-20.493837",
+                "net_pnl_usdt": "-23.4627746535",
+                "net_return": "-0.0234627746535",
+                "positive_label": 0,
+                "reference_capital_usdt": "1000",
+            },
+        )
+        self.assertEqual(
+            result["eligibility"]["profitability"],
+            "INELIGIBLE_SINGLE_EPISODE",
+        )
+        self.assertEqual(
+            result["security_boundary"]["market_request_count"],
+            0,
+        )
+        self.assertEqual(
+            result["security_boundary"]["broker_request_count"],
+            0,
+        )
+        self.assertEqual(
+            result["security_boundary"]["order_submission_count"],
+            0,
+        )
+        self.assertEqual(
+            result["security_boundary"]["runner_invocation_count"],
+            0,
+        )
+        self.assertEqual(
+            result["security_boundary"]["state_write_count"],
+            0,
+        )
+        self.assertIn(
+            "SINGLE_EPISODE_CANNOT_ESTABLISH_EDGE",
+            result["warnings"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
