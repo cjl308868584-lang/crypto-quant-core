@@ -92,6 +92,7 @@ _FROZEN_ARTIFACT_PATHS = (
     "artifacts/challenger-forward/challenger-cohort-evidence-maintenance-install-candidate-v0.51.0.json",
     "artifacts/challenger-forward/challenger-cohort-evidence-maintenance-installed-v0.51.0.json",
     "artifacts/challenger-forward/challenger-cohort-evidence-maintenance-first-run-waiting-v0.52.0.json",
+    "artifacts/challenger-forward/challenger-cohort-evidence-maintenance-first-run-receipt-v0.53.0.json",
     "artifacts/challenger-forward/challenger-episode-cohort-plan-v0.43.0.json",
     "artifacts/challenger-forward/challenger-episode-economic-result-v0.42.0.json",
     "artifacts/challenger-forward/challenger-episode-economic-plan-v0.37.0.json",

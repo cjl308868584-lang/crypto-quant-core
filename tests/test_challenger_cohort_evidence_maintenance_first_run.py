@@ -8,12 +8,14 @@ from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
 
+from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_cohort_evidence_maintenance_first_run import (
     ChallengerCohortEvidenceMaintenanceFirstRunError,
     _file_prefix_valid,
     _inventory_prefix_valid,
     _schedule,
     _summary,
+    maintenance_first_run_receipt_hash,
     observe_challenger_cohort_evidence_maintenance_first_run,
 )
 from crypto_quant.challenger_cohort_evidence_maintenance_first_run_cli import (
@@ -486,6 +488,84 @@ class FirstNaturalMaintenanceRunTests(unittest.TestCase):
             "log",
         }
         self.assertFalse(actions & forbidden)
+
+    def test_committed_v053_receipt_is_canonical_and_frozen(self):
+        root = Path(__file__).resolve().parents[1]
+        artifact_path = (
+            root
+            / "artifacts"
+            / "challenger-forward"
+            / "challenger-cohort-evidence-maintenance-first-run-"
+            "receipt-v0.53.0.json"
+        )
+        artifact_bytes = artifact_path.read_bytes()
+        receipt = json.loads(artifact_bytes)
+        schema = json.loads(
+            (
+                root
+                / "config"
+                / "challenger-cohort-evidence-maintenance-first-run-"
+                "receipt-v1.schema.json"
+            ).read_bytes()
+        )
+        self.assertEqual(
+            artifact_bytes,
+            canonical_json(receipt).encode("utf-8"),
+        )
+        self.assertFalse(
+            tuple(Draft202012Validator(schema).iter_errors(receipt))
+        )
+        self.assertEqual(len(artifact_bytes), 10273)
+        self.assertEqual(
+            hashlib.sha256(artifact_bytes).hexdigest(),
+            "86e85a40ed9c09d90568b0c9cc50ad43"
+            "9092155718c929072ea3bb3539e3598f",
+        )
+        self.assertEqual(
+            receipt["receipt_id"],
+            "challenger_cohort_evidence_maintenance_first_run_receipt_"
+            "c0298535143bb17418f2ebea5c08667c"
+            "237f0a64a7a381547fff84d9bea42b07",
+        )
+        self.assertEqual(
+            receipt["receipt_hash"],
+            maintenance_first_run_receipt_hash(receipt),
+        )
+        self.assertEqual(
+            receipt["receipt_hash"],
+            "b89087541fa590c41e4ae3533cb11da0"
+            "e0328c0ff60cbad36e1972bd44446ee4",
+        )
+        self.assertEqual(
+            receipt["observation_status"],
+            "FIRST_NATURAL_MAINTENANCE_RUN_COMPLETED_VERIFIED",
+        )
+        self.assertEqual(receipt["launchd_runs_observed"], 1)
+        self.assertEqual(receipt["last_exit_code_observed"], "0")
+        self.assertEqual(
+            receipt["maintenance_summary"]["status"],
+            "COHORT_EVIDENCE_NO_COMPLETED_EPISODES",
+        )
+        self.assertEqual(
+            receipt["maintenance_summary"]["receipt_stage"][
+                "completed_episode_count"
+            ],
+            0,
+        )
+        self.assertEqual(
+            receipt["security_boundary"],
+            {
+                "launchctl_print_count": 1,
+                "observer_network_request_count": 0,
+                "broker_request_count": 0,
+                "order_submission_count": 0,
+                "strategy_state_write_count": 0,
+                "strategy_runner_invocation_count": 0,
+                "maintenance_invocation_count": 0,
+                "shell_invoked": False,
+                "arbitrary_command_allowed": False,
+            },
+        )
 
 
 if __name__ == "__main__":
