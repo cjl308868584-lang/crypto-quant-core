@@ -2,11 +2,11 @@
   "$schema": "./evaluator-build-manifest-v1.schema.json",
   "schema_version": "1.0.0",
   "manifest_id": "release-evaluator-build-v1",
-  "manifest_version": "1.47.0",
+  "manifest_version": "1.48.0",
   "status": "BUILD_CANDIDATE",
   "evaluator_id": "release-gate-evaluator-v1",
   "package_name": "crypto-quant-core",
-  "package_version": "0.52.0",
+  "package_version": "0.53.0",
   "python_requires": ">=3.9",
   "metric_catalog_id": "release-metrics-v1.1",
   "metric_catalog_version": "1.1.6",
@@ -27,6 +27,7 @@
     "artifacts/challenger-forward/binance-challenger-forward-not-run-v0.30.0.json": "79e614c9d876fff65d317952b7cb4b226b50f3bd31f9e398a360434a3752cc84",
     "artifacts/challenger-forward/binance-challenger-live-runner-not-run-v0.31.0.json": "ed114b936c3a774a1bddce6a5b4f08a4d5b6e5caf2eb1dcb2a14dcb7e4f03ab7",
     "artifacts/challenger-forward/challenger-cohort-evaluation-plan-v0.44.0.json": "49e3b7642e163bb95c4ce01bc1c8d95a23b0cefce277d2f99f2e69029207a4d8",
+    "artifacts/challenger-forward/challenger-cohort-evidence-maintenance-first-run-receipt-v0.53.0.json": "86e85a40ed9c09d90568b0c9cc50ad439092155718c929072ea3bb3539e3598f",
     "artifacts/challenger-forward/challenger-cohort-evidence-maintenance-first-run-waiting-v0.52.0.json": "cbdbdee729bc592c4f0ec4f586d02db7b1de2c45fe456a2ff7d38badabf32a5b",
     "artifacts/challenger-forward/challenger-cohort-evidence-maintenance-install-candidate-v0.51.0.json": "def4a3997eecdaa6d899c36c8bb4b69e7eddaa0fd583dfb8df5400d858d93478",
     "artifacts/challenger-forward/challenger-cohort-evidence-maintenance-installed-v0.51.0.json": "b4ec735d7ae10d0cfd6ba6cb6396bcefc080a3b4426fd1a7b6b94974d0b717bd",
@@ -118,14 +119,14 @@
     "config/statistical-series-snapshot-v1.schema.json": "3ef36d8465aa4978b178a3b07ffb5f5c877e5921af1d4e4f17ef2bac6260caff",
     "config/supporting-observation-bundle-v1.schema.json": "559b92cf5545b40035c8f30db95c8df7351a2e320f87b7d2572a0e47e830eec0",
     "config/trade-replay-snapshot-v1.schema.json": "d45dfaaf86f2dbdcd83109fd3b329aca6f455812df0022652129079555b8546f",
-    "pyproject.toml": "2c305d83ece199cef7a57b7b043d6f57735e102fd48b670f61429707ead10121",
+    "pyproject.toml": "90166bba7da0b5fc477bc8d7d78587acba877f1fb3d98b09a8c4e06f20b7fa6a",
     "requirements.lock": "71aa777f1717f056886f3de1fb2e1013a5dec5210d681ed30943056edf7ccbed",
     "setup.py": "ed3fea39a6a140f3933132e9c3512e7e83c389e4c158215af33e665f7d00c7fe",
-    "src/crypto_quant/__init__.py": "f8f65dbdc4db8e8e5f97fc45f09d4b4e809ea0a4ee295c5a1f403ace40f61996",
+    "src/crypto_quant/__init__.py": "e904b58afbbdd3535f9814ecd8e62006ba5aefc5099ec4fdf3ab3d051cd26c1e",
     "src/crypto_quant/account_commission.py": "7ce2db8d648f8e0208951caf866d914854d244e469c9a86a27b1ee14ff84c9f4",
     "src/crypto_quant/account_commission_cli.py": "993e6cb903673bc6781ca0a74494bfc149cea73c4d5a47576a3384e052652076",
     "src/crypto_quant/baseline_attribution.py": "cb72d295c26b05f5205643adc7403b127ac6a174d4e198b06d025661967060dd",
-    "src/crypto_quant/build.py": "feff8d485065fb32bc43b2c200358231706f481c8d9e9253b503564bffe07db7",
+    "src/crypto_quant/build.py": "391efbc6acee1e7740da5398065acb9fa91e1ebf248d3bb7cb19e2339d7c9b78",
     "src/crypto_quant/canonical.py": "29bca29c775ec8f6734c5676fc0682d402b0659a2250902de68fb7c477891120",
     "src/crypto_quant/capture_cli.py": "d542e062327c3c2f17bf3484a020b5e38d5f07027be12e0bd78cc2c975629bb0",
     "src/crypto_quant/causal_research.py": "20f0065df15988f4bb1838b21b1e955bf5b3053d41547d2e478c91df78bedfd1",
@@ -253,7 +254,7 @@
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335"
   },
-  "build_input_tree_hash": "a71fbd1b959b1fa19cb7897fd3918922697e1727840c0eb99a6a129a78f4e8b5",
+  "build_input_tree_hash": "bccbfddd0134888aaeb8e72791a8defb07b9109c155ed88539a25e903bd3735a",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -261,5 +262,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "cacf71a700485dee4f93aa9a4830e696955a7ac3b855b302d9f3d9bd1c110048"
+  "manifest_hash": "e9abbaea6842b2dfcd056728c40d99c3d95fdbf28cf3b8376225fcf8d02ada0a"
 }

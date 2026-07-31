@@ -623,6 +623,12 @@ class EvaluatorBuildTests(unittest.TestCase):
             expected,
         )
         self.assertIn(
+            "artifacts/challenger-forward/"
+            "challenger-cohort-evidence-maintenance-first-run-"
+            "receipt-v0.53.0.json",
+            expected,
+        )
+        self.assertIn(
             "config/challenger-launchd-contract-v1.schema.json",
             expected,
         )
@@ -644,9 +650,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.47.0")
-        self.assertEqual(manifest["package_version"], "0.52.0")
-        self.assertEqual(crypto_quant.__version__, "0.52.0")
+        self.assertEqual(manifest["manifest_version"], "1.48.0")
+        self.assertEqual(manifest["package_version"], "0.53.0")
+        self.assertEqual(crypto_quant.__version__, "0.53.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",

@@ -16,8 +16,8 @@ MANIFEST_PATH = ROOT / "config" / "evaluator-build-manifest-v1.json"
 
 def main() -> int:
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    manifest["manifest_version"] = "1.47.0"
-    manifest["package_version"] = "0.52.0"
+    manifest["manifest_version"] = "1.48.0"
+    manifest["package_version"] = "0.53.0"
     paths = EvaluatorBuild.expected_file_paths(ROOT)
     hashes = EvaluatorBuild.file_hashes(ROOT, paths)
     manifest["file_hashes"] = hashes
