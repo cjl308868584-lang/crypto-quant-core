@@ -153,13 +153,21 @@
         "stderr": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["path", "observed_stat", "exact_utf8"],
+          "required": [
+            "path",
+            "observed_stat",
+            "canonical_line_utf8",
+            "occurrence_count",
+            "exact_utf8"
+          ],
           "properties": {
             "path": {"type": "string", "minLength": 1},
             "observed_stat": {"type": "object"},
-            "exact_utf8": {
+            "canonical_line_utf8": {
               "const": "{\"error\":\"CHALLENGER_RUNNER_MISSED_SLOT\"}\n"
-            }
+            },
+            "occurrence_count": {"type": "integer", "minimum": 1},
+            "exact_utf8": {"type": "string", "minLength": 42}
           }
         }
       }

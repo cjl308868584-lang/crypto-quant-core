@@ -453,6 +453,40 @@ class ChallengerCohortFailureTests(unittest.TestCase):
                 self.observe(wrong)
             self.assertEqual(len(wrong["service"].calls), calls_before)
 
+    def test_repeated_identical_natural_failure_lines_are_exact_evidence(self):
+        """Catches rejecting a later natural run or accepting mixed errors."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            repeated = self.environment(root / "repeated")
+            repeated["paths"]["stderr"].write_bytes(
+                MISSED_SLOT_STDERR * 2
+            )
+            repeated["paths"]["stderr"].chmod(0o600)
+            repeated["service"].runs = 2
+            summary = self.observe(repeated)
+            receipt = json.loads(Path(summary["receipt_path"]).read_bytes())
+            self.assertEqual(
+                receipt["logs"]["stderr"]["occurrence_count"], 2
+            )
+            self.assertEqual(
+                receipt["logs"]["stderr"]["exact_utf8"],
+                (MISSED_SLOT_STDERR * 2).decode("utf-8"),
+            )
+
+            mixed = self.environment(root / "mixed")
+            mixed["paths"]["stderr"].write_bytes(
+                MISSED_SLOT_STDERR + b'{"error":"OTHER"}\n'
+            )
+            mixed["paths"]["stderr"].chmod(0o600)
+            calls_before = len(mixed["service"].calls)
+            with self.assertRaisesRegex(
+                ChallengerCohortFailureError,
+                "CHALLENGER_COHORT_FAILURE_STDERR_INVALID",
+            ):
+                self.observe(mixed)
+            self.assertEqual(len(mixed["service"].calls), calls_before)
+
     def test_duplicate_bundle_and_hardlinked_state_fail_before_launchctl(self):
         """Catches ambiguous bundle evidence and non-exclusive state inodes."""
 

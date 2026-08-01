@@ -131,7 +131,7 @@ Set `receipt_id = stable_id("challenger_cohort_failure_receipt", _identity(recei
 
 - [ ] **Step 6: Implement semantic loader and mirrored Schema**
 
-The loader re-reads plans/install chain, validates canonical bytes, Schema, self-hash, fixed v0.48 identity, derived service/paths, exact stderr, slot ordering, prefix counts, before/after equality, eligibility and every zero safety counter. It does not call launchctl or require the service to remain loaded after decommission.
+The loader re-reads plans/install chain, validates canonical bytes, Schema, self-hash, fixed v0.48 identity, derived service/paths, one-or-more identical exact missed-slot stderr lines and their count, slot ordering, prefix counts, before/after equality, eligibility and every zero safety counter. It does not call launchctl or require the service to remain loaded after decommission.
 
 - [ ] **Step 7: Add negative and idempotency tests**
 
@@ -340,7 +340,7 @@ Record system UTC/local time, branch/HEAD, `main/origin/main/v0.53.0`, GitHub pr
 
 - [ ] **Step 2: Run the failure observer exactly once**
 
-Use the production CLI with only the five frozen source paths and fixed failure output root. Require `COHORT_MISSED_SLOT_FAILURE_VERIFIED`, one launchctl print, all network/Broker/order/state-write/Runner/maintenance counters zero, and no runtime file changes.
+Use the production CLI with only the five frozen source paths and fixed failure output root. Require `COHORT_MISSED_SLOT_FAILURE_VERIFIED`, one launchctl print, one-or-more byte-identical canonical missed-slot stderr lines with exact count, all network/Broker/order/state-write/Runner/maintenance counters zero, and no runtime file changes.
 
 - [ ] **Step 3: Replay runtime failure receipt and publish exact Git bytes**
 

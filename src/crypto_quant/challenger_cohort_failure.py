@@ -214,7 +214,14 @@ def _failure_logs(
         raise ChallengerCohortFailureError(
             "CHALLENGER_COHORT_FAILURE_LOG_INVALID"
         ) from error
-    if stderr_bytes != _MISSED_SLOT_STDERR:
+    occurrence_count, remainder = divmod(
+        len(stderr_bytes), len(_MISSED_SLOT_STDERR)
+    )
+    if (
+        occurrence_count < 1
+        or remainder != 0
+        or stderr_bytes != _MISSED_SLOT_STDERR * occurrence_count
+    ):
         raise ChallengerCohortFailureError(
             "CHALLENGER_COHORT_FAILURE_STDERR_INVALID"
         )
@@ -259,6 +266,8 @@ def _failure_logs(
         "stderr": {
             "path": str(stderr_path),
             "observed_stat": stderr_stat,
+            "canonical_line_utf8": _MISSED_SLOT_STDERR.decode("utf-8"),
+            "occurrence_count": occurrence_count,
             "exact_utf8": stderr_bytes.decode("utf-8"),
         },
     }
@@ -1081,8 +1090,11 @@ def load_challenger_cohort_failure_receipt(
             and _root_cause_valid(
                 receipt["root_cause"], next_required=next_required
             )
+            and receipt["logs"]["stderr"]["canonical_line_utf8"]
+            == _MISSED_SLOT_STDERR.decode("utf-8")
             and receipt["logs"]["stderr"]["exact_utf8"]
             == _MISSED_SLOT_STDERR.decode("utf-8")
+            * receipt["logs"]["stderr"]["occurrence_count"]
             and receipt["evidence_before"] == receipt["evidence_after"]
             and current == receipt["evidence_after"]
             and receipt["eligibility"]["old_cohort"]

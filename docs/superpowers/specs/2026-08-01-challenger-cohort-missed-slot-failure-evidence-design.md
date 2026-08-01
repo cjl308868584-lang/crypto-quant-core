@@ -85,8 +85,9 @@ Observer 严格按以下顺序执行：
    stdout `RECORDED`；
 5. 自动派生 `last_scheduled_for` 和 `next_required_slot`；
 6. 要求可信 current slot 严格晚于 `next_required_slot`；
-7. 要求 stderr 是唯一 exact canonical JSON 行
-   `{"error":"CHALLENGER_RUNNER_MISSED_SLOT"}`；
+7. 要求 stderr 由一条或多条逐字相同的 exact canonical JSON 行组成：
+   `{"error":"CHALLENGER_RUNNER_MISSED_SLOT"}`；自然调度可能在停用前重复证明同一失败，
+   receipt 必须记录精确行数与完整 bytes，任何空行、混合错误或截断均失败；
 8. 对固定 argv 执行一次 `launchctl print`，要求 service not running、last exit 1；
 9. 复用 v0.48 的冻结 plan/state/partition/bundle/launchd 语义，在 failure-specific
    observer 内将“下一要求槽已过且 exact stderr 为 MISSED_SLOT”归类为
@@ -94,7 +95,7 @@ Observer 严格按以下顺序执行：
    或执行第二次 `launchctl print`；
 10. 再次记录所有现场 stat/hash，要求前后完全不变。
 
-任何已存在后续 decision、重复/缺失 bundle、stdout 不一致、stderr 多行、service 正在运行、
+任何已存在后续 decision、重复/缺失 bundle、stdout 不一致、stderr 混合/空行/截断、service 正在运行、
 last exit 非 1、文件变化、loader 失败或 continuity 原因不同，均失败关闭且不发布 receipt。
 
 观察 summary 固定状态：
@@ -115,7 +116,7 @@ Receipt 至少包含：
 - last decision、last slot、next required slot、current slot；
 - verified prefix slot/decision count；
 - state/WAL/SHM、stdout、stderr 与 bundle inventory 的前后 stat/hash；
-- stderr exact bytes 的 UTF-8 文本、size 与 SHA-256；
+- stderr canonical line、精确重复次数、完整 exact bytes 的 UTF-8 文本、size 与 SHA-256；
 - v0.48 evaluator code identity、等价 failure status 和 reason；
 - root-cause observation：boot time 晚于 required slot，仅作辅助说明；
 - launchctl print 固定为 1，market/Kline/Broker/order/state-write/Runner/maintenance
