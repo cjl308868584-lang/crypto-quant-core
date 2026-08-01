@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crypto-quant/schemas/system-paper-plan-v1.schema.json",
+  "title": "Credential-free System Paper Plan V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "plan_id",
+    "plan_hash",
+    "scope",
+    "market_data_policy",
+    "capital_policy",
+    "cost_policy",
+    "fill_policy",
+    "risk_policy",
+    "authority",
+    "status",
+    "eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./system-paper-plan-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "plan_id": {"type": "string", "pattern": "^system_paper_plan_[0-9a-f]{64}$"},
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "route",
+        "strategy_policy_id",
+        "offline_plan_schema_version",
+        "market_data_provider",
+        "symbol",
+        "market",
+        "direction",
+        "duration_days",
+        "decision_cadence_seconds",
+        "historical_backfill_allowed",
+        "evidence_scope_reset_on_semantic_change",
+        "policy_hash"
+      ],
+      "properties": {
+        "mode": {"const": "SYSTEM_PAPER"},
+        "route": {"const": "BASELINE_ONLY"},
+        "strategy_policy_id": {"const": "SPOT_LONG_SMA20_VOL12_BUCKET25_V1"},
+        "offline_plan_schema_version": {"const": "1.0.0"},
+        "market_data_provider": {"const": "BINANCE_MARKET_DATA_ONLY"},
+        "symbol": {"const": "ETHUSDT"},
+        "market": {"const": "SPOT"},
+        "direction": {"const": "LONG_ONLY"},
+        "duration_days": {"const": 90},
+        "decision_cadence_seconds": {"const": 14400},
+        "historical_backfill_allowed": {"const": false},
+        "evidence_scope_reset_on_semantic_change": {"const": true},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "market_data_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "public_only",
+        "http_method",
+        "public_request_families",
+        "account_requests_allowed",
+        "private_endpoints_allowed",
+        "missing_or_stale_input_action",
+        "policy_hash"
+      ],
+      "properties": {
+        "provider": {"const": "BINANCE_MARKET_DATA_ONLY"},
+        "public_only": {"const": true},
+        "http_method": {"const": "GET"},
+        "public_request_families": {
+          "const": [
+            "SPOT_AGG_TRADE",
+            "SPOT_BBO",
+            "SPOT_EXCHANGE_INFO",
+            "SPOT_KLINE_4H_WARMUP"
+          ]
+        },
+        "account_requests_allowed": {"const": false},
+        "private_endpoints_allowed": {"const": false},
+        "missing_or_stale_input_action": {"const": "FAIL_CLOSED_NO_DECISION"},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "capital_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "starting_virtual_equity_usdt",
+        "external_cash_flows_allowed",
+        "leverage",
+        "margin_borrowing_allowed",
+        "policy_hash"
+      ],
+      "properties": {
+        "starting_virtual_equity_usdt": {"const": "1000"},
+        "external_cash_flows_allowed": {"const": false},
+        "leverage": {"const": "1"},
+        "margin_borrowing_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "cost_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slippage_rate_per_side",
+        "taker_fee_rate_per_side",
+        "funding_applicable",
+        "funding_rate",
+        "decimal_arithmetic_only",
+        "binary_float_allowed",
+        "cost_override_allowed",
+        "policy_hash"
+      ],
+      "properties": {
+        "slippage_rate_per_side": {"const": "0.001"},
+        "taker_fee_rate_per_side": {"const": "0.0015"},
+        "funding_applicable": {"const": false},
+        "funding_rate": {"const": "0"},
+        "decimal_arithmetic_only": {"const": true},
+        "binary_float_allowed": {"const": false},
+        "cost_override_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "fill_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_mode",
+        "fill_model_version",
+        "partial_fill_required",
+        "reject_cancel_timeout_unknown_required",
+        "real_fill_claim_allowed",
+        "fill_override_allowed",
+        "policy_hash"
+      ],
+      "properties": {
+        "execution_mode": {"const": "DETERMINISTIC_SIMULATED_BROKER"},
+        "fill_model_version": {"const": "SYSTEM_PAPER_CONSERVATIVE_BBO_V1"},
+        "partial_fill_required": {"const": true},
+        "reject_cancel_timeout_unknown_required": {"const": true},
+        "real_fill_claim_allowed": {"const": false},
+        "fill_override_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "risk_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "volatility_target",
+        "risk_bucket",
+        "maximum_gross_leverage",
+        "drawdown_bands",
+        "risk_lock_required",
+        "position_reconciliation_required",
+        "ledger_reconciliation_required",
+        "kill_switch_required",
+        "new_risk_on_unknown_allowed",
+        "risk_override_allowed",
+        "policy_hash"
+      ],
+      "properties": {
+        "volatility_target": {"const": "0.12"},
+        "risk_bucket": {"const": "0.25"},
+        "maximum_gross_leverage": {"const": "1"},
+        "drawdown_bands": {
+          "const": [
+            {"lower": "0.10", "upper": "0.12", "state": "WARNING"},
+            {"lower": "0.12", "upper": "0.15", "state": "REDUCE"},
+            {"lower": "0.15", "upper": "0.20", "state": "HALT"},
+            {"lower": "0.20", "upper": null, "state": "HARD_BOUNDARY"}
+          ]
+        },
+        "risk_lock_required": {"const": true},
+        "position_reconciliation_required": {"const": true},
+        "ledger_reconciliation_required": {"const": true},
+        "kill_switch_required": {"const": true},
+        "new_risk_on_unknown_allowed": {"const": false},
+        "risk_override_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentials_allowed",
+        "account_requests_allowed",
+        "broker_requests_allowed",
+        "real_orders_allowed",
+        "production_activation",
+        "runtime_install_authorized",
+        "paper_start_authorized"
+      ],
+      "properties": {
+        "credentials_allowed": {"const": false},
+        "account_requests_allowed": {"const": false},
+        "broker_requests_allowed": {"const": false},
+        "real_orders_allowed": {"const": false},
+        "production_activation": {"const": false},
+        "runtime_install_authorized": {"const": false},
+        "paper_start_authorized": {"const": false}
+      }
+    },
+    "status": {"const": "PLAN_FROZEN_PAPER_NOT_STARTED"},
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "system_paper_start",
+        "system_paper_pass",
+        "canary",
+        "profitability",
+        "ai_comparison"
+      ],
+      "properties": {
+        "system_paper_start": {"const": "INELIGIBLE_RUNTIME_NOT_INSTALLED"},
+        "system_paper_pass": {"const": "INELIGIBLE_90_DAY_EVIDENCE_NOT_STARTED"},
+        "canary": {"const": "INELIGIBLE"},
+        "profitability": {"const": "INELIGIBLE_NO_SYSTEM_PAPER_EVIDENCE"},
+        "ai_comparison": {"const": "NOT_APPLICABLE_BASELINE_ONLY"}
+      }
+    },
+    "warnings": {"const": ["PAPER_NOT_STARTED", "CANARY_NOT_AUTHORIZED"]}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
