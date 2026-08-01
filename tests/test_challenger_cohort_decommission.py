@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import tempfile
 import unittest
@@ -126,6 +127,32 @@ class ReboundBeforeBootoutRunner(RecordingCommandRunner):
                 ),
                 result.stderr,
             )
+        return super().__call__(argv)
+
+
+class ReceiptReplacingFinalPrintRunner(RecordingCommandRunner):
+    def __call__(self, argv):
+        result = super().__call__(argv)
+        if tuple(argv) == OLD_PRINT and self.argv.count(OLD_PRINT) == 2:
+            receipt = self.environment["failure_receipt"]
+            receipt.write_bytes(b"{}")
+            receipt.chmod(0o600)
+        return result
+
+
+class RaisingBootoutRunner(RecordingCommandRunner):
+    def __call__(self, argv):
+        if tuple(argv) == BOOTOUT:
+            self.argv.append(tuple(argv))
+            raise TimeoutError("bootout result unavailable")
+        return super().__call__(argv)
+
+
+class RaisingAfterPrintRunner(RecordingCommandRunner):
+    def __call__(self, argv):
+        if tuple(argv) == OLD_PRINT and self.booted_out:
+            self.argv.append(tuple(argv))
+            raise TimeoutError("postcondition result unavailable")
         return super().__call__(argv)
 
 
@@ -312,6 +339,8 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
             changed = copy.deepcopy(receipt)
             domain = changed["commands"]["domain_print"]
             domain["crypto_quant_labels"] = []
+            domain["filtered_stdout_utf8"] = ""
+            domain["filtered_stdout_sha256"] = hashlib.sha256(b"").hexdigest()
             domain["stdout_sha256"] = "0" * 64
             domain["command_evidence_hash"] = artifact_self_hash(
                 domain, "command_evidence_hash"
@@ -471,6 +500,28 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 ChallengerCohortDecommissionError,
                 "CHALLENGER_COHORT_DECOMMISSION_PREFLIGHT_INVALID",
+            ):
+                decommission_failed_challenger_cohort(
+                    failure_receipt_path=environment["failure_receipt"],
+                    cohort_plan_path=environment["cohort_plan_path"],
+                    evaluation_plan_path=environment["evaluation_plan_path"],
+                    install_receipt_path=environment["install_receipt_path"],
+                    contract_path=environment["contract_path"],
+                    plist_path=environment["plist_path"],
+                    failure_output_root=environment["failure_output_root"],
+                    _command_runner=runner,
+                )
+            self.assertNotIn(BOOTOUT, runner.argv)
+
+    def test_receipt_replacement_during_final_print_blocks_bootout(self):
+        """Catches an authority swap during the final service observation."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            environment = self.environment(Path(directory).resolve())
+            runner = ReceiptReplacingFinalPrintRunner(environment)
+            with self.assertRaisesRegex(
+                ChallengerCohortDecommissionError,
+                "CHALLENGER_COHORT_DECOMMISSION_SOURCE_MUTATED",
             ):
                 decommission_failed_challenger_cohort(
                     failure_receipt_path=environment["failure_receipt"],
@@ -651,6 +702,57 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
                         artifact_self_hash(receipt, "receipt_hash"),
                     )
                     self.assertIn("bootout", receipt["commands"])
+
+    def test_command_exceptions_after_bootout_authority_are_forensic(self):
+        """Catches losing evidence when an attempted command has no result."""
+
+        cases = (
+            (RaisingBootoutRunner, "BOOTOUT_COMMAND_EXCEPTION"),
+            (RaisingAfterPrintRunner, "POSTCONDITION_COMMAND_EXCEPTION"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for index, (runner_type, phase) in enumerate(cases):
+                with self.subTest(phase=phase):
+                    environment = self.environment(root / str(index))
+                    with self.assertRaises(ChallengerCohortDecommissionError):
+                        decommission_failed_challenger_cohort(
+                            failure_receipt_path=environment[
+                                "failure_receipt"
+                            ],
+                            cohort_plan_path=environment[
+                                "cohort_plan_path"
+                            ],
+                            evaluation_plan_path=environment[
+                                "evaluation_plan_path"
+                            ],
+                            install_receipt_path=environment[
+                                "install_receipt_path"
+                            ],
+                            contract_path=environment["contract_path"],
+                            plist_path=environment["plist_path"],
+                            failure_output_root=environment[
+                                "failure_output_root"
+                            ],
+                            _command_runner=runner_type(environment),
+                        )
+                    files = list(
+                        (
+                            environment["failure_output_root"]
+                            / "challenger-cohort-decommission-failures"
+                        ).glob("*.json")
+                    )
+                    self.assertEqual(len(files), 1)
+                    receipt = json.loads(files[0].read_bytes())
+                    self.assertEqual(receipt["phase"], phase)
+                    self.assertIn(
+                        "command_exception_type",
+                        receipt["commands"][
+                            "bootout"
+                            if phase == "BOOTOUT_COMMAND_EXCEPTION"
+                            else "after_print"
+                        ],
+                    )
 
     def test_decommission_receipt_symlink_fails_closed_with_forensics(self):
         """Catches redirecting the success receipt after bootout."""

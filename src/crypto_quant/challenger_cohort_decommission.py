@@ -134,6 +134,21 @@ def _evidence(
     )
 
 
+def _command_exception_evidence(
+    argv: Tuple[str, ...], error: Exception
+) -> Mapping[str, Any]:
+    evidence: Dict[str, Any] = {
+        "argv": list(argv),
+        "command_result_available": False,
+        "command_exception_type": type(error).__name__,
+        "command_evidence_hash": "0" * 64,
+    }
+    evidence["command_evidence_hash"] = artifact_self_hash(
+        evidence, "command_evidence_hash"
+    )
+    return evidence
+
+
 def _file_evidence(path: Path) -> Mapping[str, Any]:
     try:
         selected = Path(path).expanduser()
@@ -321,6 +336,15 @@ def _identity(receipt: Mapping[str, Any]) -> Mapping[str, Any]:
         "failure_receipt_file_sha256": receipt["failure_receipt"][
             "file_sha256"
         ],
+        "before_print_command_hash": receipt["commands"]["before_print"][
+            "command_evidence_hash"
+        ],
+        "domain_print_command_hash": receipt["commands"]["domain_print"][
+            "command_evidence_hash"
+        ],
+        "immediately_before_print_command_hash": receipt["commands"][
+            "immediately_before_print"
+        ]["command_evidence_hash"],
         "bootout_command_hash": receipt["commands"]["bootout"][
             "command_evidence_hash"
         ],
@@ -560,7 +584,40 @@ def decommission_failed_challenger_cohort(
             "CHALLENGER_COHORT_DECOMMISSION_PREFLIGHT_INVALID"
         )
 
-    bootout_result = _run(runner, _BOOTOUT_ARGV)
+    final_authority_snapshot = _protected_snapshot(**snapshot_arguments)
+    if final_authority_snapshot != before:
+        raise ChallengerCohortDecommissionError(
+            "CHALLENGER_COHORT_DECOMMISSION_SOURCE_MUTATED"
+        )
+
+    try:
+        bootout_result = _run(runner, _BOOTOUT_ARGV)
+    except Exception as error:
+        bootout_exception = _command_exception_evidence(
+            _BOOTOUT_ARGV, error
+        )
+        try:
+            failed_after = _protected_snapshot(**snapshot_arguments)
+        except Exception:
+            failed_after = None
+        _publish_operation_failure(
+            phase="BOOTOUT_COMMAND_EXCEPTION",
+            observed_at=observed_at,
+            output_root=output_root,
+            failure_receipt_path=Path(failure_receipt_path),
+            failure_receipt=failure_receipt,
+            commands={
+                "before_print": before_evidence,
+                "domain_print": domain_evidence,
+                "immediately_before_print": final_print_evidence,
+                "bootout": bootout_exception,
+            },
+            preserved_before=before,
+            preserved_after_or_null=failed_after,
+        )
+        raise ChallengerCohortDecommissionError(
+            "CHALLENGER_COHORT_DECOMMISSION_COMMAND_FAILED"
+        ) from error
     bootout_evidence = _evidence(_BOOTOUT_ARGV, bootout_result)
     if (
         bootout_result.returncode != 0
@@ -589,7 +646,33 @@ def decommission_failed_challenger_cohort(
         raise ChallengerCohortDecommissionError(
             "CHALLENGER_COHORT_DECOMMISSION_BOOTOUT_FAILED"
         )
-    after_result = _run(runner, _PRINT_ARGV)
+    try:
+        after_result = _run(runner, _PRINT_ARGV)
+    except Exception as error:
+        after_exception = _command_exception_evidence(_PRINT_ARGV, error)
+        try:
+            failed_after = _protected_snapshot(**snapshot_arguments)
+        except Exception:
+            failed_after = None
+        _publish_operation_failure(
+            phase="POSTCONDITION_COMMAND_EXCEPTION",
+            observed_at=observed_at,
+            output_root=output_root,
+            failure_receipt_path=Path(failure_receipt_path),
+            failure_receipt=failure_receipt,
+            commands={
+                "before_print": before_evidence,
+                "domain_print": domain_evidence,
+                "immediately_before_print": final_print_evidence,
+                "bootout": bootout_evidence,
+                "after_print": after_exception,
+            },
+            preserved_before=before,
+            preserved_after_or_null=failed_after,
+        )
+        raise ChallengerCohortDecommissionError(
+            "CHALLENGER_COHORT_DECOMMISSION_COMMAND_FAILED"
+        ) from error
     after_evidence = _evidence(_PRINT_ARGV, after_result)
     if not _not_found(after_result):
         try:
@@ -615,7 +698,28 @@ def decommission_failed_challenger_cohort(
         raise ChallengerCohortDecommissionError(
             "CHALLENGER_COHORT_DECOMMISSION_POSTCONDITION_INVALID"
         )
-    after = _protected_snapshot(**snapshot_arguments)
+    try:
+        after = _protected_snapshot(**snapshot_arguments)
+    except Exception as error:
+        _publish_operation_failure(
+            phase="POST_BOOTOUT_SNAPSHOT_FAILED",
+            observed_at=observed_at,
+            output_root=output_root,
+            failure_receipt_path=Path(failure_receipt_path),
+            failure_receipt=failure_receipt,
+            commands={
+                "before_print": before_evidence,
+                "domain_print": domain_evidence,
+                "immediately_before_print": final_print_evidence,
+                "bootout": bootout_evidence,
+                "after_print": after_evidence,
+            },
+            preserved_before=before,
+            preserved_after_or_null=None,
+        )
+        raise ChallengerCohortDecommissionError(
+            "CHALLENGER_COHORT_DECOMMISSION_SOURCE_MUTATED"
+        ) from error
     if after != before:
         _publish_operation_failure(
             phase="SOURCE_MUTATED_AFTER_BOOTOUT",
