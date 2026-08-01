@@ -600,7 +600,22 @@ def challenger_install_receipt_reasons(
         ):
             reasons.append("CHALLENGER_INSTALL_TARGET_BINDING_MISMATCH")
         actual_stat = _target_stat(target, uid)
-        if receipt["target_stat"] != actual_stat:
+        recorded_stat = receipt["target_stat"]
+        stable_stat_fields = (
+            "inode",
+            "owner_uid",
+            "mode_octal",
+            "link_count",
+            "size_bytes",
+            "sha256",
+        )
+        if (
+            set(recorded_stat) != set(actual_stat)
+            or any(
+                recorded_stat[field] != actual_stat[field]
+                for field in stable_stat_fields
+            )
+        ):
             reasons.append("CHALLENGER_INSTALL_TARGET_STAT_MISMATCH")
         print_argv = (_LAUNCHCTL, "print", service)
         if not _command_evidence_valid(
@@ -641,7 +656,7 @@ def challenger_install_receipt_reasons(
         identity = _receipt_identity(
             contract_hash=contract["contract_hash"],
             target_path=target,
-            target_stat=actual_stat,
+            target_stat=recorded_stat,
             action=action,
             installed_at=receipt["installed_at"],
             verified_at=receipt["verified_at"],
