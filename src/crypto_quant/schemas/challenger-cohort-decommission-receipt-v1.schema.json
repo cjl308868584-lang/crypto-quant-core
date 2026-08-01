@@ -80,12 +80,14 @@
       "required": [
         "before_print",
         "domain_print",
+        "immediately_before_print",
         "bootout",
         "after_print"
       ],
       "properties": {
         "before_print": {"type": "object"},
         "domain_print": {"type": "object"},
+        "immediately_before_print": {"type": "object"},
         "bootout": {"type": "object"},
         "after_print": {"type": "object"}
       }
@@ -109,8 +111,8 @@
         "maintenance_invocation_count"
       ],
       "properties": {
-        "launchctl_command_count": {"const": 4},
-        "launchctl_print_count": {"const": 3},
+        "launchctl_command_count": {"const": 5},
+        "launchctl_print_count": {"const": 4},
         "bootout_count": {"const": 1},
         "shell_invoked": {"const": false},
         "delete_count": {"const": 0},

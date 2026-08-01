@@ -9,14 +9,18 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from crypto_quant.canonical import business_hash, canonical_json
+from crypto_quant.canonical import business_hash, canonical_json, stable_id
 from crypto_quant.challenger_cohort_failure import (
     ChallengerCohortFailureError,
     challenger_cohort_failure_receipt_hash,
     load_challenger_cohort_failure_receipt,
     observe_challenger_cohort_missed_slot_failure,
 )
-from crypto_quant.challenger_cohort_failure_cli import _parser
+from crypto_quant.challenger_cohort_failure_cli import (
+    ChallengerCohortFailureCLIError,
+    _parser,
+    _trusted_output_root as trusted_failure_output_root,
+)
 from crypto_quant.challenger_launchd_install import LaunchctlResult
 from crypto_quant.evidence import artifact_self_hash
 from tests import test_challenger_cohort_episode_receipt as cohort_tests
@@ -110,6 +114,40 @@ class ChallengerCohortFailureTests(unittest.TestCase):
                 "PERMANENTLY_INELIGIBLE_CONTINUITY_GAP",
             )
             self.assertEqual(
+                receipt["failure"]["equivalent_evaluator_status"],
+                "FAILED_CLOSED_NO_BACKFILL",
+            )
+            self.assertEqual(
+                receipt["failure"]["equivalent_evaluator_reason"],
+                "CHALLENGER_COHORT_CUMULATIVE_CONTINUITY_INVALID",
+            )
+            self.assertEqual(
+                receipt["sources"]["install_receipt"]["file_sha256"],
+                hashlib.sha256(
+                    environment["install_receipt_path"].read_bytes()
+                ).hexdigest(),
+            )
+            self.assertEqual(
+                receipt["sources"]["contract"]["file_sha256"],
+                hashlib.sha256(
+                    environment["contract_path"].read_bytes()
+                ).hexdigest(),
+            )
+            self.assertFalse(receipt["root_cause"]["required_for_failure"])
+            if receipt["root_cause"]["system_boot_time_or_null"] is None:
+                self.assertIsNone(
+                    receipt["root_cause"][
+                        "boot_after_next_required_slot_or_null"
+                    ]
+                )
+            else:
+                self.assertIsInstance(
+                    receipt["root_cause"][
+                        "boot_after_next_required_slot_or_null"
+                    ],
+                    bool,
+                )
+            self.assertEqual(
                 hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
                 summary["receipt_file_sha256"],
             )
@@ -146,6 +184,18 @@ class ChallengerCohortFailureTests(unittest.TestCase):
                 "order",
             }
         )
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            expected = base / "challenger-forward-v1" / "cohort-failures"
+            self.assertEqual(
+                trusted_failure_output_root(str(expected), allowed_base=base),
+                expected,
+            )
+            with self.assertRaises(ChallengerCohortFailureCLIError):
+                trusted_failure_output_root(
+                    str(base / "arbitrary" / "cohort-failures"),
+                    allowed_base=base,
+                )
 
     def test_schema_mirrors_validate_a_real_failure_receipt(self):
         """Catches shipping an unvalidated or non-packaged receipt shape."""
@@ -247,6 +297,65 @@ class ChallengerCohortFailureTests(unittest.TestCase):
                     plist_path=environment["plist_path"],
                 )
 
+    def test_rehash_cannot_decouple_observed_time_and_current_slot(self):
+        """Catches a receipt whose wall clock contradicts its slot floor."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            environment = self.environment(root / "environment")
+            summary = self.observe(environment)
+            receipt = json.loads(Path(summary["receipt_path"]).read_bytes())
+            changed = copy.deepcopy(receipt)
+            changed["observed_at"] = "2026-08-01T03:59:59.000Z"
+            changed["failure"]["current_slot"] = (
+                "2026-08-01T08:00:00.000Z"
+            )
+            changed["receipt_id"] = stable_id(
+                "challenger_cohort_failure_receipt",
+                {
+                    "cohort_plan_hash": changed["sources"]["cohort_plan"][
+                        "plan_hash"
+                    ],
+                    "evaluation_plan_hash": changed["sources"][
+                        "evaluation_plan"
+                    ]["plan_hash"],
+                    "state_file_sha256": changed["evidence_after"]["state"][
+                        "file_stat"
+                    ]["sha256"],
+                    "stderr_sha256": changed["evidence_after"]["stderr"][
+                        "file_stat"
+                    ]["sha256"],
+                    "next_required_slot": changed["failure"][
+                        "next_required_slot"
+                    ],
+                    "current_slot": changed["failure"]["current_slot"],
+                    "observed_at": changed["observed_at"],
+                },
+            )
+            changed["receipt_hash"] = challenger_cohort_failure_receipt_hash(
+                changed
+            )
+            tampered = root / "time-tampered.json"
+            tampered.write_bytes(canonical_json(changed).encode("utf-8"))
+            tampered.chmod(0o600)
+
+            with self.assertRaisesRegex(
+                ChallengerCohortFailureError,
+                "CHALLENGER_COHORT_FAILURE_RECEIPT_INVALID",
+            ):
+                load_challenger_cohort_failure_receipt(
+                    receipt_path=tampered,
+                    cohort_plan_path=environment["cohort_plan_path"],
+                    evaluation_plan_path=environment[
+                        "evaluation_plan_path"
+                    ],
+                    install_receipt_path=environment[
+                        "install_receipt_path"
+                    ],
+                    contract_path=environment["contract_path"],
+                    plist_path=environment["plist_path"],
+                )
+
     def test_output_root_beneath_a_symlink_is_rejected(self):
         """Catches redirecting owner-only evidence through a symlink ancestor."""
 
@@ -268,6 +377,27 @@ class ChallengerCohortFailureTests(unittest.TestCase):
             self.assertEqual(
                 len(environment["service"].calls), calls_before
             )
+
+    def test_receipt_directory_symlink_cannot_redirect_publication(self):
+        """Catches a child symlink installed after output-root validation."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            environment = self.environment(root / "environment")
+            output_root = environment["failure_output_root"]
+            output_root.mkdir(mode=0o700)
+            redirect = root / "redirect-target"
+            redirect.mkdir(mode=0o700)
+            (output_root / "challenger-cohort-failure-receipts").symlink_to(
+                redirect, target_is_directory=True
+            )
+
+            with self.assertRaisesRegex(
+                ChallengerCohortFailureError,
+                "CHALLENGER_COHORT_FAILURE_PUBLISH_FAILED",
+            ):
+                self.observe(environment)
+            self.assertEqual(list(redirect.iterdir()), [])
 
     def test_output_root_cannot_overlap_strategy_evidence(self):
         """Catches publishing receipts inside the strategy evidence tree."""

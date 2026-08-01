@@ -1,17 +1,27 @@
+import copy
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from jsonschema import Draft202012Validator
 
 from crypto_quant.challenger_cohort_decommission import (
     ChallengerCohortDecommissionError,
     DecommissionCommandResult,
+    challenger_cohort_decommission_receipt_hash,
     decommission_failed_challenger_cohort,
     load_challenger_cohort_decommission_receipt,
 )
-from crypto_quant.challenger_cohort_decommission_cli import _parser
+import crypto_quant.challenger_cohort_decommission as decommission_module
+from crypto_quant.challenger_cohort_decommission_cli import (
+    ChallengerCohortDecommissionCLIError,
+    _parser,
+    _trusted_output_root as trusted_decommission_output_root,
+)
+from crypto_quant.canonical import canonical_json
+from crypto_quant.evidence import artifact_self_hash
 from tests import test_challenger_cohort_failure as failure_tests
 
 
@@ -103,6 +113,22 @@ class MutatingBootoutRunner(RecordingCommandRunner):
         return result
 
 
+class ReboundBeforeBootoutRunner(RecordingCommandRunner):
+    def __call__(self, argv):
+        call = tuple(argv)
+        if call == OLD_PRINT and self.argv.count(OLD_PRINT) == 1:
+            self.argv.append(call)
+            result = self.environment["failed_launchctl"](call)
+            return DecommissionCommandResult(
+                result.returncode,
+                result.stdout.replace(
+                    b"last exit code = 1", b"last exit code = 0"
+                ),
+                result.stderr,
+            )
+        return super().__call__(argv)
+
+
 class ChallengerCohortDecommissionTests(unittest.TestCase):
     def environment(self, root: Path):
         helper = failure_tests.ChallengerCohortFailureTests()
@@ -137,7 +163,10 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
             self.assertEqual(
                 summary["status"], "FAILED_COHORT_DECOMMISSIONED_VERIFIED"
             )
-            self.assertEqual(runner.argv, [OLD_PRINT, DOMAIN_PRINT, BOOTOUT, OLD_PRINT])
+            self.assertEqual(
+                runner.argv,
+                [OLD_PRINT, DOMAIN_PRINT, OLD_PRINT, BOOTOUT, OLD_PRINT],
+            )
             self.assertEqual(runner.argv.count(BOOTOUT), 1)
             self.assertEqual(
                 {
@@ -192,6 +221,22 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
                 "order",
             }
         )
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            expected = base / "challenger-forward-v1" / "cohort-failures"
+            expected.mkdir(mode=0o700, parents=True)
+            self.assertEqual(
+                trusted_decommission_output_root(
+                    str(expected), allowed_base=base
+                ),
+                expected,
+            )
+            wrong = base / "arbitrary"
+            wrong.mkdir(mode=0o700)
+            with self.assertRaises(ChallengerCohortDecommissionCLIError):
+                trusted_decommission_output_root(
+                    str(wrong), allowed_base=base
+                )
 
     def test_schema_mirrors_validate_real_decommission_receipt(self):
         """Catches shipping a decommission receipt without packaged Schema."""
@@ -247,6 +292,55 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
         self.assertNotIn(b"com.apple.private.sentinel", body)
         self.assertNotIn(b"/Users/example/secret", body)
 
+    def test_rehash_cannot_erase_domain_labels(self):
+        """Catches claimed labels detached from persisted filtered evidence."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            environment = self.environment(root / "environment")
+            summary = decommission_failed_challenger_cohort(
+                failure_receipt_path=environment["failure_receipt"],
+                cohort_plan_path=environment["cohort_plan_path"],
+                evaluation_plan_path=environment["evaluation_plan_path"],
+                install_receipt_path=environment["install_receipt_path"],
+                contract_path=environment["contract_path"],
+                plist_path=environment["plist_path"],
+                failure_output_root=environment["failure_output_root"],
+                _command_runner=RecordingCommandRunner(environment),
+            )
+            receipt = json.loads(Path(summary["receipt_path"]).read_bytes())
+            changed = copy.deepcopy(receipt)
+            domain = changed["commands"]["domain_print"]
+            domain["crypto_quant_labels"] = []
+            domain["stdout_sha256"] = "0" * 64
+            domain["command_evidence_hash"] = artifact_self_hash(
+                domain, "command_evidence_hash"
+            )
+            changed["receipt_hash"] = (
+                challenger_cohort_decommission_receipt_hash(changed)
+            )
+            tampered = root / "domain-tampered.json"
+            tampered.write_bytes(canonical_json(changed).encode("utf-8"))
+            tampered.chmod(0o600)
+
+            with self.assertRaisesRegex(
+                ChallengerCohortDecommissionError,
+                "CHALLENGER_COHORT_DECOMMISSION_RECEIPT_INVALID",
+            ):
+                load_challenger_cohort_decommission_receipt(
+                    receipt_path=tampered,
+                    failure_receipt_path=environment["failure_receipt"],
+                    cohort_plan_path=environment["cohort_plan_path"],
+                    evaluation_plan_path=environment[
+                        "evaluation_plan_path"
+                    ],
+                    install_receipt_path=environment[
+                        "install_receipt_path"
+                    ],
+                    contract_path=environment["contract_path"],
+                    plist_path=environment["plist_path"],
+                )
+
     def test_invalid_failure_receipt_never_reaches_launchctl(self):
         """Catches bootout authority surviving a failed receipt replay."""
 
@@ -278,6 +372,117 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
                     _command_runner=runner,
                 )
             self.assertEqual(runner.argv, [])
+
+    def test_only_canonical_owner_only_failure_receipt_can_authorize(self):
+        """Catches copied or relaxed-mode receipt authority."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            copied = self.environment(root / "copied")
+            copied_path = root / "arbitrary-failure.json"
+            copied_path.write_bytes(copied["failure_receipt"].read_bytes())
+            copied_path.chmod(0o644)
+            runner = RecordingCommandRunner(copied)
+            with self.assertRaisesRegex(
+                ChallengerCohortDecommissionError,
+                "CHALLENGER_COHORT_DECOMMISSION_PREFLIGHT_INVALID",
+            ):
+                decommission_failed_challenger_cohort(
+                    failure_receipt_path=copied_path,
+                    cohort_plan_path=copied["cohort_plan_path"],
+                    evaluation_plan_path=copied["evaluation_plan_path"],
+                    install_receipt_path=copied["install_receipt_path"],
+                    contract_path=copied["contract_path"],
+                    plist_path=copied["plist_path"],
+                    failure_output_root=copied["failure_output_root"],
+                    _command_runner=runner,
+                )
+            self.assertEqual(runner.argv, [])
+
+            relaxed = self.environment(root / "relaxed")
+            relaxed["failure_receipt"].chmod(0o644)
+            runner = RecordingCommandRunner(relaxed)
+            with self.assertRaisesRegex(
+                ChallengerCohortDecommissionError,
+                "CHALLENGER_COHORT_DECOMMISSION_PREFLIGHT_INVALID",
+            ):
+                decommission_failed_challenger_cohort(
+                    failure_receipt_path=relaxed["failure_receipt"],
+                    cohort_plan_path=relaxed["cohort_plan_path"],
+                    evaluation_plan_path=relaxed["evaluation_plan_path"],
+                    install_receipt_path=relaxed["install_receipt_path"],
+                    contract_path=relaxed["contract_path"],
+                    plist_path=relaxed["plist_path"],
+                    failure_output_root=relaxed["failure_output_root"],
+                    _command_runner=runner,
+                )
+            self.assertEqual(runner.argv, [])
+
+    def test_failure_receipt_replacement_after_load_blocks_all_commands(self):
+        """Catches a receipt-path replacement between replay and snapshot."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            environment = self.environment(Path(directory).resolve())
+            receipt_path = environment["failure_receipt"]
+            runner = RecordingCommandRunner(environment)
+            original_loader = (
+                decommission_module.load_challenger_cohort_failure_receipt
+            )
+
+            def load_then_replace(**kwargs):
+                receipt = original_loader(**kwargs)
+                receipt_path.write_bytes(b"{}")
+                receipt_path.chmod(0o600)
+                return receipt
+
+            with mock.patch.object(
+                decommission_module,
+                "load_challenger_cohort_failure_receipt",
+                side_effect=load_then_replace,
+            ):
+                with self.assertRaisesRegex(
+                    ChallengerCohortDecommissionError,
+                    "CHALLENGER_COHORT_DECOMMISSION_PREFLIGHT_INVALID",
+                ):
+                    decommission_failed_challenger_cohort(
+                        failure_receipt_path=receipt_path,
+                        cohort_plan_path=environment["cohort_plan_path"],
+                        evaluation_plan_path=environment[
+                            "evaluation_plan_path"
+                        ],
+                        install_receipt_path=environment[
+                            "install_receipt_path"
+                        ],
+                        contract_path=environment["contract_path"],
+                        plist_path=environment["plist_path"],
+                        failure_output_root=environment[
+                            "failure_output_root"
+                        ],
+                        _command_runner=runner,
+                    )
+            self.assertEqual(runner.argv, [])
+
+    def test_service_rebind_detected_immediately_before_bootout(self):
+        """Catches bootout after the fixed label changes post-domain check."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            environment = self.environment(Path(directory).resolve())
+            runner = ReboundBeforeBootoutRunner(environment)
+            with self.assertRaisesRegex(
+                ChallengerCohortDecommissionError,
+                "CHALLENGER_COHORT_DECOMMISSION_PREFLIGHT_INVALID",
+            ):
+                decommission_failed_challenger_cohort(
+                    failure_receipt_path=environment["failure_receipt"],
+                    cohort_plan_path=environment["cohort_plan_path"],
+                    evaluation_plan_path=environment["evaluation_plan_path"],
+                    install_receipt_path=environment["install_receipt_path"],
+                    contract_path=environment["contract_path"],
+                    plist_path=environment["plist_path"],
+                    failure_output_root=environment["failure_output_root"],
+                    _command_runner=runner,
+                )
+            self.assertNotIn(BOOTOUT, runner.argv)
 
     def test_invalid_clock_is_rejected_before_any_launchctl_command(self):
         """Catches discovering malformed receipt identity after bootout."""
@@ -394,6 +599,99 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
                             _command_runner=runner,
                         )
                     self.assertEqual(runner.argv.count(BOOTOUT), 1)
+
+    def test_attempted_bootout_failures_publish_structured_forensics(self):
+        """Catches losing command evidence after an irreversible attempt."""
+
+        cases = (
+            (BootoutFailureRunner, "BOOTOUT_FAILED"),
+            (StillLoadedAfterBootoutRunner, "POSTCONDITION_INVALID"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for index, (runner_type, phase) in enumerate(cases):
+                with self.subTest(phase=phase):
+                    environment = self.environment(root / str(index))
+                    with self.assertRaises(ChallengerCohortDecommissionError):
+                        decommission_failed_challenger_cohort(
+                            failure_receipt_path=environment[
+                                "failure_receipt"
+                            ],
+                            cohort_plan_path=environment[
+                                "cohort_plan_path"
+                            ],
+                            evaluation_plan_path=environment[
+                                "evaluation_plan_path"
+                            ],
+                            install_receipt_path=environment[
+                                "install_receipt_path"
+                            ],
+                            contract_path=environment["contract_path"],
+                            plist_path=environment["plist_path"],
+                            failure_output_root=environment[
+                                "failure_output_root"
+                            ],
+                            _command_runner=runner_type(environment),
+                        )
+                    failure_directory = (
+                        environment["failure_output_root"]
+                        / "challenger-cohort-decommission-failures"
+                    )
+                    files = list(failure_directory.glob("*.json"))
+                    self.assertEqual(len(files), 1)
+                    self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+                    receipt = json.loads(files[0].read_bytes())
+                    self.assertEqual(
+                        receipt["observation_status"],
+                        "FAILED_CLOSED_DECOMMISSION_UNVERIFIED",
+                    )
+                    self.assertEqual(receipt["phase"], phase)
+                    self.assertEqual(
+                        receipt["receipt_hash"],
+                        artifact_self_hash(receipt, "receipt_hash"),
+                    )
+                    self.assertIn("bootout", receipt["commands"])
+
+    def test_decommission_receipt_symlink_fails_closed_with_forensics(self):
+        """Catches redirecting the success receipt after bootout."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            environment = self.environment(root / "environment")
+            redirect = root / "redirect-target"
+            redirect.mkdir(mode=0o700)
+            (
+                environment["failure_output_root"]
+                / "challenger-cohort-decommission-receipts"
+            ).symlink_to(redirect, target_is_directory=True)
+            runner = RecordingCommandRunner(environment)
+
+            with self.assertRaisesRegex(
+                ChallengerCohortDecommissionError,
+                "CHALLENGER_COHORT_DECOMMISSION_PUBLISH_FAILED",
+            ):
+                decommission_failed_challenger_cohort(
+                    failure_receipt_path=environment["failure_receipt"],
+                    cohort_plan_path=environment["cohort_plan_path"],
+                    evaluation_plan_path=environment["evaluation_plan_path"],
+                    install_receipt_path=environment["install_receipt_path"],
+                    contract_path=environment["contract_path"],
+                    plist_path=environment["plist_path"],
+                    failure_output_root=environment["failure_output_root"],
+                    _command_runner=runner,
+                )
+            self.assertEqual(list(redirect.iterdir()), [])
+            forensic_files = list(
+                (
+                    environment["failure_output_root"]
+                    / "challenger-cohort-decommission-failures"
+                ).glob("*.json")
+            )
+            self.assertEqual(len(forensic_files), 1)
+            forensic = json.loads(forensic_files[0].read_bytes())
+            self.assertEqual(
+                forensic["phase"], "DECOMMISSION_RECEIPT_PUBLISH_FAILED"
+            )
 
 
 if __name__ == "__main__":

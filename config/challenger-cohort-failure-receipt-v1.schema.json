@@ -12,6 +12,7 @@
     "observed_at",
     "sources",
     "failure",
+    "root_cause",
     "state",
     "source_bundles",
     "logs",
@@ -61,20 +62,22 @@
         "install_receipt": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["receipt_id", "receipt_hash"],
+          "required": ["receipt_id", "receipt_hash", "file_sha256"],
           "properties": {
             "receipt_id": {"type": "string", "minLength": 1},
-            "receipt_hash": {"$ref": "#/$defs/sha256"}
+            "receipt_hash": {"$ref": "#/$defs/sha256"},
+            "file_sha256": {"$ref": "#/$defs/sha256"}
           }
         },
         "contract": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["contract_id", "contract_hash", "contract_trust_hash"],
+          "required": ["contract_id", "contract_hash", "contract_trust_hash", "file_sha256"],
           "properties": {
             "contract_id": {"type": "string", "minLength": 1},
             "contract_hash": {"$ref": "#/$defs/sha256"},
-            "contract_trust_hash": {"$ref": "#/$defs/sha256"}
+            "contract_trust_hash": {"$ref": "#/$defs/sha256"},
+            "file_sha256": {"$ref": "#/$defs/sha256"}
           }
         },
         "plist": {
@@ -96,6 +99,8 @@
       "additionalProperties": false,
       "required": [
         "reason_code",
+        "equivalent_evaluator_status",
+        "equivalent_evaluator_reason",
         "last_trusted_slot",
         "next_required_slot",
         "current_slot",
@@ -104,11 +109,31 @@
       ],
       "properties": {
         "reason_code": {"const": "CHALLENGER_RUNNER_MISSED_SLOT"},
+        "equivalent_evaluator_status": {"const": "FAILED_CLOSED_NO_BACKFILL"},
+        "equivalent_evaluator_reason": {"const": "CHALLENGER_COHORT_CUMULATIVE_CONTINUITY_INVALID"},
         "last_trusted_slot": {"$ref": "#/$defs/timestamp"},
         "next_required_slot": {"$ref": "#/$defs/timestamp"},
         "current_slot": {"$ref": "#/$defs/timestamp"},
         "historical_backfill_allowed": {"const": false},
         "continuity_repair_allowed": {"const": false}
+      }
+    },
+    "root_cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "system_boot_time_or_null",
+        "boot_after_next_required_slot_or_null",
+        "required_for_failure"
+      ],
+      "properties": {
+        "system_boot_time_or_null": {
+          "oneOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]
+        },
+        "boot_after_next_required_slot_or_null": {
+          "type": ["boolean", "null"]
+        },
+        "required_for_failure": {"const": false}
       }
     },
     "state": {

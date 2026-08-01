@@ -17,6 +17,7 @@ from .challenger_cohort_failure import (
 _DEFAULT_OUTPUT_BASE = (
     Path.home() / "Library" / "Application Support" / "CryptoQuant"
 )
+_OUTPUT_RELATIVE = Path("challenger-forward-v1") / "cohort-failures"
 
 
 class ChallengerCohortFailureCLIError(ValueError):
@@ -59,6 +60,7 @@ def _trusted_output_root(value: str, *, allowed_base: Path) -> Path:
     try:
         requested = Path(value).expanduser()
         base = Path(allowed_base).expanduser().resolve(strict=True)
+        expected = (base / _OUTPUT_RELATIVE).absolute()
         if (
             not requested.is_absolute()
             or requested.is_symlink()
@@ -66,7 +68,7 @@ def _trusted_output_root(value: str, *, allowed_base: Path) -> Path:
         ):
             raise ValueError
         resolved = requested.resolve()
-        if resolved == base or base not in resolved.parents:
+        if resolved != expected:
             raise ValueError
         if resolved.exists():
             root_stat = resolved.lstat()

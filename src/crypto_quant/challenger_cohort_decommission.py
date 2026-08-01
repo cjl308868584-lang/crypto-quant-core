@@ -22,6 +22,7 @@ from .challenger_cohort_failure import (
     _snapshot,
     _stored_failed_service_valid,
     _trusted_sources,
+    _publish_owner_only_exact,
     _validate_output_disjoint,
     _validate_output_root,
     load_challenger_cohort_failure_receipt,
@@ -32,7 +33,6 @@ from .challenger_launchd_install import (
     _command_evidence_valid,
 )
 from .evidence import artifact_self_hash
-from .research_corpus import _publish_exact
 
 
 _OLD_SERVICE = "gui/501/local.crypto-quant.challenger-forward"
@@ -49,6 +49,8 @@ _NOT_FOUND_STDERR = (
     b'in domain for user gui: 501\n'
 )
 _OUTPUT_DIRECTORY = "challenger-cohort-decommission-receipts"
+_FAILURE_RECEIPT_DIRECTORY = "challenger-cohort-failure-receipts"
+_OPERATION_FAILURE_DIRECTORY = "challenger-cohort-decommission-failures"
 _SCHEMA = "challenger-cohort-decommission-receipt-v1.schema.json"
 _MAX_COMMAND_BYTES = 4 * 1024 * 1024
 _MAX_INPUT_BYTES = 64 * 1024 * 1024
@@ -245,6 +247,7 @@ def _domain_evidence(
     result: DecommissionCommandResult,
 ) -> Mapping[str, Any]:
     labels = list(_domain_labels(result))
+    filtered_stdout = "".join(f"{label}\n" for label in labels)
     disallowed = [
         label
         for label in labels
@@ -260,6 +263,10 @@ def _domain_evidence(
         "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
         "crypto_quant_labels": labels,
         "disallowed_labels": disallowed,
+        "filtered_stdout_utf8": filtered_stdout,
+        "filtered_stdout_sha256": hashlib.sha256(
+            filtered_stdout.encode("utf-8")
+        ).hexdigest(),
         "raw_stdout_persisted": False,
         "command_evidence_hash": "0" * 64,
     }
@@ -332,6 +339,128 @@ def _receipt_path(output_root: Path, receipt_id: str) -> Path:
     )
 
 
+def _failure_receipt_authority_valid(
+    *,
+    path: Path,
+    output_root: Path,
+    receipt: Mapping[str, Any],
+    evidence: Mapping[str, Any],
+) -> bool:
+    try:
+        requested = Path(path).expanduser()
+        expected = (
+            Path(output_root)
+            / _FAILURE_RECEIPT_DIRECTORY
+            / f"{receipt['receipt_id']}.json"
+        ).absolute()
+        root_stat = Path(output_root).lstat()
+        directory_stat = expected.parent.lstat()
+        file_stat = requested.lstat()
+        return (
+            requested.is_absolute()
+            and requested.absolute() == expected
+            and requested.resolve(strict=True) == expected
+            and stat.S_ISDIR(root_stat.st_mode)
+            and not stat.S_ISLNK(root_stat.st_mode)
+            and root_stat.st_uid == os.getuid()
+            and stat.S_IMODE(root_stat.st_mode) == 0o700
+            and stat.S_ISDIR(directory_stat.st_mode)
+            and not stat.S_ISLNK(directory_stat.st_mode)
+            and directory_stat.st_uid == os.getuid()
+            and stat.S_IMODE(directory_stat.st_mode) == 0o700
+            and stat.S_ISREG(file_stat.st_mode)
+            and not stat.S_ISLNK(file_stat.st_mode)
+            and file_stat.st_uid == os.getuid()
+            and file_stat.st_nlink == 1
+            and stat.S_IMODE(file_stat.st_mode) == 0o600
+            and evidence["path"] == str(expected)
+            and evidence["mode_octal"] == "0600"
+            and evidence["link_count"] == 1
+        )
+    except (KeyError, OSError, TypeError, ValueError):
+        return False
+
+
+def _publish_operation_failure(
+    *,
+    phase: str,
+    observed_at: str,
+    output_root: Path,
+    failure_receipt_path: Path,
+    failure_receipt: Mapping[str, Any],
+    commands: Mapping[str, Any],
+    preserved_before: Mapping[str, Any],
+    preserved_after_or_null: Any,
+) -> Path:
+    failure_body = canonical_json(failure_receipt).encode("utf-8")
+    receipt: Dict[str, Any] = {
+        "schema_version": "challenger-cohort-decommission-failure-v1",
+        "receipt_id": "",
+        "receipt_hash": "0" * 64,
+        "observation_status": "FAILED_CLOSED_DECOMMISSION_UNVERIFIED",
+        "observed_at": observed_at,
+        "phase": phase,
+        "failure_receipt": {
+            "path": str(Path(failure_receipt_path).resolve(strict=True)),
+            "receipt_id": failure_receipt["receipt_id"],
+            "receipt_hash": failure_receipt["receipt_hash"],
+            "file_sha256": hashlib.sha256(failure_body).hexdigest(),
+            "size_bytes": len(failure_body),
+        },
+        "service": _OLD_SERVICE,
+        "commands": dict(commands),
+        "preserved_evidence_before": preserved_before,
+        "preserved_evidence_after_or_null": preserved_after_or_null,
+        "security_boundary": {
+            "bootout_attempted": True,
+            "shell_invoked": False,
+            "delete_count": 0,
+            "market_request_count": 0,
+            "broker_request_count": 0,
+            "order_submission_count": 0,
+            "state_write_count": 0,
+            "runner_invocation_count": 0,
+            "maintenance_invocation_count": 0,
+        },
+        "warnings": [
+            "DECOMMISSION_NOT_VERIFIED",
+            "PRESERVE_ALL_FAILURE_EVIDENCE",
+            "NO_PROFITABILITY_CLAIM",
+        ],
+    }
+    receipt["receipt_id"] = stable_id(
+        "challenger_cohort_decommission_failure",
+        {
+            "failure_receipt_file_sha256": receipt["failure_receipt"][
+                "file_sha256"
+            ],
+            "phase": phase,
+            "observed_at": observed_at,
+            "bootout_command_hash": commands["bootout"][
+                "command_evidence_hash"
+            ],
+            "after_print_command_hash_or_null": (
+                commands.get("after_print", {}).get(
+                    "command_evidence_hash"
+                )
+            ),
+        },
+    )
+    receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
+    body = canonical_json(receipt).encode("utf-8")
+    try:
+        return _publish_owner_only_exact(
+            output_root=output_root,
+            directory_name=_OPERATION_FAILURE_DIRECTORY,
+            filename=f"{receipt['receipt_id']}.json",
+            body=body,
+        )
+    except Exception as error:
+        raise ChallengerCohortDecommissionError(
+            "CHALLENGER_COHORT_DECOMMISSION_FORENSIC_PUBLISH_FAILED"
+        ) from error
+
+
 def decommission_failed_challenger_cohort(
     *,
     failure_receipt_path: Path,
@@ -373,7 +502,20 @@ def decommission_failed_challenger_cohort(
             "plist_path": Path(plist_path),
         }
         before = _protected_snapshot(**snapshot_arguments)
-        if before["runtime"] != failure_receipt["evidence_after"]:
+        loaded_failure_body = canonical_json(failure_receipt).encode("utf-8")
+        failure_file = before["trusted_files"]["failure_receipt"]
+        if (
+            before["runtime"] != failure_receipt["evidence_after"]
+            or not _failure_receipt_authority_valid(
+                path=Path(failure_receipt_path),
+                output_root=output_root,
+                receipt=failure_receipt,
+                evidence=failure_file,
+            )
+            or failure_file["sha256"]
+            != hashlib.sha256(loaded_failure_body).hexdigest()
+            or failure_file["size_bytes"] != len(loaded_failure_body)
+        ):
             raise ValueError
     except Exception as error:
         raise ChallengerCohortDecommissionError(
@@ -405,6 +547,19 @@ def decommission_failed_challenger_cohort(
             "CHALLENGER_COHORT_DECOMMISSION_SOURCE_MUTATED"
         )
 
+    final_print_result = _run(runner, _PRINT_ARGV)
+    final_print_evidence = _evidence(_PRINT_ARGV, final_print_result)
+    if not _stored_failed_service_valid(
+        final_print_evidence,
+        launchd_runs=failure_receipt["launchd_runs_observed"],
+        contract=contract,
+        install_receipt=install_receipt,
+        paths=paths,
+    ):
+        raise ChallengerCohortDecommissionError(
+            "CHALLENGER_COHORT_DECOMMISSION_PREFLIGHT_INVALID"
+        )
+
     bootout_result = _run(runner, _BOOTOUT_ARGV)
     bootout_evidence = _evidence(_BOOTOUT_ARGV, bootout_result)
     if (
@@ -412,17 +567,72 @@ def decommission_failed_challenger_cohort(
         or bootout_result.stdout != b""
         or bootout_result.stderr != b""
     ):
+        try:
+            failed_after = _protected_snapshot(**snapshot_arguments)
+        except Exception:
+            failed_after = None
+        _publish_operation_failure(
+            phase="BOOTOUT_FAILED",
+            observed_at=observed_at,
+            output_root=output_root,
+            failure_receipt_path=Path(failure_receipt_path),
+            failure_receipt=failure_receipt,
+            commands={
+                "before_print": before_evidence,
+                "domain_print": domain_evidence,
+                "immediately_before_print": final_print_evidence,
+                "bootout": bootout_evidence,
+            },
+            preserved_before=before,
+            preserved_after_or_null=failed_after,
+        )
         raise ChallengerCohortDecommissionError(
             "CHALLENGER_COHORT_DECOMMISSION_BOOTOUT_FAILED"
         )
     after_result = _run(runner, _PRINT_ARGV)
     after_evidence = _evidence(_PRINT_ARGV, after_result)
     if not _not_found(after_result):
+        try:
+            failed_after = _protected_snapshot(**snapshot_arguments)
+        except Exception:
+            failed_after = None
+        _publish_operation_failure(
+            phase="POSTCONDITION_INVALID",
+            observed_at=observed_at,
+            output_root=output_root,
+            failure_receipt_path=Path(failure_receipt_path),
+            failure_receipt=failure_receipt,
+            commands={
+                "before_print": before_evidence,
+                "domain_print": domain_evidence,
+                "immediately_before_print": final_print_evidence,
+                "bootout": bootout_evidence,
+                "after_print": after_evidence,
+            },
+            preserved_before=before,
+            preserved_after_or_null=failed_after,
+        )
         raise ChallengerCohortDecommissionError(
             "CHALLENGER_COHORT_DECOMMISSION_POSTCONDITION_INVALID"
         )
     after = _protected_snapshot(**snapshot_arguments)
     if after != before:
+        _publish_operation_failure(
+            phase="SOURCE_MUTATED_AFTER_BOOTOUT",
+            observed_at=observed_at,
+            output_root=output_root,
+            failure_receipt_path=Path(failure_receipt_path),
+            failure_receipt=failure_receipt,
+            commands={
+                "before_print": before_evidence,
+                "domain_print": domain_evidence,
+                "immediately_before_print": final_print_evidence,
+                "bootout": bootout_evidence,
+                "after_print": after_evidence,
+            },
+            preserved_before=before,
+            preserved_after_or_null=after,
+        )
         raise ChallengerCohortDecommissionError(
             "CHALLENGER_COHORT_DECOMMISSION_SOURCE_MUTATED"
         )
@@ -451,14 +661,15 @@ def decommission_failed_challenger_cohort(
         "commands": {
             "before_print": before_evidence,
             "domain_print": domain_evidence,
+            "immediately_before_print": final_print_evidence,
             "bootout": bootout_evidence,
             "after_print": after_evidence,
         },
         "preserved_evidence_before": before,
         "preserved_evidence_after": after,
         "security_boundary": {
-            "launchctl_command_count": 4,
-            "launchctl_print_count": 3,
+            "launchctl_command_count": 5,
+            "launchctl_print_count": 4,
             "bootout_count": 1,
             "shell_invoked": False,
             "delete_count": 0,
@@ -492,21 +703,62 @@ def decommission_failed_challenger_cohort(
     body = canonical_json(receipt).encode("utf-8")
     path = _receipt_path(output_root, receipt["receipt_id"])
     try:
-        _publish_exact(path, body)
-        os.chmod(path, 0o600)
+        path = _publish_owner_only_exact(
+            output_root=output_root,
+            directory_name=_OUTPUT_DIRECTORY,
+            filename=path.name,
+            body=body,
+        )
     except Exception as error:
+        _publish_operation_failure(
+            phase="DECOMMISSION_RECEIPT_PUBLISH_FAILED",
+            observed_at=observed_at,
+            output_root=output_root,
+            failure_receipt_path=Path(failure_receipt_path),
+            failure_receipt=failure_receipt,
+            commands={
+                "before_print": before_evidence,
+                "domain_print": domain_evidence,
+                "immediately_before_print": final_print_evidence,
+                "bootout": bootout_evidence,
+                "after_print": after_evidence,
+            },
+            preserved_before=before,
+            preserved_after_or_null=after,
+        )
         raise ChallengerCohortDecommissionError(
             "CHALLENGER_COHORT_DECOMMISSION_PUBLISH_FAILED"
         ) from error
-    loaded = load_challenger_cohort_decommission_receipt(
-        receipt_path=path,
-        failure_receipt_path=Path(failure_receipt_path),
-        cohort_plan_path=Path(cohort_plan_path),
-        evaluation_plan_path=Path(evaluation_plan_path),
-        install_receipt_path=Path(install_receipt_path),
-        contract_path=Path(contract_path),
-        plist_path=Path(plist_path),
-    )
+    try:
+        loaded = load_challenger_cohort_decommission_receipt(
+            receipt_path=path,
+            failure_receipt_path=Path(failure_receipt_path),
+            cohort_plan_path=Path(cohort_plan_path),
+            evaluation_plan_path=Path(evaluation_plan_path),
+            install_receipt_path=Path(install_receipt_path),
+            contract_path=Path(contract_path),
+            plist_path=Path(plist_path),
+        )
+    except Exception as error:
+        _publish_operation_failure(
+            phase="DECOMMISSION_RECEIPT_REPLAY_FAILED",
+            observed_at=observed_at,
+            output_root=output_root,
+            failure_receipt_path=Path(failure_receipt_path),
+            failure_receipt=failure_receipt,
+            commands={
+                "before_print": before_evidence,
+                "domain_print": domain_evidence,
+                "immediately_before_print": final_print_evidence,
+                "bootout": bootout_evidence,
+                "after_print": after_evidence,
+            },
+            preserved_before=before,
+            preserved_after_or_null=after,
+        )
+        raise ChallengerCohortDecommissionError(
+            "CHALLENGER_COHORT_DECOMMISSION_RECEIPT_INVALID"
+        ) from error
     return {
         "status": loaded["observation_status"],
         "receipt_id": loaded["receipt_id"],
@@ -514,7 +766,7 @@ def decommission_failed_challenger_cohort(
         "receipt_path": str(path),
         "receipt_file_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "bootout_count": 1,
-        "launchctl_command_count": 4,
+        "launchctl_command_count": 5,
         "market_request_count": 0,
         "broker_request_count": 0,
         "order_submission_count": 0,
@@ -538,6 +790,8 @@ def _stored_domain_valid(evidence: Mapping[str, Any]) -> bool:
                 "stderr_sha256",
                 "crypto_quant_labels",
                 "disallowed_labels",
+                "filtered_stdout_utf8",
+                "filtered_stdout_sha256",
                 "raw_stdout_persisted",
                 "command_evidence_hash",
             }
@@ -554,6 +808,12 @@ def _stored_domain_valid(evidence: Mapping[str, Any]) -> bool:
             and labels == sorted(set(labels))
             and set(labels) <= {_OLD_LABEL, _MAINTENANCE_LABEL}
             and evidence["disallowed_labels"] == []
+            and evidence["filtered_stdout_utf8"]
+            == "".join(f"{label}\n" for label in labels)
+            and evidence["filtered_stdout_sha256"]
+            == hashlib.sha256(
+                evidence["filtered_stdout_utf8"].encode("utf-8")
+            ).hexdigest()
             and evidence["raw_stdout_persisted"] is False
             and evidence["command_evidence_hash"]
             == artifact_self_hash(evidence, "command_evidence_hash")
@@ -597,7 +857,11 @@ def load_challenger_cohort_decommission_receipt(
             plist_path=Path(plist_path),
         )
         failure_body = Path(failure_receipt_path).read_bytes()
+        failure_file = current["trusted_files"]["failure_receipt"]
         before_print = receipt["commands"]["before_print"]
+        immediately_before_print = receipt["commands"][
+            "immediately_before_print"
+        ]
         after_print = receipt["commands"]["after_print"]
         after_result = DecommissionCommandResult(
             after_print["return_code"],
@@ -625,6 +889,12 @@ def load_challenger_cohort_decommission_receipt(
                 "file_sha256": hashlib.sha256(failure_body).hexdigest(),
                 "size_bytes": len(failure_body),
             }
+            and _failure_receipt_authority_valid(
+                path=Path(failure_receipt_path),
+                output_root=Path(failure_receipt_path).parent.parent,
+                receipt=failure_receipt,
+                evidence=failure_file,
+            )
             and receipt["sources"] == failure_receipt["sources"]
             and receipt["service"]
             == {
@@ -641,6 +911,13 @@ def load_challenger_cohort_decommission_receipt(
                 paths=paths,
             )
             and _stored_domain_valid(receipt["commands"]["domain_print"])
+            and _stored_failed_service_valid(
+                immediately_before_print,
+                launchd_runs=failure_receipt["launchd_runs_observed"],
+                contract=contract,
+                install_receipt=install_receipt,
+                paths=paths,
+            )
             and _command_evidence_valid(
                 receipt["commands"]["bootout"], _BOOTOUT_ARGV
             )
@@ -662,8 +939,8 @@ def load_challenger_cohort_decommission_receipt(
             }
             and receipt["security_boundary"]
             == {
-                "launchctl_command_count": 4,
-                "launchctl_print_count": 3,
+                "launchctl_command_count": 5,
+                "launchctl_print_count": 4,
                 "bootout_count": 1,
                 "shell_invoked": False,
                 "delete_count": 0,

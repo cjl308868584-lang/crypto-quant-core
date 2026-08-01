@@ -1,10 +1,13 @@
 """Fail-closed evidence for a permanently missed Challenger cohort slot."""
 
 import hashlib
+import ctypes
 import json
 import os
 import re
+import secrets
 import stat
+import sys
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from importlib import resources
@@ -43,7 +46,7 @@ from .challenger_launchd_install import (
     _print_bindings_valid,
 )
 from .evidence import artifact_self_hash
-from .research_corpus import _publish_exact, _strict_json_bytes
+from .research_corpus import _strict_json_bytes
 
 
 _CADENCE = timedelta(hours=4)
@@ -416,6 +419,183 @@ def _validate_output_disjoint(
             )
 
 
+def _open_owned_directory(path: Path, *, mode: Optional[int]) -> int:
+    before = path.lstat()
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor = os.open(str(path), flags)
+    after = os.fstat(descriptor)
+    valid = (
+        stat.S_ISDIR(before.st_mode)
+        and not stat.S_ISLNK(before.st_mode)
+        and before.st_uid == os.getuid()
+        and (mode is None or stat.S_IMODE(before.st_mode) == mode)
+        and (before.st_dev, before.st_ino)
+        == (after.st_dev, after.st_ino)
+        and stat.S_ISDIR(after.st_mode)
+        and after.st_uid == os.getuid()
+        and (mode is None or stat.S_IMODE(after.st_mode) == mode)
+    )
+    if not valid:
+        os.close(descriptor)
+        raise ValueError
+    return descriptor
+
+
+def _read_owned_child(directory_fd: int, name: str) -> bytes:
+    before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    if (
+        not stat.S_ISREG(before.st_mode)
+        or before.st_uid != os.getuid()
+        or before.st_nlink != 1
+        or stat.S_IMODE(before.st_mode) != 0o600
+    ):
+        raise ValueError
+    descriptor = os.open(
+        name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd
+    )
+    try:
+        opened = os.fstat(descriptor)
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ValueError
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+        if (
+            opened.st_dev,
+            opened.st_ino,
+            opened.st_mode,
+            opened.st_uid,
+            opened.st_nlink,
+            opened.st_size,
+            opened.st_mtime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_mode,
+            after.st_uid,
+            after.st_nlink,
+            after.st_size,
+            after.st_mtime_ns,
+        ):
+            raise ValueError
+        body = b"".join(chunks)
+        if len(body) != after.st_size:
+            raise ValueError
+        return body
+    finally:
+        os.close(descriptor)
+
+
+def _publish_owner_only_exact(
+    *,
+    output_root: Path,
+    directory_name: str,
+    filename: str,
+    body: bytes,
+) -> Path:
+    root = _validate_output_root(Path(output_root))
+    if (
+        not directory_name
+        or Path(directory_name).name != directory_name
+        or not filename.endswith(".json")
+        or Path(filename).name != filename
+    ):
+        raise ValueError
+    parent_fd = _open_owned_directory(root.parent, mode=None)
+    try:
+        try:
+            os.mkdir(root.name, mode=0o700, dir_fd=parent_fd)
+        except FileExistsError:
+            pass
+        root_fd = os.open(
+            root.name,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=parent_fd,
+        )
+    finally:
+        os.close(parent_fd)
+    try:
+        root_stat = os.fstat(root_fd)
+        if (
+            not stat.S_ISDIR(root_stat.st_mode)
+            or root_stat.st_uid != os.getuid()
+            or stat.S_IMODE(root_stat.st_mode) != 0o700
+        ):
+            raise ValueError
+        try:
+            os.mkdir(directory_name, mode=0o700, dir_fd=root_fd)
+            os.fsync(root_fd)
+        except FileExistsError:
+            pass
+        directory_fd = os.open(
+            directory_name,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=root_fd,
+        )
+    finally:
+        os.close(root_fd)
+    try:
+        directory_stat = os.fstat(directory_fd)
+        if (
+            not stat.S_ISDIR(directory_stat.st_mode)
+            or directory_stat.st_uid != os.getuid()
+            or stat.S_IMODE(directory_stat.st_mode) != 0o700
+        ):
+            raise ValueError
+        try:
+            existing = _read_owned_child(directory_fd, filename)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None:
+            if existing != body:
+                raise ValueError
+            return root / directory_name / filename
+
+        temporary_name = f".receipt-{secrets.token_hex(16)}.tmp"
+        descriptor = os.open(
+            temporary_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+            dir_fd=directory_fd,
+        )
+        try:
+            view = memoryview(body)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError("short receipt write")
+                view = view[written:]
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        try:
+            os.link(
+                temporary_name,
+                filename,
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+        except FileExistsError:
+            if _read_owned_child(directory_fd, filename) != body:
+                raise ValueError
+        finally:
+            try:
+                os.unlink(temporary_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+        os.fsync(directory_fd)
+        if _read_owned_child(directory_fd, filename) != body:
+            raise ValueError
+        return root / directory_name / filename
+    finally:
+        os.close(directory_fd)
+
+
 def _source_bindings(
     *,
     plan: Mapping[str, Any],
@@ -424,8 +604,22 @@ def _source_bindings(
     evaluation_sha256: str,
     contract: Mapping[str, Any],
     install_receipt: Mapping[str, Any],
+    install_receipt_path: Path,
+    contract_path: Path,
     plist_path: Path,
 ) -> Mapping[str, Any]:
+    install_stat, _install_body = _secure_file(
+        Path(install_receipt_path),
+        maximum_bytes=2 * 1024 * 1024,
+        allow_empty=False,
+        reason_code="CHALLENGER_COHORT_FAILURE_SOURCE_INVALID",
+    )
+    contract_stat, _contract_body = _secure_file(
+        Path(contract_path),
+        maximum_bytes=2 * 1024 * 1024,
+        allow_empty=False,
+        reason_code="CHALLENGER_COHORT_FAILURE_SOURCE_INVALID",
+    )
     return {
         "cohort_plan": {
             "plan_id": plan["plan_id"],
@@ -440,6 +634,7 @@ def _source_bindings(
         "install_receipt": {
             "receipt_id": install_receipt["receipt_id"],
             "receipt_hash": install_receipt["receipt_hash"],
+            "file_sha256": install_stat["sha256"],
         },
         "contract": {
             "contract_id": contract["contract_id"],
@@ -447,6 +642,7 @@ def _source_bindings(
             "contract_trust_hash": challenger_launchd_contract_trust_hash(
                 contract
             ),
+            "file_sha256": contract_stat["sha256"],
         },
         "plist": {
             "path": str(Path(plist_path).resolve(strict=True)),
@@ -454,6 +650,78 @@ def _source_bindings(
         },
         "v0_48_evaluator_commit": _V048_EVALUATOR_COMMIT,
     }
+
+
+def _system_boot_time() -> Optional[datetime]:
+    try:
+        if sys.platform == "darwin":
+            class Timeval(ctypes.Structure):
+                _fields_ = [
+                    ("tv_sec", ctypes.c_long),
+                    ("tv_usec", ctypes.c_int),
+                ]
+
+            value = Timeval()
+            size = ctypes.c_size_t(ctypes.sizeof(value))
+            libc = ctypes.CDLL(None, use_errno=True)
+            result = libc.sysctlbyname(
+                b"kern.boottime",
+                ctypes.byref(value),
+                ctypes.byref(size),
+                None,
+                0,
+            )
+            if result != 0:
+                return None
+            return datetime.fromtimestamp(
+                value.tv_sec + value.tv_usec / 1_000_000,
+                tz=timezone.utc,
+            )
+        proc_stat = Path("/proc/stat")
+        if proc_stat.is_file():
+            for line in proc_stat.read_text(encoding="ascii").splitlines():
+                if line.startswith("btime "):
+                    return datetime.fromtimestamp(
+                        int(line.split()[1]), tz=timezone.utc
+                    )
+    except (OSError, TypeError, ValueError):
+        return None
+    return None
+
+
+def _root_cause_evidence(next_required: datetime) -> Mapping[str, Any]:
+    boot = _system_boot_time()
+    return {
+        "system_boot_time_or_null": (
+            utc_datetime(boot) if boot is not None else None
+        ),
+        "boot_after_next_required_slot_or_null": (
+            boot > next_required if boot is not None else None
+        ),
+        "required_for_failure": False,
+    }
+
+
+def _root_cause_valid(
+    evidence: Mapping[str, Any], *, next_required: datetime
+) -> bool:
+    try:
+        if set(evidence) != {
+            "system_boot_time_or_null",
+            "boot_after_next_required_slot_or_null",
+            "required_for_failure",
+        } or evidence["required_for_failure"] is not False:
+            return False
+        boot_value = evidence["system_boot_time_or_null"]
+        relation = evidence["boot_after_next_required_slot_or_null"]
+        if boot_value is None:
+            return relation is None
+        boot = _utc(boot_value)[0]
+        return isinstance(relation, bool) and relation == (
+            boot > next_required
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def observe_challenger_cohort_missed_slot_failure(
@@ -560,16 +828,23 @@ def observe_challenger_cohort_missed_slot_failure(
             evaluation_sha256=evaluation_sha256,
             contract=contract,
             install_receipt=install_receipt,
+            install_receipt_path=Path(install_receipt_path),
+            contract_path=Path(contract_path),
             plist_path=Path(plist_path),
         ),
         "failure": {
             "reason_code": "CHALLENGER_RUNNER_MISSED_SLOT",
+            "equivalent_evaluator_status": "FAILED_CLOSED_NO_BACKFILL",
+            "equivalent_evaluator_reason": (
+                "CHALLENGER_COHORT_CUMULATIVE_CONTINUITY_INVALID"
+            ),
             "last_trusted_slot": cohort[-1]["scheduled_for"],
             "next_required_slot": utc_datetime(next_required),
             "current_slot": utc_datetime(current_slot),
             "historical_backfill_allowed": False,
             "continuity_repair_allowed": False,
         },
+        "root_cause": _root_cause_evidence(next_required),
         "state": {
             "path": state_evidence["path"],
             "metadata": state_evidence["metadata"],
@@ -621,10 +896,12 @@ def observe_challenger_cohort_missed_slot_failure(
     body = canonical_json(receipt).encode("utf-8")
     path = _receipt_path(validated_output_root, receipt["receipt_id"])
     try:
-        validated_output_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(validated_output_root, 0o700)
-        _publish_exact(path, body)
-        os.chmod(path, 0o600)
+        path = _publish_owner_only_exact(
+            output_root=validated_output_root,
+            directory_name=_OUTPUT_DIRECTORY,
+            filename=path.name,
+            body=body,
+        )
     except Exception as error:
         raise ChallengerCohortFailureError(
             "CHALLENGER_COHORT_FAILURE_PUBLISH_FAILED"
@@ -719,6 +996,8 @@ def load_challenger_cohort_failure_receipt(
             evaluation_sha256=evaluation_sha256,
             contract=contract,
             install_receipt=install_receipt,
+            install_receipt_path=Path(install_receipt_path),
+            contract_path=Path(contract_path),
             plist_path=Path(plist_path),
         )
         current = _snapshot(paths)
@@ -785,14 +1064,23 @@ def load_challenger_cohort_failure_receipt(
             )
             and receipt["failure"]["reason_code"]
             == "CHALLENGER_RUNNER_MISSED_SLOT"
+            and receipt["failure"]["equivalent_evaluator_status"]
+            == "FAILED_CLOSED_NO_BACKFILL"
+            and receipt["failure"]["equivalent_evaluator_reason"]
+            == "CHALLENGER_COHORT_CUMULATIVE_CONTINUITY_INVALID"
             and receipt["failure"]["last_trusted_slot"]
             == cohort[-1]["scheduled_for"]
             and receipt["failure"]["next_required_slot"]
             == utc_datetime(next_required)
             and not receipt["failure"]["historical_backfill_allowed"]
             and not receipt["failure"]["continuity_repair_allowed"]
+            and _current_slot(_utc(receipt["observed_at"])[0])
+            == _utc(receipt["failure"]["current_slot"])[0]
             and _utc(receipt["failure"]["current_slot"])[0]
             > _utc(receipt["failure"]["next_required_slot"])[0]
+            and _root_cause_valid(
+                receipt["root_cause"], next_required=next_required
+            )
             and receipt["logs"]["stderr"]["exact_utf8"]
             == _MISSED_SLOT_STDERR.decode("utf-8")
             and receipt["evidence_before"] == receipt["evidence_after"]
