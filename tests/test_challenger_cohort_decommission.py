@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,14 +27,16 @@ from crypto_quant.evidence import artifact_self_hash
 from tests import test_challenger_cohort_failure as failure_tests
 
 
-OLD_SERVICE = "gui/501/local.crypto-quant.challenger-forward"
+TEST_UID = os.getuid()
+TEST_DOMAIN = f"gui/{TEST_UID}"
+OLD_SERVICE = f"{TEST_DOMAIN}/local.crypto-quant.challenger-forward"
 OLD_PRINT = ("/bin/launchctl", "print", OLD_SERVICE)
-DOMAIN_PRINT = ("/bin/launchctl", "print", "gui/501")
+DOMAIN_PRINT = ("/bin/launchctl", "print", TEST_DOMAIN)
 BOOTOUT = ("/bin/launchctl", "bootout", OLD_SERVICE)
 NOT_FOUND = (
     b'Bad request.\nCould not find service '
     b'"local.crypto-quant.challenger-forward" '
-    b'in domain for user gui: 501\n'
+    + f"in domain for user gui: {TEST_UID}\n".encode("utf-8")
 )
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,9 +59,9 @@ class RecordingCommandRunner:
             return DecommissionCommandResult(
                 0,
                 (
-                    b"gui/501 = {\nservices = {\n"
-                    b"local.crypto-quant.challenger-forward\n}\n}\n"
-                    b"com.apple.private.sentinel /Users/example/secret\n"
+                    f"{TEST_DOMAIN} = {{\nservices = {{\n".encode("utf-8")
+                    + b"local.crypto-quant.challenger-forward\n}\n}\n"
+                    + b"com.apple.private.sentinel /Users/example/secret\n"
                 ),
                 b"",
             )
@@ -157,6 +160,21 @@ class RaisingAfterPrintRunner(RecordingCommandRunner):
 
 
 class ChallengerCohortDecommissionTests(unittest.TestCase):
+    def setUp(self):
+        # Production is intentionally frozen to gui/501. Synthetic install
+        # receipts use the executing test user's UID, so project that same
+        # fixed identity into this test module without widening production.
+        identity = mock.patch.multiple(
+            decommission_module,
+            _OLD_SERVICE=OLD_SERVICE,
+            _PRINT_ARGV=OLD_PRINT,
+            _DOMAIN_PRINT_ARGV=DOMAIN_PRINT,
+            _BOOTOUT_ARGV=BOOTOUT,
+            _NOT_FOUND_STDERR=NOT_FOUND,
+        )
+        identity.start()
+        self.addCleanup(identity.stop)
+
     def environment(self, root: Path):
         helper = failure_tests.ChallengerCohortFailureTests()
         environment = helper.environment(root)
