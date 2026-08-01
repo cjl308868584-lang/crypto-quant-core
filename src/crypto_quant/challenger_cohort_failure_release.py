@@ -12,6 +12,10 @@ from .challenger_cohort_failure import (
     ChallengerCohortFailureError,
     load_challenger_cohort_failure_receipt,
 )
+from .challenger_cohort_decommission import (
+    ChallengerCohortDecommissionError,
+    load_challenger_cohort_decommission_receipt,
+)
 
 
 _MAX_RECEIPT_BYTES = 64 * 1024 * 1024
@@ -19,6 +23,12 @@ _FAILURE_ARTIFACT = (
     "challenger-cohort-missed-slot-failure-receipt-v0.54.0.json"
 )
 _FAILURE_RUNTIME_DIRECTORY = "challenger-cohort-failure-receipts"
+_DECOMMISSION_ARTIFACT = (
+    "challenger-cohort-decommission-receipt-v0.54.0.json"
+)
+_DECOMMISSION_RUNTIME_DIRECTORY = (
+    "challenger-cohort-decommission-receipts"
+)
 
 
 class ChallengerCohortFailureReleaseError(ValueError):
@@ -271,6 +281,111 @@ def release_challenger_cohort_failure_receipt(
         ) from error
     return {
         "status": "EXACT_FAILURE_RECEIPT_RELEASED",
+        "runtime_receipt_path": str(source_path),
+        "artifact_output_path": str(target),
+        "artifact_created": created,
+        "receipt_id": receipt["receipt_id"],
+        "receipt_hash": receipt["receipt_hash"],
+        "file_sha256": source_stat["sha256"],
+        "size_bytes": source_stat["size_bytes"],
+        "runtime_and_artifact_bytes_equal": True,
+        "launchctl_command_count": 0,
+        "market_request_count": 0,
+        "broker_request_count": 0,
+        "order_submission_count": 0,
+        "strategy_state_write_count": 0,
+        "strategy_runner_invocation_count": 0,
+        "maintenance_invocation_count": 0,
+    }
+
+
+def release_challenger_cohort_decommission_receipt(
+    *,
+    runtime_receipt_path: Path,
+    artifact_output_path: Path,
+    failure_receipt_path: Path,
+    cohort_plan_path: Path,
+    evaluation_plan_path: Path,
+    install_receipt_path: Path,
+    contract_path: Path,
+    plist_path: Path,
+    _receipt_loader=None,
+) -> Mapping[str, Any]:
+    loader = _receipt_loader or load_challenger_cohort_decommission_receipt
+    source_path, source_bytes, source_stat = _source(runtime_receipt_path)
+    loader_arguments = {
+        "failure_receipt_path": Path(failure_receipt_path),
+        "cohort_plan_path": Path(cohort_plan_path),
+        "evaluation_plan_path": Path(evaluation_plan_path),
+        "install_receipt_path": Path(install_receipt_path),
+        "contract_path": Path(contract_path),
+        "plist_path": Path(plist_path),
+    }
+    try:
+        receipt = loader(receipt_path=source_path, **loader_arguments)
+    except (
+        ChallengerCohortDecommissionError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise ChallengerCohortFailureReleaseError(
+            "CHALLENGER_COHORT_DECOMMISSION_RELEASE_RECEIPT_INVALID"
+        ) from error
+    if (
+        not isinstance(receipt, Mapping)
+        or source_bytes != canonical_json(receipt).encode("utf-8")
+        or receipt.get("observation_status")
+        != "FAILED_COHORT_DECOMMISSIONED_VERIFIED"
+        or source_path.parent.name != _DECOMMISSION_RUNTIME_DIRECTORY
+        or source_path.name != f"{receipt.get('receipt_id')}.json"
+    ):
+        raise ChallengerCohortFailureReleaseError(
+            "CHALLENGER_COHORT_DECOMMISSION_RELEASE_RECEIPT_INVALID"
+        )
+    target = _target(
+        artifact_output_path, expected_name=_DECOMMISSION_ARTIFACT
+    )
+    created = _publish(target, source_bytes)
+    try:
+        target_bytes = target.read_bytes()
+        target_stat = target.lstat()
+        if (
+            target_bytes != source_bytes
+            or hashlib.sha256(target_bytes).hexdigest()
+            != source_stat["sha256"]
+            or target_stat.st_uid != os.getuid()
+            or target_stat.st_nlink != 1
+            or stat.S_IMODE(target_stat.st_mode) != 0o600
+        ):
+            raise ValueError
+        replay = loader(receipt_path=target, **loader_arguments)
+        if replay != receipt:
+            raise ValueError
+        final_source_path, final_source_bytes, final_source_stat = _source(
+            source_path
+        )
+        if (
+            final_source_path != source_path
+            or final_source_bytes != source_bytes
+            or final_source_stat != source_stat
+        ):
+            raise ValueError
+    except (
+        ChallengerCohortFailureReleaseError,
+        ChallengerCohortDecommissionError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as error:
+        if created:
+            _rollback_created(target, source_bytes)
+        raise ChallengerCohortFailureReleaseError(
+            "CHALLENGER_COHORT_DECOMMISSION_RELEASE_REPLAY_INVALID"
+        ) from error
+    return {
+        "status": "EXACT_DECOMMISSION_RECEIPT_RELEASED",
         "runtime_receipt_path": str(source_path),
         "artifact_output_path": str(target),
         "artifact_created": created,

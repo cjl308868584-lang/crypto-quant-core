@@ -9,14 +9,19 @@ from crypto_quant.challenger_cohort_failure import (
 )
 from crypto_quant.challenger_cohort_failure_release import (
     ChallengerCohortFailureReleaseError,
+    release_challenger_cohort_decommission_receipt,
     release_challenger_cohort_failure_receipt,
 )
 from crypto_quant.challenger_cohort_failure_release_cli import _parser
 from tests import test_challenger_cohort_failure as failure_tests
+from tests import test_challenger_cohort_decommission as decommission_tests
 
 
 ARTIFACT_NAME = (
     "challenger-cohort-missed-slot-failure-receipt-v0.54.0.json"
+)
+DECOMMISSION_ARTIFACT_NAME = (
+    "challenger-cohort-decommission-receipt-v0.54.0.json"
 )
 
 
@@ -92,6 +97,7 @@ class ChallengerCohortFailureReleaseTests(unittest.TestCase):
                 "help",
                 "release_kind",
                 "runtime_receipt_path",
+                "failure_receipt_path",
                 "artifact_output_path",
                 "cohort_plan_path",
                 "evaluation_plan_path",
@@ -230,6 +236,49 @@ class ChallengerCohortFailureReleaseTests(unittest.TestCase):
                 )
             self.assertFalse(environment["artifact"].exists())
             self.assertTrue(environment["runtime_receipt"].exists())
+
+    def test_exact_decommission_release_replays_fixed_git_bytes(self):
+        """Catches publishing a transformed or unverified stop receipt."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            helper = decommission_tests.ChallengerCohortDecommissionTests()
+            runtime = helper.environment(root / "runtime")
+            result = decommission_tests.decommission_failed_challenger_cohort(
+                failure_receipt_path=runtime["failure_receipt"],
+                cohort_plan_path=runtime["cohort_plan_path"],
+                evaluation_plan_path=runtime["evaluation_plan_path"],
+                install_receipt_path=runtime["install_receipt_path"],
+                contract_path=runtime["contract_path"],
+                plist_path=runtime["plist_path"],
+                failure_output_root=runtime["failure_output_root"],
+                _command_runner=decommission_tests.RecordingCommandRunner(
+                    runtime
+                ),
+            )
+            runtime_receipt = Path(result["receipt_path"])
+            artifact_parent = root / "artifacts"
+            artifact_parent.mkdir(mode=0o700)
+            artifact = artifact_parent / DECOMMISSION_ARTIFACT_NAME
+
+            summary = release_challenger_cohort_decommission_receipt(
+                runtime_receipt_path=runtime_receipt,
+                artifact_output_path=artifact,
+                failure_receipt_path=runtime["failure_receipt"],
+                cohort_plan_path=runtime["cohort_plan_path"],
+                evaluation_plan_path=runtime["evaluation_plan_path"],
+                install_receipt_path=runtime["install_receipt_path"],
+                contract_path=runtime["contract_path"],
+                plist_path=runtime["plist_path"],
+            )
+
+            self.assertEqual(
+                artifact.read_bytes(), runtime_receipt.read_bytes()
+            )
+            self.assertTrue(summary["artifact_created"])
+            self.assertEqual(
+                summary["status"], "EXACT_DECOMMISSION_RECEIPT_RELEASED"
+            )
 
 
 if __name__ == "__main__":
