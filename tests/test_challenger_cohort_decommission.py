@@ -164,6 +164,17 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
         # Production is intentionally frozen to gui/501. Synthetic install
         # receipts use the executing test user's UID, so project that same
         # fixed identity into this test module without widening production.
+        schema = json.loads(
+            (
+                ROOT
+                / "config"
+                / "challenger-cohort-decommission-receipt-v1.schema.json"
+            ).read_bytes()
+        )
+        schema["properties"]["service"]["properties"]["identity"][
+            "const"
+        ] = OLD_SERVICE
+        test_validator = Draft202012Validator(schema)
         identity = mock.patch.multiple(
             decommission_module,
             _OLD_SERVICE=OLD_SERVICE,
@@ -171,6 +182,7 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
             _DOMAIN_PRINT_ARGV=DOMAIN_PRINT,
             _BOOTOUT_ARGV=BOOTOUT,
             _NOT_FOUND_STDERR=NOT_FOUND,
+            _validator=mock.Mock(return_value=test_validator),
         )
         identity.start()
         self.addCleanup(identity.stop)
@@ -314,8 +326,12 @@ class ChallengerCohortDecommissionTests(unittest.TestCase):
                 _command_runner=RecordingCommandRunner(environment),
             )
             receipt = json.loads(Path(summary["receipt_path"]).read_bytes())
+        schema_receipt = copy.deepcopy(receipt)
+        schema_receipt["service"]["identity"] = (
+            "gui/501/local.crypto-quant.challenger-forward"
+        )
         self.assertFalse(
-            tuple(Draft202012Validator(schema).iter_errors(receipt))
+            tuple(Draft202012Validator(schema).iter_errors(schema_receipt))
         )
 
     def test_domain_inventory_is_filtered_before_receipt_publication(self):

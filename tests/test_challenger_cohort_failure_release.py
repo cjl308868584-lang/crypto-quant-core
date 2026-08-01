@@ -253,42 +253,48 @@ class ChallengerCohortFailureReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             helper = decommission_tests.ChallengerCohortDecommissionTests()
-            runtime = helper.environment(root / "runtime")
-            result = decommission_tests.decommission_failed_challenger_cohort(
-                failure_receipt_path=runtime["failure_receipt"],
-                cohort_plan_path=runtime["cohort_plan_path"],
-                evaluation_plan_path=runtime["evaluation_plan_path"],
-                install_receipt_path=runtime["install_receipt_path"],
-                contract_path=runtime["contract_path"],
-                plist_path=runtime["plist_path"],
-                failure_output_root=runtime["failure_output_root"],
-                _command_runner=decommission_tests.RecordingCommandRunner(
-                    runtime
-                ),
-            )
-            runtime_receipt = Path(result["receipt_path"])
-            artifact_parent = root / "artifacts"
-            artifact_parent.mkdir(mode=0o700)
-            artifact = artifact_parent / DECOMMISSION_ARTIFACT_NAME
+            helper.setUp()
+            try:
+                runtime = helper.environment(root / "runtime")
+                result = (
+                    decommission_tests.decommission_failed_challenger_cohort(
+                        failure_receipt_path=runtime["failure_receipt"],
+                        cohort_plan_path=runtime["cohort_plan_path"],
+                        evaluation_plan_path=runtime["evaluation_plan_path"],
+                        install_receipt_path=runtime["install_receipt_path"],
+                        contract_path=runtime["contract_path"],
+                        plist_path=runtime["plist_path"],
+                        failure_output_root=runtime["failure_output_root"],
+                        _command_runner=(
+                            decommission_tests.RecordingCommandRunner(runtime)
+                        ),
+                    )
+                )
+                runtime_receipt = Path(result["receipt_path"])
+                artifact_parent = root / "artifacts"
+                artifact_parent.mkdir(mode=0o700)
+                artifact = artifact_parent / DECOMMISSION_ARTIFACT_NAME
 
-            summary = release_challenger_cohort_decommission_receipt(
-                runtime_receipt_path=runtime_receipt,
-                artifact_output_path=artifact,
-                failure_receipt_path=runtime["failure_receipt"],
-                cohort_plan_path=runtime["cohort_plan_path"],
-                evaluation_plan_path=runtime["evaluation_plan_path"],
-                install_receipt_path=runtime["install_receipt_path"],
-                contract_path=runtime["contract_path"],
-                plist_path=runtime["plist_path"],
-            )
+                summary = release_challenger_cohort_decommission_receipt(
+                    runtime_receipt_path=runtime_receipt,
+                    artifact_output_path=artifact,
+                    failure_receipt_path=runtime["failure_receipt"],
+                    cohort_plan_path=runtime["cohort_plan_path"],
+                    evaluation_plan_path=runtime["evaluation_plan_path"],
+                    install_receipt_path=runtime["install_receipt_path"],
+                    contract_path=runtime["contract_path"],
+                    plist_path=runtime["plist_path"],
+                )
 
-            self.assertEqual(
-                artifact.read_bytes(), runtime_receipt.read_bytes()
-            )
-            self.assertTrue(summary["artifact_created"])
-            self.assertEqual(
-                summary["status"], "EXACT_DECOMMISSION_RECEIPT_RELEASED"
-            )
+                self.assertEqual(
+                    artifact.read_bytes(), runtime_receipt.read_bytes()
+                )
+                self.assertTrue(summary["artifact_created"])
+                self.assertEqual(
+                    summary["status"], "EXACT_DECOMMISSION_RECEIPT_RELEASED"
+                )
+            finally:
+                helper.doCleanups()
 
     def test_committed_v054_receipts_are_canonical_and_frozen(self):
         """Catches changing or omitting the exact production evidence."""
