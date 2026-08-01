@@ -189,6 +189,12 @@
 181. [Challenger Cohort 维护首次自然运行证据 v0.53.0](artifacts/challenger-forward/challenger-cohort-evidence-maintenance-first-run-receipt-v0.53.0.json)
 182. [Challenger Cohort 维护首次自然运行证据发布 ADR-0053](docs/adr/0053-challenger-cohort-evidence-maintenance-first-run-release.md)
 183. [实施追踪 v0.53.0](docs/implementation-status-v0.53.0.md)
+184. [Challenger Cohort 漏槽失败 Receipt Schema](config/challenger-cohort-failure-receipt-v1.schema.json)
+185. [Challenger Cohort 停用 Receipt Schema](config/challenger-cohort-decommission-receipt-v1.schema.json)
+186. [Challenger Cohort 漏槽失败证据 v0.54.0](artifacts/challenger-forward/challenger-cohort-missed-slot-failure-receipt-v0.54.0.json)
+187. [Challenger Cohort 受控停用证据 v0.54.0](artifacts/challenger-forward/challenger-cohort-decommission-receipt-v0.54.0.json)
+188. [Challenger Cohort 漏槽失败与受控停用 ADR-0054](docs/adr/0054-challenger-cohort-missed-slot-failure-evidence.md)
+189. [实施追踪 v0.54.0](docs/implementation-status-v0.54.0.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -203,7 +209,7 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.53.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文、当前账户 Spot/USDⓈ-M commission 的只读取证边界、账户费率与Paper经济结果的PIT费用重放绑定、账户成本/永续同槽位的context-complete可恢复侧车、共享可信时钟与保留决策前账户证据的可恢复完整周期编排、42个完整月与显式日档修复的完整研究语料、官方1m执行代理、严格因果event-based标签、固定低维Logistic档案研究、固定分组的简单基线失败归因、仅前向challenger事件流状态机与不可回填记录器、固定3+1公共请求边界的实时只读runner与source bundle、无凭据macOS LaunchAgent合同、固定用户域原子安装与私有执行快照、首槽state/bundle/log/install receipt的只读交叉取证、首个预注册真实decision的逐字节证据封存、在退出结果出现前冻结的首个episode只读观察器、决策后1m保守成交与双边成本计划、完整日档验证与Decimal经济结果评估器、只在completed receipt和日档时间门后工作的owner-only官方archive采集器、从全部可信输入自动派生唯一结果的离线CLI、首个自然完成episode的逐字节证据封存、在第二Episode前冻结的90天全纳入confirmatory cohort、在cohort首槽前冻结的累计经济评估门、从cohort start自动验证全部槽并为所有completed Episode生成不可选择receipt的只追加管线、从全部verified receipt自动求UTC日并集并跨Episode复用完整官方1m日档的共享归档层、从全部completed receipts和verified日档自动生成每Episode成本后结果与不可变累计索引的全纳入管线、固定尾部前禁止读取PnL、尾部后才对完整540槽运行预注册累计门的离线评估器、把 receipt/archive/result 三阶段按固定顺序安全串联的一次性证据维护协调器、每天08:10且与策略Runner隔离的证据维护LaunchAgent合同、由Git冻结external trust约束的owner-only私有执行快照和固定用户域受限安装，以及首次08:10自然维护成功的逐字节证据封存。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
+Git中的设计基线已冻结，当前代码版本为 `0.54.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文、当前账户 Spot/USDⓈ-M commission 的只读取证边界、账户费率与Paper经济结果的PIT费用重放绑定、账户成本/永续同槽位的context-complete可恢复侧车、共享可信时钟与保留决策前账户证据的可恢复完整周期编排、42个完整月与显式日档修复的完整研究语料、官方1m执行代理、严格因果event-based标签、固定低维Logistic档案研究、固定分组的简单基线失败归因、仅前向challenger事件流状态机与不可回填记录器、固定3+1公共请求边界的实时只读runner与source bundle、无凭据macOS LaunchAgent合同、固定用户域原子安装与私有执行快照、首槽state/bundle/log/install receipt的只读交叉取证、首个预注册真实decision的逐字节证据封存、在退出结果出现前冻结的首个episode只读观察器、决策后1m保守成交与双边成本计划、完整日档验证与Decimal经济结果评估器、只在completed receipt和日档时间门后工作的owner-only官方archive采集器、从全部可信输入自动派生唯一结果的离线CLI、首个自然完成episode的逐字节证据封存、在第二Episode前冻结的90天全纳入confirmatory cohort、在cohort首槽前冻结的累计经济评估门、从cohort start自动验证全部槽并为所有completed Episode生成不可选择receipt的只追加管线、从全部verified receipt自动求UTC日并集并跨Episode复用完整官方1m日档的共享归档层、从全部completed receipts和verified日档自动生成每Episode成本后结果与不可变累计索引的全纳入管线、固定尾部前禁止读取PnL、尾部后才对完整540槽运行预注册累计门的离线评估器、把 receipt/archive/result 三阶段按固定顺序安全串联的一次性证据维护协调器、每天08:10且与策略Runner隔离的证据维护LaunchAgent合同、由Git冻结external trust约束的owner-only私有执行快照和固定用户域受限安装，以及首次08:10自然维护成功的逐字节证据封存。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
 
 当前58个Catalog算法中有26个Estimator可执行，其余32个明确Fail-Closed。公开历史归档的结构化请求只能访问ETHUSDT/BTCUSDT的allowlisted数据族；生产transport只执行无凭据GET，必须在解压前通过官方checksum，并将来源、质量和快照绑定到哈希。真实smoke已验证2026-07-25 ETHUSDT Spot daily 4h归档，但全部事后归档固定为`ARCHIVE_REPLAY_ONLY`：URL不是Artifact身份，也不能证明历史决策时点的数据可用性。Fee Schedule因产品、账户层级、折扣和生效期而独立冻结，不能从行情或当前网页费率反填历史。
 
@@ -281,7 +287,9 @@ v0.52在首次自然维护槽前冻结只读observer，从v0.51信任链自动�
 
 v0.53使用tag `v0.52.0`的冻结observer验收首次08:10自然维护运行：LaunchAgent自然运行一次并退出0，唯一stdout summary合法、stderr为空，策略state/日志和三个cohort inventory在观察前后不变。Runtime receipt经同版本production loader重放，Git副本与原件10,273 bytes及SHA-256逐字节一致。首轮维护时cohort尚无completed Episode，因此没有archive请求或经济结果；这证明自动证据管线按计划运行，不证明盈利。
 
-仓库仍没有真实账户费率响应、成功的真实Futures上下文、真实成交/实际滑点、批准模型或连续90天Paper证据，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。首个负结果必须保留，但单Episode也不能证明策略长期亏损。AI臂仍没有批准模型，不能进入发布或下单链。FeeSchedule因没有外部签名批准器而不支持`PRODUCTION`。当前没有Broker、余额读取或真实下单能力；凭据模块仅允许one-shot只读费率取证。下一步是继续自然收集完整90天cohort，让每天08:10维护只追加全纳入证据，并在固定tail end后由v0.48执行唯一累计门；不得手工补槽、选择Episode或提前读取累计PnL。详细完成度见[实施追踪 v0.53.0](docs/implementation-status-v0.53.0.md)，工程裁决见[ADR-0053](docs/adr/0053-challenger-cohort-evidence-maintenance-first-run-release.md)。
+v0.54确认原 Challenger cohort 在 `2026-08-01T04:00:00.000Z` 永久漏槽。只读 observer 封存 failure receipt 后，系统只对固定旧 Runner 执行一次无 shell bootout；旧 service 已不再加载，state/stdout/stderr 原字节不变。两份 runtime receipts 与 Git artifacts 逐字节一致。该结果证明连续性失败并阻止继续制造无资格数据，不评价收益；禁止补槽、回填或把旧 cohort 恢复为可完成。
+
+仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；下一步是在独立版本完成常在线预检后，用全新service/state/log/bundle/evidence roots尽量同日自然启动replacement Challenger与System Paper，各自重新完成90天验收。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.54.0](docs/implementation-status-v0.54.0.md)，工程裁决见[ADR-0054](docs/adr/0054-challenger-cohort-missed-slot-failure-evidence.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
