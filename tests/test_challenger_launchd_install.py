@@ -27,7 +27,7 @@ from crypto_quant.challenger_launchd_install import (
 from crypto_quant.challenger_launchd_install_cli import (
     main as install_main,
 )
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import canonical_json, stable_id
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -279,6 +279,73 @@ class ChallengerLaunchdInstallTests(unittest.TestCase):
             ):
                 load_challenger_install_receipt(
                     receipt_path=tampered,
+                    contract_path=values["contract_path"],
+                    plist_path=values["plist_path"],
+                )
+
+    def test_loader_allows_only_reboot_device_number_drift(self):
+        """Catches binding a permanent receipt to a boot-volatile st_dev."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            contract, _, _, values = self.install_inputs(root)
+            result = install_challenger_launchd(**values)
+            receipt = json.loads(Path(result["receipt_path"]).read_bytes())
+            changed = copy.deepcopy(receipt)
+            changed["target_stat"]["device"] += 1
+            identity = {
+                "source_contract_hash": contract["contract_hash"],
+                "target_path": changed["target_path"],
+                "target_device": changed["target_stat"]["device"],
+                "target_inode": changed["target_stat"]["inode"],
+                "install_action": changed["install_action"],
+                "installed_at": changed["installed_at"],
+                "verified_at": changed["verified_at"],
+                "preflight_print_hash": changed["preflight_print"][
+                    "command_evidence_hash"
+                ],
+                "bootstrap_hash": changed["bootstrap_or_null"][
+                    "command_evidence_hash"
+                ],
+                "verified_print_hash": changed["verified_print"][
+                    "command_evidence_hash"
+                ],
+            }
+            changed["receipt_id"] = stable_id(
+                "challenger_launchd_install_receipt", identity
+            )
+            changed["receipt_hash"] = challenger_install_receipt_hash(
+                changed
+            )
+            drifted = root / "device-drifted-receipt.json"
+            drifted.write_bytes(canonical_json(changed).encode("utf-8"))
+            loaded = load_challenger_install_receipt(
+                receipt_path=drifted,
+                contract_path=values["contract_path"],
+                plist_path=values["plist_path"],
+            )
+            self.assertEqual(
+                loaded["target_stat"]["device"],
+                receipt["target_stat"]["device"] + 1,
+            )
+
+            wrong_inode = copy.deepcopy(changed)
+            wrong_inode["target_stat"]["inode"] += 1
+            identity["target_inode"] = wrong_inode["target_stat"]["inode"]
+            wrong_inode["receipt_id"] = stable_id(
+                "challenger_launchd_install_receipt", identity
+            )
+            wrong_inode["receipt_hash"] = challenger_install_receipt_hash(
+                wrong_inode
+            )
+            forged = root / "wrong-inode-receipt.json"
+            forged.write_bytes(canonical_json(wrong_inode).encode("utf-8"))
+            with self.assertRaisesRegex(
+                ChallengerLaunchdInstallError,
+                "CHALLENGER_INSTALL_RECEIPT_INVALID",
+            ):
+                load_challenger_install_receipt(
+                    receipt_path=forged,
                     contract_path=values["contract_path"],
                     plist_path=values["plist_path"],
                 )

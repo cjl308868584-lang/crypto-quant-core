@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-cohort-decommission-receipt-v1.schema.json",
+  "title": "Challenger Cohort Decommission Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "receipt_hash",
+    "observation_status",
+    "observed_at",
+    "failure_receipt",
+    "sources",
+    "service",
+    "commands",
+    "preserved_evidence_before",
+    "preserved_evidence_after",
+    "security_boundary",
+    "eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "challenger-cohort-decommission-receipt-v1"
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^challenger_cohort_decommission_receipt_[0-9a-f]{64}$"
+    },
+    "receipt_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "observation_status": {
+      "const": "FAILED_COHORT_DECOMMISSIONED_VERIFIED"
+    },
+    "observed_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "failure_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "receipt_id",
+        "receipt_hash",
+        "file_sha256",
+        "size_bytes"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^challenger_cohort_failure_receipt_[0-9a-f]{64}$"
+        },
+        "receipt_hash": {"$ref": "#/$defs/sha256"},
+        "file_sha256": {"$ref": "#/$defs/sha256"},
+        "size_bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "sources": {"type": "object"},
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "label", "state_before", "state_after"],
+      "properties": {
+        "identity": {
+          "const": "gui/501/local.crypto-quant.challenger-forward"
+        },
+        "label": {
+          "const": "local.crypto-quant.challenger-forward"
+        },
+        "state_before": {"const": "NOT_RUNNING_FAILED"},
+        "state_after": {"const": "NOT_LOADED"}
+      }
+    },
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "before_print",
+        "domain_print",
+        "immediately_before_print",
+        "bootout",
+        "after_print"
+      ],
+      "properties": {
+        "before_print": {"type": "object"},
+        "domain_print": {"type": "object"},
+        "immediately_before_print": {"type": "object"},
+        "bootout": {"type": "object"},
+        "after_print": {"type": "object"}
+      }
+    },
+    "preserved_evidence_before": {"type": "object"},
+    "preserved_evidence_after": {"type": "object"},
+    "security_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "launchctl_command_count",
+        "launchctl_print_count",
+        "bootout_count",
+        "shell_invoked",
+        "delete_count",
+        "market_request_count",
+        "broker_request_count",
+        "order_submission_count",
+        "state_write_count",
+        "runner_invocation_count",
+        "maintenance_invocation_count"
+      ],
+      "properties": {
+        "launchctl_command_count": {"const": 5},
+        "launchctl_print_count": {"const": 4},
+        "bootout_count": {"const": 1},
+        "shell_invoked": {"const": false},
+        "delete_count": {"const": 0},
+        "market_request_count": {"const": 0},
+        "broker_request_count": {"const": 0},
+        "order_submission_count": {"const": 0},
+        "state_write_count": {"const": 0},
+        "runner_invocation_count": {"const": 0},
+        "maintenance_invocation_count": {"const": 0}
+      }
+    },
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "old_cohort",
+        "service",
+        "replacement_cohort",
+        "system_paper",
+        "canary"
+      ],
+      "properties": {
+        "old_cohort": {
+          "const": "PERMANENTLY_INELIGIBLE_CONTINUITY_GAP"
+        },
+        "service": {"const": "DECOMMISSIONED"},
+        "replacement_cohort": {"const": "NOT_STARTED"},
+        "system_paper": {"const": "NOT_STARTED"},
+        "canary": {"const": "NOT_AUTHORIZED"}
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "uniqueItems": true,
+      "contains": {"const": "NO_PROFITABILITY_CLAIM"},
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    }
+  }
+}
