@@ -394,6 +394,28 @@ def _receipt_path(output_root: Path, receipt_id: str) -> Path:
     return root / _OUTPUT_DIRECTORY / f"{receipt_id}.json"
 
 
+def _validate_output_disjoint(
+    output_root: Path, paths: Mapping[str, Path]
+) -> None:
+    selected = output_root.resolve()
+    protected = (
+        paths["state"].parent.resolve(),
+        paths["output"].resolve(),
+        paths["bundle_directory"].resolve(),
+        paths["stdout"].parent.resolve(),
+        paths["stderr"].parent.resolve(),
+    )
+    for candidate in protected:
+        if (
+            selected == candidate
+            or selected in candidate.parents
+            or candidate in selected.parents
+        ):
+            raise ChallengerCohortFailureError(
+                "CHALLENGER_COHORT_FAILURE_OUTPUT_INVALID"
+            )
+
+
 def _source_bindings(
     *,
     plan: Mapping[str, Any],
@@ -458,6 +480,7 @@ def observe_challenger_cohort_missed_slot_failure(
             contract_path=Path(contract_path),
             plist_path=Path(plist_path),
         )
+        _validate_output_disjoint(validated_output_root, paths)
         before = _snapshot(paths)
         state_evidence, decisions = _read_state(paths["state"])
         observed, observed_at = _utc(

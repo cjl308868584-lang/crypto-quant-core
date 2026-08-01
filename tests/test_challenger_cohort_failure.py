@@ -16,6 +16,7 @@ from crypto_quant.challenger_cohort_failure import (
     load_challenger_cohort_failure_receipt,
     observe_challenger_cohort_missed_slot_failure,
 )
+from crypto_quant.challenger_cohort_failure_cli import _parser
 from crypto_quant.challenger_launchd_install import LaunchctlResult
 from crypto_quant.evidence import artifact_self_hash
 from tests import test_challenger_cohort_episode_receipt as cohort_tests
@@ -112,6 +113,39 @@ class ChallengerCohortFailureTests(unittest.TestCase):
                 hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
                 summary["receipt_file_sha256"],
             )
+
+    def test_cli_exposes_only_frozen_source_and_output_paths(self):
+        """Catches adding an authority override to the failure observer CLI."""
+
+        destinations = {action.dest for action in _parser()._actions}
+        self.assertEqual(
+            destinations,
+            {
+                "help",
+                "cohort_plan_path",
+                "evaluation_plan_path",
+                "install_receipt_path",
+                "contract_path",
+                "plist_path",
+                "failure_output_root",
+            },
+        )
+        self.assertFalse(
+            destinations
+            & {
+                "clock",
+                "service",
+                "state",
+                "stderr",
+                "slot",
+                "command",
+                "launchctl",
+                "runner",
+                "maintenance",
+                "broker",
+                "order",
+            }
+        )
 
     def test_schema_mirrors_validate_a_real_failure_receipt(self):
         """Catches shipping an unvalidated or non-packaged receipt shape."""
@@ -226,6 +260,24 @@ class ChallengerCohortFailureTests(unittest.TestCase):
             environment["failure_output_root"] = link / "cohort-failures"
             calls_before = len(environment["service"].calls)
 
+            with self.assertRaisesRegex(
+                ChallengerCohortFailureError,
+                "CHALLENGER_COHORT_FAILURE_OUTPUT_INVALID",
+            ):
+                self.observe(environment)
+            self.assertEqual(
+                len(environment["service"].calls), calls_before
+            )
+
+    def test_output_root_cannot_overlap_strategy_evidence(self):
+        """Catches publishing receipts inside the strategy evidence tree."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            environment = self.environment(Path(directory))
+            environment["failure_output_root"] = environment["paths"][
+                "output"
+            ]
+            calls_before = len(environment["service"].calls)
             with self.assertRaisesRegex(
                 ChallengerCohortFailureError,
                 "CHALLENGER_COHORT_FAILURE_OUTPUT_INVALID",
