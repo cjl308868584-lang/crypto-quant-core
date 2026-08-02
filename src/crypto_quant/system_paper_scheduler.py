@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import sqlite3
 import stat
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ _CADENCE = timedelta(hours=4)
 _CLOSE_DELAY = timedelta(minutes=5)
 _LEASE = timedelta(minutes=15)
 _GENESIS_HASH = "0" * 64
+_MAX_RESULT_ARTIFACT_BYTES = 1024 * 1024
 _PUBLIC_REQUEST_FAMILIES = (
     "SPOT_AGG_TRADE",
     "SPOT_BBO",
@@ -239,6 +241,85 @@ def _output_root_hash(output_root: Path) -> str:
             "resolved_path": str(Path(output_root).expanduser().resolve()),
         }
     )
+
+
+def _owner_safe_directory_stat(entry: os.stat_result) -> bool:
+    return (
+        stat.S_ISDIR(entry.st_mode)
+        and entry.st_uid == os.getuid()
+        and stat.S_IMODE(entry.st_mode) == 0o700
+    )
+
+
+def _artifact_body(
+    output_root: Path,
+    slot: SystemPaperSlot,
+    *,
+    expected_bytes: bytes,
+    expected_sha256: str,
+) -> bytes:
+    """Read one published result through stable, owner-safe directory handles."""
+
+    root = Path(output_root).expanduser()
+    if not root.is_absolute() or root.is_symlink():
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID")
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    root_fd = slots_fd = artifact_fd = None
+    try:
+        root_fd = os.open(str(root), os.O_RDONLY | directory | nofollow)
+        root_stat = os.fstat(root_fd)
+        if not _owner_safe_directory_stat(root_stat):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_UNSAFE")
+        slots_fd = os.open(
+            "system-paper-slots",
+            os.O_RDONLY | directory | nofollow,
+            dir_fd=root_fd,
+        )
+        slots_stat = os.fstat(slots_fd)
+        if not _owner_safe_directory_stat(slots_stat):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_UNSAFE")
+        name = slot.slot_id + ".json"
+        artifact_fd = os.open(name, os.O_RDONLY | nofollow, dir_fd=slots_fd)
+        before = os.fstat(artifact_fd)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_uid != os.getuid()
+            or stat.S_IMODE(before.st_mode) != 0o600
+            or before.st_size > _MAX_RESULT_ARTIFACT_BYTES
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_UNSAFE")
+        chunks = []
+        remaining = _MAX_RESULT_ARTIFACT_BYTES + 1
+        while remaining:
+            chunk = os.read(artifact_fd, min(65_536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        body = b"".join(chunks)
+        after = os.fstat(artifact_fd)
+        if (
+            before.st_dev != after.st_dev
+            or before.st_ino != after.st_ino
+            or before.st_mode != after.st_mode
+            or before.st_uid != after.st_uid
+            or before.st_nlink != after.st_nlink
+            or len(body) != before.st_size
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_RACE")
+    except FileNotFoundError as error:
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_MISSING") from error
+    except OSError as error:
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_UNSAFE") from error
+    finally:
+        for descriptor in (artifact_fd, slots_fd, root_fd):
+            if descriptor is not None:
+                os.close(descriptor)
+    if body != expected_bytes or _sha256(body) != expected_sha256:
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_MISMATCH")
+    return body
 
 
 def _slot_from_payload(
@@ -1006,6 +1087,7 @@ class SystemPaperScheduleState:
         slot: SystemPaperSlot,
         *,
         output_root_hash: str,
+        output_root: Optional[Path] = None,
     ) -> Tuple[bytes, ...]:
         projection = self.slot_projection()
         target = _utc(slot.scheduled_for)[0]
@@ -1035,7 +1117,16 @@ class SystemPaperScheduleState:
                 raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_MISSING")
             if row["output_root_hash"] != output_root_hash:
                 raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_MISMATCH")
-            bodies.append(row["result_bytes"])
+            bodies.append(
+                row["result_bytes"]
+                if output_root is None
+                else _artifact_body(
+                    output_root,
+                    self.policy.slot_from_scheduled(state["scheduled_for"]),
+                    expected_bytes=row["result_bytes"],
+                    expected_sha256=row["result_sha256"],
+                )
+            )
         if previous + _CADENCE != target:
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PARENT_CHAIN_INVALID")
         try:
@@ -1059,7 +1150,9 @@ class SystemPaperScheduleState:
         self._validate_slot(slot)
         self.verify_integrity()
         return self._successful_parent_result_bodies(
-            slot, output_root_hash=_output_root_hash(output_root)
+            slot,
+            output_root_hash=_output_root_hash(output_root),
+            output_root=output_root,
         )
 
     def _validated_prepared_result(
@@ -1253,7 +1346,15 @@ class SystemPaperScheduleState:
                     parent_hash, envelope["output_root_hash"],
                 ),
             )
-            self.verify_integrity()
+            persisted = self.slot_projection().get(claim.slot.slot_id)
+            if (
+                persisted is None
+                or persisted["durable_stage"] != "RESULT"
+                or persisted["result_event_id"] != event["event_id"]
+            ):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_EVENT_MISMATCH"
+                )
             self.connection.commit()
         except Exception:
             self.connection.rollback()

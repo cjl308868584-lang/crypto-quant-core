@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 
 from crypto_quant.canonical import business_hash, canonical_json, stable_id
@@ -15,6 +16,7 @@ from crypto_quant.system_paper_runtime import (
     SystemPaperSlotInputs,
     build_initial_system_paper_runtime_snapshot,
     run_system_paper_slot,
+    system_paper_slot_hash,
 )
 from crypto_quant.system_paper_scheduler import (
     SystemPaperInputCapture,
@@ -712,7 +714,8 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             Path(self.temp.name) / "state.sqlite", self.policy
         )
         self.output_root = Path(self.temp.name) / "results"
-        self.output_root.mkdir()
+        self.output_root.mkdir(mode=0o700)
+        os.chmod(self.output_root, 0o700)
         self.output_root_hash = business_hash(
             {
                 "purpose": "SYSTEM_PAPER_IMMUTABLE_OUTPUT_ROOT",
@@ -723,6 +726,15 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.state.close()
         self.temp.cleanup()
+
+    def write_result_artifact(self, slot, result_bytes):
+        directory = self.output_root / "system-paper-slots"
+        directory.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(directory, 0o700)
+        path = directory / f"{slot.slot_id}.json"
+        path.write_bytes(result_bytes)
+        os.chmod(path, 0o600)
+        return path
 
     def prepare_slot(self, scheduled_for, previous_snapshot):
         slot = self.policy.slot_from_scheduled(scheduled_for)
@@ -812,6 +824,37 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             0,
         )
 
+    def test_successful_parent_chain_rejects_missing_published_artifact(self):
+        # Catches deriving parent bodies only from SQLite after publication is lost.
+        first_claim, _first_input, first = self.prepare_slot(
+            "2026-08-02T00:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        first_record = self.state.prepare_result(
+            first_claim,
+            result_bytes=canonical_json(first).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=first_claim.claimed_at,
+        )
+        self.succeed_prepared(first_claim)
+        self.write_result_artifact(first_claim.slot, first_record["result_bytes"])
+        second_claim, _second_input, second = self.prepare_slot(
+            "2026-08-02T04:00:00.000Z", first["runtime_snapshot"]
+        )
+        self.state.prepare_result(
+            second_claim,
+            result_bytes=canonical_json(second).encode("utf-8"),
+            parent_result_bodies=(first_record["result_bytes"],),
+            prepared_at=second_claim.claimed_at,
+        )
+        self.succeed_prepared(second_claim)
+
+        with self.assertRaisesRegex(SystemPaperScheduleError, "RESULT_ARTIFACT_MISSING"):
+            self.state.successful_parent_result_bodies(
+                self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z"),
+                output_root=self.output_root,
+            )
+
     def succeed_prepared(self, claim):
         self.state.connection.execute("BEGIN IMMEDIATE")
         self.state._append_locked(
@@ -830,6 +873,218 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
         )
         self.state.connection.commit()
 
+    def prepare_successful_parent_pair(self):
+        first_claim, _first_input, first = self.prepare_slot(
+            "2026-08-02T00:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        first_record = self.state.prepare_result(
+            first_claim,
+            result_bytes=canonical_json(first).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=first_claim.claimed_at,
+        )
+        self.succeed_prepared(first_claim)
+        first_path = self.write_result_artifact(
+            first_claim.slot, first_record["result_bytes"]
+        )
+        second_claim, _second_input, second = self.prepare_slot(
+            "2026-08-02T04:00:00.000Z", first["runtime_snapshot"]
+        )
+        second_record = self.state.prepare_result(
+            second_claim,
+            result_bytes=canonical_json(second).encode("utf-8"),
+            parent_result_bodies=(first_record["result_bytes"],),
+            prepared_at=second_claim.claimed_at,
+        )
+        self.succeed_prepared(second_claim)
+        second_path = self.write_result_artifact(
+            second_claim.slot, second_record["result_bytes"]
+        )
+        return (
+            self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z"),
+            first_record,
+            second_record,
+            first_path,
+            second_path,
+        )
+
+    def test_parent_chain_rejects_replaced_or_unsafe_artifacts(self):
+        # Catches accepting mutable, linked, or owner-unsafe published parents.
+        target, first, second, first_path, second_path = self.prepare_successful_parent_pair()
+
+        first_path.write_bytes(b"tampered")
+        os.chmod(first_path, 0o600)
+        with self.assertRaisesRegex(SystemPaperScheduleError, "ARTIFACT_MISMATCH"):
+            self.state.successful_parent_result_bodies(
+                target, output_root=self.output_root
+            )
+        first_path.write_bytes(first["result_bytes"])
+        os.chmod(first_path, 0o600)
+
+        second_path.unlink()
+        second_path.symlink_to(first_path)
+        with self.assertRaisesRegex(SystemPaperScheduleError, "ARTIFACT_UNSAFE"):
+            self.state.successful_parent_result_bodies(
+                target, output_root=self.output_root
+            )
+        second_path.unlink()
+        second_path.write_bytes(second["result_bytes"])
+        os.chmod(second_path, 0o600)
+
+        second_path.unlink()
+        os.link(first_path, second_path)
+        with self.assertRaisesRegex(SystemPaperScheduleError, "ARTIFACT_UNSAFE"):
+            self.state.successful_parent_result_bodies(
+                target, output_root=self.output_root
+            )
+        second_path.unlink()
+        second_path.write_bytes(second["result_bytes"])
+        os.chmod(second_path, 0o600)
+
+        os.chmod(self.output_root, 0o755)
+        with self.assertRaisesRegex(SystemPaperScheduleError, "OUTPUT_ROOT_UNSAFE"):
+            self.state.successful_parent_result_bodies(
+                target, output_root=self.output_root
+            )
+        os.chmod(self.output_root, 0o700)
+        linked_root = Path(self.temp.name) / "linked-results"
+        linked_root.symlink_to(self.output_root, target_is_directory=True)
+        with self.assertRaisesRegex(SystemPaperScheduleError, "OUTPUT_ROOT_INVALID"):
+            self.state.successful_parent_result_bodies(
+                target, output_root=linked_root
+            )
+
+    def test_result_prepare_rejects_expired_or_forged_claim_ownership(self):
+        # Catches accepting a result after lease loss or from a stale attempt.
+        claim, _input, result = self.prepare_slot(
+            "2026-08-02T12:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        body = canonical_json(result).encode("utf-8")
+
+        with self.assertRaisesRegex(SystemPaperScheduleError, "RESULT_CLAIM_LEASE_EXPIRED"):
+            self.state.prepare_result(
+                claim,
+                result_bytes=body,
+                parent_result_bodies=(),
+                prepared_at=claim.lease_expires_at,
+            )
+        forged = replace(claim, attempt=claim.attempt + 1)
+        with self.assertRaisesRegex(SystemPaperScheduleError, "RESULT_CLAIM_INVALID"):
+            self.state.prepare_result(
+                forged,
+                result_bytes=body,
+                parent_result_bodies=(),
+                prepared_at=claim.claimed_at,
+            )
+        self.assertEqual(
+            self.state.connection.execute("SELECT COUNT(*) FROM prepared_results").fetchone()[0],
+            0,
+        )
+
+    def test_result_prepare_rolls_back_event_when_result_insert_fails(self):
+        # Catches an orphan RESULT_PREPARED event after an atomic insert failure.
+        claim, _input, result = self.prepare_slot(
+            "2026-08-02T12:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        self.state.connection.execute(
+            """
+            CREATE TRIGGER fail_prepared_result_insert
+            BEFORE INSERT ON prepared_results
+            BEGIN SELECT RAISE(ABORT, 'injected result insert failure'); END;
+            """
+        )
+
+        with self.assertRaises(sqlite3.DatabaseError):
+            self.state.prepare_result(
+                claim,
+                result_bytes=canonical_json(result).encode("utf-8"),
+                parent_result_bodies=(),
+                prepared_at=claim.claimed_at,
+            )
+        self.assertEqual(
+            self.state.connection.execute(
+                "SELECT COUNT(*) FROM schedule_events WHERE event_type='RESULT_PREPARED'"
+            ).fetchone()[0],
+            0,
+        )
+        self.assertEqual(
+            self.state.connection.execute("SELECT COUNT(*) FROM prepared_results").fetchone()[0],
+            0,
+        )
+
+    def test_result_prepare_rejects_rehashed_unbalanced_candidate(self):
+        # Catches trusting recomputed outer hashes without full ledger replay.
+        claim, _input, result = self.prepare_slot(
+            "2026-08-02T12:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        forged = deepcopy(result)
+        forged["ledger"]["credits_usdt"] = "1"
+        forged["slot_hash"] = "0" * 64
+        forged["runtime_snapshot"]["snapshot_hash"] = "0" * 64
+        forged["runtime_snapshot"]["last_slot_hash_or_null"] = "0" * 64
+        forged["slot_hash"] = system_paper_slot_hash(forged)
+        forged["runtime_snapshot"]["last_slot_hash_or_null"] = forged["slot_hash"]
+        forged["runtime_snapshot"]["snapshot_hash"] = artifact_self_hash(
+            forged["runtime_snapshot"], "snapshot_hash"
+        )
+
+        with self.assertRaisesRegex(SystemPaperScheduleError, "PREPARED_RESULT_INVALID"):
+            self.state.prepare_result(
+                claim,
+                result_bytes=canonical_json(forged).encode("utf-8"),
+                parent_result_bodies=(),
+                prepared_at=claim.claimed_at,
+            )
+
+    def test_unknown_result_persists_only_with_locked_risk_and_active_order(self):
+        # Catches loss of UNKNOWN safety invariants across durable preparation.
+        slot = self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z")
+        claim = self.state.claim(slot, worker_id="worker-a", claimed_at=slot.due_at)
+        input_record = self.state.prepare_input(
+            claim,
+            plan=self.plan,
+            capture=SystemPaperInputCapture(
+                public_market_bundle=make_bundle(
+                    observed_at=slot.scheduled_for, long_signal=True
+                ),
+                capture_attempt_id="unknown-capture",
+                captured_at=slot.due_at,
+                request_families=(
+                    "SPOT_AGG_TRADE", "SPOT_BBO", "SPOT_EXCHANGE_INFO",
+                    "SPOT_KLINE_4H_WARMUP",
+                ),
+                network_request_count=4,
+            ),
+            previous_runtime_snapshot=build_initial_system_paper_runtime_snapshot(self.plan),
+            fill_scenario=FillScenario.disconnect_after_submit(),
+            output_root_hash=self.output_root_hash,
+            prepared_at=slot.due_at,
+        )
+        payload = input_record["payload"]
+        result = run_system_paper_slot(
+            SystemPaperSlotInputs(
+                plan=payload["plan"],
+                scheduled_for=payload["scheduled_for"],
+                public_market_bundle=payload["capture"]["public_market_bundle"],
+                previous_runtime_snapshot=payload["previous_runtime_snapshot"],
+                fill_scenario=FillScenario.disconnect_after_submit(),
+            )
+        )
+        self.assertEqual(result["order"]["state"], "UNKNOWN")
+        self.assertEqual(result["runtime_snapshot"]["risk_state"], "LOCKED")
+        self.assertIsNotNone(result["runtime_snapshot"]["active_order_or_null"])
+
+        self.state.prepare_result(
+            claim,
+            result_bytes=canonical_json(result).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=claim.claimed_at,
+        )
+
     def test_successful_parent_bodies_require_complete_adjacent_immutable_chain(self):
         # Catches deriving continuity from a partial chain, non-success, or mutable rows.
         first_claim, _first_input, first = self.prepare_slot(
@@ -843,6 +1098,7 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             prepared_at=first_claim.claimed_at,
         )
         self.succeed_prepared(first_claim)
+        self.write_result_artifact(first_claim.slot, first_record["result_bytes"])
         second_claim, _second_input, second = self.prepare_slot(
             "2026-08-02T04:00:00.000Z", first["runtime_snapshot"]
         )
@@ -860,6 +1116,7 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             prepared_at=second_claim.claimed_at,
         )
         self.succeed_prepared(second_claim)
+        self.write_result_artifact(second_claim.slot, second_record["result_bytes"])
         target = self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z")
 
         self.assertEqual(
@@ -889,6 +1146,7 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             prepared_at=third_claim.claimed_at,
         )
         self.succeed_prepared(third_claim)
+        self.write_result_artifact(third_claim.slot, third_record["result_bytes"])
         self.assertEqual(
             self.state.successful_parent_result_bodies(
                 self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z"),
@@ -926,6 +1184,7 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             prepared_at=first_claim.claimed_at,
         )
         self.succeed_prepared(first_claim)
+        self.write_result_artifact(first_claim.slot, first_record["result_bytes"])
         target = self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z")
 
         with self.assertRaisesRegex(SystemPaperScheduleError, "PARENT_CHAIN_INVALID"):
@@ -948,13 +1207,14 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             "2026-08-02T00:00:00.000Z",
             build_initial_system_paper_runtime_snapshot(self.plan),
         )
-        self.state.prepare_result(
+        first_record = self.state.prepare_result(
             first_claim,
             result_bytes=canonical_json(first).encode("utf-8"),
             parent_result_bodies=(),
             prepared_at=first_claim.claimed_at,
         )
         self.succeed_prepared(first_claim)
+        self.write_result_artifact(first_claim.slot, first_record["result_bytes"])
         predecessor = self.policy.slot_from_scheduled("2026-08-02T04:00:00.000Z")
         self.state.claim(
             predecessor, worker_id="worker-a", claimed_at=predecessor.due_at
@@ -965,4 +1225,46 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemPaperScheduleError, "PARENT_NOT_SUCCEEDED"):
             self.state.successful_parent_result_bodies(
                 target, output_root=self.output_root
+            )
+
+    def test_parent_derivation_blocks_failed_predecessor(self):
+        # Catches treating a failed attempt as a usable continuity parent.
+        first_claim, _first_input, first = self.prepare_slot(
+            "2026-08-02T00:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        first_record = self.state.prepare_result(
+            first_claim,
+            result_bytes=canonical_json(first).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=first_claim.claimed_at,
+        )
+        self.succeed_prepared(first_claim)
+        self.write_result_artifact(first_claim.slot, first_record["result_bytes"])
+        predecessor = self.policy.slot_from_scheduled("2026-08-02T04:00:00.000Z")
+        failed = self.state.claim(
+            predecessor, worker_id="worker-a", claimed_at=predecessor.due_at
+        )
+        self.state.connection.execute("BEGIN IMMEDIATE")
+        self.state._append_locked(
+            "FAILED",
+            predecessor,
+            predecessor.due_at,
+            {
+                "plan_hash": self.policy.plan_hash,
+                "schedule_policy_hash": self.policy.schedule_policy_hash,
+                "scheduled_for": predecessor.scheduled_for,
+                "due_at": predecessor.due_at,
+                "expires_at": predecessor.expires_at,
+                "worker_id": failed.worker_id,
+                "attempt": failed.attempt,
+                "reason_code": "SYSTEM_PAPER_RUNTIME_INTERRUPTED",
+            },
+        )
+        self.state.connection.commit()
+
+        with self.assertRaisesRegex(SystemPaperScheduleError, "PARENT_NOT_SUCCEEDED"):
+            self.state.successful_parent_result_bodies(
+                self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z"),
+                output_root=self.output_root,
             )
