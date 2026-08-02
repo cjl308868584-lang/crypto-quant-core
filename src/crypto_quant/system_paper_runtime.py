@@ -979,7 +979,15 @@ def _verify_loaded_slot(
         raise SystemPaperRuntimeError("SYSTEM_PAPER_FULL_REPLAY_MISMATCH")
 
 
-def _load_slot_bytes(path: Path) -> Dict[str, Any]:
+def _load_slot_body(body: bytes) -> Dict[str, Any]:
+    result = dict(_strict_slot_json(body))
+    canonical = canonical_json(result).encode("utf-8")
+    if body not in (canonical, canonical + b"\n"):
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_SLOT_CANONICAL_BYTES_REQUIRED")
+    return result
+
+
+def _read_slot_body(path: Path) -> bytes:
     result_path = Path(path).expanduser()
     if (
         not result_path.is_absolute()
@@ -987,11 +995,25 @@ def _load_slot_bytes(path: Path) -> Dict[str, Any]:
         or not result_path.is_file()
     ):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_SLOT_PATH_INVALID")
-    body = result_path.read_bytes()
-    result = dict(_strict_slot_json(body))
-    canonical = canonical_json(result).encode("utf-8")
-    if body not in (canonical, canonical + b"\n"):
-        raise SystemPaperRuntimeError("SYSTEM_PAPER_SLOT_CANONICAL_BYTES_REQUIRED")
+    return result_path.read_bytes()
+
+
+def load_system_paper_slot_result_bytes(
+    body: bytes,
+    *,
+    parent_result_bodies: Tuple[bytes, ...] = (),
+) -> Dict[str, Any]:
+    """Verify one canonical slot body against its complete ordered parents."""
+
+    if not isinstance(parent_result_bodies, tuple):
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_PARENT_CHAIN_INVALID")
+    expected_parent = None
+    for parent_body in parent_result_bodies:
+        parent = _load_slot_body(parent_body)
+        _verify_loaded_slot(parent, expected_parent)
+        expected_parent = parent
+    result = _load_slot_body(body)
+    _verify_loaded_slot(result, expected_parent)
     return result
 
 
@@ -1004,11 +1026,9 @@ def load_system_paper_slot_result(
 
     if not isinstance(parent_result_paths, tuple):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_PARENT_CHAIN_INVALID")
-    expected_parent = None
-    for parent_path in parent_result_paths:
-        parent = _load_slot_bytes(parent_path)
-        _verify_loaded_slot(parent, expected_parent)
-        expected_parent = parent
-    result = _load_slot_bytes(path)
-    _verify_loaded_slot(result, expected_parent)
-    return result
+    return load_system_paper_slot_result_bytes(
+        _read_slot_body(path),
+        parent_result_bodies=tuple(
+            _read_slot_body(parent_path) for parent_path in parent_result_paths
+        ),
+    )

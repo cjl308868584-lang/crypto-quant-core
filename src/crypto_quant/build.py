@@ -126,6 +126,13 @@ _FROZEN_ARTIFACT_PATHS = (
     "artifacts/runtime/v0.20-smoke/runtime/paper-runtime-runtime_event_ea4452a8f11abc78d4e8df0a02f57554e2ec918567b9bedb7c5df20d47b3e34e.json",
     "artifacts/system-paper/system-paper-plan-v0.55.0.json",
 )
+_FROZEN_RELEASE_PATHS = (
+    "tests/test_system_paper_scheduler.py",
+    "tests/test_system_paper_fault_injection.py",
+    "docs/superpowers/specs/"
+    "2026-08-02-system-paper-wal-scheduler-design.md",
+    "docs/superpowers/plans/2026-08-02-system-paper-wal-scheduler.md",
+)
 
 
 @dataclass(frozen=True)
@@ -156,6 +163,7 @@ class EvaluatorBuild:
                 + package_resources
                 + list(_FROZEN_CONFIG_PATHS)
                 + list(_FROZEN_ARTIFACT_PATHS)
+                + list(_FROZEN_RELEASE_PATHS)
             )
         )
 
