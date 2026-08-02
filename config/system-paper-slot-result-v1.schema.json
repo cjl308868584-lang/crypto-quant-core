@@ -1,0 +1,619 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crypto-quant/schemas/system-paper-slot-result-v1.schema.json",
+  "title": "System Paper Slot Result V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "slot_id",
+    "slot_hash",
+    "status",
+    "plan_id",
+    "plan_hash",
+    "scheduled_for",
+    "parent_slot_hash_or_null",
+    "market_bundle_hash",
+    "instrument",
+    "signal",
+    "risk",
+    "order",
+    "ledger",
+    "reconciliation",
+    "runtime_snapshot",
+    "replay_inputs",
+    "replay",
+    "safety_counts",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./system-paper-slot-result-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "slot_id": {
+      "type": "string",
+      "pattern": "^system_paper_slot_[0-9a-f]{64}$"
+    },
+    "slot_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "status": {
+      "const": "SYSTEM_PAPER_SLOT_COMPLETED"
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^system_paper_plan_[0-9a-f]{64}$"
+    },
+    "plan_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "scheduled_for": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "parent_slot_hash_or_null": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hash"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "market_bundle_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "instrument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "instrument_id",
+        "metadata_hash",
+        "market_type",
+        "symbol",
+        "contract_multiplier"
+      ],
+      "properties": {
+        "provider": {"const": "BINANCE_MARKET_DATA_ONLY"},
+        "instrument_id": {"const": "BINANCE:SPOT:ETHUSDT"},
+        "metadata_hash": {"$ref": "#/$defs/hash"},
+        "market_type": {"const": "SPOT"},
+        "symbol": {"const": "ETHUSDT"},
+        "contract_multiplier": {"const": "1"}
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_source",
+        "strategy_version",
+        "direction",
+        "recommended_action",
+        "target_id",
+        "decision_hash"
+      ],
+      "properties": {
+        "decision_source": {
+          "const": "NO_AI_BASE"
+        },
+        "strategy_version": {
+          "const": "SPOT_LONG_SMA20_VOL12_BUCKET25_V1"
+        },
+        "direction": {
+          "enum": [
+            "LONG",
+            "FLAT"
+          ]
+        },
+        "recommended_action": {
+          "enum": [
+            "SET_TARGET",
+            "HOLD_CURRENT"
+          ]
+        },
+        "target_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision_hash": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "drawdown_state",
+        "drawdown_ratio",
+        "requested_target_notional_usdt",
+        "approved_target_notional_usdt",
+        "reason_codes"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "NORMAL",
+            "LOCKED"
+          ]
+        },
+        "drawdown_state": {
+          "enum": [
+            "NORMAL",
+            "WARNING",
+            "REDUCE",
+            "HALT",
+            "HARD_BOUNDARY"
+          ]
+        },
+        "drawdown_ratio": {
+          "$ref": "#/$defs/decimal"
+        },
+        "requested_target_notional_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "approved_target_notional_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "reason_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "order": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "local_order_id",
+            "instrument_id",
+            "side",
+            "fill_policy_version",
+            "state",
+            "requested_quantity",
+            "filled_quantity",
+            "average_fill_price_or_null",
+            "fee_usdt",
+            "event_ids",
+            "risk_lock_required",
+            "result_hash"
+          ],
+          "properties": {
+            "local_order_id": {
+              "type": "string",
+              "pattern": "^paper_order_[0-9a-f]{64}$"
+            },
+            "instrument_id": {
+              "const": "BINANCE:SPOT:ETHUSDT"
+            },
+            "side": {
+              "enum": [
+                "BUY",
+                "SELL"
+              ]
+            },
+            "fill_policy_version": {
+              "const": "SYSTEM_PAPER_CONSERVATIVE_BBO_V1"
+            },
+            "state": {
+              "enum": [
+                "RISK_DENIED",
+                "FILLED",
+                "PARTIALLY_FILLED",
+                "CANCELED",
+                "REJECTED",
+                "EXPIRED",
+                "FAILED_PRE_SUBMIT",
+                "UNKNOWN",
+                "ACKNOWLEDGED"
+              ]
+            },
+            "requested_quantity": {
+              "$ref": "#/$defs/decimal"
+            },
+            "filled_quantity": {
+              "$ref": "#/$defs/decimal"
+            },
+            "average_fill_price_or_null": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fee_usdt": {
+              "$ref": "#/$defs/decimal"
+            },
+            "event_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^paper_event_[0-9a-f]{64}$"
+              }
+            },
+            "risk_lock_required": {
+              "type": "boolean"
+            },
+            "result_hash": {
+              "$ref": "#/$defs/hash"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries",
+        "debits_usdt",
+        "credits_usdt",
+        "position_cost_relieved_usdt",
+        "position_cost_after_usdt",
+        "realized_pnl_usdt",
+        "cumulative_realized_pnl_usdt",
+        "cumulative_fees_usdt",
+        "unrealized_pnl_usdt",
+        "balanced"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "entry_id",
+              "account",
+              "side",
+              "amount_usdt"
+            ],
+            "properties": {
+              "entry_id": {
+                "type": "string",
+                "pattern": "^paper_ledger_[0-9a-f]{64}$"
+              },
+              "account": {
+                "enum": [
+                  "ETH_POSITION_COST",
+                  "VIRTUAL_CASH",
+                  "TAKER_FEE_EXPENSE",
+                  "REALIZED_GAIN",
+                  "REALIZED_LOSS"
+                ]
+              },
+              "side": {
+                "enum": [
+                  "DEBIT",
+                  "CREDIT"
+                ]
+              },
+              "amount_usdt": {
+                "$ref": "#/$defs/decimal"
+              }
+            }
+          }
+        },
+        "debits_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "credits_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "position_cost_relieved_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "position_cost_after_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "realized_pnl_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "cumulative_realized_pnl_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "cumulative_fees_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "unrealized_pnl_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "balanced": {
+          "const": true
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_position_quantity",
+        "actual_position_quantity",
+        "unexplained_position_difference",
+        "ledger_imbalance_usdt",
+        "status"
+      ],
+      "properties": {
+        "expected_position_quantity": {
+          "$ref": "#/$defs/decimal"
+        },
+        "actual_position_quantity": {
+          "$ref": "#/$defs/decimal"
+        },
+        "unexplained_position_difference": {
+          "const": "0"
+        },
+        "ledger_imbalance_usdt": {
+          "const": "0"
+        },
+        "status": {
+          "enum": [
+            "RECONCILED",
+            "OPEN_ORDER_RECONCILIATION_REQUIRED"
+          ]
+        }
+      }
+    },
+    "runtime_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "snapshot_hash",
+        "plan_hash",
+        "last_slot_id_or_null",
+        "last_slot_hash_or_null",
+        "processed_slot_ids",
+        "cash_usdt",
+        "position_quantity",
+        "position_cost_usdt",
+        "average_entry_price_or_null",
+        "cumulative_realized_pnl_usdt",
+        "cumulative_fees_usdt",
+        "marked_equity_usdt",
+        "peak_equity_usdt",
+        "risk_state",
+        "active_order_or_null"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "snapshot_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "plan_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "last_slot_id_or_null": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^system_paper_slot_[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_slot_hash_or_null": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/hash"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "processed_slot_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^system_paper_slot_[0-9a-f]{64}$"
+          }
+        },
+        "cash_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "position_quantity": {
+          "$ref": "#/$defs/decimal"
+        },
+        "position_cost_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "average_entry_price_or_null": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cumulative_realized_pnl_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "cumulative_fees_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "marked_equity_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "peak_equity_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "risk_state": {
+          "enum": [
+            "NORMAL",
+            "LOCKED"
+          ]
+        },
+        "active_order_or_null": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "local_order_id",
+                "state",
+                "remaining_quantity",
+                "result_hash"
+              ],
+              "properties": {
+                "local_order_id": {
+                  "type": "string",
+                  "pattern": "^paper_order_[0-9a-f]{64}$"
+                },
+                "state": {
+                  "enum": [
+                    "ACKNOWLEDGED",
+                    "PARTIALLY_FILLED",
+                    "CANCEL_PENDING",
+                    "UNKNOWN"
+                  ]
+                },
+                "remaining_quantity": {
+                  "$ref": "#/$defs/decimal"
+                },
+                "result_hash": {
+                  "$ref": "#/$defs/hash"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_hash_match",
+        "market_bundle_hash_match",
+        "full_slot_hash_match"
+      ],
+      "properties": {
+        "decision_hash_match": {
+          "const": true
+        },
+        "market_bundle_hash_match": {
+          "const": true
+        },
+        "full_slot_hash_match": {
+          "const": true
+        }
+      }
+    },
+    "replay_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan",
+        "scheduled_for",
+        "public_market_bundle",
+        "previous_runtime_snapshot",
+        "fill_scenario"
+      ],
+      "properties": {
+        "plan": {"type": "object"},
+        "scheduled_for": {"type": "string", "format": "date-time"},
+        "public_market_bundle": {"type": "object"},
+        "previous_runtime_snapshot": {"type": "object"},
+        "fill_scenario": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "partial_fill_ratio_or_null"],
+          "properties": {
+            "kind": {
+              "enum": [
+                "IMMEDIATE_FULL",
+                "PARTIAL_THEN_FULL",
+                "DISCONNECT_AFTER_SUBMIT",
+                "DISCONNECT_THEN_FULL",
+                "REJECTED",
+                "CANCEL_BEFORE_FILL",
+                "FILL_BEFORE_CANCEL",
+                "FILL_BEFORE_ACK_WITH_DUPLICATE",
+                "TIMEOUT_AFTER_ACK",
+                "IMPOSSIBLE_OVERFILL"
+              ]
+            },
+            "partial_fill_ratio_or_null": {
+              "oneOf": [
+                {"$ref": "#/$defs/decimal"},
+                {"type": "null"}
+              ]
+            }
+          }
+        }
+      }
+    },
+    "safety_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credential_reads",
+        "account_requests",
+        "real_broker_calls",
+        "real_order_writes"
+      ],
+      "properties": {
+        "credential_reads": {
+          "const": 0
+        },
+        "account_requests": {
+          "const": 0
+        },
+        "real_broker_calls": {
+          "const": 0
+        },
+        "real_order_writes": {
+          "const": 0
+        }
+      }
+    },
+    "warnings": {
+      "const": [
+        "CANARY_NOT_AUTHORIZED",
+        "SYSTEM_PAPER_NOT_STARTED"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    }
+  }
+}
