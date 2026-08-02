@@ -33,6 +33,7 @@ class FillScenarioKind(str, Enum):
     IMMEDIATE_FULL = "IMMEDIATE_FULL"
     PARTIAL_THEN_FULL = "PARTIAL_THEN_FULL"
     DISCONNECT_AFTER_SUBMIT = "DISCONNECT_AFTER_SUBMIT"
+    DISCONNECT_THEN_FULL = "DISCONNECT_THEN_FULL"
     REJECTED = "REJECTED"
     CANCEL_BEFORE_FILL = "CANCEL_BEFORE_FILL"
     FILL_BEFORE_CANCEL = "FILL_BEFORE_CANCEL"
@@ -63,6 +64,10 @@ class FillScenario:
     @classmethod
     def disconnect_after_submit(cls) -> "FillScenario":
         return cls._without_ratio(FillScenarioKind.DISCONNECT_AFTER_SUBMIT)
+
+    @classmethod
+    def disconnect_then_full(cls) -> "FillScenario":
+        return cls._without_ratio(FillScenarioKind.DISCONNECT_THEN_FULL)
 
     @classmethod
     def immediate_full(cls) -> "FillScenario":
@@ -163,6 +168,7 @@ def fill_scenario_from_payload(payload: Mapping[str, Any]) -> FillScenario:
     factories = {
         FillScenarioKind.IMMEDIATE_FULL: FillScenario.immediate_full,
         FillScenarioKind.DISCONNECT_AFTER_SUBMIT: FillScenario.disconnect_after_submit,
+        FillScenarioKind.DISCONNECT_THEN_FULL: FillScenario.disconnect_then_full,
         FillScenarioKind.REJECTED: FillScenario.rejected,
         FillScenarioKind.CANCEL_BEFORE_FILL: FillScenario.cancel_before_fill,
         FillScenarioKind.TIMEOUT_AFTER_ACK: FillScenario.timeout_after_ack,
@@ -354,7 +360,10 @@ class SimulatedBroker:
             self._apply(record, "ack", OrderEventType.ACK)
             self._apply(record, "expired", OrderEventType.VENUE_EXPIRED)
             return self._result(record)
-        if self._scenario.kind is FillScenarioKind.DISCONNECT_AFTER_SUBMIT:
+        if self._scenario.kind in (
+            FillScenarioKind.DISCONNECT_AFTER_SUBMIT,
+            FillScenarioKind.DISCONNECT_THEN_FULL,
+        ):
             self._apply(record, "disconnect", OrderEventType.DISCONNECT)
             return self._result(record)
         if self._scenario.kind is FillScenarioKind.REJECTED:
@@ -478,13 +487,22 @@ class SimulatedBroker:
                     "outcome": "UNRESOLVED",
                 },
             )
-            self._apply(
-                record,
-                "reconcile_unresolved",
-                OrderEventType.RECON_UNRESOLVED,
-                reconciliation_result_id=reconciliation_result_id,
-            )
-        elif self._scenario.kind is FillScenarioKind.PARTIAL_THEN_FULL:
+            if self._scenario.kind is FillScenarioKind.DISCONNECT_THEN_FULL:
+                self._apply(
+                    record,
+                    "reconcile_full",
+                    OrderEventType.RECON_FULL_FILL,
+                    cumulative_filled_quantity=record.rounded_plan.rounded_quantity,
+                    reconciliation_result_id=reconciliation_result_id,
+                )
+            else:
+                self._apply(
+                    record,
+                    "reconcile_unresolved",
+                    OrderEventType.RECON_UNRESOLVED,
+                    reconciliation_result_id=reconciliation_result_id,
+                )
+        elif record.aggregate.state is OrderState.PARTIALLY_FILLED:
             self._apply(
                 record,
                 "full",

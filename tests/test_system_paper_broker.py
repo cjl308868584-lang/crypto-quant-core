@@ -292,6 +292,19 @@ class SimulatedBrokerLifecycleTests(unittest.TestCase):
             result.requested_quantity,
         )
 
+    def test_disconnect_can_reconcile_to_one_full_economic_fill(self) -> None:
+        broker = SimulatedBroker(FillScenario.disconnect_then_full())
+
+        unknown = broker.submit(self.command, self.market)
+        reconciled = broker.reconcile(unknown.local_order_id)
+
+        self.assertEqual(unknown.state, OrderState.UNKNOWN)
+        self.assertEqual(reconciled.state, OrderState.FILLED)
+        self.assertEqual(
+            reconciled.cumulative_filled_quantity,
+            reconciled.requested_quantity,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

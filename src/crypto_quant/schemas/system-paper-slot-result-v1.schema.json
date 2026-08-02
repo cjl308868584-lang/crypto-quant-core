@@ -556,6 +556,7 @@
                 "IMMEDIATE_FULL",
                 "PARTIAL_THEN_FULL",
                 "DISCONNECT_AFTER_SUBMIT",
+                "DISCONNECT_THEN_FULL",
                 "REJECTED",
                 "CANCEL_BEFORE_FILL",
                 "FILL_BEFORE_CANCEL",

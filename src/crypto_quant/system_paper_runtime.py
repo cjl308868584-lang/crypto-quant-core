@@ -174,12 +174,12 @@ def build_initial_system_paper_runtime_snapshot(
 
 def _verify_snapshot(
     snapshot: Mapping[str, Any],
-    plan_hash: str,
+    plan: Mapping[str, Any],
 ) -> Dict[str, Any]:
     if not isinstance(snapshot, Mapping) or set(snapshot) != _SNAPSHOT_KEYS:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID")
     value = dict(snapshot)
-    if value.get("plan_hash") != plan_hash:
+    if value.get("plan_hash") != plan["plan_hash"]:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_RUNTIME_PLAN_MISMATCH")
     if value.get("snapshot_hash") != artifact_self_hash(value, "snapshot_hash"):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_RUNTIME_SNAPSHOT_HASH_MISMATCH")
@@ -190,6 +190,32 @@ def _verify_snapshot(
         or any(not isinstance(item, str) or not item for item in processed)
     ):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID")
+    if not processed:
+        if value != build_initial_system_paper_runtime_snapshot(plan):
+            raise SystemPaperRuntimeError("SYSTEM_PAPER_RUNTIME_GENESIS_MISMATCH")
+    else:
+        expected_slot_prefix = "system_paper_slot_"
+        if (
+            value["last_slot_id_or_null"] != processed[-1]
+            or any(
+                not item.startswith(expected_slot_prefix)
+                or len(item) != len(expected_slot_prefix) + 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in item[len(expected_slot_prefix):]
+                )
+                for item in processed
+            )
+            or not isinstance(value["last_slot_hash_or_null"], str)
+            or len(value["last_slot_hash_or_null"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in value["last_slot_hash_or_null"]
+            )
+        ):
+            raise SystemPaperRuntimeError(
+                "SYSTEM_PAPER_RUNTIME_PARENT_BINDING_INVALID"
+            )
     cash = _decimal(value["cash_usdt"], "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID")
     position = _decimal(
         value["position_quantity"],
@@ -444,7 +470,7 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_SLOT_INPUTS_INVALID")
     plan = _verified_plan(inputs.plan)
     scheduled_dt, scheduled_for = _time(inputs.scheduled_for)
-    previous = _verify_snapshot(inputs.previous_runtime_snapshot, plan["plan_hash"])
+    previous = _verify_snapshot(inputs.previous_runtime_snapshot, plan)
     bundle, metadata, bid, ask = _verify_bundle(
         inputs.public_market_bundle,
         plan,
@@ -577,6 +603,13 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
                 market_bundle_hash=market_hash,
             ),
         )
+        if broker_result.state in (
+            OrderState.ACKNOWLEDGED,
+            OrderState.PARTIALLY_FILLED,
+            OrderState.CANCEL_PENDING,
+            OrderState.UNKNOWN,
+        ):
+            broker_result = broker.reconcile(broker_result.local_order_id)
 
     filled_quantity = (
         Decimal("0")
@@ -852,7 +885,10 @@ def _strict_slot_json(body: bytes) -> Mapping[str, Any]:
     return value
 
 
-def _verify_loaded_slot(result: Mapping[str, Any]) -> None:
+def _verify_loaded_slot(
+    result: Mapping[str, Any],
+    expected_parent_or_null: Optional[Mapping[str, Any]] = None,
+) -> None:
     if tuple(_slot_validator().iter_errors(result)):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_SLOT_SCHEMA_INVALID")
     if result["slot_hash"] != system_paper_slot_hash(result):
@@ -870,6 +906,20 @@ def _verify_loaded_slot(result: Mapping[str, Any]) -> None:
         or snapshot["processed_slot_ids"][-1] != result["slot_id"]
     ):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_SLOT_SNAPSHOT_BINDING_INVALID")
+    replay_parent = result["replay_inputs"]["previous_runtime_snapshot"]
+    if replay_parent["processed_slot_ids"]:
+        if expected_parent_or_null is None:
+            raise SystemPaperRuntimeError("SYSTEM_PAPER_PARENT_ARTIFACT_REQUIRED")
+        if (
+            replay_parent != expected_parent_or_null["runtime_snapshot"]
+            or result["parent_slot_hash_or_null"]
+            != expected_parent_or_null["slot_hash"]
+        ):
+            raise SystemPaperRuntimeError(
+                "SYSTEM_PAPER_PARENT_ARTIFACT_MISMATCH"
+            )
+    elif expected_parent_or_null is not None:
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_PARENT_CHAIN_INVALID")
     entries = result["ledger"]["entries"]
     debits = sum(
         (
@@ -929,9 +979,7 @@ def _verify_loaded_slot(result: Mapping[str, Any]) -> None:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_FULL_REPLAY_MISMATCH")
 
 
-def load_system_paper_slot_result(path: Path) -> Dict[str, Any]:
-    """Load a canonical slot only after schema, hashes and balances replay."""
-
+def _load_slot_bytes(path: Path) -> Dict[str, Any]:
     result_path = Path(path).expanduser()
     if (
         not result_path.is_absolute()
@@ -944,5 +992,23 @@ def load_system_paper_slot_result(path: Path) -> Dict[str, Any]:
     canonical = canonical_json(result).encode("utf-8")
     if body not in (canonical, canonical + b"\n"):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_SLOT_CANONICAL_BYTES_REQUIRED")
-    _verify_loaded_slot(result)
+    return result
+
+
+def load_system_paper_slot_result(
+    path: Path,
+    *,
+    parent_result_paths: Tuple[Path, ...] = (),
+) -> Dict[str, Any]:
+    """Load a canonical slot only after schema, hashes and balances replay."""
+
+    if not isinstance(parent_result_paths, tuple):
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_PARENT_CHAIN_INVALID")
+    expected_parent = None
+    for parent_path in parent_result_paths:
+        parent = _load_slot_bytes(parent_path)
+        _verify_loaded_slot(parent, expected_parent)
+        expected_parent = parent
+    result = _load_slot_bytes(path)
+    _verify_loaded_slot(result, expected_parent)
     return result

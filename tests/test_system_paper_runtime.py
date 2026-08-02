@@ -5,6 +5,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import Optional
 
 from jsonschema import Draft202012Validator
 
@@ -31,7 +32,7 @@ def make_metadata(
     *,
     market_type: MarketType = MarketType.SPOT,
     effective_from: datetime = NOW,
-    effective_to_or_null: datetime | None = None,
+    effective_to_or_null: Optional[datetime] = None,
 ) -> InstrumentMetadata:
     return InstrumentMetadata(
         schema_version="instrument-metadata-v1",
@@ -66,7 +67,7 @@ def make_bundle(
     bid: str = "99.99",
     ask: str = "100.01",
     observed_at: str = SCHEDULED_FOR,
-    metadata: InstrumentMetadata | None = None,
+    metadata: Optional[InstrumentMetadata] = None,
 ):
     closes = ["100"] * 20 + (["110"] if long_signal else ["90"])
     bundle = {
@@ -93,6 +94,15 @@ def rehash_snapshot(snapshot):
     value = dict(snapshot)
     value["snapshot_hash"] = artifact_self_hash(value, "snapshot_hash")
     return value
+
+
+def rehash_parent_snapshot(snapshot):
+    value = dict(snapshot)
+    parent_id = "system_paper_slot_" + "a" * 64
+    value["processed_slot_ids"] = [parent_id]
+    value["last_slot_id_or_null"] = parent_id
+    value["last_slot_hash_or_null"] = "b" * 64
+    return rehash_snapshot(value)
 
 
 def rehash_slot(result):
@@ -131,7 +141,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         self.assertEqual(result["status"], "SYSTEM_PAPER_SLOT_COMPLETED")
         self.assertEqual(result["signal"]["decision_source"], "NO_AI_BASE")
         self.assertEqual(result["risk"]["state"], "NORMAL")
-        self.assertEqual(result["order"]["state"], "PARTIALLY_FILLED")
+        self.assertEqual(result["order"]["state"], "FILLED")
         self.assertGreater(Decimal(result["order"]["filled_quantity"]), Decimal("0"))
         self.assertEqual(result["ledger"]["debits_usdt"], result["ledger"]["credits_usdt"])
         self.assertEqual(result["safety_counts"]["credential_reads"], 0)
@@ -149,13 +159,13 @@ class SystemPaperRuntimeTests(unittest.TestCase):
             result["runtime_snapshot"]["last_slot_hash_or_null"],
             result["slot_hash"],
         )
-        self.assertEqual(
-            result["runtime_snapshot"]["active_order_or_null"]["state"],
-            "PARTIALLY_FILLED",
-        )
+        self.assertIsNone(result["runtime_snapshot"]["active_order_or_null"])
+        self.assertEqual(result["reconciliation"]["status"], "RECONCILED")
 
-    def test_next_slot_refuses_new_decision_while_partial_order_is_active(self) -> None:
-        first = run_system_paper_slot(self.inputs())
+    def test_next_slot_refuses_new_decision_while_unknown_order_is_active(self) -> None:
+        first = run_system_paper_slot(
+            self.inputs(fill_scenario=FillScenario.disconnect_after_submit())
+        )
 
         with self.assertRaisesRegex(
             SystemPaperRuntimeError,
@@ -170,6 +180,15 @@ class SystemPaperRuntimeTests(unittest.TestCase):
                     previous_runtime_snapshot=first["runtime_snapshot"],
                 )
             )
+
+    def test_disconnect_reconciliation_can_finish_within_the_same_slot(self) -> None:
+        result = run_system_paper_slot(
+            self.inputs(fill_scenario=FillScenario.disconnect_then_full())
+        )
+
+        self.assertEqual(result["order"]["state"], "FILLED")
+        self.assertIsNone(result["runtime_snapshot"]["active_order_or_null"])
+        self.assertEqual(result["reconciliation"]["status"], "RECONCILED")
 
     def test_no_trade_signal_keeps_cash_and_position_unchanged(self) -> None:
         result = run_system_paper_slot(
@@ -203,7 +222,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         self.assertEqual(result["runtime_snapshot"]["position_quantity"], "0")
 
     def test_losing_mark_to_market_is_preserved_even_without_a_new_trade(self) -> None:
-        previous = rehash_snapshot(
+        previous = rehash_parent_snapshot(
             {
                 **self.previous,
                 "cash_usdt": "890",
@@ -227,7 +246,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         self.assertEqual(result["runtime_snapshot"]["marked_equity_usdt"], "989.99")
 
     def test_closed_losing_trade_relieves_cost_and_records_realized_pnl(self) -> None:
-        previous = rehash_snapshot(
+        previous = rehash_parent_snapshot(
             {
                 **self.previous,
                 "cash_usdt": "890",
@@ -274,7 +293,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
             )
 
     def test_hard_drawdown_boundary_blocks_new_exposure(self) -> None:
-        previous = rehash_snapshot(
+        previous = rehash_parent_snapshot(
             {
                 **self.previous,
                 "cash_usdt": "800",
@@ -293,7 +312,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         self.assertIn("DRAWDOWN_HARD_BOUNDARY", result["risk"]["reason_codes"])
 
     def test_halt_drawdown_issues_only_a_protective_sell(self) -> None:
-        previous = rehash_snapshot(
+        previous = rehash_parent_snapshot(
             {
                 **self.previous,
                 "cash_usdt": "0",
@@ -325,7 +344,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         )
 
     def test_parent_risk_lock_allows_reduction_but_never_new_exposure(self) -> None:
-        previous = rehash_snapshot(
+        previous = rehash_parent_snapshot(
             {
                 **self.previous,
                 "cash_usdt": "900",
@@ -417,6 +436,39 @@ class SystemPaperRuntimeTests(unittest.TestCase):
             ):
                 load_system_paper_slot_result(path)
 
+    def test_nonfirst_loader_requires_the_exact_parent_artifact_chain(self) -> None:
+        first = run_system_paper_slot(
+            self.inputs(public_market_bundle=make_bundle(long_signal=False))
+        )
+        second = run_system_paper_slot(
+            self.inputs(
+                scheduled_for="2026-08-02T04:00:00.000Z",
+                public_market_bundle=make_bundle(
+                    long_signal=False,
+                    observed_at="2026-08-02T04:00:00.000Z",
+                ),
+                previous_runtime_snapshot=first["runtime_snapshot"],
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            parent_path = Path(directory).resolve() / "parent.json"
+            child_path = Path(directory).resolve() / "child.json"
+            parent_path.write_bytes(canonical_json(first).encode("utf-8") + b"\n")
+            child_path.write_bytes(canonical_json(second).encode("utf-8") + b"\n")
+            with self.assertRaisesRegex(
+                SystemPaperRuntimeError,
+                "SYSTEM_PAPER_PARENT_ARTIFACT_REQUIRED",
+            ):
+                load_system_paper_slot_result(child_path)
+            self.assertEqual(
+                load_system_paper_slot_result(
+                    child_path,
+                    parent_result_paths=(parent_path,),
+                ),
+                second,
+            )
+
     def test_full_slot_replay_is_byte_deterministic(self) -> None:
         first = run_system_paper_slot(self.inputs())
         second = run_system_paper_slot(self.inputs())
@@ -468,7 +520,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         self.assertEqual(result["instrument"]["metadata_hash"], make_metadata().metadata_hash)
 
     def test_position_snapshot_requires_a_positive_average_entry(self) -> None:
-        previous = rehash_snapshot(
+        previous = rehash_parent_snapshot(
             {
                 **self.previous,
                 "cash_usdt": "900",
@@ -484,6 +536,41 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         ):
             run_system_paper_slot(
                 self.inputs(previous_runtime_snapshot=previous)
+            )
+
+    def test_first_slot_requires_the_exact_frozen_genesis_snapshot(self) -> None:
+        forged = rehash_snapshot(
+            {
+                **self.previous,
+                "cash_usdt": "900",
+                "marked_equity_usdt": "900",
+            }
+        )
+
+        with self.assertRaisesRegex(
+            SystemPaperRuntimeError,
+            "SYSTEM_PAPER_RUNTIME_GENESIS_MISMATCH",
+        ):
+            run_system_paper_slot(
+                self.inputs(previous_runtime_snapshot=forged)
+            )
+
+    def test_nonempty_snapshot_requires_last_id_and_hash_tail_binding(self) -> None:
+        forged = rehash_snapshot(
+            {
+                **self.previous,
+                "processed_slot_ids": ["system_paper_slot_" + "a" * 64],
+                "last_slot_id_or_null": "system_paper_slot_" + "b" * 64,
+                "last_slot_hash_or_null": "c" * 64,
+            }
+        )
+
+        with self.assertRaisesRegex(
+            SystemPaperRuntimeError,
+            "SYSTEM_PAPER_RUNTIME_PARENT_BINDING_INVALID",
+        ):
+            run_system_paper_slot(
+                self.inputs(previous_runtime_snapshot=forged)
             )
 
 
