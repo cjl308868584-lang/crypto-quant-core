@@ -1,5 +1,6 @@
 """Crash-safe, append-only scheduling primitives for System Paper slots."""
 
+import hashlib
 import json
 import sqlite3
 import stat
@@ -9,6 +10,12 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from .canonical import business_hash, canonical_json, stable_id, utc_datetime
+from .evidence import artifact_self_hash
+from .system_paper_broker import (
+    FillScenario,
+    fill_scenario_from_payload,
+    fill_scenario_payload,
+)
 from .system_paper_plan import system_paper_plan_reasons
 
 
@@ -18,6 +25,12 @@ _CADENCE = timedelta(hours=4)
 _CLOSE_DELAY = timedelta(minutes=5)
 _LEASE = timedelta(minutes=15)
 _GENESIS_HASH = "0" * 64
+_PUBLIC_REQUEST_FAMILIES = (
+    "SPOT_AGG_TRADE",
+    "SPOT_BBO",
+    "SPOT_EXCHANGE_INFO",
+    "SPOT_KLINE_4H_WARMUP",
+)
 _ALLOWED_EVENTS = frozenset(
     (
         "CLAIMED",
@@ -38,6 +51,20 @@ class SystemPaperScheduleError(ValueError):
     def __init__(self, reason_code: str):
         super().__init__(reason_code)
         self.reason_code = reason_code
+
+
+def _sha256(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _hash(value: object, reason_code: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise SystemPaperScheduleError(reason_code)
+    return value
 
 
 def _utc(value: object) -> Tuple[datetime, str]:
@@ -415,6 +442,47 @@ class SystemPaperClaim:
     durable_stage: str
 
 
+@dataclass(frozen=True)
+class SystemPaperInputRequest:
+    """The complete credential-free public capture request for one slot."""
+
+    plan_hash: str
+    slot_id: str
+    scheduled_for: str
+    capture_deadline: str
+    request_families: Tuple[str, ...]
+
+    @classmethod
+    def for_slot(
+        cls,
+        policy: SystemPaperSchedulePolicy,
+        slot: SystemPaperSlot,
+    ) -> "SystemPaperInputRequest":
+        if not isinstance(policy, SystemPaperSchedulePolicy):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_POLICY_INVALID")
+        if not isinstance(slot, SystemPaperSlot):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_SLOT_INVALID")
+        expected = policy.slot_from_scheduled(slot.scheduled_for)
+        if slot != expected:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_SLOT_INVALID")
+        return cls(
+            plan_hash=policy.plan_hash,
+            slot_id=slot.slot_id,
+            scheduled_for=slot.scheduled_for,
+            capture_deadline=slot.expires_at,
+            request_families=_PUBLIC_REQUEST_FAMILIES,
+        )
+
+
+@dataclass(frozen=True)
+class SystemPaperInputCapture:
+    public_market_bundle: Mapping[str, Any]
+    capture_attempt_id: str
+    captured_at: str
+    request_families: Tuple[str, ...]
+    network_request_count: int
+
+
 class SystemPaperScheduleState:
     """SQLite WAL event chain for System Paper; all durable rows are immutable."""
 
@@ -572,7 +640,315 @@ class SystemPaperScheduleState:
             raise SystemPaperScheduleError(
                 "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_SET_MISMATCH"
             )
+        for row in self.connection.execute("SELECT * FROM prepared_inputs").fetchall():
+            self._validated_prepared_input(row, projection)
         return events[-1]["event_hash"] if events else _GENESIS_HASH
+
+    def _capture_payload(
+        self,
+        capture: SystemPaperInputCapture,
+        slot: SystemPaperSlot,
+    ) -> Dict[str, Any]:
+        if not isinstance(capture, SystemPaperInputCapture):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_INVALID")
+        if (
+            not isinstance(capture.capture_attempt_id, str)
+            or not capture.capture_attempt_id
+            or len(capture.capture_attempt_id) > 128
+            or not capture.capture_attempt_id.isascii()
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_INVALID")
+        if (
+            not isinstance(capture.request_families, tuple)
+            or capture.request_families != _PUBLIC_REQUEST_FAMILIES
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_REQUEST_INVALID")
+        if (
+            isinstance(capture.network_request_count, bool)
+            or capture.network_request_count != len(_PUBLIC_REQUEST_FAMILIES)
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_REQUEST_INVALID")
+        captured, captured_text = _utc(capture.captured_at)
+        if not (_utc(slot.due_at)[0] <= captured < _utc(slot.expires_at)[0]):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_WINDOW_INVALID")
+        if not isinstance(capture.public_market_bundle, Mapping):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID")
+        bundle = dict(capture.public_market_bundle)
+        try:
+            bundle_hash = _hash(
+                bundle.get("bundle_hash"), "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID"
+            )
+            if bundle_hash != artifact_self_hash(bundle, "bundle_hash"):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_HASH_MISMATCH"
+                )
+            _, observed_at = _utc(bundle.get("observed_at"))
+        except (TypeError, ValueError) as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID"
+            ) from error
+        if observed_at != slot.scheduled_for:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_TIME_MISMATCH")
+        return {
+            "public_market_bundle": bundle,
+            "capture_attempt_id": capture.capture_attempt_id,
+            "captured_at": captured_text,
+            "request_families": list(capture.request_families),
+            "network_request_count": capture.network_request_count,
+        }
+
+    def _input_envelope(
+        self,
+        slot: SystemPaperSlot,
+        *,
+        plan: Mapping[str, Any],
+        capture: SystemPaperInputCapture,
+        previous_runtime_snapshot: Mapping[str, Any],
+        fill_scenario: FillScenario,
+        output_root_hash: str,
+    ) -> Tuple[Dict[str, Any], Dict[str, str]]:
+        if not isinstance(plan, Mapping):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_PLAN_INVALID")
+        reasons = system_paper_plan_reasons(plan)
+        if reasons or plan.get("plan_hash") != self.policy.plan_hash:
+            raise SystemPaperScheduleError(
+                reasons[0] if reasons else "SYSTEM_PAPER_SCHEDULE_INPUT_PLAN_MISMATCH"
+            )
+        if not isinstance(previous_runtime_snapshot, Mapping):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_SNAPSHOT_INVALID")
+        snapshot = dict(previous_runtime_snapshot)
+        try:
+            snapshot_hash = _hash(
+                snapshot.get("snapshot_hash"), "SYSTEM_PAPER_SCHEDULE_INPUT_SNAPSHOT_INVALID"
+            )
+            if snapshot.get("plan_hash") != self.policy.plan_hash:
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_SNAPSHOT_PLAN_MISMATCH")
+            if snapshot_hash != artifact_self_hash(snapshot, "snapshot_hash"):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_INPUT_SNAPSHOT_HASH_MISMATCH"
+                )
+        except (TypeError, ValueError) as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_INPUT_SNAPSHOT_INVALID"
+            ) from error
+        try:
+            scenario_payload = fill_scenario_payload(fill_scenario)
+            fill_scenario_from_payload(scenario_payload)
+        except Exception as error:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_FILL_INVALID") from error
+        output_hash = _hash(
+            output_root_hash, "SYSTEM_PAPER_SCHEDULE_INPUT_OUTPUT_ROOT_INVALID"
+        )
+        capture_payload = self._capture_payload(capture, slot)
+        envelope = {
+            "schema_version": "1.0.0",
+            "slot_id": slot.slot_id,
+            "schedule_policy_hash": self.policy.schedule_policy_hash,
+            "plan": dict(plan),
+            "scheduled_for": slot.scheduled_for,
+            "capture": capture_payload,
+            "previous_runtime_snapshot": snapshot,
+            "fill_scenario": scenario_payload,
+            "output_root_hash": output_hash,
+        }
+        try:
+            canonical_json(envelope)
+        except (TypeError, ValueError) as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_INPUT_CANONICAL_INVALID"
+            ) from error
+        return envelope, {
+            "plan_hash": plan["plan_hash"],
+            "market_bundle_hash": capture_payload["public_market_bundle"]["bundle_hash"],
+            "previous_snapshot_hash": snapshot_hash,
+            "fill_scenario_hash": business_hash(scenario_payload),
+            "output_root_hash": output_hash,
+        }
+
+    def _validated_prepared_input(
+        self,
+        row: sqlite3.Row,
+        projection: Mapping[str, Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        slot_id = row["slot_id"]
+        state = projection.get(slot_id)
+        if (
+            state is None
+            or state["durable_stage"] not in ("INPUT", "RESULT")
+            or state["input_event_id"] != row["source_event_id"]
+        ):
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_EVENT_MISMATCH"
+            )
+        event = self.connection.execute(
+            "SELECT * FROM schedule_events WHERE event_id=?", (row["source_event_id"],)
+        ).fetchone()
+        if event is None or event["event_type"] != "INPUT_PREPARED" or event["slot_id"] != slot_id:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_EVENT_MISMATCH"
+            )
+        input_bytes = row["input_bytes"]
+        if not isinstance(input_bytes, bytes) or _sha256(input_bytes) != row["input_sha256"]:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_SHA256_MISMATCH")
+
+        def reject_pairs(items):
+            value = {}
+            for key, item in items:
+                if key in value:
+                    raise ValueError("duplicate key")
+                value[key] = item
+            return value
+
+        def reject_number(_value):
+            raise ValueError("binary float")
+
+        try:
+            envelope = json.loads(
+                input_bytes.decode("utf-8"),
+                object_pairs_hook=reject_pairs,
+                parse_float=reject_number,
+                parse_constant=reject_number,
+            )
+            if input_bytes != canonical_json(envelope).encode("utf-8"):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_INPUT_CANONICAL_INVALID"
+                )
+        except SystemPaperScheduleError:
+            raise
+        except (UnicodeDecodeError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_INPUT_CANONICAL_INVALID"
+            ) from error
+        slot = self.policy.slot_from_scheduled(state["scheduled_for"])
+        try:
+            expected, hashes = self._input_envelope(
+                slot,
+                plan=envelope["plan"],
+                capture=SystemPaperInputCapture(
+                    **{
+                        **envelope["capture"],
+                        "request_families": tuple(
+                            envelope["capture"]["request_families"]
+                        ),
+                    }
+                ),
+                previous_runtime_snapshot=envelope["previous_runtime_snapshot"],
+                fill_scenario=fill_scenario_from_payload(envelope["fill_scenario"]),
+                output_root_hash=envelope["output_root_hash"],
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_ENVELOPE_INVALID") from error
+        if envelope != expected:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_ENVELOPE_INVALID")
+        if any(row[name] != value for name, value in hashes.items()):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_HASH_MISMATCH")
+        try:
+            event_payload = json.loads(event["payload_json"])
+        except json.JSONDecodeError as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_EVENT_MISMATCH"
+            ) from error
+        if (
+            event_payload.get("input_sha256") != row["input_sha256"]
+            or any(event_payload.get(name) != value for name, value in hashes.items())
+        ):
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_EVENT_MISMATCH"
+            )
+        return {"input_bytes": input_bytes, "input_sha256": row["input_sha256"], "payload": envelope}
+
+    def prepare_input(
+        self,
+        claim: SystemPaperClaim,
+        *,
+        plan: Mapping[str, Any],
+        capture: SystemPaperInputCapture,
+        previous_runtime_snapshot: Mapping[str, Any],
+        fill_scenario: FillScenario,
+        output_root_hash: str,
+        prepared_at: object,
+    ) -> Mapping[str, Any]:
+        if not isinstance(claim, SystemPaperClaim):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_CLAIM_INVALID")
+        self._validate_slot(claim.slot)
+        if claim.outcome != "CLAIMED":
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CLAIM_INVALID")
+        _prepared, prepared_text = _utc(prepared_at)
+        envelope, hashes = self._input_envelope(
+            claim.slot,
+            plan=plan,
+            capture=capture,
+            previous_runtime_snapshot=previous_runtime_snapshot,
+            fill_scenario=fill_scenario,
+            output_root_hash=output_root_hash,
+        )
+        if prepared_text != envelope["capture"]["captured_at"]:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_TIME_MISMATCH")
+        input_bytes = canonical_json(envelope).encode("utf-8")
+        input_sha256 = _sha256(input_bytes)
+        try:
+            self._transaction()
+            self.verify_integrity()
+            state = self.slot_projection().get(claim.slot.slot_id)
+            active = None if state is None else state["active_claim"]
+            if (
+                state is None
+                or state["durable_stage"] != "NONE"
+                or active is None
+                or active["worker_id"] != claim.worker_id
+                or active["attempt"] != claim.attempt
+                or active["claimed_at"] != claim.claimed_at
+                or active["lease_expires_at"] != claim.lease_expires_at
+            ):
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CLAIM_INVALID")
+            event = self._append_locked(
+                "INPUT_PREPARED",
+                claim.slot,
+                prepared_text,
+                {
+                    **_slot_core(claim.slot, self.policy),
+                    "worker_id": claim.worker_id,
+                    "attempt": claim.attempt,
+                    "input_sha256": input_sha256,
+                    **hashes,
+                },
+            )
+            self.connection.execute(
+                """
+                INSERT INTO prepared_inputs (
+                    source_event_id, slot_id, input_bytes, input_sha256, plan_hash,
+                    market_bundle_hash, previous_snapshot_hash, fill_scenario_hash,
+                    output_root_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event["event_id"], claim.slot.slot_id, input_bytes, input_sha256,
+                    hashes["plan_hash"], hashes["market_bundle_hash"],
+                    hashes["previous_snapshot_hash"], hashes["fill_scenario_hash"],
+                    hashes["output_root_hash"],
+                ),
+            )
+            self.verify_integrity()
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return {
+            "input_bytes": input_bytes,
+            "input_sha256": input_sha256,
+            "payload": envelope,
+            "input_request": SystemPaperInputRequest.for_slot(self.policy, claim.slot),
+        }
+
+    def load_prepared_input(self, slot: SystemPaperSlot) -> Mapping[str, Any]:
+        self._validate_slot(slot)
+        self.verify_integrity()
+        row = self.connection.execute(
+            "SELECT * FROM prepared_inputs WHERE slot_id=?", (slot.slot_id,)
+        ).fetchone()
+        if row is None:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_MISSING")
+        return self._validated_prepared_input(row, self.slot_projection())
 
     def _append_locked(
         self,

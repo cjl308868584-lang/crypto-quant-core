@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import sqlite3
 import tempfile
@@ -7,12 +8,20 @@ from copy import deepcopy
 from pathlib import Path
 
 from crypto_quant.canonical import business_hash, stable_id
+from crypto_quant.evidence import artifact_self_hash
+from crypto_quant.system_paper_broker import FillScenario
 from crypto_quant.system_paper_plan import build_system_paper_plan
+from crypto_quant.system_paper_runtime import (
+    build_initial_system_paper_runtime_snapshot,
+)
 from crypto_quant.system_paper_scheduler import (
+    SystemPaperInputCapture,
+    SystemPaperInputRequest,
     SystemPaperScheduleError,
     SystemPaperSchedulePolicy,
     SystemPaperScheduleState,
 )
+from tests.test_system_paper_runtime import make_bundle
 
 
 class SystemPaperSchedulePolicyTests(unittest.TestCase):
@@ -366,3 +375,208 @@ class SystemPaperScheduleStateTests(unittest.TestCase):
             state.connection.commit()
             with self.assertRaisesRegex(SystemPaperScheduleError, "TRANSITION_INVALID"):
                 state.verify_integrity()
+
+
+class SystemPaperPreparedInputTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.plan = build_system_paper_plan()
+        self.policy = SystemPaperSchedulePolicy.create(self.plan)
+        self.state = SystemPaperScheduleState(
+            Path(self.temp.name) / "state.sqlite", self.policy
+        )
+        self.now = "2026-08-02T12:05:11.000Z"
+        self.slot = self.policy.current_slot(self.now)
+        self.market_bundle = make_bundle(observed_at=self.slot.scheduled_for)
+        self.output_root_hash = "f" * 64
+
+    def tearDown(self) -> None:
+        self.state.close()
+        self.temp.cleanup()
+
+    def claim_current(self, worker_id="worker-a", claimed_at=None):
+        return self.state.claim(
+            self.slot,
+            worker_id=worker_id,
+            claimed_at=claimed_at or self.now,
+        )
+
+    def capture(self, **overrides):
+        values = {
+            "public_market_bundle": self.market_bundle,
+            "capture_attempt_id": "capture-20260802t120511z",
+            "captured_at": self.now,
+            "request_families": (
+                "SPOT_AGG_TRADE",
+                "SPOT_BBO",
+                "SPOT_EXCHANGE_INFO",
+                "SPOT_KLINE_4H_WARMUP",
+            ),
+            "network_request_count": 4,
+        }
+        values.update(overrides)
+        return SystemPaperInputCapture(**values)
+
+    def prepare(self, claim, **overrides):
+        values = {
+            "plan": self.plan,
+            "capture": self.capture(),
+            "previous_runtime_snapshot": build_initial_system_paper_runtime_snapshot(
+                self.plan
+            ),
+            "fill_scenario": FillScenario.immediate_full(),
+            "output_root_hash": self.output_root_hash,
+            "prepared_at": self.now,
+        }
+        values.update(overrides)
+        return self.state.prepare_input(claim, **values)
+
+    def test_input_prepare_is_atomic_exact_and_allowlisted(self):
+        claim = self.claim_current()
+        prepared = self.prepare(claim)
+
+        loaded = self.state.load_prepared_input(claim.slot)
+        envelope = json.loads(loaded["input_bytes"])
+        self.assertEqual(
+            hashlib.sha256(loaded["input_bytes"]).hexdigest(),
+            prepared["input_sha256"],
+        )
+        self.assertEqual(envelope["slot_id"], claim.slot.slot_id)
+        self.assertEqual(envelope["scheduled_for"], "2026-08-02T12:00:00.000Z")
+        self.assertEqual(
+            envelope["capture"]["request_families"],
+            [
+                "SPOT_AGG_TRADE",
+                "SPOT_BBO",
+                "SPOT_EXCHANGE_INFO",
+                "SPOT_KLINE_4H_WARMUP",
+            ],
+        )
+        self.assertEqual(
+            self.state.slot_projection()[claim.slot.slot_id]["durable_stage"], "INPUT"
+        )
+        self.assertEqual(
+            self.state.connection.execute("SELECT COUNT(*) FROM prepared_inputs").fetchone()[0],
+            1,
+        )
+
+    def test_input_request_is_credential_and_path_free(self):
+        request = SystemPaperInputRequest.for_slot(self.policy, self.slot)
+
+        self.assertEqual(request.plan_hash, self.plan["plan_hash"])
+        self.assertEqual(request.capture_deadline, self.slot.expires_at)
+        self.assertEqual(
+            request.request_families,
+            (
+                "SPOT_AGG_TRADE",
+                "SPOT_BBO",
+                "SPOT_EXCHANGE_INFO",
+                "SPOT_KLINE_4H_WARMUP",
+            ),
+        )
+
+    def test_input_prepare_rejects_non_allowlisted_capture_boundaries(self):
+        cases = (
+            self.capture(request_families=("SPOT_BBO", "SPOT_EXCHANGE_INFO", "SPOT_KLINE_4H_WARMUP")),
+            self.capture(request_families=("SPOT_AGG_TRADE", "SPOT_BBO", "SPOT_BBO", "SPOT_KLINE_4H_WARMUP")),
+            self.capture(request_families=("SPOT_BBO", "SPOT_AGG_TRADE", "SPOT_EXCHANGE_INFO", "SPOT_KLINE_4H_WARMUP")),
+            self.capture(request_families=("SPOT_AGG_TRADE", "SPOT_BBO", "SPOT_EXCHANGE_INFO", "SPOT_KLINE_4H_WARMUP", "SPOT_ACCOUNT")),
+            self.capture(request_families=("SPOT_AGG_TRADE", "SPOT_BBO", "SPOT_EXCHANGE_INFO", "BROKER_ORDER")),
+            self.capture(network_request_count=3),
+            self.capture(network_request_count=5),
+        )
+        claim = self.claim_current()
+        for index, capture in enumerate(cases):
+            with self.subTest(index=index):
+                with self.assertRaises(SystemPaperScheduleError):
+                    self.prepare(claim, capture=capture)
+                self.assertEqual(
+                    self.state.connection.execute("SELECT COUNT(*) FROM prepared_inputs").fetchone()[0],
+                    0,
+                )
+
+    def test_input_prepare_rejects_stale_or_mismatched_capture(self):
+        stale = self.capture(captured_at="2026-08-02T16:00:00.000Z")
+        changed_bundle = dict(self.market_bundle)
+        changed_bundle["observed_at"] = "2026-08-02T08:00:00.000Z"
+        changed_bundle["bundle_hash"] = artifact_self_hash(changed_bundle, "bundle_hash")
+        mismatched = self.capture(public_market_bundle=changed_bundle)
+        claim = self.claim_current()
+        for index, capture in enumerate((stale, mismatched)):
+            with self.subTest(index=index):
+                with self.assertRaises(SystemPaperScheduleError):
+                    self.prepare(claim, capture=capture)
+
+    def test_load_prepared_input_rejects_binary_float_envelopes(self):
+        claim = self.claim_current()
+        self.prepare(claim)
+        self.state.connection.execute("DROP TRIGGER prepared_inputs_no_update")
+        binary_float = b'{"schema_version":"1.0.0","slot_id":"tampered","number":1.0}'
+        self.state.connection.execute(
+            "UPDATE prepared_inputs SET input_bytes=?, input_sha256=?",
+            (binary_float, hashlib.sha256(binary_float).hexdigest()),
+        )
+        with self.assertRaisesRegex(SystemPaperScheduleError, "INPUT_CANONICAL"):
+            self.state.load_prepared_input(claim.slot)
+
+    def test_load_prepared_input_rejects_changed_component_hashes(self):
+        claim = self.claim_current()
+        self.prepare(claim)
+        self.state.connection.execute("DROP TRIGGER prepared_inputs_no_update")
+        for column in (
+            "plan_hash",
+            "market_bundle_hash",
+            "previous_snapshot_hash",
+            "fill_scenario_hash",
+            "output_root_hash",
+        ):
+            original = self.state.connection.execute(
+                f"SELECT {column} FROM prepared_inputs"
+            ).fetchone()[0]
+            changed = "0" * 64 if original != "0" * 64 else "1" * 64
+            self.state.connection.execute(
+                f"UPDATE prepared_inputs SET {column}=?", (changed,)
+            )
+            with self.subTest(column=column):
+                with self.assertRaisesRegex(SystemPaperScheduleError, "INPUT_HASH_MISMATCH"):
+                    self.state.load_prepared_input(claim.slot)
+            self.state.connection.execute(
+                f"UPDATE prepared_inputs SET {column}=?", (original,)
+            )
+
+    def test_prepared_input_is_immutable_and_resumes_after_failure_or_expired_lease(self):
+        first = self.claim_current()
+        prepared = self.prepare(first)
+        original = self.state.load_prepared_input(first.slot)["input_bytes"]
+        with self.assertRaises(SystemPaperScheduleError):
+            self.prepare(first)
+        with self.assertRaises(sqlite3.DatabaseError):
+            self.state.connection.execute("UPDATE prepared_inputs SET input_sha256='0'")
+        with self.assertRaises(sqlite3.DatabaseError):
+            self.state.connection.execute("DELETE FROM prepared_inputs")
+        self.state.connection.rollback()
+        self.state.connection.execute("BEGIN IMMEDIATE")
+        self.state._append_locked(
+            "FAILED",
+            first.slot,
+            "2026-08-02T12:06:00.000Z",
+            {
+                "plan_hash": self.policy.plan_hash,
+                "schedule_policy_hash": self.policy.schedule_policy_hash,
+                "scheduled_for": first.slot.scheduled_for,
+                "due_at": first.slot.due_at,
+                "expires_at": first.slot.expires_at,
+                "worker_id": first.worker_id,
+                "attempt": first.attempt,
+                "reason_code": "SYSTEM_PAPER_RUNTIME_INTERRUPTED",
+            },
+        )
+        self.state.connection.commit()
+        after_failure = self.claim_current("worker-b", "2026-08-02T12:07:00.000Z")
+        self.assertEqual(after_failure.outcome, "RESUME_INPUT")
+        after_expiry = self.claim_current("worker-c", "2026-08-02T12:23:00.000Z")
+        self.assertEqual(after_expiry.outcome, "RESUME_INPUT")
+        after_window = self.claim_current("worker-d", "2026-08-02T16:05:11.000Z")
+        self.assertEqual(after_window.outcome, "RESUME_INPUT")
+        self.assertEqual(self.state.load_prepared_input(first.slot)["input_bytes"], original)
+        self.assertEqual(prepared["input_sha256"], hashlib.sha256(original).hexdigest())
