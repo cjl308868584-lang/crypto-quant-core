@@ -1,8 +1,8 @@
 # 实施追踪 v0.57.0
 
-日期：2026-08-02
+日期：2026-08-03
 
-状态：scheduler library 已完成本地验证；System Paper 未安装、未启动
+状态：scheduler library 代码与独立审查已通过；全量发布验证进行中；System Paper 未安装、未启动
 
 ## 本版本交付
 
@@ -24,6 +24,9 @@
 - `SUCCEEDED` 三字段与 prepared result 精确绑定，六个 immutable trigger 定义逐字义
   normalized 验证；output root fd/inode 贯穿 invocation，`system-paper-slots` 在 preflight
   与 publisher 两层要求 owner + exact `0700`；
+- runner 预检保留的 output-root `(st_dev, st_ino)` 作为 `succeed()` 必填契约进入状态事务；
+  exact artifact 读取、`SUCCEEDED` 追加后和最终 commit 前均复核 pathname 仍附着于同一
+  owner-only root，替代目录、路径消失或 commit 前替换均回滚且不伪造成功；
 - parent continuity 对外与 durable FAILED 均冻结为
   `SYSTEM_PAPER_PARENT_CONTINUITY_BROKEN`；artifact write/fsync ENOSPC 保留 RESULT 且不
   伪造 terminal event，恢复时 provider/network/candidate 均为零；
@@ -42,14 +45,24 @@
 - final-review TDD 红灯覆盖 1 个 Critical 与 8 个 Important finding，包括跨窗口错误
   claim/provider、capture time equality、重哈希 SUCCEEDED、同名 no-op trigger、root
   replacement、artifact ENOSPC、跨 root ALREADY、continuity reason 泄漏与 unsafe slots；
+- residual I3 使用独立冻结设计和红灯回归关闭 runner → state 组件边界：同路径 safe root
+  即使含 exact artifact bytes 也返回 `SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE`；五个聚焦
+  identity tests 通过，scheduler/fault 85 项通过，相邻 scheduler/runtime/artifact 133 项通过；
+- 两轮独立 scoped review 已确认 production I3 和 mandatory failure invariants 均关闭，
+  没有遗留或新增 Critical/Important；
 - `PYTHONPATH=src:tests python3 scripts/refresh_evaluator_build_manifest.py`：通过；
   build inputs：257；package：`0.57.0`；manifest：`1.51.0`；
-  tree hash：`bd94c22560ab2ebb7fe567446808ce6b934f63794eb6ea9b240b5aede326bbcf`；
-  manifest hash：`554e4ff28f955319ac5ec59d93de4878a6df7abe9f7817a4eef62bcfeac9bce0`；
+  tree hash：`2f0e0b9b23db0338f8aee0a743fa54b3cc63459860d8b34d5385ffbf499141f3`；
+  manifest hash：`3a25f58a7ad715a937aa8a95a9b65ca7965b837df05f791ddcea1355239beada`；
 - `PYTHONPATH=src:tests python3 scripts/validate_evaluator_build.py`：通过；
+- `PYTHONPATH=src:tests python3 -m unittest discover -s tests -q`：891 项通过，
+  267.293 秒，0 failure/error；
 - 指定 scheduler/fault/runtime/broker/market-data/estimator 与相邻 paper/context suites：
   196 项通过；
 - `PYTHONPYCACHEPREFIX=/private/tmp/crypto-quant-v057-pycache python3 -m compileall -q src tests scripts`：通过；
+- `make validate`：退出码 0；release policy 如实保持 `FAIL`，固定原因包含缺少生产 Policy
+  bindings、`POLICY_STATUS:DESIGN_BASELINE` 与 `PRODUCTION_ACTIVATION_DISABLED`；governance
+  templates 保持 `TEMPLATE_UNAPPROVED`，没有误放行生产；
 - `git diff --check`：通过。
 
 ## 尚未完成

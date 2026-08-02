@@ -274,12 +274,12 @@
     "src/crypto_quant/system_paper_broker.py": "273f7ad291faaec7e3515526378355b287e58785c859ac680da36933f2102af7",
     "src/crypto_quant/system_paper_plan.py": "fc48849143b370cdc779f2e8f71e6f6e59c3c864ec956a55bbc744fc945d8b47",
     "src/crypto_quant/system_paper_runtime.py": "9dd146aa0037865aa8e438ea35afa5eb3cc6133e3ec6210dc2b17efbd54e32ec",
-    "src/crypto_quant/system_paper_scheduler.py": "ca3186317288934f3e8be30e70a9fd5551c3c44be906f92b8cf077eca630539a",
+    "src/crypto_quant/system_paper_scheduler.py": "c4942a0e60a88dc2a4c77b70ba54c27f30044de421896c3dc53bdc74b1aa1dc0",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335",
     "tests/test_system_paper_fault_injection.py": "87322635cdb27d97576e209d7c38980288d658fe8379a43a47f344d8ff8e13ad",
-    "tests/test_system_paper_scheduler.py": "d592a5a10c284de01bf7151641e8280e817bd56cffcfa5af31f84bd144c22f3d"
+    "tests/test_system_paper_scheduler.py": "91a1270afd4063e8501d2a0b90fe40b3916b6de9a0a7b74e8e1751b28380679d"
   },
-  "build_input_tree_hash": "bd94c22560ab2ebb7fe567446808ce6b934f63794eb6ea9b240b5aede326bbcf",
+  "build_input_tree_hash": "2f0e0b9b23db0338f8aee0a743fa54b3cc63459860d8b34d5385ffbf499141f3",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -287,5 +287,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "554e4ff28f955319ac5ec59d93de4878a6df7abe9f7817a4eef62bcfeac9bce0"
+  "manifest_hash": "3a25f58a7ad715a937aa8a95a9b65ca7965b837df05f791ddcea1355239beada"
 }
