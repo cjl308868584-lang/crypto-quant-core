@@ -21,6 +21,7 @@ from .system_paper_runtime import (
     SystemPaperRuntimeError,
     _verify_bundle,
     _verify_snapshot,
+    load_system_paper_slot_result_bytes,
 )
 
 
@@ -231,6 +232,15 @@ def _slot_core(
     }
 
 
+def _output_root_hash(output_root: Path) -> str:
+    return business_hash(
+        {
+            "purpose": "SYSTEM_PAPER_IMMUTABLE_OUTPUT_ROOT",
+            "resolved_path": str(Path(output_root).expanduser().resolve()),
+        }
+    )
+
+
 def _slot_from_payload(
     slot_id: object, payload: Mapping[str, Any], policy: SystemPaperSchedulePolicy
 ) -> SystemPaperSlot:
@@ -399,6 +409,10 @@ def _event_projection(
                 or not isinstance(payload.get("result_sha256"), str)
             ):
                 raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_TRANSITION_INVALID")
+            if event_time >= _utc(active_claim["lease_expires_at"])[0]:
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_RESULT_CLAIM_LEASE_EXPIRED"
+                )
             state["durable_stage"] = "RESULT"
             state["result_event_id"] = source["event_id"]
         elif event_type == "SUCCEEDED":
@@ -651,6 +665,12 @@ class SystemPaperScheduleState:
             )
         for row in self.connection.execute("SELECT * FROM prepared_inputs").fetchall():
             self._validated_prepared_input(row, projection)
+        for state in sorted(
+            projection.values(), key=lambda value: value["scheduled_for"]
+        ):
+            if state["result_event_id"] is not None:
+                slot = self.policy.slot_from_scheduled(state["scheduled_for"])
+                self._load_prepared_result(slot)
         return events[-1]["event_hash"] if events else _GENESIS_HASH
 
     def _capture_payload(
@@ -980,6 +1000,272 @@ class SystemPaperScheduleState:
         if row is None:
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_MISSING")
         return self._validated_prepared_input(row, self.slot_projection())
+
+    def _successful_parent_result_bodies(
+        self,
+        slot: SystemPaperSlot,
+        *,
+        output_root_hash: str,
+    ) -> Tuple[bytes, ...]:
+        projection = self.slot_projection()
+        target = _utc(slot.scheduled_for)[0]
+        parent_states = sorted(
+            (
+                state
+                for state in projection.values()
+                if _utc(state["scheduled_for"])[0] < target
+            ),
+            key=lambda state: state["scheduled_for"],
+        )
+        if not parent_states:
+            return ()
+        previous = None
+        bodies = []
+        for state in parent_states:
+            scheduled = _utc(state["scheduled_for"])[0]
+            if previous is not None and scheduled != previous + _CADENCE:
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PARENT_CHAIN_INVALID")
+            previous = scheduled
+            if state["terminal_state"] != "SUCCEEDED":
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PARENT_NOT_SUCCEEDED")
+            row = self.connection.execute(
+                "SELECT * FROM prepared_results WHERE slot_id=?", (state["slot_id"],)
+            ).fetchone()
+            if row is None:
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_MISSING")
+            if row["output_root_hash"] != output_root_hash:
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_MISMATCH")
+            bodies.append(row["result_bytes"])
+        if previous + _CADENCE != target:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PARENT_CHAIN_INVALID")
+        try:
+            load_system_paper_slot_result_bytes(
+                bodies[-1], parent_result_bodies=tuple(bodies[:-1])
+            )
+        except SystemPaperRuntimeError as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PARENT_RESULT_INVALID"
+            ) from error
+        return tuple(bodies)
+
+    def successful_parent_result_bodies(
+        self,
+        slot: SystemPaperSlot,
+        *,
+        output_root: Path,
+    ) -> Tuple[bytes, ...]:
+        """Return only an exact, adjacent, successful parent artifact chain."""
+
+        self._validate_slot(slot)
+        self.verify_integrity()
+        return self._successful_parent_result_bodies(
+            slot, output_root_hash=_output_root_hash(output_root)
+        )
+
+    def _validated_prepared_result(
+        self,
+        row: sqlite3.Row,
+        projection: Mapping[str, Mapping[str, Any]],
+        parent_result_bodies: Tuple[bytes, ...],
+    ) -> Dict[str, Any]:
+        slot_id = row["slot_id"]
+        state = projection.get(slot_id)
+        if (
+            state is None
+            or state["durable_stage"] != "RESULT"
+            or state["result_event_id"] != row["source_event_id"]
+        ):
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_EVENT_MISMATCH"
+            )
+        event = self.connection.execute(
+            "SELECT * FROM schedule_events WHERE event_id=?", (row["source_event_id"],)
+        ).fetchone()
+        if event is None or event["event_type"] != "RESULT_PREPARED" or event["slot_id"] != slot_id:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_EVENT_MISMATCH"
+            )
+        result_bytes = row["result_bytes"]
+        if not isinstance(result_bytes, bytes) or _sha256(result_bytes) != row["result_sha256"]:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_SHA256_MISMATCH")
+        try:
+            result = load_system_paper_slot_result_bytes(
+                result_bytes, parent_result_bodies=parent_result_bodies
+            )
+        except SystemPaperRuntimeError as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_INVALID"
+            ) from error
+        input_row = self.connection.execute(
+            "SELECT * FROM prepared_inputs WHERE slot_id=?", (slot_id,)
+        ).fetchone()
+        if input_row is None:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_MISSING")
+        prepared_input = self._validated_prepared_input(input_row, projection)
+        envelope = prepared_input["payload"]
+        expected_replay_inputs = {
+            "plan": envelope["plan"],
+            "scheduled_for": envelope["scheduled_for"],
+            "public_market_bundle": envelope["capture"]["public_market_bundle"],
+            "previous_runtime_snapshot": envelope["previous_runtime_snapshot"],
+            "fill_scenario": envelope["fill_scenario"],
+        }
+        parent_hash = result["parent_slot_hash_or_null"] or _GENESIS_HASH
+        if (
+            result["slot_id"] != slot_id
+            or result["replay_inputs"] != expected_replay_inputs
+            or row["slot_hash"] != result["slot_hash"]
+            or row["runtime_snapshot_hash"] != result["runtime_snapshot"]["snapshot_hash"]
+            or row["parent_slot_hash"] != parent_hash
+            or row["output_root_hash"] != envelope["output_root_hash"]
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_BINDING_MISMATCH")
+        try:
+            event_payload = json.loads(event["payload_json"])
+        except json.JSONDecodeError as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_EVENT_MISMATCH"
+            ) from error
+        if (
+            event_payload.get("result_sha256") != row["result_sha256"]
+            or event_payload.get("slot_hash") != row["slot_hash"]
+            or event_payload.get("runtime_snapshot_hash") != row["runtime_snapshot_hash"]
+            or event_payload.get("parent_slot_hash") != row["parent_slot_hash"]
+            or event_payload.get("output_root_hash") != row["output_root_hash"]
+        ):
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_EVENT_MISMATCH"
+            )
+        return {"result_bytes": result_bytes, "result_sha256": row["result_sha256"], "slot_hash": row["slot_hash"], "payload": result}
+
+    def _load_prepared_result(self, slot: SystemPaperSlot) -> Dict[str, Any]:
+        self._validate_slot(slot)
+        projection = self.slot_projection()
+        row = self.connection.execute(
+            "SELECT * FROM prepared_results WHERE slot_id=?", (slot.slot_id,)
+        ).fetchone()
+        if row is None:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_MISSING")
+        input_row = self.connection.execute(
+            "SELECT * FROM prepared_inputs WHERE slot_id=?", (slot.slot_id,)
+        ).fetchone()
+        if input_row is None:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_MISSING")
+        input_payload = self._validated_prepared_input(input_row, projection)["payload"]
+        parents = self._successful_parent_result_bodies(
+            slot, output_root_hash=input_payload["output_root_hash"]
+        )
+        return self._validated_prepared_result(row, projection, parents)
+
+    def load_prepared_result(self, slot: SystemPaperSlot) -> Dict[str, Any]:
+        self._validate_slot(slot)
+        self.verify_integrity()
+        return self._load_prepared_result(slot)
+
+    def prepare_result(
+        self,
+        claim: SystemPaperClaim,
+        *,
+        result_bytes: bytes,
+        parent_result_bodies: Tuple[bytes, ...],
+        prepared_at: object,
+    ) -> Mapping[str, Any]:
+        if not isinstance(claim, SystemPaperClaim):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_CLAIM_INVALID")
+        self._validate_slot(claim.slot)
+        if claim.outcome not in ("CLAIMED", "RESUME_INPUT"):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_CLAIM_INVALID")
+        if not isinstance(parent_result_bodies, tuple):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PARENT_CHAIN_INVALID")
+        prepared, prepared_text = _utc(prepared_at)
+        if prepared >= _utc(claim.lease_expires_at)[0]:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_RESULT_CLAIM_LEASE_EXPIRED"
+            )
+        try:
+            self._transaction()
+            self.verify_integrity()
+            projection = self.slot_projection()
+            state = projection.get(claim.slot.slot_id)
+            active = None if state is None else state["active_claim"]
+            if (
+                state is None
+                or state["durable_stage"] != "INPUT"
+                or active is None
+                or active["worker_id"] != claim.worker_id
+                or active["attempt"] != claim.attempt
+                or active["claimed_at"] != claim.claimed_at
+                or active["lease_expires_at"] != claim.lease_expires_at
+            ):
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_CLAIM_INVALID")
+            prepared_input = self.load_prepared_input(claim.slot)
+            expected_parents = self._successful_parent_result_bodies(
+                claim.slot,
+                output_root_hash=prepared_input["payload"]["output_root_hash"],
+            )
+            if parent_result_bodies != expected_parents:
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_PARENT_CHAIN_INVALID")
+            try:
+                result = load_system_paper_slot_result_bytes(
+                    result_bytes, parent_result_bodies=expected_parents
+                )
+            except SystemPaperRuntimeError as error:
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_INVALID"
+                ) from error
+            envelope = prepared_input["payload"]
+            expected_replay_inputs = {
+                "plan": envelope["plan"],
+                "scheduled_for": envelope["scheduled_for"],
+                "public_market_bundle": envelope["capture"]["public_market_bundle"],
+                "previous_runtime_snapshot": envelope["previous_runtime_snapshot"],
+                "fill_scenario": envelope["fill_scenario"],
+            }
+            if result["slot_id"] != claim.slot.slot_id or result["replay_inputs"] != expected_replay_inputs:
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_BINDING_MISMATCH")
+            result_sha256 = _sha256(result_bytes)
+            parent_hash = result["parent_slot_hash_or_null"] or _GENESIS_HASH
+            event = self._append_locked(
+                "RESULT_PREPARED",
+                claim.slot,
+                prepared_text,
+                {
+                    **_slot_core(claim.slot, self.policy),
+                    "worker_id": claim.worker_id,
+                    "attempt": claim.attempt,
+                    "result_sha256": result_sha256,
+                    "slot_hash": result["slot_hash"],
+                    "runtime_snapshot_hash": result["runtime_snapshot"]["snapshot_hash"],
+                    "parent_slot_hash": parent_hash,
+                    "output_root_hash": envelope["output_root_hash"],
+                },
+            )
+            self.connection.execute(
+                """
+                INSERT INTO prepared_results (
+                    source_event_id, slot_id, result_bytes, result_sha256, slot_hash,
+                    runtime_snapshot_hash, parent_slot_hash, output_root_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event["event_id"], claim.slot.slot_id, result_bytes, result_sha256,
+                    result["slot_hash"], result["runtime_snapshot"]["snapshot_hash"],
+                    parent_hash, envelope["output_root_hash"],
+                ),
+            )
+            self.verify_integrity()
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return {
+            "result_bytes": result_bytes,
+            "result_sha256": result_sha256,
+            "slot_hash": result["slot_hash"],
+            "runtime_snapshot_hash": result["runtime_snapshot"]["snapshot_hash"],
+            "parent_slot_hash": parent_hash,
+            "output_root_hash": envelope["output_root_hash"],
+        }
 
     def _append_locked(
         self,

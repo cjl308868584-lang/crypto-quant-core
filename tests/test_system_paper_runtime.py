@@ -18,6 +18,7 @@ from crypto_quant.system_paper_runtime import (
     SystemPaperRuntimeError,
     SystemPaperSlotInputs,
     build_initial_system_paper_runtime_snapshot,
+    load_system_paper_slot_result_bytes,
     load_system_paper_slot_result,
     run_system_paper_slot,
     system_paper_slot_hash,
@@ -368,6 +369,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
             Decimal("1"),
         )
 
+
     def test_result_schema_mirror_and_strict_loader_round_trip(self) -> None:
         result = run_system_paper_slot(self.inputs())
         root = Path(__file__).resolve().parents[1]
@@ -572,6 +574,114 @@ class SystemPaperRuntimeTests(unittest.TestCase):
             run_system_paper_slot(
                 self.inputs(previous_runtime_snapshot=forged)
             )
+
+
+class SystemPaperRuntimeLoaderTests(unittest.TestCase):
+    """Regression tests for bytes/path trust-chain equivalence."""
+
+    def setUp(self) -> None:
+        self.plan = build_system_paper_plan()
+        self.first_inputs = SystemPaperSlotInputs(
+            plan=self.plan,
+            scheduled_for=SCHEDULED_FOR,
+            public_market_bundle=make_bundle(long_signal=False),
+            previous_runtime_snapshot=build_initial_system_paper_runtime_snapshot(
+                self.plan
+            ),
+            fill_scenario=FillScenario.immediate_full(),
+        )
+
+    def second_inputs(self, snapshot):
+        return SystemPaperSlotInputs(
+            plan=self.plan,
+            scheduled_for="2026-08-02T04:00:00.000Z",
+            public_market_bundle=make_bundle(
+                long_signal=False,
+                observed_at="2026-08-02T04:00:00.000Z",
+            ),
+            previous_runtime_snapshot=snapshot,
+            fill_scenario=FillScenario.immediate_full(),
+        )
+
+    def test_bytes_loader_matches_path_loader_and_replays_full_parent_chain(self):
+        # Catches a loader that verifies only a path or only the outer result.
+        first = run_system_paper_slot(self.first_inputs)
+        second = run_system_paper_slot(self.second_inputs(first["runtime_snapshot"]))
+        first_body = canonical_json(first).encode("utf-8")
+        second_body = canonical_json(second).encode("utf-8")
+
+        loaded = load_system_paper_slot_result_bytes(
+            second_body,
+            parent_result_bodies=(first_body,),
+        )
+
+        self.assertEqual(loaded, second)
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory).resolve() / "parent.json"
+            child = Path(directory).resolve() / "child.json"
+            parent.write_bytes(first_body)
+            child.write_bytes(second_body)
+            self.assertEqual(
+                load_system_paper_slot_result(child, parent_result_paths=(parent,)),
+                loaded,
+            )
+
+    def test_bytes_loader_rejects_ambiguous_or_noncanonical_json_bytes(self):
+        # Catches accepting byte representations that change the signed payload.
+        for body, reason in (
+            (b'{"slot_hash":"a","slot_hash":"b"}', "DUPLICATE_KEY"),
+            (b'{"value":1.5}', "FLOAT_FORBIDDEN"),
+            (b"{}\n\n", "CANONICAL_BYTES_REQUIRED"),
+        ):
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(SystemPaperRuntimeError, reason):
+                    load_system_paper_slot_result_bytes(body)
+
+        first = run_system_paper_slot(self.first_inputs)
+        self.assertEqual(
+            load_system_paper_slot_result_bytes(
+                canonical_json(first).encode("utf-8") + b"\n"
+            ),
+            first,
+        )
+
+    def test_bytes_loader_rejects_missing_extra_reordered_and_tampered_parents(self):
+        # Catches bypassing ordered full-chain replay or accepting rehashed parents.
+        first = run_system_paper_slot(self.first_inputs)
+        second = run_system_paper_slot(self.second_inputs(first["runtime_snapshot"]))
+        third = run_system_paper_slot(
+            SystemPaperSlotInputs(
+                plan=self.plan,
+                scheduled_for="2026-08-02T08:00:00.000Z",
+                public_market_bundle=make_bundle(
+                    long_signal=False,
+                    observed_at="2026-08-02T08:00:00.000Z",
+                ),
+                previous_runtime_snapshot=second["runtime_snapshot"],
+                fill_scenario=FillScenario.immediate_full(),
+            )
+        )
+        first_body = canonical_json(first).encode("utf-8")
+        second_body = canonical_json(second).encode("utf-8")
+        third_body = canonical_json(third).encode("utf-8")
+        tampered = copy.deepcopy(second)
+        tampered["risk"]["reason_codes"] = ["FORGED"]
+        tampered = rehash_slot(tampered)
+        tampered_body = canonical_json(tampered).encode("utf-8")
+
+        for parents in (
+            (),
+            (second_body,),
+            (first_body, third_body),
+            (second_body, first_body),
+            (first_body, tampered_body),
+        ):
+            with self.subTest(parent_count=len(parents)):
+                with self.assertRaises(SystemPaperRuntimeError):
+                    load_system_paper_slot_result_bytes(
+                        third_body,
+                        parent_result_bodies=parents,
+                    )
 
 
 if __name__ == "__main__":

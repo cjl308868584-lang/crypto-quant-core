@@ -12,7 +12,9 @@ from crypto_quant.evidence import artifact_self_hash
 from crypto_quant.system_paper_broker import FillScenario
 from crypto_quant.system_paper_plan import build_system_paper_plan
 from crypto_quant.system_paper_runtime import (
+    SystemPaperSlotInputs,
     build_initial_system_paper_runtime_snapshot,
+    run_system_paper_slot,
 )
 from crypto_quant.system_paper_scheduler import (
     SystemPaperInputCapture,
@@ -697,3 +699,270 @@ class SystemPaperPreparedInputTests(unittest.TestCase):
         self.assertEqual(after_window.outcome, "RESUME_INPUT")
         self.assertEqual(self.state.load_prepared_input(first.slot)["input_bytes"], original)
         self.assertEqual(prepared["input_sha256"], hashlib.sha256(original).hexdigest())
+
+
+class SystemPaperPreparedResultTests(unittest.TestCase):
+    """Behavior tests for binding result bytes to durable scheduler inputs."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.plan = build_system_paper_plan()
+        self.policy = SystemPaperSchedulePolicy.create(self.plan)
+        self.state = SystemPaperScheduleState(
+            Path(self.temp.name) / "state.sqlite", self.policy
+        )
+        self.output_root = Path(self.temp.name) / "results"
+        self.output_root.mkdir()
+        self.output_root_hash = business_hash(
+            {
+                "purpose": "SYSTEM_PAPER_IMMUTABLE_OUTPUT_ROOT",
+                "resolved_path": str(self.output_root.resolve()),
+            }
+        )
+
+    def tearDown(self) -> None:
+        self.state.close()
+        self.temp.cleanup()
+
+    def prepare_slot(self, scheduled_for, previous_snapshot):
+        slot = self.policy.slot_from_scheduled(scheduled_for)
+        claimed_at = slot.due_at
+        claim = self.state.claim(slot, worker_id="worker-a", claimed_at=claimed_at)
+        input_record = self.state.prepare_input(
+            claim,
+            plan=self.plan,
+            capture=SystemPaperInputCapture(
+                public_market_bundle=make_bundle(observed_at=scheduled_for, long_signal=False),
+                capture_attempt_id="capture-" + scheduled_for.replace(":", ""),
+                captured_at=claimed_at,
+                request_families=(
+                    "SPOT_AGG_TRADE",
+                    "SPOT_BBO",
+                    "SPOT_EXCHANGE_INFO",
+                    "SPOT_KLINE_4H_WARMUP",
+                ),
+                network_request_count=4,
+            ),
+            previous_runtime_snapshot=previous_snapshot,
+            fill_scenario=FillScenario.immediate_full(),
+            output_root_hash=self.output_root_hash,
+            prepared_at=claimed_at,
+        )
+        payload = input_record["payload"]
+        result = run_system_paper_slot(
+            SystemPaperSlotInputs(
+                plan=payload["plan"],
+                scheduled_for=payload["scheduled_for"],
+                public_market_bundle=payload["capture"]["public_market_bundle"],
+                previous_runtime_snapshot=payload["previous_runtime_snapshot"],
+                fill_scenario=FillScenario.immediate_full(),
+            )
+        )
+        return claim, input_record, result
+
+    def test_result_prepare_replays_input_and_full_parent_chain(self):
+        # Catches accepting result bytes because their outer hash is self-consistent.
+        slot = self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z")
+        claim, _input_record, result = self.prepare_slot(
+            slot.scheduled_for,
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+
+        record = self.state.prepare_result(
+            claim,
+            result_bytes=canonical_json(result).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=claim.claimed_at,
+        )
+
+        self.assertEqual(record["slot_hash"], result["slot_hash"])
+        self.assertEqual(
+            self.state.slot_projection()[claim.slot.slot_id]["durable_stage"], "RESULT"
+        )
+        self.assertEqual(self.state.load_prepared_result(claim.slot)["result_bytes"], record["result_bytes"])
+
+    def test_result_prepare_rejects_a_valid_result_from_different_persisted_input(self):
+        # Catches loading candidate bytes without binding replay inputs to durable input.
+        slot = self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z")
+        claim, _input_record, _result = self.prepare_slot(
+            slot.scheduled_for,
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        other = run_system_paper_slot(
+            SystemPaperSlotInputs(
+                plan=self.plan,
+                scheduled_for=slot.scheduled_for,
+                public_market_bundle=make_bundle(observed_at=slot.scheduled_for),
+                previous_runtime_snapshot=build_initial_system_paper_runtime_snapshot(
+                    self.plan
+                ),
+                fill_scenario=FillScenario.immediate_full(),
+            )
+        )
+
+        with self.assertRaises(SystemPaperScheduleError):
+            self.state.prepare_result(
+                claim,
+                result_bytes=canonical_json(other).encode("utf-8"),
+                parent_result_bodies=(),
+                prepared_at=claim.claimed_at,
+            )
+        self.assertEqual(
+            self.state.connection.execute("SELECT COUNT(*) FROM prepared_results").fetchone()[0],
+            0,
+        )
+
+    def succeed_prepared(self, claim):
+        self.state.connection.execute("BEGIN IMMEDIATE")
+        self.state._append_locked(
+            "SUCCEEDED",
+            claim.slot,
+            claim.slot.expires_at,
+            {
+                "plan_hash": self.policy.plan_hash,
+                "schedule_policy_hash": self.policy.schedule_policy_hash,
+                "scheduled_for": claim.slot.scheduled_for,
+                "due_at": claim.slot.due_at,
+                "expires_at": claim.slot.expires_at,
+                "worker_id": claim.worker_id,
+                "attempt": claim.attempt,
+            },
+        )
+        self.state.connection.commit()
+
+    def test_successful_parent_bodies_require_complete_adjacent_immutable_chain(self):
+        # Catches deriving continuity from a partial chain, non-success, or mutable rows.
+        first_claim, _first_input, first = self.prepare_slot(
+            "2026-08-02T00:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        first_record = self.state.prepare_result(
+            first_claim,
+            result_bytes=canonical_json(first).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=first_claim.claimed_at,
+        )
+        self.succeed_prepared(first_claim)
+        second_claim, _second_input, second = self.prepare_slot(
+            "2026-08-02T04:00:00.000Z", first["runtime_snapshot"]
+        )
+        with self.assertRaisesRegex(SystemPaperScheduleError, "PARENT_CHAIN_INVALID"):
+            self.state.prepare_result(
+                second_claim,
+                result_bytes=canonical_json(second).encode("utf-8"),
+                parent_result_bodies=(first_record["result_bytes"] + b"\n",),
+                prepared_at=second_claim.claimed_at,
+            )
+        second_record = self.state.prepare_result(
+            second_claim,
+            result_bytes=canonical_json(second).encode("utf-8"),
+            parent_result_bodies=(first_record["result_bytes"],),
+            prepared_at=second_claim.claimed_at,
+        )
+        self.succeed_prepared(second_claim)
+        target = self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z")
+
+        self.assertEqual(
+            self.state.successful_parent_result_bodies(
+                target, output_root=self.output_root
+            ),
+            (first_record["result_bytes"], second_record["result_bytes"]),
+        )
+        with self.assertRaises(sqlite3.DatabaseError):
+            self.state.connection.execute(
+                "UPDATE prepared_results SET result_sha256='0'"
+            )
+        with self.assertRaises(sqlite3.DatabaseError):
+            self.state.connection.execute("DELETE FROM prepared_results")
+        self.state.connection.rollback()
+
+        third_claim, _third_input, third = self.prepare_slot(
+            "2026-08-02T08:00:00.000Z", second["runtime_snapshot"]
+        )
+        third_record = self.state.prepare_result(
+            third_claim,
+            result_bytes=canonical_json(third).encode("utf-8"),
+            parent_result_bodies=(
+                first_record["result_bytes"],
+                second_record["result_bytes"],
+            ),
+            prepared_at=third_claim.claimed_at,
+        )
+        self.succeed_prepared(third_claim)
+        self.assertEqual(
+            self.state.successful_parent_result_bodies(
+                self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z"),
+                output_root=self.output_root,
+            ),
+            (
+                first_record["result_bytes"],
+                second_record["result_bytes"],
+                third_record["result_bytes"],
+            ),
+        )
+        with self.assertRaises(SystemPaperScheduleError):
+            self.state.successful_parent_result_bodies(
+                target, output_root=Path(self.temp.name) / "other-root"
+            )
+        self.state.connection.execute("DROP TRIGGER prepared_results_no_delete")
+        self.state.connection.execute(
+            "DELETE FROM prepared_results WHERE slot_id=?", (second_claim.slot.slot_id,)
+        )
+        with self.assertRaises(SystemPaperScheduleError):
+            self.state.successful_parent_result_bodies(
+                target, output_root=self.output_root
+            )
+
+    def test_parent_derivation_blocks_missing_and_missed_natural_slots(self):
+        # Catches treating merely earlier success as a continuous 4-hour lineage.
+        first_claim, _first_input, first = self.prepare_slot(
+            "2026-08-02T00:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        first_record = self.state.prepare_result(
+            first_claim,
+            result_bytes=canonical_json(first).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=first_claim.claimed_at,
+        )
+        self.succeed_prepared(first_claim)
+        target = self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z")
+
+        with self.assertRaisesRegex(SystemPaperScheduleError, "PARENT_CHAIN_INVALID"):
+            self.state.successful_parent_result_bodies(
+                target, output_root=self.output_root
+            )
+        self.state.record_gaps(target, recorded_at=target.due_at)
+        with self.assertRaisesRegex(SystemPaperScheduleError, "PARENT_NOT_SUCCEEDED"):
+            self.state.successful_parent_result_bodies(
+                target, output_root=self.output_root
+            )
+        self.assertEqual(
+            self.state.connection.execute("SELECT result_bytes FROM prepared_results").fetchone()[0],
+            first_record["result_bytes"],
+        )
+
+    def test_parent_derivation_blocks_expired_predecessor(self):
+        # Catches accepting a known-but-expired predecessor as a replay parent.
+        first_claim, _first_input, first = self.prepare_slot(
+            "2026-08-02T00:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        self.state.prepare_result(
+            first_claim,
+            result_bytes=canonical_json(first).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=first_claim.claimed_at,
+        )
+        self.succeed_prepared(first_claim)
+        predecessor = self.policy.slot_from_scheduled("2026-08-02T04:00:00.000Z")
+        self.state.claim(
+            predecessor, worker_id="worker-a", claimed_at=predecessor.due_at
+        )
+        target = self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z")
+        self.state.record_gaps(target, recorded_at=target.due_at)
+
+        with self.assertRaisesRegex(SystemPaperScheduleError, "PARENT_NOT_SUCCEEDED"):
+            self.state.successful_parent_result_bodies(
+                target, output_root=self.output_root
+            )
