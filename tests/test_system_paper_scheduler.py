@@ -914,6 +914,15 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
         except TypeError as error:
             self.fail("trusted output-root identity contract is missing: " + str(error))
 
+    def persistence_snapshot(self):
+        return tuple(
+            tuple(tuple(row) for row in self.state.connection.execute(query).fetchall())
+            for query in (
+                "SELECT * FROM prepared_inputs ORDER BY slot_id",
+                "SELECT * FROM prepared_results ORDER BY slot_id",
+            )
+        )
+
     def test_result_prepare_replays_input_and_full_parent_chain(self):
         # Catches accepting result bytes because their outer hash is self-consistent.
         slot = self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z")
@@ -1078,12 +1087,8 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
         artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
         artifact_before = (artifact.read_bytes(), artifact.stat().st_ino)
         events_before = self.state.events()
-        prepared_before = tuple(
-            tuple(row)
-            for row in self.state.connection.execute(
-                "SELECT * FROM prepared_results ORDER BY slot_id"
-            ).fetchall()
-        )
+        persistence_before = self.persistence_snapshot()
+        safety_before = dict(scheduler_module._RUNNER_SAFETY_COUNTS)
         other_root = Path(self.temp.name) / "other-results"
         other_root.mkdir(mode=0o700)
         os.chmod(other_root, 0o700)
@@ -1098,19 +1103,18 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
                 artifact_path=artifact,
                 expected_output_root_identity=(other_stat.st_dev, other_stat.st_ino),
                 completed_at=claim.claimed_at,
-            )
+        )
 
         self.assertEqual(self.state.events(), events_before)
-        self.assertEqual(
-            tuple(
-                tuple(row)
-                for row in self.state.connection.execute(
-                    "SELECT * FROM prepared_results ORDER BY slot_id"
-                ).fetchall()
-            ),
-            prepared_before,
-        )
+        self.assertEqual(self.persistence_snapshot(), persistence_before)
         self.assertEqual((artifact.read_bytes(), artifact.stat().st_ino), artifact_before)
+        self.assertEqual(dict(scheduler_module._RUNNER_SAFETY_COUNTS), safety_before)
+        self.assertEqual(safety_before, {
+            "credential_reads": 0,
+            "account_requests": 0,
+            "real_broker_calls": 0,
+            "real_order_writes": 0,
+        })
 
     def test_succeed_rejects_malformed_expected_output_root_identity(self):
         claim, _input, result = self.prepare_slot(
@@ -1124,13 +1128,10 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             prepared_at=claim.claimed_at,
         )
         artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
+        artifact_before = (artifact.read_bytes(), artifact.stat().st_ino)
         events_before = self.state.events()
-        prepared_before = tuple(
-            tuple(row)
-            for row in self.state.connection.execute(
-                "SELECT * FROM prepared_results ORDER BY slot_id"
-            ).fetchall()
-        )
+        persistence_before = self.persistence_snapshot()
+        safety_before = dict(scheduler_module._RUNNER_SAFETY_COUNTS)
 
         for malformed in (None, (1,), (True, 2), (0, 2), [-1, 2], ("1", 2)):
             with self.subTest(identity=malformed):
@@ -1145,14 +1146,12 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
                         completed_at=claim.claimed_at,
                     )
                 self.assertEqual(self.state.events(), events_before)
+                self.assertEqual(self.persistence_snapshot(), persistence_before)
                 self.assertEqual(
-                    tuple(
-                        tuple(row)
-                        for row in self.state.connection.execute(
-                            "SELECT * FROM prepared_results ORDER BY slot_id"
-                        ).fetchall()
-                    ),
-                    prepared_before,
+                    (artifact.read_bytes(), artifact.stat().st_ino), artifact_before
+                )
+                self.assertEqual(
+                    dict(scheduler_module._RUNNER_SAFETY_COUNTS), safety_before
                 )
 
     def test_succeed_rejects_output_root_replacement_before_commit(self):
@@ -1169,6 +1168,8 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
         artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
         artifact_before = (artifact.read_bytes(), artifact.stat().st_ino)
         events_before = self.state.events()
+        persistence_before = self.persistence_snapshot()
+        safety_before = dict(scheduler_module._RUNNER_SAFETY_COUNTS)
         root_stat = os.stat(self.output_root, follow_symlinks=False)
         root_identity = (root_stat.st_dev, root_stat.st_ino)
         backup = Path(str(self.output_root) + "-backup")
@@ -1192,11 +1193,13 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
 
         retained_artifact = backup / "system-paper-slots" / artifact.name
         self.assertEqual(self.state.events(), events_before)
+        self.assertEqual(self.persistence_snapshot(), persistence_before)
         self.assertEqual(
             (retained_artifact.read_bytes(), retained_artifact.stat().st_ino),
             artifact_before,
         )
         self.assertFalse((self.output_root / "system-paper-slots").exists())
+        self.assertEqual(dict(scheduler_module._RUNNER_SAFETY_COUNTS), safety_before)
 
     def test_succeed_maps_disappeared_expected_output_root_to_race(self):
         claim, _input, result = self.prepare_slot(
@@ -1210,7 +1213,10 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             prepared_at=claim.claimed_at,
         )
         artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
+        artifact_before = (artifact.read_bytes(), artifact.stat().st_ino)
         events_before = self.state.events()
+        persistence_before = self.persistence_snapshot()
+        safety_before = dict(scheduler_module._RUNNER_SAFETY_COUNTS)
         root_stat = os.stat(self.output_root, follow_symlinks=False)
         root_identity = (root_stat.st_dev, root_stat.st_ino)
         backup = Path(str(self.output_root) + "-backup")
@@ -1228,8 +1234,12 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             )
 
         self.assertEqual(self.state.events(), events_before)
+        self.assertEqual(self.persistence_snapshot(), persistence_before)
         retained = backup / "system-paper-slots" / artifact.name
-        self.assertEqual(retained.read_bytes(), record["result_bytes"])
+        self.assertEqual(
+            (retained.read_bytes(), retained.stat().st_ino), artifact_before
+        )
+        self.assertEqual(dict(scheduler_module._RUNNER_SAFETY_COUNTS), safety_before)
 
     def prepare_successful_parent_pair(self):
         first_claim, _first_input, first = self.prepare_slot(
@@ -2362,27 +2372,52 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
     def test_output_root_replacement_between_runner_validation_and_succeed_fails_closed(self):
         backup = Path(str(self.output_root) + "-backup")
         real_succeed = scheduler_module.SystemPaperScheduleState.succeed
+        real_runtime = scheduler_module.run_system_paper_slot
         replacement_artifact = []
+        boundary_evidence = []
+        runtime_invocations = []
+        safety_before = dict(scheduler_module._RUNNER_SAFETY_COUNTS)
+
+        def recording_runtime(*args, **kwargs):
+            runtime_invocations.append((args, kwargs))
+            return real_runtime(*args, **kwargs)
 
         def swapping_succeed(state, claim, **kwargs):
+            source = self.output_root / "system-paper-slots" / (
+                claim.slot.slot_id + ".json"
+            )
+            boundary_evidence.append({
+                "events": state.events(),
+                "persistence": tuple(
+                    tuple(
+                        tuple(row)
+                        for row in state.connection.execute(query).fetchall()
+                    )
+                    for query in (
+                        "SELECT * FROM prepared_inputs ORDER BY slot_id",
+                        "SELECT * FROM prepared_results ORDER BY slot_id",
+                    )
+                ),
+                "artifact": (source.read_bytes(), source.stat().st_ino),
+            })
             self.output_root.rename(backup)
             self.output_root.mkdir(mode=0o700)
             os.chmod(self.output_root, 0o700)
             replacement_slots = self.output_root / "system-paper-slots"
             replacement_slots.mkdir(mode=0o700)
             os.chmod(replacement_slots, 0o700)
-            source = backup / "system-paper-slots" / (claim.slot.slot_id + ".json")
-            replacement = replacement_slots / source.name
-            replacement.write_bytes(source.read_bytes())
+            retained = backup / "system-paper-slots" / (claim.slot.slot_id + ".json")
+            replacement = replacement_slots / retained.name
+            replacement.write_bytes(retained.read_bytes())
             os.chmod(replacement, 0o600)
             replacement_artifact.append(replacement)
             return real_succeed(state, claim, **kwargs)
 
         provider = RecordingProvider(self.now)
         with patch.object(
-            scheduler_module.SystemPaperScheduleState,
-            "succeed",
-            swapping_succeed,
+            scheduler_module, "run_system_paper_slot", recording_runtime
+        ), patch.object(
+            scheduler_module.SystemPaperScheduleState, "succeed", swapping_succeed
         ):
             with self.assertRaisesRegex(
                 SystemPaperScheduleError,
@@ -2391,7 +2426,9 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
                 self.invoke_runner(provider)
 
         self.assertEqual(provider.invocations, 1)
+        self.assertEqual(len(runtime_invocations), 1)
         self.assertEqual(len(replacement_artifact), 1)
+        self.assertEqual(len(boundary_evidence), 1)
         replacement = replacement_artifact[0]
         retained = backup / "system-paper-slots" / replacement.name
         self.assertEqual(replacement.read_bytes(), retained.read_bytes())
@@ -2402,9 +2439,33 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             prepared = state.connection.execute(
                 "SELECT result_bytes FROM prepared_results"
             ).fetchone()
+            persistence_after = tuple(
+                tuple(
+                    tuple(row)
+                    for row in state.connection.execute(query).fetchall()
+                )
+                for query in (
+                    "SELECT * FROM prepared_inputs ORDER BY slot_id",
+                    "SELECT * FROM prepared_results ORDER BY slot_id",
+                )
+            )
         self.assertNotIn("SUCCEEDED", [event["event_type"] for event in events])
+        self.assertEqual(events[:-1], boundary_evidence[0]["events"])
+        self.assertEqual(events[-1]["event_type"], "FAILED")
+        self.assertEqual(persistence_after, boundary_evidence[0]["persistence"])
         self.assertIsNotNone(prepared)
         self.assertEqual(prepared["result_bytes"], retained.read_bytes())
+        self.assertEqual(
+            (retained.read_bytes(), retained.stat().st_ino),
+            boundary_evidence[0]["artifact"],
+        )
+        self.assertEqual(dict(scheduler_module._RUNNER_SAFETY_COUNTS), safety_before)
+        self.assertEqual(safety_before, {
+            "credential_reads": 0,
+            "account_requests": 0,
+            "real_broker_calls": 0,
+            "real_order_writes": 0,
+        })
 
     def test_existing_unsafe_slots_directory_rejects_before_state_or_provider(self):
         cases = ("wrong-mode", "symlink")
