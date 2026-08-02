@@ -462,10 +462,62 @@ def _owner_safe_directory_stat(entry: os.stat_result) -> bool:
     )
 
 
+def _expected_output_root_identity(value: object) -> Tuple[int, int]:
+    if (
+        not isinstance(value, tuple)
+        or len(value) != 2
+        or any(
+            not isinstance(part, int) or isinstance(part, bool) or part <= 0
+            for part in value
+        )
+    ):
+        raise SystemPaperScheduleError(
+            "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_IDENTITY_INVALID"
+        )
+    return value
+
+
+def _validate_output_root_attachment(
+    output_root: Path,
+    expected_identity: Tuple[int, int],
+) -> None:
+    expected = _expected_output_root_identity(expected_identity)
+    root = Path(output_root).expanduser()
+    directory = getattr(os, "O_DIRECTORY", None)
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if (
+        not root.is_absolute()
+        or root.is_symlink()
+        or directory is None
+        or nofollow is None
+    ):
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE")
+    descriptor = None
+    try:
+        descriptor = os.open(str(root), os.O_RDONLY | directory | nofollow)
+        opened = os.fstat(descriptor)
+        current = os.stat(str(root), follow_symlinks=False)
+    except OSError as error:
+        raise SystemPaperScheduleError(
+            "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE"
+        ) from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if (
+        not _owner_safe_directory_stat(opened)
+        or not _owner_safe_directory_stat(current)
+        or (opened.st_dev, opened.st_ino) != expected
+        or (current.st_dev, current.st_ino) != expected
+    ):
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE")
+
+
 def _artifact_body(
     output_root: Path,
     slot: SystemPaperSlot,
     *,
+    expected_output_root_identity: Optional[Tuple[int, int]] = None,
     expected_bytes: bytes,
     expected_sha256: str,
 ) -> bytes:
@@ -473,15 +525,32 @@ def _artifact_body(
 
     root = Path(output_root).expanduser()
     if not root.is_absolute() or root.is_symlink():
-        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID")
+        raise SystemPaperScheduleError(
+            "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE"
+            if expected_output_root_identity is not None
+            else "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID"
+        )
+    expected_identity = (
+        None
+        if expected_output_root_identity is None
+        else _expected_output_root_identity(expected_output_root_identity)
+    )
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     directory = getattr(os, "O_DIRECTORY", 0)
     root_fd = slots_fd = artifact_fd = current_fd = None
     try:
         root_fd = os.open(str(root), os.O_RDONLY | directory | nofollow)
         root_stat = os.fstat(root_fd)
-        if not _owner_safe_directory_stat(root_stat):
-            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_UNSAFE")
+        if (
+            not _owner_safe_directory_stat(root_stat)
+            or expected_identity is not None
+            and (root_stat.st_dev, root_stat.st_ino) != expected_identity
+        ):
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE"
+                if expected_identity is not None
+                else "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_UNSAFE"
+            )
         slots_fd = os.open(
             "system-paper-slots",
             os.O_RDONLY | directory | nofollow,
@@ -536,10 +605,20 @@ def _artifact_body(
             or current.st_ino != before.st_ino
         ):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_RACE")
+        if expected_identity is not None:
+            _validate_output_root_attachment(root, expected_identity)
     except FileNotFoundError as error:
-        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_MISSING") from error
+        raise SystemPaperScheduleError(
+            "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE"
+            if expected_identity is not None and root_fd is None
+            else "SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_MISSING"
+        ) from error
     except OSError as error:
-        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_UNSAFE") from error
+        raise SystemPaperScheduleError(
+            "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE"
+            if expected_identity is not None and root_fd is None
+            else "SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_UNSAFE"
+        ) from error
     finally:
         for descriptor in (current_fd, artifact_fd, slots_fd, root_fd):
             if descriptor is not None:
@@ -2005,6 +2084,7 @@ class SystemPaperScheduleState:
         claim: SystemPaperClaim,
         *,
         artifact_path: Path,
+        expected_output_root_identity: Tuple[int, int],
         completed_at: object,
         before_commit: Optional[Callable[[], None]] = None,
     ) -> None:
@@ -2012,6 +2092,9 @@ class SystemPaperScheduleState:
 
         if not isinstance(claim, SystemPaperClaim):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_SUCCESS_INVALID")
+        expected_identity = _expected_output_root_identity(
+            expected_output_root_identity
+        )
         self._validate_slot(claim.slot)
         path = Path(artifact_path).expanduser()
         if (
@@ -2050,9 +2133,11 @@ class SystemPaperScheduleState:
             _artifact_body(
                 output_root,
                 claim.slot,
+                expected_output_root_identity=expected_identity,
                 expected_bytes=record["result_bytes"],
                 expected_sha256=record["result_sha256"],
             )
+            _validate_output_root_attachment(output_root, expected_identity)
             self._append_locked(
                 "SUCCEEDED",
                 claim.slot,
@@ -2071,6 +2156,7 @@ class SystemPaperScheduleState:
             self.verify_integrity()
             if before_commit is not None:
                 before_commit()
+            _validate_output_root_attachment(output_root, expected_identity)
             self.connection.commit()
         except Exception:
             self.connection.rollback()
@@ -2325,6 +2411,7 @@ def run_due_system_paper_slot(
             state.succeed(
                 claim,
                 artifact_path=result_path,
+                expected_output_root_identity=root_handle.identity,
                 completed_at=sampled_at,
                 before_commit=lambda: injector.maybe_raise("BEFORE_SUCCESS_COMMIT"),
             )

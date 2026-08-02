@@ -1198,6 +1198,39 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
         )
         self.assertFalse((self.output_root / "system-paper-slots").exists())
 
+    def test_succeed_maps_disappeared_expected_output_root_to_race(self):
+        claim, _input, result = self.prepare_slot(
+            "2026-08-02T12:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        record = self.state.prepare_result(
+            claim,
+            result_bytes=canonical_json(result).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=claim.claimed_at,
+        )
+        artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
+        events_before = self.state.events()
+        root_stat = os.stat(self.output_root, follow_symlinks=False)
+        root_identity = (root_stat.st_dev, root_stat.st_ino)
+        backup = Path(str(self.output_root) + "-backup")
+        self.output_root.rename(backup)
+
+        with self.assertRaisesRegex(
+            SystemPaperScheduleError,
+            "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE",
+        ):
+            self.succeed_with_identity(
+                claim,
+                artifact_path=artifact,
+                expected_output_root_identity=root_identity,
+                completed_at=claim.claimed_at,
+            )
+
+        self.assertEqual(self.state.events(), events_before)
+        retained = backup / "system-paper-slots" / artifact.name
+        self.assertEqual(retained.read_bytes(), record["result_bytes"])
+
     def prepare_successful_parent_pair(self):
         first_claim, _first_input, first = self.prepare_slot(
             "2026-08-02T00:00:00.000Z",
