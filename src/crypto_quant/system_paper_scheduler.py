@@ -57,6 +57,9 @@ _ALLOWED_EVENTS = frozenset(
     )
 )
 _TERMINAL_STATES = frozenset(("MISSED", "EXPIRED", "SUCCEEDED"))
+_ALLOWED_FAILED_REASON_CODES = frozenset(
+    ("SYSTEM_PAPER_INPUT_INVALID", "SYSTEM_PAPER_RUNTIME_INTERRUPTED")
+)
 
 
 class SystemPaperScheduleError(ValueError):
@@ -298,6 +301,33 @@ def _output_root_hash(output_root: Path) -> str:
     )
 
 
+def _validated_runner_output_root(output_root: Path) -> Path:
+    """Accept only an already-provisioned owner-only root without following it."""
+
+    root = Path(output_root).expanduser()
+    if not root.is_absolute() or root.is_symlink():
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID")
+    directory = getattr(os, "O_DIRECTORY", None)
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if directory is None or nofollow is None:
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID")
+    flags = os.O_RDONLY | directory | nofollow
+    descriptor = None
+    try:
+        descriptor = os.open(str(root), flags)
+        entry = os.fstat(descriptor)
+        if not _owner_safe_directory_stat(entry):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_UNSAFE")
+    except SystemPaperScheduleError:
+        raise
+    except OSError as error:
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    return root.resolve()
+
+
 def _owner_safe_directory_stat(entry: os.stat_result) -> bool:
     return (
         stat.S_ISDIR(entry.st_mode)
@@ -527,8 +557,8 @@ def _event_projection(
                 or active_claim is None
                 or payload.get("worker_id") != active_claim["worker_id"]
                 or payload.get("attempt") != active_claim["attempt"]
-                or not isinstance(payload.get("reason_code"), str)
-                or not payload["reason_code"]
+                or payload.get("reason_code") not in _ALLOWED_FAILED_REASON_CODES
+                or event_time >= _utc(active_claim["lease_expires_at"])[0]
             ):
                 raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_TRANSITION_INVALID")
             state["attempt_status"] = "FAILED"
@@ -575,6 +605,7 @@ def _event_projection(
                 or active_claim is None
                 or payload.get("worker_id") != active_claim["worker_id"]
                 or payload.get("attempt") != active_claim["attempt"]
+                or event_time >= _utc(active_claim["lease_expires_at"])[0]
             ):
                 raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_TRANSITION_INVALID")
             state["terminal_state"] = "SUCCEEDED"
@@ -1066,6 +1097,7 @@ class SystemPaperScheduleState:
         fill_scenario: FillScenario,
         output_root_hash: str,
         prepared_at: object,
+        before_commit: Optional[Callable[[], None]] = None,
     ) -> Mapping[str, Any]:
         if not isinstance(claim, SystemPaperClaim):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_CLAIM_INVALID")
@@ -1132,6 +1164,8 @@ class SystemPaperScheduleState:
                 ),
             )
             self.verify_integrity()
+            if before_commit is not None:
+                before_commit()
             self.connection.commit()
         except Exception:
             self.connection.rollback()
@@ -1333,6 +1367,7 @@ class SystemPaperScheduleState:
         result_bytes: bytes,
         parent_result_bodies: Tuple[bytes, ...],
         prepared_at: object,
+        before_commit: Optional[Callable[[], None]] = None,
     ) -> Mapping[str, Any]:
         if not isinstance(claim, SystemPaperClaim):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_CLAIM_INVALID")
@@ -1426,6 +1461,8 @@ class SystemPaperScheduleState:
                 raise SystemPaperScheduleError(
                     "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_EVENT_MISMATCH"
                 )
+            if before_commit is not None:
+                before_commit()
             self.connection.commit()
         except Exception:
             self.connection.rollback()
@@ -1583,6 +1620,8 @@ class SystemPaperScheduleState:
         *,
         worker_id: str,
         claimed_at: object,
+        before_commit: Optional[Callable[[], None]] = None,
+        after_commit: Optional[Callable[[], None]] = None,
     ) -> SystemPaperClaim:
         self._validate_slot(slot)
         worker = _worker_id(worker_id)
@@ -1647,7 +1686,11 @@ class SystemPaperScheduleState:
                 },
             )
             self.verify_integrity()
+            if before_commit is not None:
+                before_commit()
             self.connection.commit()
+            if after_commit is not None:
+                after_commit()
             stage = "NONE" if state is None else state["durable_stage"]
             return SystemPaperClaim(
                 "RESUME_RESULT" if stage == "RESULT" else (
@@ -1681,7 +1724,11 @@ class SystemPaperScheduleState:
         ):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_FAIL_INVALID")
         self._validate_slot(claim.slot)
-        _, failed_text = _utc(failed_at)
+        failed, failed_text = _utc(failed_at)
+        if reason_code not in _ALLOWED_FAILED_REASON_CODES:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_FAIL_REASON_INVALID")
+        if failed >= _utc(claim.lease_expires_at)[0]:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_FAIL_CLAIM_LEASE_EXPIRED")
         try:
             self._transaction()
             self.verify_integrity()
@@ -1720,6 +1767,7 @@ class SystemPaperScheduleState:
         *,
         artifact_path: Path,
         completed_at: object,
+        before_commit: Optional[Callable[[], None]] = None,
     ) -> None:
         """Commit success only after the prepared bytes are safely published."""
 
@@ -1734,7 +1782,9 @@ class SystemPaperScheduleState:
         ):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_INVALID")
         output_root = path.parent.parent
-        _, completed_text = _utc(completed_at)
+        completed, completed_text = _utc(completed_at)
+        if completed >= _utc(claim.lease_expires_at)[0]:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_SUCCESS_CLAIM_LEASE_EXPIRED")
         try:
             self._transaction()
             self.verify_integrity()
@@ -1780,6 +1830,8 @@ class SystemPaperScheduleState:
                 },
             )
             self.verify_integrity()
+            if before_commit is not None:
+                before_commit()
             self.connection.commit()
         except Exception:
             self.connection.rollback()
@@ -1864,7 +1916,7 @@ def run_due_system_paper_slot(
         raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_FAULT_INVALID")
     policy = SystemPaperSchedulePolicy.create(plan)
     slot = policy.current_slot(sampled_at)
-    root = Path(output_root).expanduser().resolve()
+    root = _validated_runner_output_root(output_root)
     root_hash = _output_root_hash(root)
     result_path = root / "system-paper-slots" / (slot.slot_id + ".json")
     claim: Optional[SystemPaperClaim] = None
@@ -1875,7 +1927,13 @@ def run_due_system_paper_slot(
     with SystemPaperScheduleState(Path(state_path), policy) as state:
         try:
             state.record_gaps(slot, recorded_at=sampled_at)
-            claim = state.claim(slot, worker_id=worker_id, claimed_at=sampled_at)
+            claim = state.claim(
+                slot,
+                worker_id=worker_id,
+                claimed_at=sampled_at,
+                before_commit=lambda: injector.maybe_raise("BEFORE_CLAIM_COMMIT"),
+                after_commit=lambda: injector.maybe_raise("AFTER_CLAIM_COMMIT"),
+            )
             if claim.outcome == "BUSY":
                 return _runner_summary(
                     outcome="BUSY",
@@ -1939,6 +1997,9 @@ def run_due_system_paper_slot(
                     fill_scenario=fill_scenario,
                     output_root_hash=root_hash,
                     prepared_at=sampled_at,
+                    before_commit=lambda: injector.maybe_raise(
+                        "BEFORE_INPUT_PREPARED_COMMIT"
+                    ),
                 )
                 injector.maybe_raise("AFTER_INPUT_PREPARED_COMMIT")
 
@@ -1967,6 +2028,9 @@ def run_due_system_paper_slot(
                     result_bytes=canonical_json(candidate).encode("utf-8"),
                     parent_result_bodies=parents,
                     prepared_at=sampled_at,
+                    before_commit=lambda: injector.maybe_raise(
+                        "BEFORE_RESULT_PREPARED_COMMIT"
+                    ),
                 )
                 injector.maybe_raise("AFTER_RESULT_PREPARED_COMMIT")
 
@@ -1982,7 +2046,12 @@ def run_due_system_paper_slot(
                 ),
             )
             injector.maybe_raise("AFTER_ARTIFACT_PUBLISH_BEFORE_SUCCESS")
-            state.succeed(claim, artifact_path=result_path, completed_at=sampled_at)
+            state.succeed(
+                claim,
+                artifact_path=result_path,
+                completed_at=sampled_at,
+                before_commit=lambda: injector.maybe_raise("BEFORE_SUCCESS_COMMIT"),
+            )
             outcome = {
                 "CLAIMED": "EXECUTED",
                 "RESUME_INPUT": "RESUMED_INPUT",

@@ -887,7 +887,7 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
         self.state._append_locked(
             "SUCCEEDED",
             claim.slot,
-            claim.slot.expires_at,
+            claim.claimed_at,
             {
                 "plan_hash": self.policy.plan_hash,
                 "schedule_policy_hash": self.policy.schedule_policy_hash,
@@ -899,6 +899,42 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             },
         )
         self.state.connection.commit()
+
+    def test_succeed_and_replay_reject_the_exact_claim_lease_expiry(self):
+        claim, _input, result = self.prepare_slot(
+            "2026-08-02T12:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        record = self.state.prepare_result(
+            claim,
+            result_bytes=canonical_json(result).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=claim.claimed_at,
+        )
+        artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
+        with self.assertRaises(SystemPaperScheduleError):
+            self.state.succeed(
+                claim, artifact_path=artifact, completed_at=claim.lease_expires_at
+            )
+        self.state.connection.execute("BEGIN IMMEDIATE")
+        self.state._append_locked(
+            "SUCCEEDED", claim.slot, claim.lease_expires_at,
+            {
+                "plan_hash": self.plan["plan_hash"],
+                "schedule_policy_hash": self.policy.schedule_policy_hash,
+                "scheduled_for": claim.slot.scheduled_for,
+                "due_at": claim.slot.due_at,
+                "expires_at": claim.slot.expires_at,
+                "worker_id": claim.worker_id,
+                "attempt": claim.attempt,
+                "result_sha256": record["result_sha256"],
+                "runtime_snapshot_hash": result["runtime_snapshot"]["snapshot_hash"],
+                "output_root_hash": record["output_root_hash"],
+            },
+        )
+        self.state.connection.commit()
+        with self.assertRaises(SystemPaperScheduleError):
+            self.state.verify_integrity()
 
     def prepare_successful_parent_pair(self):
         first_claim, _first_input, first = self.prepare_slot(
@@ -1433,10 +1469,40 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             **extra,
         )
 
+    def assert_summary_shape(self, summary, *, outcome, counts, loader_replays):
+        self.assertEqual(set(summary), {
+            "outcome", "slot_id", "provider_invocation_count",
+            "network_request_count", "candidate_runtime_invocation_count",
+            "loader_replay_count", "result_path_or_null", "result_sha256_or_null",
+            "slot_hash_or_null", "runtime_snapshot_hash_or_null", "risk_state_or_null",
+            "safety_counts",
+        })
+        self.assertEqual(summary["outcome"], outcome)
+        self.assertEqual(
+            tuple(summary[name] for name in (
+                "provider_invocation_count", "network_request_count",
+                "candidate_runtime_invocation_count",
+            )), counts,
+        )
+        self.assertEqual(summary["loader_replay_count"], loader_replays)
+        self.assertIsInstance(summary["slot_id"], str)
+        for name in (
+            "result_path_or_null", "result_sha256_or_null", "slot_hash_or_null",
+            "runtime_snapshot_hash_or_null", "risk_state_or_null",
+        ):
+            self.assertTrue(summary[name] is None or isinstance(summary[name], str))
+        self.assertEqual(summary["safety_counts"], {
+            "credential_reads": 0, "account_requests": 0,
+            "real_broker_calls": 0, "real_order_writes": 0,
+        })
+
     def test_run_then_same_slot_is_zero_capture_zero_runtime_idempotent(self):
         provider = RecordingProvider(self.now)
         first = self.invoke_runner(provider)
         second = self.invoke_runner(BombProvider(), worker_id="worker-b")
+
+        self.assert_summary_shape(first, outcome="EXECUTED", counts=(1, 4, 1), loader_replays=1)
+        self.assert_summary_shape(second, outcome="ALREADY_SUCCEEDED", counts=(0, 0, 0), loader_replays=1)
 
         self.assertEqual(first["outcome"], "EXECUTED")
         self.assertEqual(second["outcome"], "ALREADY_SUCCEEDED")
@@ -1472,6 +1538,7 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
         resumed_input = self.invoke_runner(
             BombProvider(), worker_id="worker-b", clock=lambda: recovered_at
         )
+        self.assert_summary_shape(resumed_input, outcome="RESUMED_INPUT", counts=(0, 0, 1), loader_replays=1)
         self.assertEqual(resumed_input["outcome"], "RESUMED_INPUT")
         self.assertEqual(
             (resumed_input["provider_invocation_count"], resumed_input["network_request_count"]),
@@ -1491,6 +1558,7 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
         resumed_result = self.invoke_runner(
             BombProvider(), worker_id="worker-b", clock=lambda: recovered_at
         )
+        self.assert_summary_shape(resumed_result, outcome="RESUMED_RESULT", counts=(0, 0, 0), loader_replays=1)
         self.assertEqual(resumed_result["outcome"], "RESUMED_RESULT")
         self.assertEqual(
             (
@@ -1513,6 +1581,7 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
         with SystemPaperScheduleState(self.state_path, policy) as state:
             state.claim(policy.current_slot(self.now), worker_id="owner", claimed_at=self.now)
         result = self.invoke_runner(BombProvider(), clock=clock, worker_id="worker-b")
+        self.assert_summary_shape(result, outcome="BUSY", counts=(0, 0, 0), loader_replays=0)
         self.assertEqual(reads, ["read"])
         self.assertEqual(result["outcome"], "BUSY")
         self.assertEqual(
@@ -1596,7 +1665,14 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             )
             state.connection.commit()
         result = self.invoke_runner(BombProvider())
+        self.assert_summary_shape(result, outcome="TERMINAL_INELIGIBLE", counts=(0, 0, 0), loader_replays=0)
         self.assertEqual(result["outcome"], "TERMINAL_INELIGIBLE")
+        self.assertEqual(
+            tuple(result[name] for name in (
+                "result_path_or_null", "result_sha256_or_null", "slot_hash_or_null",
+                "runtime_snapshot_hash_or_null", "risk_state_or_null",
+            )), (None, None, None, None, None)
+        )
         self.assertEqual(
             (result["provider_invocation_count"], result["candidate_runtime_invocation_count"]),
             (0, 0),
@@ -1620,3 +1696,128 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             SystemPaperFaultInjector({"NOT_A_POINT": "CRASH"})
         with self.assertRaises(SystemPaperScheduleError):
             SystemPaperFaultInjector({"AFTER_INPUT_PREPARED_COMMIT": "OTHER"})
+
+    def test_commit_faults_reach_the_durable_boundaries(self):
+        expected = {
+            "BEFORE_CLAIM_COMMIT": "NONE",
+            "AFTER_CLAIM_COMMIT": "NONE",
+            "BEFORE_INPUT_PREPARED_COMMIT": "NONE",
+            "BEFORE_RESULT_PREPARED_COMMIT": "INPUT",
+            "BEFORE_SUCCESS_COMMIT": "RESULT",
+        }
+        for point, stage in expected.items():
+            with self.subTest(point=point):
+                self.state_path = Path(self.temp.name) / (point + ".sqlite")
+                with self.assertRaises(SystemPaperInjectedFault):
+                    self.invoke_runner(
+                        RecordingProvider(self.now),
+                        fault_injector=SystemPaperFaultInjector({point: "CRASH"}),
+                    )
+                with SystemPaperScheduleState(
+                    self.state_path, SystemPaperSchedulePolicy.create(self.plan)
+                ) as state:
+                    projection = state.slot_projection()
+                if point == "BEFORE_CLAIM_COMMIT":
+                    self.assertEqual(projection, {})
+                else:
+                    self.assertEqual(
+                        projection[SystemPaperSchedulePolicy.create(self.plan).current_slot(self.now).slot_id]["durable_stage"],
+                        stage,
+                    )
+
+    def test_prepared_result_before_commit_enospc_rolls_back_to_input(self):
+        with self.assertRaises(OSError) as error:
+            self.invoke_runner(
+                RecordingProvider(self.now),
+                fault_injector=SystemPaperFaultInjector(
+                    {"BEFORE_RESULT_PREPARED_COMMIT": "ENOSPC"}
+                ),
+            )
+        self.assertEqual(error.exception.errno, 28)
+        with SystemPaperScheduleState(
+            self.state_path, SystemPaperSchedulePolicy.create(self.plan)
+        ) as state:
+            projection = state.slot_projection()
+            durable = projection[SystemPaperSchedulePolicy.create(self.plan).current_slot(self.now).slot_id]
+        self.assertEqual((durable["attempt_status"], durable["durable_stage"]), ("CLAIMED", "INPUT"))
+
+    def test_missing_symlink_or_wrong_mode_root_rejects_before_state_or_provider(self):
+        target = Path(self.temp.name) / "target"
+        target.mkdir(mode=0o700)
+        os.chmod(target, 0o700)
+        invalid_roots = {
+            "missing": Path(self.temp.name) / "missing",
+            "symlink": Path(self.temp.name) / "root-link",
+            "wrong-mode": Path(self.temp.name) / "wrong-mode",
+        }
+        invalid_roots["symlink"].symlink_to(target, target_is_directory=True)
+        invalid_roots["wrong-mode"].mkdir(mode=0o755)
+        os.chmod(invalid_roots["wrong-mode"], 0o755)
+        original_root = self.output_root
+        for name, root in invalid_roots.items():
+            with self.subTest(name=name):
+                self.output_root = root
+                self.state_path = Path(self.temp.name) / (name + ".sqlite")
+                with self.assertRaises(SystemPaperScheduleError):
+                    self.invoke_runner(BombProvider())
+                self.assertFalse(self.state_path.exists())
+                self.assertFalse((root / "system-paper-slots").exists())
+        self.output_root = original_root
+
+    def test_fail_rejects_arbitrary_reasons_and_the_lease_expiry_boundary(self):
+        policy = SystemPaperSchedulePolicy.create(self.plan)
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            claim = state.claim(
+                policy.current_slot(self.now), worker_id="worker-a", claimed_at=self.now
+            )
+            for reason, failed_at in (
+                ("UNSTRUCTURED_FAILURE", self.now),
+                ("SYSTEM_PAPER_RUNTIME_INTERRUPTED", claim.lease_expires_at),
+            ):
+                with self.subTest(reason=reason, failed_at=failed_at):
+                    with self.assertRaises(SystemPaperScheduleError):
+                        state.fail(claim, reason_code=reason, failed_at=failed_at)
+            state.connection.execute("BEGIN IMMEDIATE")
+            state._append_locked(
+                "FAILED",
+                claim.slot,
+                self.now,
+                {
+                    "plan_hash": self.plan["plan_hash"],
+                    "schedule_policy_hash": policy.schedule_policy_hash,
+                    "scheduled_for": claim.slot.scheduled_for,
+                    "due_at": claim.slot.due_at,
+                    "expires_at": claim.slot.expires_at,
+                    "worker_id": claim.worker_id,
+                    "attempt": claim.attempt,
+                    "reason_code": "UNSTRUCTURED_FAILURE",
+                },
+            )
+            state.connection.commit()
+            with self.assertRaises(SystemPaperScheduleError):
+                state.verify_integrity()
+
+    def test_failed_replay_rejects_an_allowed_reason_at_exact_lease_expiry(self):
+        path = Path(self.temp.name) / "failed-lease.sqlite"
+        policy = SystemPaperSchedulePolicy.create(self.plan)
+        with SystemPaperScheduleState(path, policy) as state:
+            claim = state.claim(
+                policy.current_slot(self.now), worker_id="worker-a", claimed_at=self.now
+            )
+            state.connection.execute("BEGIN IMMEDIATE")
+            state._append_locked(
+                "FAILED", claim.slot, claim.lease_expires_at,
+                {
+                    "plan_hash": self.plan["plan_hash"],
+                    "schedule_policy_hash": policy.schedule_policy_hash,
+                    "scheduled_for": claim.slot.scheduled_for,
+                    "due_at": claim.slot.due_at,
+                    "expires_at": claim.slot.expires_at,
+                    "worker_id": claim.worker_id,
+                    "attempt": claim.attempt,
+                    "reason_code": "SYSTEM_PAPER_RUNTIME_INTERRUPTED",
+                },
+            )
+            state.connection.commit()
+            with self.assertRaises(SystemPaperScheduleError):
+                state.verify_integrity()
