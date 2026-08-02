@@ -480,11 +480,16 @@ class SimulatedBroker:
         if record.reconcile_completed:
             return self._result(record)
         if record.aggregate.state is OrderState.UNKNOWN:
+            reconciliation_outcome = (
+                "FULL_FILL"
+                if self._scenario.kind is FillScenarioKind.DISCONNECT_THEN_FULL
+                else "UNRESOLVED"
+            )
             reconciliation_result_id = stable_id(
                 "paper_reconciliation",
                 {
                     "local_order_id": local_order_id,
-                    "outcome": "UNRESOLVED",
+                    "outcome": reconciliation_outcome,
                 },
             )
             if self._scenario.kind is FillScenarioKind.DISCONNECT_THEN_FULL:

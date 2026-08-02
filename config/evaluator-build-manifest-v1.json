@@ -2,11 +2,11 @@
   "$schema": "./evaluator-build-manifest-v1.schema.json",
   "schema_version": "1.0.0",
   "manifest_id": "release-evaluator-build-v1",
-  "manifest_version": "1.49.0",
+  "manifest_version": "1.50.0",
   "status": "BUILD_CANDIDATE",
   "evaluator_id": "release-gate-evaluator-v1",
   "package_name": "crypto-quant-core",
-  "package_version": "0.55.0",
+  "package_version": "0.56.0",
   "python_requires": ">=3.9",
   "metric_catalog_id": "release-metrics-v1.1",
   "metric_catalog_version": "1.1.6",
@@ -126,10 +126,10 @@
     "config/system-paper-plan-v1.schema.json": "e9e637a79148a3005c77b9414f4782823e0af289693b4651bc939b73d83d7fed",
     "config/system-paper-slot-result-v1.schema.json": "78bae36a510f37554fda0a455eb3fc0646604fd3fad398ecdffadc2a33e3543b",
     "config/trade-replay-snapshot-v1.schema.json": "d45dfaaf86f2dbdcd83109fd3b329aca6f455812df0022652129079555b8546f",
-    "pyproject.toml": "57f6f252dd511ef5a0f74a8bafc82cd3c505bcad2afd9b09a0f4da2828dd42de",
+    "pyproject.toml": "06137b8bfded4774ddc3ff970d419c431acbe9c0b9fc8ac2be45c049d956b78e",
     "requirements.lock": "71aa777f1717f056886f3de1fb2e1013a5dec5210d681ed30943056edf7ccbed",
-    "setup.py": "47413ae2e24a333692a6dbd29b4c97095390e6bf32731ca12ca9162dfbc22292",
-    "src/crypto_quant/__init__.py": "e4d9cd5c977a4158335008040e339c9f49ffcd6b1f8f0c2798f99459909b587b",
+    "setup.py": "730143a904b3fce3c6b21c3346d81c80067e935992f3ddc550e8545a3bd3f20d",
+    "src/crypto_quant/__init__.py": "b0f70c8c91494243c294076ea5ec0f84400232f144c0a437ddf09f057f492d9b",
     "src/crypto_quant/account_commission.py": "7ce2db8d648f8e0208951caf866d914854d244e469c9a86a27b1ee14ff84c9f4",
     "src/crypto_quant/account_commission_cli.py": "993e6cb903673bc6781ca0a74494bfc149cea73c4d5a47576a3384e052652076",
     "src/crypto_quant/baseline_attribution.py": "cb72d295c26b05f5205643adc7403b127ac6a174d4e198b06d025661967060dd",
@@ -269,12 +269,12 @@
     "src/crypto_quant/schemas/system-paper-slot-result-v1.schema.json": "78bae36a510f37554fda0a455eb3fc0646604fd3fad398ecdffadc2a33e3543b",
     "src/crypto_quant/statistical_decision.py": "cf98dbbf554f1afe40bd7ddafda4b579d1dcb3fa5e2894440b06b2fafd204cfd",
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
-    "src/crypto_quant/system_paper_broker.py": "cf89545ac3872281d81169aaa80bde86607f4211d8166eb3cd31239e907ff8bf",
+    "src/crypto_quant/system_paper_broker.py": "273f7ad291faaec7e3515526378355b287e58785c859ac680da36933f2102af7",
     "src/crypto_quant/system_paper_plan.py": "fc48849143b370cdc779f2e8f71e6f6e59c3c864ec956a55bbc744fc945d8b47",
     "src/crypto_quant/system_paper_runtime.py": "84aea457eb90e8c23eae339424be5c4f9866282d0dfe5a3ecf875193f8a153c1",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335"
   },
-  "build_input_tree_hash": "68d44dc64b6f9cc047910b883590e746688d08f43ccfefa82de850f510f69c4f",
+  "build_input_tree_hash": "b8df5a853e89a51fd61c6baf0e66fa46ddc44099a8725bf5a2aabca521399a9a",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -282,5 +282,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "d89f8a4d6d12f31be0f8ac363f1b4d02cd3854a62e65a2f67c5195b3b1c22f45"
+  "manifest_hash": "150004ac439d8978b6bcb98efe85c4c08a96d84b15f4a20ea1b00c9a46f910aa"
 }
