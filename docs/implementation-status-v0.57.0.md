@@ -16,6 +16,17 @@
 - 从 exact genesis 开始的完整、有序、相邻 parent artifact chain bytes loader；
 - 冻结 CRASH/ENOSPC、provider、order 与 artifact-write fault matrix，保持
   exactly-once 经济结果和 fail-closed recovery；
+- final review 已补齐跨一个或多个 4h window 的 durable INPUT/RESULT recovery：旧工作
+  终结前不 claim 当前槽、不调用 provider、不记录后续 gap；矛盾的多 recoverable 状态
+  失败关闭；
+- capture 保存实际 `captured_at`，其范围固定为入口 sample（含）至 claim lease expiry
+  （不含），同时四个 schedule event time 仍只使用单次入口 sample；
+- `SUCCEEDED` 三字段与 prepared result 精确绑定，六个 immutable trigger 定义逐字义
+  normalized 验证；output root fd/inode 贯穿 invocation，`system-paper-slots` 在 preflight
+  与 publisher 两层要求 owner + exact `0700`；
+- parent continuity 对外与 durable FAILED 均冻结为
+  `SYSTEM_PAPER_PARENT_CONTINUITY_BROKEN`；artifact write/fsync ENOSPC 保留 RESULT 且不
+  伪造 terminal event，恢复时 provider/network/candidate 均为零；
 - evaluator build inputs 绑定 scheduler code、两份 scheduler/fault tests 和冻结
   design/implementation plan。
 
@@ -28,14 +39,16 @@
 
 ## 本次验证
 
-- TDD 红灯：更新后的 estimator/build expectations 在旧 package `0.56.0`、manifest
-  `1.50.0` 和缺少 scheduler test/design/plan build inputs 时失败；
+- final-review TDD 红灯覆盖 1 个 Critical 与 8 个 Important finding，包括跨窗口错误
+  claim/provider、capture time equality、重哈希 SUCCEEDED、同名 no-op trigger、root
+  replacement、artifact ENOSPC、跨 root ALREADY、continuity reason 泄漏与 unsafe slots；
 - `PYTHONPATH=src:tests python3 scripts/refresh_evaluator_build_manifest.py`：通过；
   build inputs：257；package：`0.57.0`；manifest：`1.51.0`；
-  tree hash：`ab22787874926f4ea1eaf33748426fffb752fca79b1ce6ecf6d96d5c8edfcab4`；
-  manifest hash：`78d97fd83388810a43df3e9e60ca1a83e88a3f80afc8c0d1616e8ff11a027f4a`；
+  tree hash：`bd94c22560ab2ebb7fe567446808ce6b934f63794eb6ea9b240b5aede326bbcf`；
+  manifest hash：`554e4ff28f955319ac5ec59d93de4878a6df7abe9f7817a4eef62bcfeac9bce0`；
 - `PYTHONPATH=src:tests python3 scripts/validate_evaluator_build.py`：通过；
-- 指定 scheduler/fault/runtime/broker/estimator suites：120 项通过；
+- 指定 scheduler/fault/runtime/broker/market-data/estimator 与相邻 paper/context suites：
+  196 项通过；
 - `PYTHONPYCACHEPREFIX=/private/tmp/crypto-quant-v057-pycache python3 -m compileall -q src tests scripts`：通过；
 - `git diff --check`：通过。
 

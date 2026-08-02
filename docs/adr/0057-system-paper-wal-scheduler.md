@@ -32,6 +32,19 @@ service、安装步骤、启动 receipt 或网络 transport；它只协调已冻
 6. 故障矩阵冻结在提交前/后 claim、input、result、publish 与 success 的 CRASH/
    ENOSPC 边界，以及 provider、order 和 artifact 写入失败。故障后只能恢复到最后
    已提交阶段，且不得伪造 `FAILED` 或 `SUCCEEDED`。
+7. final review 强化不改变上述范围：每次 invocation 仍只采样一次时钟，但必须先于
+   当前自然槽恢复唯一、最旧的非终态 durable INPUT/RESULT；恢复完成前不记录后续 gap，
+   多份相互矛盾的 recoverable work 失败关闭。实际 `captured_at` 可晚于入口采样，但必须
+   位于 `[入口采样, claim lease expiry)`，所有 schedule event time 仍绑定入口采样。
+8. `SUCCEEDED` event 必须逐字段绑定 immutable prepared result 的 result SHA、runtime
+   snapshot hash 与 output-root hash；六个 UPDATE/DELETE trigger 的名称、table、timing、
+   action 与 RAISE body 在每次打开和完整重放时精确验证，不能被同名 no-op 替代。
+9. output root 的 owner-safe fd 与 `(dev, ino)` 贯穿整个 runner invocation，并在 provider、
+   runtime、publish 与 success 边界复核。既有 `system-paper-slots` 必须为当前 owner 且
+   exact `0700`；publisher 在创建任何 temp/final 前再次校验 root identity 与该目录。
+   所有 parent continuity 对外冻结为 `SYSTEM_PAPER_PARENT_CONTINUITY_BROKEN`，owned claim
+   的 durable FAILED 也使用同一码。artifact write/fsync 的 ENOSPC 保留 durable RESULT，
+   不伪造 FAILED/SUCCEEDED，并由下一 invocation 以零 provider/network/candidate 恢复。
 
 ## 后果
 

@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from .canonical import business_hash, canonical_json, stable_id, utc_datetime
 from .evidence import artifact_self_hash
+from .market_data import MarketDataError
 from .system_paper_broker import (
     FillScenario,
     fill_scenario_from_payload,
@@ -58,8 +59,50 @@ _ALLOWED_EVENTS = frozenset(
 )
 _TERMINAL_STATES = frozenset(("MISSED", "EXPIRED", "SUCCEEDED"))
 _ALLOWED_FAILED_REASON_CODES = frozenset(
-    ("SYSTEM_PAPER_INPUT_INVALID", "SYSTEM_PAPER_RUNTIME_INTERRUPTED")
+    (
+        "SYSTEM_PAPER_INPUT_INVALID",
+        "SYSTEM_PAPER_RUNTIME_INTERRUPTED",
+        "SYSTEM_PAPER_PARENT_CONTINUITY_BROKEN",
+    )
 )
+_PARENT_CONTINUITY_REASON_CODES = frozenset(
+    (
+        "SYSTEM_PAPER_SCHEDULE_PARENT_CHAIN_INVALID",
+        "SYSTEM_PAPER_SCHEDULE_PARENT_NOT_SUCCEEDED",
+        "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_MISSING",
+        "SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_MISSING",
+        "SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_UNSAFE",
+        "SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_RACE",
+        "SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_MISMATCH",
+        "SYSTEM_PAPER_SCHEDULE_PARENT_RESULT_INVALID",
+    )
+)
+_IMMUTABILITY_TRIGGERS = {
+    "schedule_events_no_update": (
+        "CREATE TRIGGER schedule_events_no_update BEFORE UPDATE ON schedule_events "
+        "BEGIN SELECT RAISE(ABORT, 'schedule events are immutable'); END"
+    ),
+    "schedule_events_no_delete": (
+        "CREATE TRIGGER schedule_events_no_delete BEFORE DELETE ON schedule_events "
+        "BEGIN SELECT RAISE(ABORT, 'schedule events are immutable'); END"
+    ),
+    "prepared_inputs_no_update": (
+        "CREATE TRIGGER prepared_inputs_no_update BEFORE UPDATE ON prepared_inputs "
+        "BEGIN SELECT RAISE(ABORT, 'prepared inputs are immutable'); END"
+    ),
+    "prepared_inputs_no_delete": (
+        "CREATE TRIGGER prepared_inputs_no_delete BEFORE DELETE ON prepared_inputs "
+        "BEGIN SELECT RAISE(ABORT, 'prepared inputs are immutable'); END"
+    ),
+    "prepared_results_no_update": (
+        "CREATE TRIGGER prepared_results_no_update BEFORE UPDATE ON prepared_results "
+        "BEGIN SELECT RAISE(ABORT, 'prepared results are immutable'); END"
+    ),
+    "prepared_results_no_delete": (
+        "CREATE TRIGGER prepared_results_no_delete BEFORE DELETE ON prepared_results "
+        "BEGIN SELECT RAISE(ABORT, 'prepared results are immutable'); END"
+    ),
+}
 
 
 class SystemPaperScheduleError(ValueError):
@@ -301,31 +344,114 @@ def _output_root_hash(output_root: Path) -> str:
     )
 
 
-def _validated_runner_output_root(output_root: Path) -> Path:
-    """Accept only an already-provisioned owner-only root without following it."""
+class _ValidatedRunnerOutputRoot:
+    """Keep the preflight root identity alive for the whole invocation."""
 
-    root = Path(output_root).expanduser()
-    if not root.is_absolute() or root.is_symlink():
-        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID")
-    directory = getattr(os, "O_DIRECTORY", None)
-    nofollow = getattr(os, "O_NOFOLLOW", None)
-    if directory is None or nofollow is None:
-        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID")
-    flags = os.O_RDONLY | directory | nofollow
-    descriptor = None
-    try:
-        descriptor = os.open(str(root), flags)
-        entry = os.fstat(descriptor)
-        if not _owner_safe_directory_stat(entry):
-            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_UNSAFE")
-    except SystemPaperScheduleError:
-        raise
-    except OSError as error:
-        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID") from error
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
-    return root.resolve()
+    def __init__(self, output_root: Path):
+        root = Path(output_root).expanduser()
+        if not root.is_absolute() or root.is_symlink():
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID")
+        directory = getattr(os, "O_DIRECTORY", None)
+        nofollow = getattr(os, "O_NOFOLLOW", None)
+        if directory is None or nofollow is None:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID")
+        self.descriptor: Optional[int] = None
+        try:
+            self.descriptor = os.open(str(root), os.O_RDONLY | directory | nofollow)
+            entry = os.fstat(self.descriptor)
+            if not _owner_safe_directory_stat(entry):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_UNSAFE"
+                )
+            self.path = root.resolve()
+            self.identity = (entry.st_dev, entry.st_ino)
+            self.validate()
+            self.validate_slots_directory()
+        except SystemPaperScheduleError:
+            self.close()
+            raise
+        except OSError as error:
+            self.close()
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID"
+            ) from error
+        except Exception:
+            self.close()
+            raise
+
+    def __enter__(self) -> "_ValidatedRunnerOutputRoot":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self.descriptor is not None:
+            os.close(self.descriptor)
+            self.descriptor = None
+
+    def validate(self) -> None:
+        if self.descriptor is None:
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE")
+        try:
+            retained = os.fstat(self.descriptor)
+            current = os.stat(str(self.path), follow_symlinks=False)
+        except OSError as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE"
+            ) from error
+        if (
+            not _owner_safe_directory_stat(retained)
+            or not _owner_safe_directory_stat(current)
+            or (retained.st_dev, retained.st_ino) != self.identity
+            or (current.st_dev, current.st_ino) != self.identity
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE")
+
+    def validate_slots_directory(self) -> None:
+        self.validate()
+        assert self.descriptor is not None
+        slots_fd = None
+        try:
+            entry = os.stat(
+                "system-paper-slots",
+                dir_fd=self.descriptor,
+                follow_symlinks=False,
+            )
+            if not _owner_safe_directory_stat(entry):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_OUTPUT_DIRECTORY_UNSAFE"
+                )
+            slots_fd = os.open(
+                "system-paper-slots",
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=self.descriptor,
+            )
+            opened = os.fstat(slots_fd)
+            if (
+                not _owner_safe_directory_stat(opened)
+                or (opened.st_dev, opened.st_ino) != (entry.st_dev, entry.st_ino)
+            ):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_OUTPUT_DIRECTORY_UNSAFE"
+                )
+        except FileNotFoundError:
+            return
+        except SystemPaperScheduleError:
+            raise
+        except OSError as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_OUTPUT_DIRECTORY_UNSAFE"
+            ) from error
+        finally:
+            if slots_fd is not None:
+                os.close(slots_fd)
+
+
+def _validated_runner_output_root(
+    output_root: Path,
+) -> _ValidatedRunnerOutputRoot:
+    return _ValidatedRunnerOutputRoot(output_root)
 
 
 def _owner_safe_directory_stat(entry: os.stat_result) -> bool:
@@ -516,6 +642,7 @@ def _event_projection(
                 "last_event_at": event_time_text,
                 "input_event_id": None,
                 "result_event_id": None,
+                "success_binding": None,
             }
             projection[slot.slot_id] = state
         elif any(state[name] != value for name, value in _slot_core(slot, policy).items()):
@@ -599,6 +726,20 @@ def _event_projection(
             state["result_event_id"] = source["event_id"]
         elif event_type == "SUCCEEDED":
             active_claim = state["active_claim"]
+            try:
+                success_binding = {
+                    name: _hash(
+                        payload.get(name),
+                        "SYSTEM_PAPER_SCHEDULE_SUCCESS_BINDING_INVALID",
+                    )
+                    for name in (
+                        "result_sha256",
+                        "runtime_snapshot_hash",
+                        "output_root_hash",
+                    )
+                }
+            except SystemPaperScheduleError:
+                raise
             if (
                 state["attempt_status"] != "CLAIMED"
                 or state["durable_stage"] != "RESULT"
@@ -610,6 +751,7 @@ def _event_projection(
                 raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_TRANSITION_INVALID")
             state["terminal_state"] = "SUCCEEDED"
             state["attempt_status"] = "SUCCEEDED"
+            state["success_binding"] = success_binding
         elif event_type == "MISSED":
             if (
                 state["attempt_status"] != "UNSEEN"
@@ -698,6 +840,7 @@ class SystemPaperScheduleState:
         self.path = Path(path)
         self.policy = policy
         _validate_state_path(self.path)
+        existing_state = self.path.exists()
         self.connection = sqlite3.connect(str(self.path), timeout=0)
         self.connection.row_factory = sqlite3.Row
         try:
@@ -707,7 +850,10 @@ class SystemPaperScheduleState:
             if str(mode).lower() != "wal":
                 raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_WAL_REQUIRED")
             self.connection.execute("PRAGMA synchronous = FULL")
-            self._create_schema()
+            if existing_state:
+                self._verify_immutability_triggers()
+            else:
+                self._create_schema()
             self.verify_integrity()
         except Exception:
             self.connection.close()
@@ -780,6 +926,26 @@ class SystemPaperScheduleState:
             """
         )
 
+    @staticmethod
+    def _normalized_trigger_sql(value: object) -> str:
+        return " ".join(str(value).split())
+
+    def _verify_immutability_triggers(self) -> None:
+        actual = {
+            row["name"]: self._normalized_trigger_sql(row["sql"])
+            for row in self.connection.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type='trigger'"
+            ).fetchall()
+        }
+        expected = {
+            name: self._normalized_trigger_sql(sql)
+            for name, sql in _IMMUTABILITY_TRIGGERS.items()
+        }
+        if actual != expected:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_IMMUTABILITY_TRIGGER_INVALID"
+            )
+
     def events(self) -> Tuple[Dict[str, Any], ...]:
         events = []
         for row in self.connection.execute(
@@ -813,7 +979,65 @@ class SystemPaperScheduleState:
     def slot_projection(self) -> Dict[str, Dict[str, Any]]:
         return _event_projection(self.events(), self.policy)
 
+    def recoverable_slot(
+        self, current_slot: SystemPaperSlot
+    ) -> Optional[SystemPaperSlot]:
+        """Select the sole nonterminal durable slot, preferring recovery to gaps."""
+
+        self._validate_slot(current_slot)
+        current_scheduled = _utc(current_slot.scheduled_for)[0]
+        recoverable = sorted(
+            (
+                state
+                for state in self.slot_projection().values()
+                if state["terminal_state"] is None
+                and state["durable_stage"] in ("INPUT", "RESULT")
+            ),
+            key=lambda state: state["scheduled_for"],
+        )
+        if any(
+            _utc(state["scheduled_for"])[0] > current_scheduled
+            for state in recoverable
+        ) or len(recoverable) > 1:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_RECOVERY_AMBIGUOUS"
+            )
+        if not recoverable:
+            return None
+        return self.policy.slot_from_scheduled(recoverable[0]["scheduled_for"])
+
+    def verify_output_root_binding(
+        self, slot: SystemPaperSlot, output_root_hash: str
+    ) -> None:
+        """Bind every durable row for a slot to the invocation's root path."""
+
+        self._validate_slot(slot)
+        root_hash = _hash(
+            output_root_hash, "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_MISMATCH"
+        )
+        state = self.slot_projection().get(slot.slot_id)
+        if state is None or state["durable_stage"] == "NONE":
+            return
+        input_row = self.connection.execute(
+            "SELECT output_root_hash FROM prepared_inputs WHERE slot_id=?",
+            (slot.slot_id,),
+        ).fetchone()
+        if input_row is None or input_row["output_root_hash"] != root_hash:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_MISMATCH"
+            )
+        if state["durable_stage"] == "RESULT":
+            result_row = self.connection.execute(
+                "SELECT output_root_hash FROM prepared_results WHERE slot_id=?",
+                (slot.slot_id,),
+            ).fetchone()
+            if result_row is None or result_row["output_root_hash"] != root_hash:
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_MISMATCH"
+                )
+
     def verify_integrity(self) -> str:
+        self._verify_immutability_triggers()
         events = self.events()
         projection = _event_projection(events, self.policy)
         input_ids = {
@@ -854,6 +1078,20 @@ class SystemPaperScheduleState:
             if state["result_event_id"] is not None:
                 slot = self.policy.slot_from_scheduled(state["scheduled_for"])
                 self._load_prepared_result(slot)
+            if state["terminal_state"] == "SUCCEEDED":
+                row = self.connection.execute(
+                    "SELECT result_sha256, runtime_snapshot_hash, output_root_hash "
+                    "FROM prepared_results WHERE slot_id=?",
+                    (state["slot_id"],),
+                ).fetchone()
+                if row is None or state["success_binding"] != {
+                    "result_sha256": row["result_sha256"],
+                    "runtime_snapshot_hash": row["runtime_snapshot_hash"],
+                    "output_root_hash": row["output_root_hash"],
+                }:
+                    raise SystemPaperScheduleError(
+                        "SYSTEM_PAPER_SCHEDULE_SUCCESS_BINDING_MISMATCH"
+                    )
         return events[-1]["event_hash"] if events else _GENESIS_HASH
 
     def _capture_payload(
@@ -1117,7 +1355,8 @@ class SystemPaperScheduleState:
             fill_scenario=fill_scenario,
             output_root_hash=output_root_hash,
         )
-        if prepared_text != envelope["capture"]["captured_at"]:
+        captured = _utc(envelope["capture"]["captured_at"])[0]
+        if not (prepared <= captured < _utc(claim.lease_expires_at)[0]):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_TIME_MISMATCH")
         input_bytes = canonical_json(envelope).encode("utf-8")
         input_sha256 = _sha256(input_bytes)
@@ -1890,11 +2129,26 @@ def _load_runner_result(
     """Replay durable result bytes with the trusted, complete artifact parent chain."""
 
     prepared = state.load_prepared_result(slot)
-    parents = state.successful_parent_result_bodies(slot, output_root=output_root)
+    parents = _runner_parent_result_bodies(state, slot, output_root)
     result = load_system_paper_slot_result_bytes(
         prepared["result_bytes"], parent_result_bodies=parents
     )
     return prepared["result_bytes"], result
+
+
+def _runner_parent_result_bodies(
+    state: SystemPaperScheduleState,
+    slot: SystemPaperSlot,
+    output_root: Path,
+) -> Tuple[bytes, ...]:
+    try:
+        return state.successful_parent_result_bodies(slot, output_root=output_root)
+    except SystemPaperScheduleError as error:
+        if error.reason_code not in _PARENT_CONTINUITY_REASON_CODES:
+            raise
+        raise SystemPaperScheduleError(
+            "SYSTEM_PAPER_PARENT_CONTINUITY_BROKEN"
+        ) from error
 
 
 def run_due_system_paper_slot(
@@ -1915,18 +2169,23 @@ def run_due_system_paper_slot(
     if not isinstance(injector, SystemPaperFaultInjector):
         raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_FAULT_INVALID")
     policy = SystemPaperSchedulePolicy.create(plan)
-    slot = policy.current_slot(sampled_at)
-    root = _validated_runner_output_root(output_root)
+    current_slot = policy.current_slot(sampled_at)
+    root_handle = _validated_runner_output_root(output_root)
+    root = root_handle.path
     root_hash = _output_root_hash(root)
-    result_path = root / "system-paper-slots" / (slot.slot_id + ".json")
     claim: Optional[SystemPaperClaim] = None
     provider_calls = 0
     network_calls = 0
     runtime_calls = 0
 
-    with SystemPaperScheduleState(Path(state_path), policy) as state:
+    with root_handle, SystemPaperScheduleState(Path(state_path), policy) as state:
         try:
-            state.record_gaps(slot, recorded_at=sampled_at)
+            root_handle.validate()
+            recoverable = state.recoverable_slot(current_slot)
+            slot = recoverable or current_slot
+            result_path = root / "system-paper-slots" / (slot.slot_id + ".json")
+            if recoverable is None or recoverable == current_slot:
+                state.record_gaps(current_slot, recorded_at=sampled_at)
             claim = state.claim(
                 slot,
                 worker_id=worker_id,
@@ -1953,6 +2212,8 @@ def run_due_system_paper_slot(
                     loader_replay_count=0,
                 )
             if claim.outcome == "ALREADY_SUCCEEDED":
+                root_handle.validate()
+                state.verify_output_root_binding(slot, root_hash)
                 result_bytes, result = _load_runner_result(state, slot, root)
                 _artifact_body(
                     root,
@@ -1973,6 +2234,7 @@ def run_due_system_paper_slot(
                 )
 
             if claim.outcome == "CLAIMED":
+                root_handle.validate()
                 injector.maybe_raise("BEFORE_INPUT_PROVIDER")
                 request = SystemPaperInputRequest.for_slot(policy, slot)
                 capture = public_input_provider(request)
@@ -1980,8 +2242,9 @@ def run_due_system_paper_slot(
                 network_calls = capture.network_request_count if isinstance(
                     capture, SystemPaperInputCapture
                 ) else 0
+                root_handle.validate()
                 injector.maybe_raise("AFTER_INPUT_PROVIDER_BEFORE_COMMIT")
-                parents = state.successful_parent_result_bodies(slot, output_root=root)
+                parents = _runner_parent_result_bodies(state, slot, root)
                 previous_snapshot = (
                     build_initial_system_paper_runtime_snapshot(plan)
                     if not parents
@@ -2004,12 +2267,10 @@ def run_due_system_paper_slot(
                 injector.maybe_raise("AFTER_INPUT_PREPARED_COMMIT")
 
             prepared_input = state.load_prepared_input(slot)["payload"]
-            if prepared_input["output_root_hash"] != root_hash:
-                raise SystemPaperScheduleError(
-                    "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_MISMATCH"
-                )
+            state.verify_output_root_binding(slot, root_hash)
             if claim.outcome != "RESUME_RESULT":
-                parents = state.successful_parent_result_bodies(slot, output_root=root)
+                root_handle.validate()
+                parents = _runner_parent_result_bodies(state, slot, root)
                 candidate = run_system_paper_slot(
                     SystemPaperSlotInputs(
                         plan=prepared_input["plan"],
@@ -2022,6 +2283,7 @@ def run_due_system_paper_slot(
                     )
                 )
                 runtime_calls = 1
+                root_handle.validate()
                 injector.maybe_raise("AFTER_RUNTIME_BEFORE_RESULT_COMMIT")
                 state.prepare_result(
                     claim,
@@ -2035,17 +2297,31 @@ def run_due_system_paper_slot(
                 injector.maybe_raise("AFTER_RESULT_PREPARED_COMMIT")
 
             result_bytes, result = _load_runner_result(state, slot, root)
-            _publish_immutable(
-                root,
-                result_path.name,
-                result_bytes,
-                output_directory="system-paper-slots",
-                after_first_write=lambda: injector.maybe_raise("DURING_ARTIFACT_WRITE"),
-                after_payload_fsync=lambda: injector.maybe_raise(
-                    "AFTER_ARTIFACT_FSYNC_BEFORE_COMMIT"
-                ),
-            )
+            state.verify_output_root_binding(slot, root_hash)
+            root_handle.validate()
+            try:
+                _publish_immutable(
+                    root,
+                    result_path.name,
+                    result_bytes,
+                    output_directory="system-paper-slots",
+                    expected_root_identity=root_handle.identity,
+                    after_first_write=lambda: injector.maybe_raise("DURING_ARTIFACT_WRITE"),
+                    after_payload_fsync=lambda: injector.maybe_raise(
+                        "AFTER_ARTIFACT_FSYNC_BEFORE_COMMIT"
+                    ),
+                )
+            except MarketDataError as error:
+                if error.reason_code == "ARTIFACT_OUTPUT_ROOT_IDENTITY_MISMATCH":
+                    raise SystemPaperScheduleError(
+                        "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE"
+                    ) from error
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_PUBLISH_FAILED"
+                ) from error
+            root_handle.validate()
             injector.maybe_raise("AFTER_ARTIFACT_PUBLISH_BEFORE_SUCCESS")
+            root_handle.validate()
             state.succeed(
                 claim,
                 artifact_path=result_path,
@@ -2070,14 +2346,20 @@ def run_due_system_paper_slot(
             )
         except (SystemPaperInjectedFault, OSError):
             raise
-        except Exception:
+        except Exception as error:
             if claim is not None and claim.outcome in (
                 "CLAIMED", "RESUME_INPUT", "RESUME_RESULT",
             ):
                 try:
                     state.fail(
                         claim,
-                        reason_code="SYSTEM_PAPER_RUNTIME_INTERRUPTED",
+                        reason_code=(
+                            "SYSTEM_PAPER_PARENT_CONTINUITY_BROKEN"
+                            if isinstance(error, SystemPaperScheduleError)
+                            and error.reason_code
+                            == "SYSTEM_PAPER_PARENT_CONTINUITY_BROKEN"
+                            else "SYSTEM_PAPER_RUNTIME_INTERRUPTED"
+                        ),
                         failed_at=sampled_at,
                     )
                 except Exception:

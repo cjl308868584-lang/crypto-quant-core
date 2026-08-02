@@ -4,6 +4,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+import crypto_quant.system_paper_scheduler as scheduler_module
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -145,6 +146,79 @@ class SystemPaperScheduleStateTests(unittest.TestCase):
             with self.assertRaises(sqlite3.DatabaseError):
                 state.connection.execute("DELETE FROM schedule_events")
 
+    def test_reopen_rejects_each_same_name_noncanonical_immutability_trigger(self):
+        replacements = {
+            "schedule_events_no_update": (
+                "CREATE TRIGGER schedule_events_no_update AFTER UPDATE ON "
+                "schedule_events BEGIN SELECT 1; END"
+            ),
+            "schedule_events_no_delete": (
+                "CREATE TRIGGER schedule_events_no_delete BEFORE UPDATE ON "
+                "schedule_events BEGIN SELECT RAISE(ABORT, 'schedule events are immutable'); END"
+            ),
+            "prepared_inputs_no_update": (
+                "CREATE TRIGGER prepared_inputs_no_update BEFORE UPDATE ON "
+                "prepared_results BEGIN SELECT RAISE(ABORT, 'prepared inputs are immutable'); END"
+            ),
+            "prepared_inputs_no_delete": (
+                "CREATE TRIGGER prepared_inputs_no_delete BEFORE DELETE ON "
+                "prepared_inputs BEGIN SELECT 1; END"
+            ),
+            "prepared_results_no_update": (
+                "CREATE TRIGGER prepared_results_no_update AFTER UPDATE ON "
+                "prepared_results BEGIN SELECT RAISE(ABORT, 'prepared results are immutable'); END"
+            ),
+            "prepared_results_no_delete": (
+                "CREATE TRIGGER prepared_results_no_delete BEFORE UPDATE ON "
+                "prepared_results BEGIN SELECT RAISE(ABORT, 'prepared results are immutable'); END"
+            ),
+        }
+        for name, replacement_sql in replacements.items():
+            with self.subTest(trigger=name):
+                path = Path(self.temp.name) / (name + ".sqlite")
+                with SystemPaperScheduleState(path, self.policy):
+                    pass
+                connection = sqlite3.connect(str(path))
+                connection.execute("DROP TRIGGER " + name)
+                connection.execute(replacement_sql)
+                connection.commit()
+                connection.close()
+                with self.assertRaisesRegex(
+                    SystemPaperScheduleError,
+                    "SYSTEM_PAPER_SCHEDULE_IMMUTABILITY_TRIGGER_INVALID",
+                ):
+                    SystemPaperScheduleState(path, self.policy)
+
+    def test_all_six_immutability_triggers_block_their_write_actions(self):
+        with SystemPaperScheduleState(self.state_path, self.policy) as state:
+            state.claim(self.slot, worker_id="worker-a", claimed_at=self.now)
+        connection = sqlite3.connect(str(self.state_path))
+        connection.execute(
+            "INSERT INTO prepared_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("input-event", "input-slot", b"input", "a" * 64, "b" * 64,
+             "c" * 64, "d" * 64, "e" * 64, "f" * 64),
+        )
+        connection.execute(
+            "INSERT INTO prepared_results VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("result-event", "result-slot", b"result", "a" * 64, "b" * 64,
+             "c" * 64, "d" * 64, "e" * 64),
+        )
+        connection.commit()
+        cases = (
+            ("schedule_events", "UPDATE schedule_events SET event_type='FAILED'"),
+            ("schedule_events", "DELETE FROM schedule_events"),
+            ("prepared_inputs", "UPDATE prepared_inputs SET input_sha256='changed'"),
+            ("prepared_inputs", "DELETE FROM prepared_inputs"),
+            ("prepared_results", "UPDATE prepared_results SET result_sha256='changed'"),
+            ("prepared_results", "DELETE FROM prepared_results"),
+        )
+        for table, statement in cases:
+            with self.subTest(table=table, action=statement.split()[0]):
+                with self.assertRaises(sqlite3.DatabaseError):
+                    connection.execute(statement)
+                connection.rollback()
+        connection.close()
+
     def test_live_lease_is_busy_and_stale_lease_is_reclaimed(self):
         first = self.claim("worker-a", "2026-08-02T12:05:11.000Z")
         busy = self.claim("worker-b", "2026-08-02T12:10:00.000Z")
@@ -212,8 +286,13 @@ class SystemPaperScheduleStateTests(unittest.TestCase):
     def test_event_payload_or_hash_tampering_is_detected(self):
         self.claim("worker-a", self.now)
         connection = sqlite3.connect(str(self.state_path))
+        trigger_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='schedule_events_no_update'"
+        ).fetchone()[0]
         connection.execute("DROP TRIGGER schedule_events_no_update")
         connection.execute("UPDATE schedule_events SET payload_json='{}' WHERE sequence=1")
+        connection.execute(trigger_sql)
         connection.commit()
         connection.close()
         with self.assertRaisesRegex(SystemPaperScheduleError, "PAYLOAD_HASH_MISMATCH"):
@@ -225,6 +304,10 @@ class SystemPaperScheduleStateTests(unittest.TestCase):
         payload_json = connection.execute(
             "SELECT payload_json FROM schedule_events WHERE sequence=1"
         ).fetchone()[0]
+        trigger_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='schedule_events_no_update'"
+        ).fetchone()[0]
         connection.execute("DROP TRIGGER schedule_events_no_update")
         connection.execute(
             "UPDATE schedule_events SET payload_json=? WHERE sequence=1",
@@ -234,6 +317,7 @@ class SystemPaperScheduleStateTests(unittest.TestCase):
                 ),
             ),
         )
+        connection.execute(trigger_sql)
         connection.commit()
         connection.close()
         with self.assertRaisesRegex(SystemPaperScheduleError, "PAYLOAD_CANONICAL"):
@@ -260,11 +344,16 @@ class SystemPaperScheduleStateTests(unittest.TestCase):
                 "previous_event_hash": row["previous_event_hash"],
             }
         )
+        trigger_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='schedule_events_no_update'"
+        ).fetchone()[0]
         connection.execute("DROP TRIGGER schedule_events_no_update")
         connection.execute(
             "UPDATE schedule_events SET event_id=?, event_hash=? WHERE sequence=1",
             (tampered_id, event_hash),
         )
+        connection.execute(trigger_sql)
         connection.commit()
         connection.close()
         with self.assertRaisesRegex(SystemPaperScheduleError, "EVENT_ID_MISMATCH"):
@@ -372,7 +461,12 @@ class SystemPaperScheduleStateTests(unittest.TestCase):
                 self.slot,
                 "2026-08-02T12:08:00.000Z",
                 self.event_payload(
-                    self.slot, worker_id=claim.worker_id, attempt=claim.attempt
+                    self.slot,
+                    worker_id=claim.worker_id,
+                    attempt=claim.attempt,
+                    result_sha256="b" * 64,
+                    runtime_snapshot_hash="c" * 64,
+                    output_root_hash="d" * 64,
                 ),
             )
             state._append_locked(
@@ -646,29 +740,43 @@ class SystemPaperPreparedInputTests(unittest.TestCase):
     def test_load_prepared_input_rejects_binary_float_envelopes(self):
         claim = self.claim_current()
         self.prepare(claim)
+        trigger_sql = self.state.connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='prepared_inputs_no_update'"
+        ).fetchone()[0]
         self.state.connection.execute("DROP TRIGGER prepared_inputs_no_update")
         binary_float = b'{"schema_version":"1.0.0","slot_id":"tampered","number":1.0}'
         self.state.connection.execute(
             "UPDATE prepared_inputs SET input_bytes=?, input_sha256=?",
             (binary_float, hashlib.sha256(binary_float).hexdigest()),
         )
+        self.state.connection.execute(trigger_sql)
         with self.assertRaisesRegex(SystemPaperScheduleError, "INPUT_CANONICAL"):
             self.state.load_prepared_input(claim.slot)
 
     def test_load_prepared_input_rejects_changed_component_hashes(self):
         claim = self.claim_current()
         prepared = self.prepare(claim)
-        self.state.connection.execute("DROP TRIGGER prepared_inputs_no_update")
+        trigger_sql = self.state.connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='prepared_inputs_no_update'"
+        ).fetchone()[0]
+
+        def update_prepared_input(statement, parameters):
+            self.state.connection.execute("DROP TRIGGER prepared_inputs_no_update")
+            self.state.connection.execute(statement, parameters)
+            self.state.connection.execute(trigger_sql)
+
         changed_envelope = deepcopy(prepared["payload"])
         changed_envelope["output_root_hash"] = "0" * 64
         changed_bytes = canonical_json(changed_envelope).encode("utf-8")
-        self.state.connection.execute(
+        update_prepared_input(
             "UPDATE prepared_inputs SET input_bytes=?, input_sha256=?",
             (changed_bytes, hashlib.sha256(changed_bytes).hexdigest()),
         )
         with self.assertRaisesRegex(SystemPaperScheduleError, "INPUT_HASH_MISMATCH"):
             self.state.load_prepared_input(claim.slot)
-        self.state.connection.execute(
+        update_prepared_input(
             "UPDATE prepared_inputs SET input_bytes=?, input_sha256=?",
             (prepared["input_bytes"], prepared["input_sha256"]),
         )
@@ -683,13 +791,13 @@ class SystemPaperPreparedInputTests(unittest.TestCase):
                 f"SELECT {column} FROM prepared_inputs"
             ).fetchone()[0]
             changed = "0" * 64 if original != "0" * 64 else "1" * 64
-            self.state.connection.execute(
+            update_prepared_input(
                 f"UPDATE prepared_inputs SET {column}=?", (changed,)
             )
             with self.subTest(column=column):
                 with self.assertRaisesRegex(SystemPaperScheduleError, "INPUT_HASH_MISMATCH"):
                     self.state.load_prepared_input(claim.slot)
-            self.state.connection.execute(
+            update_prepared_input(
                 f"UPDATE prepared_inputs SET {column}=?", (original,)
             )
 
@@ -884,6 +992,12 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             )
 
     def succeed_prepared(self, claim):
+        prepared = self.state.connection.execute(
+            "SELECT result_sha256, runtime_snapshot_hash, output_root_hash "
+            "FROM prepared_results WHERE slot_id=?",
+            (claim.slot.slot_id,),
+        ).fetchone()
+        self.assertIsNotNone(prepared)
         self.state.connection.execute("BEGIN IMMEDIATE")
         self.state._append_locked(
             "SUCCEEDED",
@@ -897,6 +1011,9 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
                 "expires_at": claim.slot.expires_at,
                 "worker_id": claim.worker_id,
                 "attempt": claim.attempt,
+                "result_sha256": prepared["result_sha256"],
+                "runtime_snapshot_hash": prepared["runtime_snapshot_hash"],
+                "output_root_hash": prepared["output_root_hash"],
             },
         )
         self.state.connection.commit()
@@ -1162,13 +1279,12 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             "2026-08-02T12:00:00.000Z",
             build_initial_system_paper_runtime_snapshot(self.plan),
         )
-        self.state.connection.execute(
-            """
-            CREATE TRIGGER fail_prepared_result_insert
-            BEFORE INSERT ON prepared_results
-            BEGIN SELECT RAISE(ABORT, 'injected result insert failure'); END;
-            """
-        )
+        def deny_prepared_result_insert(action, first, _second, _database, _source):
+            if action == sqlite3.SQLITE_INSERT and first == "prepared_results":
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        self.state.connection.set_authorizer(deny_prepared_result_insert)
 
         with self.assertRaises(sqlite3.DatabaseError):
             self.state.prepare_result(
@@ -1177,6 +1293,11 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
                 parent_result_bodies=(),
                 prepared_at=claim.claimed_at,
             )
+        self.state.connection.set_authorizer(None)
+        self.state.close()
+        self.state = SystemPaperScheduleState(
+            Path(self.temp.name) / "state.sqlite", self.policy
+        )
         self.assertEqual(
             self.state.connection.execute(
                 "SELECT COUNT(*) FROM schedule_events WHERE event_type='RESULT_PREPARED'"
@@ -1522,6 +1643,85 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             (None, None, None, None, None),
         )
 
+    def rewrite_last_success_payload(self, transform):
+        connection = sqlite3.connect(str(self.state_path))
+        connection.row_factory = sqlite3.Row
+        trigger_sql = connection.execute(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type='trigger' AND name='schedule_events_no_update'"
+        ).fetchone()[0]
+        connection.execute("DROP TRIGGER schedule_events_no_update")
+        row = connection.execute(
+            "SELECT * FROM schedule_events WHERE event_type='SUCCEEDED' "
+            "ORDER BY sequence DESC LIMIT 1"
+        ).fetchone()
+        payload = transform(json.loads(row["payload_json"]))
+        payload_hash = business_hash(payload)
+        identity = {
+            "sequence": row["sequence"],
+            "event_type": row["event_type"],
+            "slot_id": row["slot_id"],
+            "event_time": row["event_time"],
+            "payload_hash": payload_hash,
+            "previous_event_hash": row["previous_event_hash"],
+        }
+        event_id = stable_id("system_paper_schedule_event", identity)
+        body = {
+            **identity,
+            "event_id": event_id,
+            "payload": payload,
+        }
+        connection.execute(
+            "UPDATE schedule_events SET event_id=?, payload_json=?, payload_hash=?, "
+            "event_hash=? WHERE sequence=?",
+            (
+                event_id,
+                canonical_json(payload),
+                payload_hash,
+                business_hash(body),
+                row["sequence"],
+            ),
+        )
+        connection.execute(trigger_sql)
+        connection.commit()
+        connection.close()
+
+    def test_rehashed_success_event_must_bind_all_prepared_result_hashes(self):
+        cases = (
+            ("missing-result-sha", "result_sha256", None),
+            ("wrong-result-sha", "result_sha256", "0" * 64),
+            ("wrong-runtime-snapshot", "runtime_snapshot_hash", "0" * 64),
+            ("wrong-output-root", "output_root_hash", "0" * 64),
+        )
+        original_state_path = self.state_path
+        original_output_root = self.output_root
+        for name, field, replacement in cases:
+            with self.subTest(name=name):
+                self.state_path = Path(self.temp.name) / (name + ".sqlite")
+                self.output_root = Path(self.temp.name) / (name + "-output")
+                self.output_root.mkdir(mode=0o700)
+                os.chmod(self.output_root, 0o700)
+                self.invoke_runner(RecordingProvider(self.now))
+
+                def transform(payload, selected=field, value=replacement):
+                    changed = dict(payload)
+                    if value is None:
+                        changed.pop(selected)
+                    else:
+                        changed[selected] = value
+                    return changed
+
+                self.rewrite_last_success_payload(transform)
+                with self.assertRaisesRegex(
+                    SystemPaperScheduleError,
+                    "SYSTEM_PAPER_SCHEDULE_SUCCESS_BINDING",
+                ):
+                    SystemPaperScheduleState(
+                        self.state_path, SystemPaperSchedulePolicy.create(self.plan)
+                    )
+        self.state_path = original_state_path
+        self.output_root = original_output_root
+
     def test_run_then_same_slot_is_zero_capture_zero_runtime_idempotent(self):
         provider = RecordingProvider(self.now)
         first = self.invoke_runner(provider)
@@ -1552,6 +1752,219 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             "real_broker_calls": 0,
             "real_order_writes": 0,
         })
+
+    def test_capture_records_actual_post_sample_time_but_events_use_entry_sample(self):
+        captured_at = "2026-08-02T12:05:12.000Z"
+        summary = self.invoke_runner(RecordingProvider(captured_at))
+
+        self.assert_summary_shape(
+            summary, outcome="EXECUTED", counts=(1, 4, 1), loader_replays=1
+        )
+        policy = SystemPaperSchedulePolicy.create(self.plan)
+        slot = policy.current_slot(self.now)
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            prepared = state.load_prepared_input(slot)
+            events = state.events()
+        self.assertEqual(prepared["payload"]["capture"]["captured_at"], captured_at)
+        self.assertEqual([event["event_time"] for event in events], [self.now] * 4)
+        self.assertEqual(
+            [event["event_type"] for event in events],
+            ["CLAIMED", "INPUT_PREPARED", "RESULT_PREPARED", "SUCCEEDED"],
+        )
+
+    def test_capture_before_sample_or_at_lease_expiry_is_rejected(self):
+        cases = (
+            ("before-sample", "2026-08-02T12:05:10.999Z"),
+            ("lease-expiry", "2026-08-02T12:20:11.000Z"),
+        )
+        for name, captured_at in cases:
+            with self.subTest(name=name):
+                self.state_path = Path(self.temp.name) / (name + ".sqlite")
+                with self.assertRaisesRegex(
+                    SystemPaperScheduleError,
+                    "SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_TIME_MISMATCH",
+                ):
+                    self.invoke_runner(RecordingProvider(captured_at))
+                policy = SystemPaperSchedulePolicy.create(self.plan)
+                with SystemPaperScheduleState(self.state_path, policy) as state:
+                    events = state.events()
+                    self.assertEqual(
+                        state.connection.execute(
+                            "SELECT COUNT(*) FROM prepared_inputs"
+                        ).fetchone()[0],
+                        0,
+                    )
+                self.assertEqual(
+                    [event["event_type"] for event in events], ["CLAIMED", "FAILED"]
+                )
+
+    def test_oldest_durable_slot_recovers_before_current_slot_across_windows(self):
+        cases = (
+            (
+                "input-one-window",
+                "AFTER_INPUT_PREPARED_COMMIT",
+                "2026-08-02T16:20:12.000Z",
+                "RESUMED_INPUT",
+                (0, 0, 1),
+            ),
+            (
+                "input-multiple-windows",
+                "AFTER_INPUT_PREPARED_COMMIT",
+                "2026-08-03T00:20:12.000Z",
+                "RESUMED_INPUT",
+                (0, 0, 1),
+            ),
+            (
+                "result-one-window",
+                "AFTER_RESULT_PREPARED_COMMIT",
+                "2026-08-02T16:20:12.000Z",
+                "RESUMED_RESULT",
+                (0, 0, 0),
+            ),
+            (
+                "result-multiple-windows",
+                "AFTER_RESULT_PREPARED_COMMIT",
+                "2026-08-03T00:20:12.000Z",
+                "RESUMED_RESULT",
+                (0, 0, 0),
+            ),
+        )
+        original_state_path = self.state_path
+        original_output_root = self.output_root
+        for name, fault_point, recovered_at, outcome, counts in cases:
+            with self.subTest(name=name):
+                self.state_path = Path(self.temp.name) / (name + ".sqlite")
+                self.output_root = Path(self.temp.name) / (name + "-output")
+                self.output_root.mkdir(mode=0o700)
+                os.chmod(self.output_root, 0o700)
+                with self.assertRaises(SystemPaperInjectedFault):
+                    self.invoke_runner(
+                        RecordingProvider(self.now),
+                        fault_injector=SystemPaperFaultInjector(
+                            {fault_point: "CRASH"}
+                        ),
+                    )
+                policy = SystemPaperSchedulePolicy.create(self.plan)
+                old_slot = policy.current_slot(self.now)
+                current_slot = policy.current_slot(recovered_at)
+                with SystemPaperScheduleState(self.state_path, policy) as state:
+                    input_before = state.connection.execute(
+                        "SELECT input_bytes FROM prepared_inputs WHERE slot_id=?",
+                        (old_slot.slot_id,),
+                    ).fetchone()[0]
+                    result_row = state.connection.execute(
+                        "SELECT result_bytes FROM prepared_results WHERE slot_id=?",
+                        (old_slot.slot_id,),
+                    ).fetchone()
+                    result_before = None if result_row is None else result_row[0]
+
+                recovered = self.invoke_runner(
+                    BombProvider(), worker_id="worker-b", clock=lambda: recovered_at
+                )
+                self.assert_summary_shape(
+                    recovered, outcome=outcome, counts=counts, loader_replays=1
+                )
+                self.assertEqual(recovered["slot_id"], old_slot.slot_id)
+                artifact = Path(recovered["result_path_or_null"])
+                artifact_before = (artifact.read_bytes(), artifact.stat().st_ino)
+                with SystemPaperScheduleState(self.state_path, policy) as state:
+                    projection = state.slot_projection()
+                    input_after = state.connection.execute(
+                        "SELECT input_bytes FROM prepared_inputs WHERE slot_id=?",
+                        (old_slot.slot_id,),
+                    ).fetchone()[0]
+                    result_after = state.connection.execute(
+                        "SELECT result_bytes FROM prepared_results WHERE slot_id=?",
+                        (old_slot.slot_id,),
+                    ).fetchone()[0]
+                    self.assertEqual(
+                        state.connection.execute(
+                            "SELECT COUNT(*) FROM prepared_results"
+                        ).fetchone()[0],
+                        1,
+                    )
+                self.assertEqual(input_after, input_before)
+                if result_before is not None:
+                    self.assertEqual(result_after, result_before)
+                self.assertEqual(result_after, artifact_before[0])
+                self.assertEqual(set(projection), {old_slot.slot_id})
+                self.assertEqual(projection[old_slot.slot_id]["terminal_state"], "SUCCEEDED")
+                self.assertNotIn(current_slot.slot_id, projection)
+                self.assertEqual(
+                    (artifact.read_bytes(), artifact.stat().st_ino), artifact_before
+                )
+
+                current_provider = RecordingProvider(recovered_at)
+                if recovered_at == "2026-08-02T16:20:12.000Z":
+                    subsequent = self.invoke_runner(
+                        current_provider,
+                        worker_id="worker-c",
+                        clock=lambda: recovered_at,
+                    )
+                    self.assertEqual(subsequent["slot_id"], current_slot.slot_id)
+                else:
+                    with self.assertRaises(SystemPaperScheduleError):
+                        self.invoke_runner(
+                            current_provider,
+                            worker_id="worker-c",
+                            clock=lambda: recovered_at,
+                        )
+                with SystemPaperScheduleState(self.state_path, policy) as state:
+                    later_projection = state.slot_projection()
+                self.assertIn(current_slot.slot_id, later_projection)
+        self.state_path = original_state_path
+        self.output_root = original_output_root
+
+    def test_multiple_nonterminal_durable_slots_fail_closed_without_new_events(self):
+        policy = SystemPaperSchedulePolicy.create(self.plan)
+        root_hash = business_hash(
+            {
+                "purpose": "SYSTEM_PAPER_IMMUTABLE_OUTPUT_ROOT",
+                "resolved_path": str(self.output_root.resolve()),
+            }
+        )
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            for scheduled_for in (
+                "2026-08-02T08:00:00.000Z",
+                "2026-08-02T12:00:00.000Z",
+            ):
+                slot = policy.slot_from_scheduled(scheduled_for)
+                claim = state.claim(
+                    slot, worker_id="contradictory-worker", claimed_at=slot.due_at
+                )
+                state.prepare_input(
+                    claim,
+                    plan=self.plan,
+                    capture=SystemPaperInputCapture(
+                        public_market_bundle=make_bundle(observed_at=scheduled_for),
+                        capture_attempt_id="contradictory-" + slot.slot_id[-12:],
+                        captured_at=slot.due_at,
+                        request_families=(
+                            "SPOT_AGG_TRADE",
+                            "SPOT_BBO",
+                            "SPOT_EXCHANGE_INFO",
+                            "SPOT_KLINE_4H_WARMUP",
+                        ),
+                        network_request_count=4,
+                    ),
+                    previous_runtime_snapshot=build_initial_system_paper_runtime_snapshot(
+                        self.plan
+                    ),
+                    fill_scenario=FillScenario.immediate_full(),
+                    output_root_hash=root_hash,
+                    prepared_at=slot.due_at,
+                )
+            events_before = state.events()
+        with self.assertRaisesRegex(
+            SystemPaperScheduleError, "SYSTEM_PAPER_SCHEDULE_RECOVERY_AMBIGUOUS"
+        ):
+            self.invoke_runner(
+                BombProvider(),
+                clock=lambda: "2026-08-02T16:05:11.000Z",
+            )
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            self.assertEqual(state.events(), events_before)
+        self.assertFalse((self.output_root / "system-paper-slots").exists())
 
     def test_recovery_uses_durable_input_then_durable_result_without_recapture(self):
         provider = RecordingProvider(self.now)
@@ -1655,6 +2068,241 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
         with SystemPaperScheduleState(self.state_path, policy) as state:
             durable = state.slot_projection()[policy.current_slot(self.now).slot_id]
         self.assertEqual((durable["attempt_status"], durable["durable_stage"]), ("FAILED", "INPUT"))
+
+    def test_already_succeeded_rejects_exact_artifact_copied_to_another_safe_root(self):
+        first = self.invoke_runner(RecordingProvider(self.now))
+        source = Path(first["result_path_or_null"])
+        other_root = Path(self.temp.name) / "copied-output"
+        other_slots = other_root / "system-paper-slots"
+        other_root.mkdir(mode=0o700)
+        other_slots.mkdir(mode=0o700)
+        os.chmod(other_root, 0o700)
+        os.chmod(other_slots, 0o700)
+        copied = other_slots / source.name
+        copied.write_bytes(source.read_bytes())
+        os.chmod(copied, 0o600)
+        copied_before = (copied.read_bytes(), copied.stat().st_ino)
+        policy = SystemPaperSchedulePolicy.create(self.plan)
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            events_before = state.events()
+            rows_before = tuple(
+                tuple(row) for row in state.connection.execute(
+                    "SELECT * FROM prepared_results ORDER BY slot_id"
+                ).fetchall()
+            )
+        original_root, self.output_root = self.output_root, other_root
+        try:
+            with self.assertRaisesRegex(
+                SystemPaperScheduleError, "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_MISMATCH"
+            ):
+                self.invoke_runner(BombProvider(), worker_id="worker-b")
+        finally:
+            self.output_root = original_root
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            self.assertEqual(state.events(), events_before)
+            self.assertEqual(
+                tuple(
+                    tuple(row) for row in state.connection.execute(
+                        "SELECT * FROM prepared_results ORDER BY slot_id"
+                    ).fetchall()
+                ),
+                rows_before,
+            )
+        self.assertEqual((copied.read_bytes(), copied.stat().st_ino), copied_before)
+
+    def test_output_root_replacement_fails_at_provider_runtime_and_publish_boundaries(self):
+        boundary_names = ("provider", "runtime", "publish")
+        original_state_path = self.state_path
+        original_output_root = self.output_root
+        real_runtime = scheduler_module.run_system_paper_slot
+        real_publish = scheduler_module._publish_immutable
+        for boundary in boundary_names:
+            with self.subTest(boundary=boundary):
+                self.state_path = Path(self.temp.name) / ("root-" + boundary + ".sqlite")
+                self.output_root = Path(self.temp.name) / ("root-" + boundary)
+                self.output_root.mkdir(mode=0o700)
+                os.chmod(self.output_root, 0o700)
+                backup = Path(str(self.output_root) + "-backup")
+                swapped = []
+
+                def swap_root():
+                    if swapped:
+                        return
+                    self.output_root.rename(backup)
+                    self.output_root.mkdir(mode=0o700)
+                    os.chmod(self.output_root, 0o700)
+                    swapped.append(True)
+
+                provider = RecordingProvider(self.now)
+
+                def swapping_provider(request):
+                    capture = provider(request)
+                    swap_root()
+                    return capture
+
+                def swapping_runtime(*args, **kwargs):
+                    swap_root()
+                    return real_runtime(*args, **kwargs)
+
+                def swapping_publish(*args, **kwargs):
+                    swap_root()
+                    return real_publish(*args, **kwargs)
+
+                provider_boundary = swapping_provider if boundary == "provider" else provider
+                runtime_patch = (
+                    patch.object(scheduler_module, "run_system_paper_slot", swapping_runtime)
+                    if boundary == "runtime" else patch.object(
+                        scheduler_module, "run_system_paper_slot", real_runtime
+                    )
+                )
+                publish_patch = (
+                    patch.object(scheduler_module, "_publish_immutable", swapping_publish)
+                    if boundary == "publish" else patch.object(
+                        scheduler_module, "_publish_immutable", real_publish
+                    )
+                )
+                with runtime_patch, publish_patch:
+                    with self.assertRaisesRegex(
+                        SystemPaperScheduleError,
+                        "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_(?:RACE|MISMATCH)",
+                    ):
+                        self.invoke_runner(provider_boundary)
+                self.assertTrue(swapped)
+                replacement_slots = self.output_root / "system-paper-slots"
+                self.assertTrue(
+                    not replacement_slots.exists()
+                    or tuple(replacement_slots.iterdir()) == ()
+                )
+                with SystemPaperScheduleState(
+                    self.state_path, SystemPaperSchedulePolicy.create(self.plan)
+                ) as state:
+                    self.assertNotIn(
+                        "SUCCEEDED", [event["event_type"] for event in state.events()]
+                    )
+        self.state_path = original_state_path
+        self.output_root = original_output_root
+
+    def test_existing_unsafe_slots_directory_rejects_before_state_or_provider(self):
+        cases = ("wrong-mode", "symlink")
+        original_state_path = self.state_path
+        original_output_root = self.output_root
+        for name in cases:
+            with self.subTest(name=name):
+                self.state_path = Path(self.temp.name) / ("slots-" + name + ".sqlite")
+                self.output_root = Path(self.temp.name) / ("slots-" + name + "-root")
+                self.output_root.mkdir(mode=0o700)
+                os.chmod(self.output_root, 0o700)
+                slots = self.output_root / "system-paper-slots"
+                if name == "wrong-mode":
+                    slots.mkdir(mode=0o755)
+                    os.chmod(slots, 0o755)
+                else:
+                    target = Path(self.temp.name) / ("slots-" + name + "-target")
+                    target.mkdir(mode=0o700)
+                    slots.symlink_to(target, target_is_directory=True)
+                provider = RecordingProvider(self.now)
+                with self.assertRaises(SystemPaperScheduleError):
+                    self.invoke_runner(provider)
+                self.assertEqual(provider.invocations, 0)
+                self.assertFalse(self.state_path.exists())
+                if slots.is_dir():
+                    self.assertEqual(tuple(slots.iterdir()), ())
+        self.state_path = original_state_path
+        self.output_root = original_output_root
+
+    def test_race_created_unsafe_slots_directory_is_rejected_before_artifact_write(self):
+        provider = RecordingProvider(self.now)
+        slots = self.output_root / "system-paper-slots"
+
+        def create_unsafe_slots(request):
+            capture = provider(request)
+            slots.mkdir(mode=0o755)
+            os.chmod(slots, 0o755)
+            return capture
+
+        with self.assertRaises(SystemPaperScheduleError):
+            self.invoke_runner(create_unsafe_slots)
+        self.assertEqual(provider.invocations, 1)
+        self.assertEqual(tuple(slots.iterdir()), ())
+        with SystemPaperScheduleState(
+            self.state_path, SystemPaperSchedulePolicy.create(self.plan)
+        ) as state:
+            self.assertNotIn(
+                "SUCCEEDED", [event["event_type"] for event in state.events()]
+            )
+
+    def test_public_parent_continuity_reason_is_frozen_and_durable(self):
+        cases = (
+            ("natural-gap", "2026-08-02T20:05:11.000Z"),
+            ("missed", "2026-08-02T16:05:11.000Z"),
+            ("expired", "2026-08-02T16:05:11.000Z"),
+            ("missing-artifact", "2026-08-02T16:05:11.000Z"),
+            ("tampered-artifact", "2026-08-02T16:05:11.000Z"),
+        )
+        original_state_path = self.state_path
+        original_output_root = self.output_root
+        for name, later_at in cases:
+            with self.subTest(name=name):
+                self.state_path = Path(self.temp.name) / ("continuity-" + name + ".sqlite")
+                self.output_root = Path(self.temp.name) / ("continuity-" + name + "-root")
+                self.output_root.mkdir(mode=0o700)
+                os.chmod(self.output_root, 0o700)
+                policy = SystemPaperSchedulePolicy.create(self.plan)
+                first_slot = policy.current_slot(self.now)
+                if name in ("natural-gap", "missing-artifact", "tampered-artifact"):
+                    first = self.invoke_runner(RecordingProvider(self.now))
+                    artifact = Path(first["result_path_or_null"])
+                    if name == "missing-artifact":
+                        artifact.unlink()
+                    elif name == "tampered-artifact":
+                        artifact.write_bytes(artifact.read_bytes() + b"\n")
+                elif name == "missed":
+                    with SystemPaperScheduleState(self.state_path, policy) as state:
+                        state.connection.execute("BEGIN IMMEDIATE")
+                        state._append_locked(
+                            "MISSED",
+                            first_slot,
+                            self.now,
+                            {
+                                "plan_hash": self.plan["plan_hash"],
+                                "schedule_policy_hash": policy.schedule_policy_hash,
+                                "scheduled_for": first_slot.scheduled_for,
+                                "due_at": first_slot.due_at,
+                                "expires_at": first_slot.expires_at,
+                                "reason_code": "MISSED_NO_CONTEMPORANEOUS_CAPTURE",
+                            },
+                        )
+                        state.connection.commit()
+                else:
+                    with SystemPaperScheduleState(self.state_path, policy) as state:
+                        state.claim(
+                            first_slot, worker_id="old-worker", claimed_at=self.now
+                        )
+
+                provider = RecordingProvider(later_at)
+                with self.assertRaises(SystemPaperScheduleError) as raised:
+                    self.invoke_runner(
+                        provider, worker_id="later-worker", clock=lambda: later_at
+                    )
+                self.assertEqual(
+                    raised.exception.reason_code,
+                    "SYSTEM_PAPER_PARENT_CONTINUITY_BROKEN",
+                )
+                self.assertEqual(provider.invocations, 1)
+                later_slot = policy.current_slot(later_at)
+                with SystemPaperScheduleState(self.state_path, policy) as state:
+                    failed = [
+                        event for event in state.events()
+                        if event["event_type"] == "FAILED"
+                        and event["slot_id"] == later_slot.slot_id
+                    ]
+                self.assertEqual(len(failed), 1)
+                self.assertEqual(
+                    failed[0]["payload"]["reason_code"],
+                    "SYSTEM_PAPER_PARENT_CONTINUITY_BROKEN",
+                )
+        self.state_path = original_state_path
+        self.output_root = original_output_root
 
     def test_post_publish_crash_adopts_the_same_inode_and_succeeds_on_recovery(self):
         with self.assertRaises(SystemPaperInjectedFault):

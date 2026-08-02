@@ -465,6 +465,102 @@ class SystemPaperFaultRecoveryTests(unittest.TestCase):
                 finally:
                     harness.close()
 
+    def test_artifact_enospc_recovers_exact_result_without_false_terminal_event(self):
+        for point in (
+            "DURING_ARTIFACT_WRITE",
+            "AFTER_ARTIFACT_FSYNC_BEFORE_COMMIT",
+        ):
+            with self.subTest(point=point):
+                harness = FaultScenarioHarness(point=point, mode="ENOSPC")
+                try:
+                    with self.assertRaises(OSError) as raised:
+                        harness.run_first_invocation()
+                    self.assertEqual(raised.exception.errno, 28)
+                    self.assertEqual(
+                        harness.durable_facts(), ("RESULT", 0, 1, 1, None)
+                    )
+                    slots = harness.output_root / "system-paper-slots"
+                    self.assertEqual(tuple(slots.iterdir()), ())
+                    policy = SystemPaperSchedulePolicy.create(harness.plan)
+                    slot = policy.current_slot(harness.now)
+                    with SystemPaperScheduleState(harness.state_path, policy) as state:
+                        event_types = [event["event_type"] for event in state.events()]
+                        input_before = state.connection.execute(
+                            "SELECT input_bytes, input_sha256 FROM prepared_inputs "
+                            "WHERE slot_id=?", (slot.slot_id,)
+                        ).fetchone()
+                        result_before = state.connection.execute(
+                            "SELECT result_bytes, result_sha256 FROM prepared_results "
+                            "WHERE slot_id=?", (slot.slot_id,)
+                        ).fetchone()
+                    self.assertNotIn("FAILED", event_types)
+                    self.assertNotIn("SUCCEEDED", event_types)
+                    self.assertEqual(
+                        hashlib.sha256(input_before["input_bytes"]).hexdigest(),
+                        input_before["input_sha256"],
+                    )
+                    self.assertEqual(
+                        hashlib.sha256(result_before["result_bytes"]).hexdigest(),
+                        result_before["result_sha256"],
+                    )
+
+                    recovery_provider = DeterministicPublicProvider(
+                        "2026-08-02T12:20:12.000Z"
+                    )
+                    recovery_evidence = InvocationEvidence()
+                    recovered = harness.run(
+                        worker_id="enospc-recovery-worker",
+                        clock_at="2026-08-02T12:20:12.000Z",
+                        provider=recovery_provider,
+                        evidence=recovery_evidence,
+                    )
+                    self.assertEqual(recovered["outcome"], "RESUMED_RESULT")
+                    self.assertEqual(
+                        (
+                            recovery_provider.invocations,
+                            recovery_provider.network_requests,
+                            recovery_evidence.candidate_runtime_calls,
+                            recovered["loader_replay_count"],
+                        ),
+                        (0, 0, 0, 1),
+                    )
+                    artifact = Path(recovered["result_path_or_null"])
+                    self.assertEqual(
+                        tuple(path.resolve() for path in slots.iterdir()),
+                        (artifact.resolve(),),
+                    )
+                    self.assertEqual(artifact.read_bytes(), result_before["result_bytes"])
+                    self.assertEqual(
+                        hashlib.sha256(artifact.read_bytes()).hexdigest(),
+                        result_before["result_sha256"],
+                    )
+                    result = load_system_paper_slot_result_bytes(artifact.read_bytes())
+                    self.assertEqual(
+                        result["ledger"]["debits_usdt"],
+                        result["ledger"]["credits_usdt"],
+                    )
+                    with SystemPaperScheduleState(harness.state_path, policy) as state:
+                        self.assertEqual(
+                            state.connection.execute(
+                                "SELECT COUNT(*) FROM prepared_results"
+                            ).fetchone()[0],
+                            1,
+                        )
+                        self.assertEqual(
+                            [event["event_type"] for event in state.events()].count(
+                                "SUCCEEDED"
+                            ),
+                            1,
+                        )
+                        self.assertNotIn(
+                            "FAILED", [event["event_type"] for event in state.events()]
+                        )
+                    self.assertFalse(
+                        any(path.name.startswith(".market-data-") for path in slots.iterdir())
+                    )
+                finally:
+                    harness.close()
+
 
 class ProviderFaultMatrixTests(unittest.TestCase):
     def _harness(self):

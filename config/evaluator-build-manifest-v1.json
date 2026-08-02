@@ -200,7 +200,7 @@
     "src/crypto_quant/local_scheduler_cli.py": "91a48f112e2d14404c410618894d609db1dd7798c191959ed06eeb647658037d",
     "src/crypto_quant/logistic_research.py": "8cd8fd8d0424e9e377ad03484ecb4bbb382bbc32ccde35041716c82d10da48d7",
     "src/crypto_quant/market_data.py": "821f02938fef7ecb216a3fe5b97d90910fccdb83f062b7a88f11f4bce428c9f6",
-    "src/crypto_quant/market_data_cli.py": "6dae6553114de3cab1ad322b7e35e37437e6baff5538e0f08089551370064099",
+    "src/crypto_quant/market_data_cli.py": "9e28048a6552e28172a579a54cbdfb2740d952b0cc8ea009d6881609022fe553",
     "src/crypto_quant/offline_paper.py": "cc50d8aa0def26ed805935dd4cf0da70dd9efde06dc3f749b6268b54f7ba28ad",
     "src/crypto_quant/offline_paper_cli.py": "a1f307876f5fd8c859588149c7b5cb90917a77df1cb2c67513f6d0a3c828a941",
     "src/crypto_quant/orders.py": "654f33d9bb09a6ad9eca475a43db5589489556c70959162ee60dae3af2998816",
@@ -274,12 +274,12 @@
     "src/crypto_quant/system_paper_broker.py": "273f7ad291faaec7e3515526378355b287e58785c859ac680da36933f2102af7",
     "src/crypto_quant/system_paper_plan.py": "fc48849143b370cdc779f2e8f71e6f6e59c3c864ec956a55bbc744fc945d8b47",
     "src/crypto_quant/system_paper_runtime.py": "9dd146aa0037865aa8e438ea35afa5eb3cc6133e3ec6210dc2b17efbd54e32ec",
-    "src/crypto_quant/system_paper_scheduler.py": "98b1005616979801db5f63ea4e8c5dc183c9a1d014d09f89f5538cced017a2ff",
+    "src/crypto_quant/system_paper_scheduler.py": "ca3186317288934f3e8be30e70a9fd5551c3c44be906f92b8cf077eca630539a",
     "src/crypto_quant/trade_replay.py": "7991ef80a0ee9e2b655d40f63de6a4284fb3fe1b959a637b9b5fce3e369ca335",
-    "tests/test_system_paper_fault_injection.py": "531bb2436ab4fa549ad1f1c97849af795b02e18bd87d719729ccdfcb05d1be24",
-    "tests/test_system_paper_scheduler.py": "d09d3269561c79b8053d2238062316be0fb8af75481788e57f51b5780656724c"
+    "tests/test_system_paper_fault_injection.py": "87322635cdb27d97576e209d7c38980288d658fe8379a43a47f344d8ff8e13ad",
+    "tests/test_system_paper_scheduler.py": "d592a5a10c284de01bf7151641e8280e817bd56cffcfa5af31f84bd144c22f3d"
   },
-  "build_input_tree_hash": "ab22787874926f4ea1eaf33748426fffb752fca79b1ce6ecf6d96d5c8edfcab4",
+  "build_input_tree_hash": "bd94c22560ab2ebb7fe567446808ce6b934f63794eb6ea9b240b5aede326bbcf",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -287,5 +287,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "78d97fd83388810a43df3e9e60ca1a83e88a3f80afc8c0d1616e8ff11a027f4a"
+  "manifest_hash": "554e4ff28f955319ac5ec59d93de4878a6df7abe9f7817a4eef62bcfeac9bce0"
 }

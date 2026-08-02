@@ -81,9 +81,27 @@ def _open_output_directory(
     except FileExistsError:
         pass
     try:
-        return os.open(output_directory, _directory_flags(), dir_fd=root_fd)
+        descriptor = os.open(output_directory, _directory_flags(), dir_fd=root_fd)
     except OSError as error:
         raise MarketDataError("ARTIFACT_OUTPUT_INVALID") from error
+    if output_directory == "system-paper-slots":
+        try:
+            entry = os.fstat(descriptor)
+            attached = os.stat(
+                output_directory, dir_fd=root_fd, follow_symlinks=False
+            )
+            if (
+                not stat.S_ISDIR(entry.st_mode)
+                or entry.st_uid != os.getuid()
+                or stat.S_IMODE(entry.st_mode) != 0o700
+                or (entry.st_dev, entry.st_ino)
+                != (attached.st_dev, attached.st_ino)
+            ):
+                raise MarketDataError("ARTIFACT_OUTPUT_INVALID")
+        except Exception:
+            _close_without_reversing_result(descriptor)
+            raise
+    return descriptor
 
 
 def _directory_is_attached(
@@ -395,7 +413,7 @@ def _publish_in_directory(
         if isinstance(error, MarketDataError):
             raise
         if isinstance(error, OSError):
-            raise MarketDataError("ARTIFACT_PUBLISH_FAILED") from error
+            raise
         raise
     finally:
         if temporary_fd is not None:
@@ -410,12 +428,19 @@ def _publish_immutable(
     output_directory: str = _OUTPUT_DIRECTORY,
     after_first_write: Optional[Callable[[], None]] = None,
     after_payload_fsync: Optional[Callable[[], None]] = None,
+    expected_root_identity: Optional[Tuple[int, int]] = None,
 ) -> bool:
     """Publish bytes below a no-follow directory boundary without replacement."""
 
     root_fd = _open_output_root(root)
     directory_fd = None
     try:
+        if expected_root_identity is not None:
+            opened = os.fstat(root_fd)
+            if (opened.st_dev, opened.st_ino) != expected_root_identity:
+                raise MarketDataError(
+                    "ARTIFACT_OUTPUT_ROOT_IDENTITY_MISMATCH"
+                )
         directory_fd = _open_output_directory(root_fd, output_directory)
         return _publish_in_directory(
             root_fd,
