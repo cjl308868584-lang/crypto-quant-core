@@ -908,6 +908,12 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
         )
         return claim, input_record, result
 
+    def succeed_with_identity(self, claim, **kwargs):
+        try:
+            return self.state.succeed(claim, **kwargs)
+        except TypeError as error:
+            self.fail("trusted output-root identity contract is missing: " + str(error))
+
     def test_result_prepare_replays_input_and_full_parent_chain(self):
         # Catches accepting result bytes because their outer hash is self-consistent.
         slot = self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z")
@@ -1030,9 +1036,13 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             prepared_at=claim.claimed_at,
         )
         artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
+        root_stat = os.stat(self.output_root, follow_symlinks=False)
         with self.assertRaises(SystemPaperScheduleError):
-            self.state.succeed(
-                claim, artifact_path=artifact, completed_at=claim.lease_expires_at
+            self.succeed_with_identity(
+                claim,
+                artifact_path=artifact,
+                expected_output_root_identity=(root_stat.st_dev, root_stat.st_ino),
+                completed_at=claim.lease_expires_at,
             )
         self.state.connection.execute("BEGIN IMMEDIATE")
         self.state._append_locked(
@@ -1053,6 +1063,140 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
         self.state.connection.commit()
         with self.assertRaises(SystemPaperScheduleError):
             self.state.verify_integrity()
+
+    def test_succeed_rejects_wrong_expected_output_root_identity(self):
+        claim, _input, result = self.prepare_slot(
+            "2026-08-02T12:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        record = self.state.prepare_result(
+            claim,
+            result_bytes=canonical_json(result).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=claim.claimed_at,
+        )
+        artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
+        artifact_before = (artifact.read_bytes(), artifact.stat().st_ino)
+        events_before = self.state.events()
+        prepared_before = tuple(
+            tuple(row)
+            for row in self.state.connection.execute(
+                "SELECT * FROM prepared_results ORDER BY slot_id"
+            ).fetchall()
+        )
+        other_root = Path(self.temp.name) / "other-results"
+        other_root.mkdir(mode=0o700)
+        os.chmod(other_root, 0o700)
+        other_stat = os.stat(other_root, follow_symlinks=False)
+
+        with self.assertRaisesRegex(
+            SystemPaperScheduleError,
+            "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE",
+        ):
+            self.succeed_with_identity(
+                claim,
+                artifact_path=artifact,
+                expected_output_root_identity=(other_stat.st_dev, other_stat.st_ino),
+                completed_at=claim.claimed_at,
+            )
+
+        self.assertEqual(self.state.events(), events_before)
+        self.assertEqual(
+            tuple(
+                tuple(row)
+                for row in self.state.connection.execute(
+                    "SELECT * FROM prepared_results ORDER BY slot_id"
+                ).fetchall()
+            ),
+            prepared_before,
+        )
+        self.assertEqual((artifact.read_bytes(), artifact.stat().st_ino), artifact_before)
+
+    def test_succeed_rejects_malformed_expected_output_root_identity(self):
+        claim, _input, result = self.prepare_slot(
+            "2026-08-02T12:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        record = self.state.prepare_result(
+            claim,
+            result_bytes=canonical_json(result).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=claim.claimed_at,
+        )
+        artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
+        events_before = self.state.events()
+        prepared_before = tuple(
+            tuple(row)
+            for row in self.state.connection.execute(
+                "SELECT * FROM prepared_results ORDER BY slot_id"
+            ).fetchall()
+        )
+
+        for malformed in (None, (1,), (True, 2), (0, 2), [-1, 2], ("1", 2)):
+            with self.subTest(identity=malformed):
+                with self.assertRaisesRegex(
+                    SystemPaperScheduleError,
+                    "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_IDENTITY_INVALID",
+                ):
+                    self.succeed_with_identity(
+                        claim,
+                        artifact_path=artifact,
+                        expected_output_root_identity=malformed,
+                        completed_at=claim.claimed_at,
+                    )
+                self.assertEqual(self.state.events(), events_before)
+                self.assertEqual(
+                    tuple(
+                        tuple(row)
+                        for row in self.state.connection.execute(
+                            "SELECT * FROM prepared_results ORDER BY slot_id"
+                        ).fetchall()
+                    ),
+                    prepared_before,
+                )
+
+    def test_succeed_rejects_output_root_replacement_before_commit(self):
+        claim, _input, result = self.prepare_slot(
+            "2026-08-02T12:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        record = self.state.prepare_result(
+            claim,
+            result_bytes=canonical_json(result).encode("utf-8"),
+            parent_result_bodies=(),
+            prepared_at=claim.claimed_at,
+        )
+        artifact = self.write_result_artifact(claim.slot, record["result_bytes"])
+        artifact_before = (artifact.read_bytes(), artifact.stat().st_ino)
+        events_before = self.state.events()
+        root_stat = os.stat(self.output_root, follow_symlinks=False)
+        root_identity = (root_stat.st_dev, root_stat.st_ino)
+        backup = Path(str(self.output_root) + "-backup")
+
+        def swap_root():
+            self.output_root.rename(backup)
+            self.output_root.mkdir(mode=0o700)
+            os.chmod(self.output_root, 0o700)
+
+        with self.assertRaisesRegex(
+            SystemPaperScheduleError,
+            "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE",
+        ):
+            self.succeed_with_identity(
+                claim,
+                artifact_path=artifact,
+                expected_output_root_identity=root_identity,
+                completed_at=claim.claimed_at,
+                before_commit=swap_root,
+            )
+
+        retained_artifact = backup / "system-paper-slots" / artifact.name
+        self.assertEqual(self.state.events(), events_before)
+        self.assertEqual(
+            (retained_artifact.read_bytes(), retained_artifact.stat().st_ino),
+            artifact_before,
+        )
+        self.assertFalse((self.output_root / "system-paper-slots").exists())
 
     def prepare_successful_parent_pair(self):
         first_claim, _first_input, first = self.prepare_slot(
@@ -2181,6 +2325,53 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
                     )
         self.state_path = original_state_path
         self.output_root = original_output_root
+
+    def test_output_root_replacement_between_runner_validation_and_succeed_fails_closed(self):
+        backup = Path(str(self.output_root) + "-backup")
+        real_succeed = scheduler_module.SystemPaperScheduleState.succeed
+        replacement_artifact = []
+
+        def swapping_succeed(state, claim, **kwargs):
+            self.output_root.rename(backup)
+            self.output_root.mkdir(mode=0o700)
+            os.chmod(self.output_root, 0o700)
+            replacement_slots = self.output_root / "system-paper-slots"
+            replacement_slots.mkdir(mode=0o700)
+            os.chmod(replacement_slots, 0o700)
+            source = backup / "system-paper-slots" / (claim.slot.slot_id + ".json")
+            replacement = replacement_slots / source.name
+            replacement.write_bytes(source.read_bytes())
+            os.chmod(replacement, 0o600)
+            replacement_artifact.append(replacement)
+            return real_succeed(state, claim, **kwargs)
+
+        provider = RecordingProvider(self.now)
+        with patch.object(
+            scheduler_module.SystemPaperScheduleState,
+            "succeed",
+            swapping_succeed,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperScheduleError,
+                "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_RACE",
+            ):
+                self.invoke_runner(provider)
+
+        self.assertEqual(provider.invocations, 1)
+        self.assertEqual(len(replacement_artifact), 1)
+        replacement = replacement_artifact[0]
+        retained = backup / "system-paper-slots" / replacement.name
+        self.assertEqual(replacement.read_bytes(), retained.read_bytes())
+        with SystemPaperScheduleState(
+            self.state_path, SystemPaperSchedulePolicy.create(self.plan)
+        ) as state:
+            events = state.events()
+            prepared = state.connection.execute(
+                "SELECT result_bytes FROM prepared_results"
+            ).fetchone()
+        self.assertNotIn("SUCCEEDED", [event["event_type"] for event in events])
+        self.assertIsNotNone(prepared)
+        self.assertEqual(prepared["result_bytes"], retained.read_bytes())
 
     def test_existing_unsafe_slots_directory_rejects_before_state_or_provider(self):
         cases = ("wrong-mode", "symlink")
