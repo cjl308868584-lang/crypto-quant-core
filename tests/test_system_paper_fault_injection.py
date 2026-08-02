@@ -86,11 +86,13 @@ FROZEN_INVOCATION_BUDGETS = {
 class DeterministicPublicProvider:
     """The provider is real deterministic test input, not a business mock."""
 
-    def __init__(self, captured_at):
+    def __init__(self, captured_at, *, network_request_count=4):
         self.invocations = 0
+        self.network_requests = 0
         self.credential_reads = 0
         self.account_requests = 0
         self.captured_at = captured_at
+        self.network_request_count = network_request_count
 
     @property
     def credentials(self):
@@ -104,13 +106,15 @@ class DeterministicPublicProvider:
 
     def __call__(self, request):
         self.invocations += 1
-        return SystemPaperInputCapture(
+        capture = SystemPaperInputCapture(
             public_market_bundle=make_bundle(observed_at=request.scheduled_for),
             capture_attempt_id="fault-capture-" + request.slot_id[-12:],
             captured_at=self.captured_at,
             request_families=request.request_families,
-            network_request_count=4,
+            network_request_count=self.network_request_count,
         )
+        self.network_requests += capture.network_request_count
+        return capture
 
 
 class InvocationEvidence:
@@ -119,7 +123,7 @@ class InvocationEvidence:
     def __init__(self):
         self.candidate_runtime_calls = 0
         self.production_loader_calls = 0
-        self.simulated_broker_constructions = 0
+        self.constructed_brokers = []
         self._real_candidate_runtime = scheduler_module.run_system_paper_slot
         self._real_loader = scheduler_module.load_system_paper_slot_result_bytes
         self._real_simulated_broker = runtime_module.SimulatedBroker
@@ -132,27 +136,29 @@ class InvocationEvidence:
         self.production_loader_calls += 1
         return self._real_loader(*args, **kwargs)
 
+    def simulated_broker_factory(self, *args, **kwargs):
+        broker = self._real_simulated_broker(*args, **kwargs)
+        if type(broker) is not self._real_simulated_broker:
+            raise AssertionError("runtime must construct the exact production SimulatedBroker")
+        self.constructed_brokers.append(broker)
+        return broker
+
     @contextmanager
     def patched(self):
-        evidence = self
-
-        class CountingSimulatedBroker(evidence._real_simulated_broker):
-            def __init__(self, *args, **kwargs):
-                evidence.simulated_broker_constructions += 1
-                super().__init__(*args, **kwargs)
-
         with patch.object(
             scheduler_module, "run_system_paper_slot", self.candidate_runtime
         ), patch.object(
             scheduler_module, "load_system_paper_slot_result_bytes", self.loader
-        ), patch.object(runtime_module, "SimulatedBroker", CountingSimulatedBroker):
+        ), patch.object(
+            runtime_module, "SimulatedBroker", self.simulated_broker_factory
+        ):
             yield self
 
     @staticmethod
     def counts(provider, evidence):
         return (
             provider.invocations,
-            provider.invocations * 4,
+            provider.network_requests,
             evidence.candidate_runtime_calls,
             evidence.production_loader_calls,
         )
@@ -309,6 +315,42 @@ class SystemPaperSafetyBoundaryTests(unittest.TestCase):
         self.assertIs(runtime_module.SimulatedBroker, SimulatedBroker)
 
 
+class InvocationEvidenceRegressionTests(unittest.TestCase):
+    def test_network_evidence_uses_the_provider_returned_count_not_an_invocation_multiple(self):
+        harness = FaultScenarioHarness(point="BEFORE_CLAIM_COMMIT", mode="CRASH")
+        evidence = InvocationEvidence()
+        try:
+            provider = DeterministicPublicProvider(harness.now, network_request_count=3)
+            with self.assertRaises(SystemPaperScheduleError):
+                harness.run(
+                    worker_id="network-probe", clock_at=harness.now,
+                    provider=provider, evidence=evidence,
+                )
+            self.assertEqual(InvocationEvidence.counts(provider, evidence), (1, 3, 0, 0))
+            self.assertNotEqual(InvocationEvidence.counts(provider, evidence), (1, 4, 0, 0))
+        finally:
+            harness.close()
+
+    def test_broker_evidence_records_exact_real_production_objects(self):
+        harness = FaultScenarioHarness(point="BEFORE_CLAIM_COMMIT", mode="CRASH")
+        evidence = InvocationEvidence()
+        try:
+            harness.run(
+                worker_id="broker-probe", clock_at=harness.now,
+                provider=harness.provider, evidence=evidence,
+            )
+            self.assertGreater(len(evidence.constructed_brokers), 0)
+            self.assertTrue(
+                all(type(broker) is SimulatedBroker for broker in evidence.constructed_brokers)
+            )
+            self.assertEqual(
+                len(evidence.constructed_brokers),
+                evidence.candidate_runtime_calls + evidence.production_loader_calls,
+            )
+        finally:
+            harness.close()
+
+
 class SystemPaperFaultRecoveryTests(unittest.TestCase):
     def test_crash_matrix_recovers_once_from_every_durable_stage(self):
         for point, durable_stage, artifact_count in FROZEN_FAILPOINTS:
@@ -326,9 +368,15 @@ class SystemPaperFaultRecoveryTests(unittest.TestCase):
                         FROZEN_INVOCATION_BUDGETS[point][0],
                     )
                     self.assertEqual(
-                        first_evidence.simulated_broker_constructions,
+                        len(first_evidence.constructed_brokers),
                         first_evidence.candidate_runtime_calls
                         + first_evidence.production_loader_calls,
+                    )
+                    self.assertTrue(
+                        all(
+                            type(broker) is SimulatedBroker
+                            for broker in first_evidence.constructed_brokers
+                        )
                     )
                     self.assertEqual(
                         (harness.provider.credential_reads, harness.provider.account_requests),
@@ -366,9 +414,15 @@ class SystemPaperFaultRecoveryTests(unittest.TestCase):
                     )
                     self.assertEqual(recovered["loader_replay_count"], 1)
                     self.assertEqual(
-                        recovery_evidence.simulated_broker_constructions,
+                        len(recovery_evidence.constructed_brokers),
                         recovery_evidence.candidate_runtime_calls
                         + recovery_evidence.production_loader_calls,
+                    )
+                    self.assertTrue(
+                        all(
+                            type(broker) is SimulatedBroker
+                            for broker in recovery_evidence.constructed_brokers
+                        )
                     )
                     self.assertEqual(
                         (recovery_provider.credential_reads, recovery_provider.account_requests),
@@ -497,6 +551,15 @@ class ProviderFaultMatrixTests(unittest.TestCase):
 
 
 class OrderFaultMatrixTests(unittest.TestCase):
+    def assert_exact_broker_evidence(self, evidence):
+        self.assertEqual(
+            len(evidence.constructed_brokers),
+            evidence.candidate_runtime_calls + evidence.production_loader_calls,
+        )
+        self.assertTrue(
+            all(type(broker) is SimulatedBroker for broker in evidence.constructed_brokers)
+        )
+
     @staticmethod
     def _abstract_outcome(summary, result):
         """The public runner keeps frozen outcome names; matrix uses brief labels."""
@@ -522,10 +585,12 @@ class OrderFaultMatrixTests(unittest.TestCase):
             with self.subTest(scenario=name):
                 harness = FaultScenarioHarness(point="BEFORE_CLAIM_COMMIT", mode="CRASH")
                 try:
+                    evidence = InvocationEvidence()
                     summary = harness.run(
                         worker_id="order-worker", clock_at=harness.now,
-                        provider=harness.provider, scenario=scenario,
+                        provider=harness.provider, scenario=scenario, evidence=evidence,
                     )
+                    self.assert_exact_broker_evidence(evidence)
                     path = Path(summary["result_path_or_null"])
                     result = load_system_paper_slot_result_bytes(path.read_bytes())
                     self.assertEqual(self._abstract_outcome(summary, result), expected)
@@ -566,12 +631,15 @@ class OrderFaultMatrixTests(unittest.TestCase):
 
     def test_impossible_overfill_forms_no_prepared_result_or_artifact(self):
         harness = FaultScenarioHarness(point="BEFORE_CLAIM_COMMIT", mode="CRASH")
+        evidence = InvocationEvidence()
         try:
             with self.assertRaises(ContractError):
                 harness.run(
                     worker_id="overfill-worker", clock_at=harness.now,
                     provider=harness.provider, scenario=FillScenario.impossible_overfill(),
+                    evidence=evidence,
                 )
+            self.assert_exact_broker_evidence(evidence)
             stage, artifacts, inputs, results, terminal = harness.durable_facts()
             self.assertEqual((stage, artifacts, inputs, results, terminal), ("INPUT", 0, 1, 0, None))
             policy = SystemPaperSchedulePolicy.create(harness.plan)
