@@ -7,7 +7,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
-from crypto_quant.canonical import business_hash, stable_id
+from crypto_quant.canonical import business_hash, canonical_json, stable_id
 from crypto_quant.evidence import artifact_self_hash
 from crypto_quant.system_paper_broker import FillScenario
 from crypto_quant.system_paper_plan import build_system_paper_plan
@@ -507,6 +507,110 @@ class SystemPaperPreparedInputTests(unittest.TestCase):
                 with self.assertRaises(SystemPaperScheduleError):
                     self.prepare(claim, capture=capture)
 
+    def test_input_prepare_rejects_rehashed_nonpublic_bundle_semantics(self):
+        unknown = dict(self.market_bundle)
+        unknown["credential"] = "must-not-persist"
+        unknown["bundle_hash"] = artifact_self_hash(unknown, "bundle_hash")
+        wrong_provider = dict(self.market_bundle)
+        wrong_provider["provider"] = "PRIVATE_MARKET_DATA"
+        wrong_provider["bundle_hash"] = artifact_self_hash(
+            wrong_provider, "bundle_hash"
+        )
+        malformed_receipts = dict(self.market_bundle)
+        malformed_receipts["source_receipt_hashes"] = ["a" * 64]
+        malformed_receipts["bundle_hash"] = artifact_self_hash(
+            malformed_receipts, "bundle_hash"
+        )
+        for name, bundle in (
+            ("unknown", unknown),
+            ("wrong_provider", wrong_provider),
+            ("malformed_receipts", malformed_receipts),
+        ):
+            with self.subTest(name=name):
+                with SystemPaperScheduleState(
+                    Path(self.temp.name) / f"{name}.sqlite", self.policy
+                ) as state:
+                    claim = state.claim(
+                        self.slot,
+                        worker_id="worker-a",
+                        claimed_at=self.now,
+                    )
+                    with self.assertRaisesRegex(
+                        SystemPaperScheduleError,
+                        "INPUT_BUNDLE_SEMANTIC_INVALID",
+                    ):
+                        state.prepare_input(
+                            claim,
+                            plan=self.plan,
+                            capture=self.capture(public_market_bundle=bundle),
+                            previous_runtime_snapshot=(
+                                build_initial_system_paper_runtime_snapshot(self.plan)
+                            ),
+                            fill_scenario=FillScenario.immediate_full(),
+                            output_root_hash=self.output_root_hash,
+                            prepared_at=self.now,
+                        )
+
+    def test_input_prepare_rejects_rehashed_invalid_runtime_snapshot(self):
+        invalid_snapshot = build_initial_system_paper_runtime_snapshot(self.plan)
+        invalid_snapshot["cash_usdt"] = "not-a-decimal"
+        invalid_snapshot["snapshot_hash"] = artifact_self_hash(
+            invalid_snapshot, "snapshot_hash"
+        )
+
+        with self.assertRaisesRegex(
+            SystemPaperScheduleError,
+            "INPUT_SNAPSHOT_SEMANTIC_INVALID",
+        ):
+            self.prepare(
+                self.claim_current(),
+                previous_runtime_snapshot=invalid_snapshot,
+            )
+
+    def test_input_prepare_rejects_the_claim_lease_expiry_boundary(self):
+        claim = self.claim_current()
+        expiry = "2026-08-02T12:20:11.000Z"
+
+        with self.assertRaisesRegex(
+            SystemPaperScheduleError,
+            "INPUT_CLAIM_LEASE_EXPIRED",
+        ):
+            self.prepare(
+                claim,
+                capture=self.capture(captured_at=expiry),
+                prepared_at=expiry,
+            )
+        self.assertEqual(
+            self.state.connection.execute("SELECT COUNT(*) FROM prepared_inputs").fetchone()[0],
+            0,
+        )
+
+    def test_replay_rejects_input_event_at_claim_lease_expiry(self):
+        claim = self.claim_current()
+        self.state.connection.execute("BEGIN IMMEDIATE")
+        self.state._append_locked(
+            "INPUT_PREPARED",
+            claim.slot,
+            claim.lease_expires_at,
+            {
+                "plan_hash": self.policy.plan_hash,
+                "schedule_policy_hash": self.policy.schedule_policy_hash,
+                "scheduled_for": claim.slot.scheduled_for,
+                "due_at": claim.slot.due_at,
+                "expires_at": claim.slot.expires_at,
+                "worker_id": claim.worker_id,
+                "attempt": claim.attempt,
+                "input_sha256": "a" * 64,
+            },
+        )
+        self.state.connection.commit()
+
+        with self.assertRaisesRegex(
+            SystemPaperScheduleError,
+            "INPUT_CLAIM_LEASE_EXPIRED",
+        ):
+            self.state.slot_projection()
+
     def test_load_prepared_input_rejects_binary_float_envelopes(self):
         claim = self.claim_current()
         self.prepare(claim)
@@ -521,8 +625,21 @@ class SystemPaperPreparedInputTests(unittest.TestCase):
 
     def test_load_prepared_input_rejects_changed_component_hashes(self):
         claim = self.claim_current()
-        self.prepare(claim)
+        prepared = self.prepare(claim)
         self.state.connection.execute("DROP TRIGGER prepared_inputs_no_update")
+        changed_envelope = deepcopy(prepared["payload"])
+        changed_envelope["output_root_hash"] = "0" * 64
+        changed_bytes = canonical_json(changed_envelope).encode("utf-8")
+        self.state.connection.execute(
+            "UPDATE prepared_inputs SET input_bytes=?, input_sha256=?",
+            (changed_bytes, hashlib.sha256(changed_bytes).hexdigest()),
+        )
+        with self.assertRaisesRegex(SystemPaperScheduleError, "INPUT_HASH_MISMATCH"):
+            self.state.load_prepared_input(claim.slot)
+        self.state.connection.execute(
+            "UPDATE prepared_inputs SET input_bytes=?, input_sha256=?",
+            (prepared["input_bytes"], prepared["input_sha256"]),
+        )
         for column in (
             "plan_hash",
             "market_bundle_hash",

@@ -17,6 +17,11 @@ from .system_paper_broker import (
     fill_scenario_payload,
 )
 from .system_paper_plan import system_paper_plan_reasons
+from .system_paper_runtime import (
+    SystemPaperRuntimeError,
+    _verify_bundle,
+    _verify_snapshot,
+)
 
 
 _POLICY_TOKEN = object()
@@ -377,6 +382,10 @@ def _event_projection(
                 or not isinstance(payload.get("input_sha256"), str)
             ):
                 raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_TRANSITION_INVALID")
+            if event_time >= _utc(active_claim["lease_expires_at"])[0]:
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_INPUT_CLAIM_LEASE_EXPIRED"
+                )
             state["durable_stage"] = "INPUT"
             state["input_event_id"] = source["event_id"]
         elif event_type == "RESULT_PREPARED":
@@ -648,6 +657,7 @@ class SystemPaperScheduleState:
         self,
         capture: SystemPaperInputCapture,
         slot: SystemPaperSlot,
+        plan: Mapping[str, Any],
     ) -> Dict[str, Any]:
         if not isinstance(capture, SystemPaperInputCapture):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_INVALID")
@@ -689,6 +699,17 @@ class SystemPaperScheduleState:
             ) from error
         if observed_at != slot.scheduled_for:
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_TIME_MISMATCH")
+        try:
+            _verify_bundle(
+                bundle,
+                plan,
+                _utc(slot.scheduled_for)[0],
+                slot.scheduled_for,
+            )
+        except SystemPaperRuntimeError as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_SEMANTIC_INVALID"
+            ) from error
         return {
             "public_market_bundle": bundle,
             "capture_attempt_id": capture.capture_attempt_id,
@@ -732,6 +753,12 @@ class SystemPaperScheduleState:
                 "SYSTEM_PAPER_SCHEDULE_INPUT_SNAPSHOT_INVALID"
             ) from error
         try:
+            _verify_snapshot(snapshot, plan)
+        except SystemPaperRuntimeError as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_INPUT_SNAPSHOT_SEMANTIC_INVALID"
+            ) from error
+        try:
             scenario_payload = fill_scenario_payload(fill_scenario)
             fill_scenario_from_payload(scenario_payload)
         except Exception as error:
@@ -739,7 +766,7 @@ class SystemPaperScheduleState:
         output_hash = _hash(
             output_root_hash, "SYSTEM_PAPER_SCHEDULE_INPUT_OUTPUT_ROOT_INVALID"
         )
-        capture_payload = self._capture_payload(capture, slot)
+        capture_payload = self._capture_payload(capture, slot, plan)
         envelope = {
             "schema_version": "1.0.0",
             "slot_id": slot.slot_id,
@@ -873,7 +900,11 @@ class SystemPaperScheduleState:
         self._validate_slot(claim.slot)
         if claim.outcome != "CLAIMED":
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CLAIM_INVALID")
-        _prepared, prepared_text = _utc(prepared_at)
+        prepared, prepared_text = _utc(prepared_at)
+        if prepared >= _utc(claim.lease_expires_at)[0]:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_INPUT_CLAIM_LEASE_EXPIRED"
+            )
         envelope, hashes = self._input_envelope(
             claim.slot,
             plan=plan,
