@@ -35,6 +35,8 @@ from .system_paper_broker import (
     SimulatedBroker,
     SimulatedMarketEvidence,
     SimulatedOrderCommand,
+    fill_scenario_from_payload,
+    fill_scenario_payload,
 )
 from .system_paper_plan import system_paper_plan_reasons
 
@@ -51,7 +53,10 @@ _SNAPSHOT_KEYS = {
     "processed_slot_ids",
     "cash_usdt",
     "position_quantity",
+    "position_cost_usdt",
     "average_entry_price_or_null",
+    "cumulative_realized_pnl_usdt",
+    "cumulative_fees_usdt",
     "marked_equity_usdt",
     "peak_equity_usdt",
     "risk_state",
@@ -59,6 +64,7 @@ _SNAPSHOT_KEYS = {
 }
 _MARKET_BUNDLE_KEYS = {
     "bundle_hash",
+    "provider",
     "observed_at",
     "instrument_metadata_schema_version",
     "instrument_metadata",
@@ -108,6 +114,12 @@ def _decimal(value: object, reason: str) -> Decimal:
     return number
 
 
+def _json_native(value: object) -> Any:
+    """Normalize replay evidence to the exact JSON-native representation."""
+
+    return json.loads(canonical_json(value))
+
+
 def _time(value: object) -> Tuple[datetime, str]:
     if not isinstance(value, str):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_SLOT_TIME_INVALID")
@@ -147,7 +159,10 @@ def build_initial_system_paper_runtime_snapshot(
         "processed_slot_ids": [],
         "cash_usdt": equity,
         "position_quantity": "0",
+        "position_cost_usdt": "0",
         "average_entry_price_or_null": None,
+        "cumulative_realized_pnl_usdt": "0",
+        "cumulative_fees_usdt": "0",
         "marked_equity_usdt": equity,
         "peak_equity_usdt": equity,
         "risk_state": "NORMAL",
@@ -180,6 +195,18 @@ def _verify_snapshot(
         value["position_quantity"],
         "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
     )
+    position_cost = _decimal(
+        value["position_cost_usdt"],
+        "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
+    )
+    _decimal(
+        value["cumulative_realized_pnl_usdt"],
+        "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
+    )
+    cumulative_fees = _decimal(
+        value["cumulative_fees_usdt"],
+        "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
+    )
     marked = _decimal(
         value["marked_equity_usdt"],
         "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
@@ -188,7 +215,14 @@ def _verify_snapshot(
         value["peak_equity_usdt"],
         "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
     )
-    if cash < 0 or position < 0 or marked < 0 or peak <= 0:
+    if (
+        cash < 0
+        or position < 0
+        or position_cost < 0
+        or cumulative_fees < 0
+        or marked < 0
+        or peak <= 0
+    ):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID")
     average = None
     if value["average_entry_price_or_null"] is not None:
@@ -197,6 +231,8 @@ def _verify_snapshot(
             "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
         )
     if (position == 0) != (average is None) or (average is not None and average <= 0):
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID")
+    if position_cost != (Decimal("0") if average is None else position * average):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID")
     if value["risk_state"] not in ("NORMAL", "LOCKED"):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID")
@@ -229,6 +265,8 @@ def _verify_snapshot(
 
 def _verify_bundle(
     bundle: Mapping[str, Any],
+    plan: Mapping[str, Any],
+    scheduled_dt: datetime,
     scheduled_for: str,
 ):
     if not isinstance(bundle, Mapping) or set(bundle) != _MARKET_BUNDLE_KEYS:
@@ -236,6 +274,8 @@ def _verify_bundle(
     value = dict(bundle)
     if value.get("bundle_hash") != artifact_self_hash(value, "bundle_hash"):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_BUNDLE_HASH_MISMATCH")
+    if value.get("provider") != plan["market_data_policy"]["provider"]:
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_PROVIDER_MISMATCH")
     _, observed_at = _time(value.get("observed_at"))
     if observed_at != scheduled_for:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_BUNDLE_TIME_MISMATCH")
@@ -284,6 +324,21 @@ def _verify_bundle(
         raise SystemPaperRuntimeError(
             "SYSTEM_PAPER_MARKET_METADATA_INVALID"
         ) from error
+    expected_instrument_id = "BINANCE:SPOT:ETHUSDT"
+    if (
+        plan["scope"]["market"] != "SPOT"
+        or plan["scope"]["symbol"] != "ETHUSDT"
+        or metadata.instrument_id != expected_instrument_id
+        or metadata.exchange != "BINANCE"
+        or metadata.market_type.value != "SPOT"
+        or metadata.symbol != "ETHUSDT"
+        or metadata.contract_multiplier != Decimal("1")
+    ):
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_INSTRUMENT_MISMATCH")
+    try:
+        metadata.assert_effective(scheduled_dt)
+    except ContractError as error:
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_METADATA_STALE") from error
     return value, metadata, bid, ask
 
 
@@ -311,47 +366,56 @@ def _ledger_entries(
     filled_quantity: Decimal,
     fill_price: Optional[Decimal],
     fee_usdt: Decimal,
-) -> Tuple[Tuple[Dict[str, str], ...], Decimal, Decimal]:
+    average_entry_price_before: Optional[Decimal],
+) -> Tuple[
+    Tuple[Dict[str, str], ...],
+    Decimal,
+    Decimal,
+    Decimal,
+    Decimal,
+]:
     if filled_quantity == 0:
-        return (), Decimal("0"), Decimal("0")
+        return (), Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0")
     if fill_price is None or fill_price <= 0:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_LEDGER_FILL_INVALID")
     if side not in (OrderSide.BUY, OrderSide.SELL):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_LEDGER_SIDE_INVALID")
     notional = filled_quantity * fill_price
-    asset_account = (
-        "ETH_POSITION_COST"
-        if side is OrderSide.BUY
-        else "ETH_POSITION_DISPOSAL"
-    )
-    asset_side = "DEBIT" if side is OrderSide.BUY else "CREDIT"
-    cash_side = "CREDIT" if side is OrderSide.BUY else "DEBIT"
-    entries = (
-        {
-            "entry_id": stable_id("paper_ledger", {"slot": slot_id, "leg": 1}),
-            "account": asset_account,
-            "side": asset_side,
-            "amount_usdt": canonical_decimal(notional),
-        },
-        {
-            "entry_id": stable_id("paper_ledger", {"slot": slot_id, "leg": 2}),
-            "account": "VIRTUAL_CASH",
-            "side": cash_side,
-            "amount_usdt": canonical_decimal(notional),
-        },
-        {
-            "entry_id": stable_id("paper_ledger", {"slot": slot_id, "leg": 3}),
-            "account": "TAKER_FEE_EXPENSE",
-            "side": "DEBIT",
-            "amount_usdt": canonical_decimal(fee_usdt),
-        },
-        {
-            "entry_id": stable_id("paper_ledger", {"slot": slot_id, "leg": 4}),
-            "account": "VIRTUAL_CASH",
-            "side": "CREDIT",
-            "amount_usdt": canonical_decimal(fee_usdt),
-        },
-    )
+    entries_list = []
+
+    def add(leg: int, account: str, side_value: str, amount: Decimal) -> None:
+        entries_list.append(
+            {
+                "entry_id": stable_id(
+                    "paper_ledger",
+                    {"slot": slot_id, "leg": leg},
+                ),
+                "account": account,
+                "side": side_value,
+                "amount_usdt": canonical_decimal(amount),
+            }
+        )
+
+    position_cost_relieved = Decimal("0")
+    realized_pnl = Decimal("0")
+    if side is OrderSide.BUY:
+        add(1, "ETH_POSITION_COST", "DEBIT", notional)
+        add(2, "VIRTUAL_CASH", "CREDIT", notional)
+    else:
+        if average_entry_price_before is None:
+            raise SystemPaperRuntimeError("SYSTEM_PAPER_LEDGER_COST_BASIS_MISSING")
+        position_cost_relieved = filled_quantity * average_entry_price_before
+        realized_pnl = notional - position_cost_relieved
+        add(1, "VIRTUAL_CASH", "DEBIT", notional)
+        add(2, "ETH_POSITION_COST", "CREDIT", position_cost_relieved)
+        if realized_pnl > 0:
+            add(3, "REALIZED_GAIN", "CREDIT", realized_pnl)
+        elif realized_pnl < 0:
+            add(3, "REALIZED_LOSS", "DEBIT", -realized_pnl)
+    fee_leg = len(entries_list) + 1
+    add(fee_leg, "TAKER_FEE_EXPENSE", "DEBIT", fee_usdt)
+    add(fee_leg + 1, "VIRTUAL_CASH", "CREDIT", fee_usdt)
+    entries = tuple(entries_list)
     debits = sum(
         (Decimal(item["amount_usdt"]) for item in entries if item["side"] == "DEBIT"),
         Decimal("0"),
@@ -360,7 +424,7 @@ def _ledger_entries(
         (Decimal(item["amount_usdt"]) for item in entries if item["side"] == "CREDIT"),
         Decimal("0"),
     )
-    return entries, debits, credits
+    return entries, debits, credits, position_cost_relieved, realized_pnl
 
 
 def system_paper_slot_hash(result: Mapping[str, Any]) -> str:
@@ -383,6 +447,8 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
     previous = _verify_snapshot(inputs.previous_runtime_snapshot, plan["plan_hash"])
     bundle, metadata, bid, ask = _verify_bundle(
         inputs.public_market_bundle,
+        plan,
+        scheduled_dt,
         scheduled_for,
     )
     if not isinstance(inputs.fill_scenario, FillScenario):
@@ -411,6 +477,12 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
         market_hash,
     )
     decision_hash = business_hash(decision)
+    if (
+        decision["proposal"]["instrument_id"] != metadata.instrument_id
+        or decision["target_position"]["instrument_id"] != metadata.instrument_id
+        or (target is not None and target.instrument_id != metadata.instrument_id)
+    ):
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_DECISION_INSTRUMENT_MISMATCH")
 
     cash_before = _decimal(previous["cash_usdt"], "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID")
     position_before = _decimal(
@@ -513,12 +585,36 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
     )
     fill_price = None if broker_result is None else broker_result.average_fill_price
     fee_usdt = Decimal("0") if broker_result is None else broker_result.fee_usdt
-    entries, debits, credits = _ledger_entries(
+    previous_cost = _decimal(
+        previous["position_cost_usdt"],
+        "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
+    )
+    average_entry_before = (
+        None
+        if previous["average_entry_price_or_null"] is None
+        else Decimal(previous["average_entry_price_or_null"])
+    )
+    cumulative_realized_before = _decimal(
+        previous["cumulative_realized_pnl_usdt"],
+        "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
+    )
+    cumulative_fees_before = _decimal(
+        previous["cumulative_fees_usdt"],
+        "SYSTEM_PAPER_RUNTIME_SNAPSHOT_INVALID",
+    )
+    (
+        entries,
+        debits,
+        credits,
+        position_cost_relieved,
+        realized_pnl,
+    ) = _ledger_entries(
         slot_id=slot_id,
         side=order_side,
         filled_quantity=filled_quantity,
         fill_price=fill_price,
         fee_usdt=fee_usdt,
+        average_entry_price_before=average_entry_before,
     )
     if debits != credits:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_LEDGER_IMBALANCE")
@@ -529,17 +625,22 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
     else:
         cash_after = cash_before - fill_notional - fee_usdt
         position_after = position_before + filled_quantity
-    previous_cost = (
-        Decimal("0")
-        if previous["average_entry_price_or_null"] is None
-        else position_before * Decimal(previous["average_entry_price_or_null"])
+    if cash_after < 0 or position_after < 0:
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_LEDGER_NEGATIVE_BALANCE")
+    position_cost_after = (
+        previous_cost + fill_notional
+        if order_side is not OrderSide.SELL
+        else previous_cost - position_cost_relieved
     )
+    cumulative_realized_after = cumulative_realized_before + realized_pnl
+    cumulative_fees_after = cumulative_fees_before + fee_usdt
     if position_after == 0:
         average_entry = None
+        position_cost_after = Decimal("0")
     elif order_side is OrderSide.SELL:
-        average_entry = Decimal(previous["average_entry_price_or_null"])
+        average_entry = average_entry_before
     else:
-        average_entry = (previous_cost + fill_notional) / position_after
+        average_entry = position_cost_after / position_after
     marked_after = cash_after + position_after * bid
     peak_after = max(peak_at_decision, marked_after)
     if broker_result is not None and broker_result.state is OrderState.UNKNOWN:
@@ -550,14 +651,16 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
     unrealized_pnl = (
         Decimal("0")
         if position_after == 0 or average_entry is None
-        else position_after * (bid - average_entry)
+        else position_after * bid - position_cost_after
     )
 
     order_payload = None
     if broker_result is not None:
         order_payload = {
             "local_order_id": broker_result.local_order_id,
-            "side": order_side.value,
+            "instrument_id": broker_result.instrument_id,
+            "side": broker_result.side.value,
+            "fill_policy_version": broker_result.fill_policy_version,
             "state": broker_result.state.value,
             "requested_quantity": canonical_decimal(
                 broker_result.requested_quantity
@@ -571,6 +674,16 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
             "risk_lock_required": broker_result.risk_lock_required,
             "result_hash": broker_result.result_hash,
         }
+    active_order_required = (
+        broker_result is not None
+        and broker_result.state
+        in (
+            OrderState.ACKNOWLEDGED,
+            OrderState.PARTIALLY_FILLED,
+            OrderState.CANCEL_PENDING,
+            OrderState.UNKNOWN,
+        )
+    )
 
     result: Dict[str, Any] = {
         "$schema": "./system-paper-slot-result-v1.schema.json",
@@ -583,6 +696,14 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
         "scheduled_for": scheduled_for,
         "parent_slot_hash_or_null": previous["last_slot_hash_or_null"],
         "market_bundle_hash": market_hash,
+        "instrument": {
+            "provider": bundle["provider"],
+            "instrument_id": metadata.instrument_id,
+            "metadata_hash": metadata.metadata_hash,
+            "market_type": metadata.market_type.value,
+            "symbol": metadata.symbol,
+            "contract_multiplier": canonical_decimal(metadata.contract_multiplier),
+        },
         "signal": {
             "decision_source": decision["decision_source"],
             "strategy_version": decision["strategy_version"],
@@ -608,6 +729,15 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
             "entries": list(entries),
             "debits_usdt": canonical_decimal(debits),
             "credits_usdt": canonical_decimal(credits),
+            "position_cost_relieved_usdt": canonical_decimal(
+                position_cost_relieved
+            ),
+            "position_cost_after_usdt": canonical_decimal(position_cost_after),
+            "realized_pnl_usdt": canonical_decimal(realized_pnl),
+            "cumulative_realized_pnl_usdt": canonical_decimal(
+                cumulative_realized_after
+            ),
+            "cumulative_fees_usdt": canonical_decimal(cumulative_fees_after),
             "unrealized_pnl_usdt": canonical_decimal(unrealized_pnl),
             "balanced": debits == credits,
         },
@@ -616,12 +746,24 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
             "actual_position_quantity": canonical_decimal(position_after),
             "unexplained_position_difference": "0",
             "ledger_imbalance_usdt": canonical_decimal(debits - credits),
-            "status": "RECONCILED",
+            "status": (
+                "OPEN_ORDER_RECONCILIATION_REQUIRED"
+                if active_order_required
+                else "RECONCILED"
+            ),
         },
         "runtime_snapshot": {},
+        "replay_inputs": {
+            "plan": _json_native(plan),
+            "scheduled_for": scheduled_for,
+            "public_market_bundle": _json_native(bundle),
+            "previous_runtime_snapshot": _json_native(previous),
+            "fill_scenario": fill_scenario_payload(inputs.fill_scenario),
+        },
         "replay": {
             "decision_hash_match": business_hash(replay_decision) == decision_hash,
             "market_bundle_hash_match": True,
+            "full_slot_hash_match": True,
         },
         "safety_counts": {
             "credential_reads": 0,
@@ -640,22 +782,20 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
         "processed_slot_ids": previous["processed_slot_ids"] + [slot_id],
         "cash_usdt": canonical_decimal(cash_after),
         "position_quantity": canonical_decimal(position_after),
+        "position_cost_usdt": canonical_decimal(position_cost_after),
         "average_entry_price_or_null": (
             None if average_entry is None else canonical_decimal(average_entry)
         ),
+        "cumulative_realized_pnl_usdt": canonical_decimal(
+            cumulative_realized_after
+        ),
+        "cumulative_fees_usdt": canonical_decimal(cumulative_fees_after),
         "marked_equity_usdt": canonical_decimal(marked_after),
         "peak_equity_usdt": canonical_decimal(peak_after),
         "risk_state": "LOCKED" if risk_locked else "NORMAL",
         "active_order_or_null": (
             None
-            if broker_result is None
-            or broker_result.state
-            not in (
-                OrderState.ACKNOWLEDGED,
-                OrderState.PARTIALLY_FILLED,
-                OrderState.CANCEL_PENDING,
-                OrderState.UNKNOWN,
-            )
+            if not active_order_required
             else {
                 "local_order_id": broker_result.local_order_id,
                 "state": broker_result.state.value,
@@ -757,6 +897,9 @@ def _verify_loaded_slot(result: Mapping[str, Any]) -> None:
     if order is not None:
         order_payload = {
             "local_order_id": order["local_order_id"],
+            "instrument_id": order["instrument_id"],
+            "side": order["side"],
+            "fill_policy_version": order["fill_policy_version"],
             "state": order["state"],
             "requested_quantity": order["requested_quantity"],
             "cumulative_filled_quantity": order["filled_quantity"],
@@ -767,6 +910,23 @@ def _verify_loaded_slot(result: Mapping[str, Any]) -> None:
         }
         if business_hash(order_payload) != order["result_hash"]:
             raise SystemPaperRuntimeError("SYSTEM_PAPER_ORDER_RESULT_HASH_MISMATCH")
+    replay_inputs = result["replay_inputs"]
+    try:
+        replayed = run_system_paper_slot(
+            SystemPaperSlotInputs(
+                plan=replay_inputs["plan"],
+                scheduled_for=replay_inputs["scheduled_for"],
+                public_market_bundle=replay_inputs["public_market_bundle"],
+                previous_runtime_snapshot=replay_inputs["previous_runtime_snapshot"],
+                fill_scenario=fill_scenario_from_payload(
+                    replay_inputs["fill_scenario"]
+                ),
+            )
+        )
+    except (KeyError, TypeError, ContractError, SystemPaperRuntimeError) as error:
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_FULL_REPLAY_INVALID") from error
+    if canonical_json(replayed) != canonical_json(result):
+        raise SystemPaperRuntimeError("SYSTEM_PAPER_FULL_REPLAY_MISMATCH")
 
 
 def load_system_paper_slot_result(path: Path) -> Dict[str, Any]:

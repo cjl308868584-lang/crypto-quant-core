@@ -1,7 +1,8 @@
+import copy
 import json
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -26,18 +27,23 @@ NOW = datetime(2026, 8, 2, tzinfo=timezone.utc)
 SCHEDULED_FOR = "2026-08-02T00:00:00.000Z"
 
 
-def make_metadata() -> InstrumentMetadata:
+def make_metadata(
+    *,
+    market_type: MarketType = MarketType.SPOT,
+    effective_from: datetime = NOW,
+    effective_to_or_null: datetime | None = None,
+) -> InstrumentMetadata:
     return InstrumentMetadata(
         schema_version="instrument-metadata-v1",
-        instrument_id="BINANCE:SPOT:ETHUSDT",
+        instrument_id=f"BINANCE:{market_type.value}:ETHUSDT",
         exchange="BINANCE",
-        market_type=MarketType.SPOT,
+        market_type=market_type,
         symbol="ETHUSDT",
         base_asset="ETH",
         quote_asset="USDT",
         settlement_asset="USDT",
-        effective_from=NOW,
-        effective_to_or_null=None,
+        effective_from=effective_from,
+        effective_to_or_null=effective_to_or_null,
         price_tick=Decimal("0.01"),
         quantity_step=Decimal("0.0001"),
         min_quantity=Decimal("0.0001"),
@@ -46,7 +52,7 @@ def make_metadata() -> InstrumentMetadata:
         contract_multiplier=Decimal("1"),
         supported_order_types=("LIMIT", "MARKET"),
         supported_time_in_force=("GTC", "IOC"),
-        supports_reduce_only=False,
+        supports_reduce_only=market_type is MarketType.USDT_PERP,
         supports_stop_market=True,
         maker_fee=Decimal("0.001"),
         taker_fee=Decimal("0.0015"),
@@ -60,13 +66,15 @@ def make_bundle(
     bid: str = "99.99",
     ask: str = "100.01",
     observed_at: str = SCHEDULED_FOR,
+    metadata: InstrumentMetadata | None = None,
 ):
     closes = ["100"] * 20 + (["110"] if long_signal else ["90"])
     bundle = {
         "bundle_hash": "0" * 64,
+        "provider": "BINANCE_MARKET_DATA_ONLY",
         "observed_at": observed_at,
         "instrument_metadata_schema_version": "instrument-metadata-v1",
-        "instrument_metadata": make_metadata().business_payload(),
+        "instrument_metadata": (metadata or make_metadata()).business_payload(),
         "closed_4h_klines": [
             {
                 "close": close,
@@ -84,6 +92,20 @@ def make_bundle(
 def rehash_snapshot(snapshot):
     value = dict(snapshot)
     value["snapshot_hash"] = artifact_self_hash(value, "snapshot_hash")
+    return value
+
+
+def rehash_slot(result):
+    value = copy.deepcopy(result)
+    value["slot_hash"] = "0" * 64
+    value["runtime_snapshot"]["snapshot_hash"] = "0" * 64
+    value["runtime_snapshot"]["last_slot_hash_or_null"] = "0" * 64
+    value["slot_hash"] = system_paper_slot_hash(value)
+    value["runtime_snapshot"]["last_slot_hash_or_null"] = value["slot_hash"]
+    value["runtime_snapshot"]["snapshot_hash"] = artifact_self_hash(
+        value["runtime_snapshot"],
+        "snapshot_hash",
+    )
     return value
 
 
@@ -186,6 +208,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
                 **self.previous,
                 "cash_usdt": "890",
                 "position_quantity": "1",
+                "position_cost_usdt": "110",
                 "average_entry_price_or_null": "110",
                 "marked_equity_usdt": "1000",
                 "peak_equity_usdt": "1000",
@@ -202,6 +225,42 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         self.assertIsNone(result["order"])
         self.assertEqual(result["ledger"]["unrealized_pnl_usdt"], "-10.01")
         self.assertEqual(result["runtime_snapshot"]["marked_equity_usdt"], "989.99")
+
+    def test_closed_losing_trade_relieves_cost_and_records_realized_pnl(self) -> None:
+        previous = rehash_snapshot(
+            {
+                **self.previous,
+                "cash_usdt": "890",
+                "position_quantity": "1",
+                "position_cost_usdt": "110",
+                "average_entry_price_or_null": "110",
+                "marked_equity_usdt": "1000",
+                "peak_equity_usdt": "1000",
+                "risk_state": "LOCKED",
+            }
+        )
+
+        result = run_system_paper_slot(
+            self.inputs(
+                previous_runtime_snapshot=previous,
+                fill_scenario=FillScenario.immediate_full(),
+            )
+        )
+
+        self.assertEqual(result["order"]["state"], "FILLED")
+        self.assertEqual(result["runtime_snapshot"]["position_quantity"], "0")
+        self.assertEqual(result["runtime_snapshot"]["position_cost_usdt"], "0")
+        self.assertIsNone(result["runtime_snapshot"]["average_entry_price_or_null"])
+        self.assertLess(Decimal(result["ledger"]["realized_pnl_usdt"]), Decimal("0"))
+        self.assertEqual(
+            result["runtime_snapshot"]["cumulative_realized_pnl_usdt"],
+            result["ledger"]["realized_pnl_usdt"],
+        )
+        self.assertGreater(
+            Decimal(result["runtime_snapshot"]["cumulative_fees_usdt"]),
+            Decimal("0"),
+        )
+        self.assertEqual(result["ledger"]["debits_usdt"], result["ledger"]["credits_usdt"])
 
     def test_duplicate_slot_is_rejected_from_the_parent_snapshot(self) -> None:
         first = run_system_paper_slot(self.inputs())
@@ -239,6 +298,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
                 **self.previous,
                 "cash_usdt": "0",
                 "position_quantity": "10",
+                "position_cost_usdt": "1000",
                 "average_entry_price_or_null": "100",
                 "marked_equity_usdt": "1000",
                 "peak_equity_usdt": "1000",
@@ -270,6 +330,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
                 **self.previous,
                 "cash_usdt": "900",
                 "position_quantity": "1",
+                "position_cost_usdt": "100",
                 "average_entry_price_or_null": "100",
                 "marked_equity_usdt": "1000",
                 "peak_equity_usdt": "1000",
@@ -327,6 +388,35 @@ class SystemPaperRuntimeTests(unittest.TestCase):
             ):
                 load_system_paper_slot_result(binary_float)
 
+    def test_loader_replays_full_slot_and_rejects_semantic_forgery(self) -> None:
+        forged = copy.deepcopy(run_system_paper_slot(self.inputs()))
+        forged["order"]["side"] = "SELL"
+        forged["order"]["result_hash"] = business_hash(
+            {
+                "local_order_id": forged["order"]["local_order_id"],
+                "instrument_id": forged["order"]["instrument_id"],
+                "side": forged["order"]["side"],
+                "fill_policy_version": forged["order"]["fill_policy_version"],
+                "state": forged["order"]["state"],
+                "requested_quantity": forged["order"]["requested_quantity"],
+                "cumulative_filled_quantity": forged["order"]["filled_quantity"],
+                "average_fill_price": forged["order"]["average_fill_price_or_null"],
+                "fee_usdt": forged["order"]["fee_usdt"],
+                "event_ids": forged["order"]["event_ids"],
+                "risk_lock_required": forged["order"]["risk_lock_required"],
+            }
+        )
+        forged = rehash_slot(forged)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory).resolve() / "forged.json"
+            path.write_bytes(canonical_json(forged).encode("utf-8") + b"\n")
+            with self.assertRaisesRegex(
+                SystemPaperRuntimeError,
+                "SYSTEM_PAPER_FULL_REPLAY_MISMATCH",
+            ):
+                load_system_paper_slot_result(path)
+
     def test_full_slot_replay_is_byte_deterministic(self) -> None:
         first = run_system_paper_slot(self.inputs())
         second = run_system_paper_slot(self.inputs())
@@ -343,6 +433,39 @@ class SystemPaperRuntimeTests(unittest.TestCase):
             "SYSTEM_PAPER_MARKET_BUNDLE_INVALID",
         ):
             run_system_paper_slot(self.inputs(public_market_bundle=bundle))
+
+    def test_market_bundle_is_bound_to_the_frozen_spot_instrument(self) -> None:
+        bundle = make_bundle(metadata=make_metadata(market_type=MarketType.USDT_PERP))
+
+        with self.assertRaisesRegex(
+            SystemPaperRuntimeError,
+            "SYSTEM_PAPER_MARKET_INSTRUMENT_MISMATCH",
+        ):
+            run_system_paper_slot(self.inputs(public_market_bundle=bundle))
+
+    def test_market_metadata_must_be_effective_at_the_slot(self) -> None:
+        bundle = make_bundle(
+            metadata=make_metadata(
+                effective_from=NOW - timedelta(days=2),
+                effective_to_or_null=NOW - timedelta(days=1),
+            )
+        )
+
+        with self.assertRaisesRegex(
+            SystemPaperRuntimeError,
+            "SYSTEM_PAPER_MARKET_METADATA_STALE",
+        ):
+            run_system_paper_slot(self.inputs(public_market_bundle=bundle))
+
+    def test_slot_carries_exact_instrument_and_provider_binding(self) -> None:
+        result = run_system_paper_slot(self.inputs())
+
+        self.assertEqual(result["instrument"]["provider"], "BINANCE_MARKET_DATA_ONLY")
+        self.assertEqual(result["instrument"]["instrument_id"], "BINANCE:SPOT:ETHUSDT")
+        self.assertEqual(result["instrument"]["market_type"], "SPOT")
+        self.assertEqual(result["instrument"]["symbol"], "ETHUSDT")
+        self.assertEqual(result["instrument"]["contract_multiplier"], "1")
+        self.assertEqual(result["instrument"]["metadata_hash"], make_metadata().metadata_hash)
 
     def test_position_snapshot_requires_a_positive_average_entry(self) -> None:
         previous = rehash_snapshot(

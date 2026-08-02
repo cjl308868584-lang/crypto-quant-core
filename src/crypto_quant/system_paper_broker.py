@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from .canonical import business_hash, canonical_decimal, stable_id, utc_datetime
 from .decimal_math import (
@@ -26,9 +26,11 @@ from .orders import OrderAggregate, OrderEventType, OrderState
 
 _FROZEN_SLIPPAGE_PER_SIDE = Decimal("0.001")
 _FROZEN_TAKER_FEE_PER_SIDE = Decimal("0.0015")
+_FROZEN_FILL_POLICY_VERSION = "SYSTEM_PAPER_CONSERVATIVE_BBO_V1"
 
 
 class FillScenarioKind(str, Enum):
+    IMMEDIATE_FULL = "IMMEDIATE_FULL"
     PARTIAL_THEN_FULL = "PARTIAL_THEN_FULL"
     DISCONNECT_AFTER_SUBMIT = "DISCONNECT_AFTER_SUBMIT"
     REJECTED = "REJECTED"
@@ -58,10 +60,13 @@ class FillScenario:
         object.__setattr__(instance, "kind", FillScenarioKind.PARTIAL_THEN_FULL)
         object.__setattr__(instance, "partial_fill_ratio_or_null", ratio)
         return instance
-
     @classmethod
     def disconnect_after_submit(cls) -> "FillScenario":
         return cls._without_ratio(FillScenarioKind.DISCONNECT_AFTER_SUBMIT)
+
+    @classmethod
+    def immediate_full(cls) -> "FillScenario":
+        return cls._without_ratio(FillScenarioKind.IMMEDIATE_FULL)
 
     @classmethod
     def rejected(cls) -> "FillScenario":
@@ -116,6 +121,54 @@ class FillScenario:
         object.__setattr__(instance, "kind", kind)
         object.__setattr__(instance, "partial_fill_ratio_or_null", ratio)
         return instance
+
+
+def fill_scenario_payload(scenario: FillScenario) -> Dict[str, Optional[str]]:
+    if not isinstance(scenario, FillScenario):
+        raise ContractError("fill scenario payload requires FillScenario")
+    return {
+        "kind": scenario.kind.value,
+        "partial_fill_ratio_or_null": (
+            None
+            if scenario.partial_fill_ratio_or_null is None
+            else canonical_decimal(scenario.partial_fill_ratio_or_null)
+        ),
+    }
+
+
+def fill_scenario_from_payload(payload: Mapping[str, Any]) -> FillScenario:
+    if not isinstance(payload, Mapping) or set(payload) != {
+        "kind",
+        "partial_fill_ratio_or_null",
+    }:
+        raise ContractError("fill scenario payload is invalid")
+    try:
+        kind = FillScenarioKind(payload["kind"])
+    except (TypeError, ValueError) as error:
+        raise ContractError("fill scenario kind is invalid") from error
+    ratio = payload["partial_fill_ratio_or_null"]
+    ratio_factories = {
+        FillScenarioKind.PARTIAL_THEN_FULL: FillScenario.partial_then_full,
+        FillScenarioKind.FILL_BEFORE_CANCEL: FillScenario.fill_before_cancel,
+        FillScenarioKind.FILL_BEFORE_ACK_WITH_DUPLICATE: (
+            FillScenario.fill_before_ack_with_duplicate
+        ),
+    }
+    if kind in ratio_factories:
+        if not isinstance(ratio, str):
+            raise ContractError("fill scenario ratio is required")
+        return ratio_factories[kind](ratio)
+    if ratio is not None:
+        raise ContractError("fill scenario ratio must be null")
+    factories = {
+        FillScenarioKind.IMMEDIATE_FULL: FillScenario.immediate_full,
+        FillScenarioKind.DISCONNECT_AFTER_SUBMIT: FillScenario.disconnect_after_submit,
+        FillScenarioKind.REJECTED: FillScenario.rejected,
+        FillScenarioKind.CANCEL_BEFORE_FILL: FillScenario.cancel_before_fill,
+        FillScenarioKind.TIMEOUT_AFTER_ACK: FillScenario.timeout_after_ack,
+        FillScenarioKind.IMPOSSIBLE_OVERFILL: FillScenario.impossible_overfill,
+    }
+    return factories[kind]()
 
 
 @dataclass(frozen=True)
@@ -199,6 +252,9 @@ class SimulatedMarketEvidence:
 @dataclass(frozen=True)
 class SimulatedOrderResult:
     local_order_id: str
+    instrument_id: str
+    side: OrderSide
+    fill_policy_version: str
     state: OrderState
     requested_quantity: Decimal
     cumulative_filled_quantity: Decimal
@@ -233,8 +289,14 @@ class SimulatedBroker:
         command: SimulatedOrderCommand,
         market: SimulatedMarketEvidence,
     ) -> SimulatedOrderResult:
+        if market.observed_at != command.scheduled_for:
+            raise ContractError("market evidence time must match the command slot")
         if command.instrument_id != market.instrument_metadata.instrument_id:
             raise ContractError("command and market instrument identities differ")
+        conservative_execution_price = self._execution_price(
+            command.side,
+            market,
+        )
         rounded = plan_order(
             metadata=market.instrument_metadata,
             decision_time=command.scheduled_for,
@@ -243,7 +305,7 @@ class SimulatedBroker:
             time_in_force_or_null=command.time_in_force_or_null,
             requested_quantity=command.requested_quantity,
             requested_price_or_null=command.requested_price_or_null,
-            notional_reference_price=market.last_trade_price,
+            notional_reference_price=conservative_execution_price,
             risk_increasing=command.risk_increasing,
             reduce_only=command.reduce_only,
             approved_notional_usdt_or_null=command.approved_notional_usdt_or_null,
@@ -323,6 +385,15 @@ class SimulatedBroker:
                 del self._orders[local_order_id]
                 raise
             raise ContractError("impossible overfill scenario did not fail closed")
+        if self._scenario.kind is FillScenarioKind.IMMEDIATE_FULL:
+            self._apply(record, "ack", OrderEventType.ACK)
+            self._apply(
+                record,
+                "full",
+                OrderEventType.FULL_FILL,
+                cumulative_filled_quantity=rounded.rounded_quantity,
+            )
+            return self._result(record)
         ratio = self._scenario.partial_fill_ratio_or_null
         if ratio is None:
             raise ContractError("partial fill scenario is missing its ratio")
@@ -465,6 +536,9 @@ class SimulatedBroker:
         )
         payload = {
             "local_order_id": record.aggregate.local_order_id,
+            "instrument_id": record.command.instrument_id,
+            "side": record.command.side.value,
+            "fill_policy_version": _FROZEN_FILL_POLICY_VERSION,
             "state": record.aggregate.state.value,
             "requested_quantity": canonical_decimal(
                 record.aggregate.requested_quantity
@@ -481,6 +555,9 @@ class SimulatedBroker:
         }
         return SimulatedOrderResult(
             local_order_id=record.aggregate.local_order_id,
+            instrument_id=record.command.instrument_id,
+            side=record.command.side,
+            fill_policy_version=_FROZEN_FILL_POLICY_VERSION,
             state=record.aggregate.state,
             requested_quantity=record.aggregate.requested_quantity,
             cumulative_filled_quantity=quantity,

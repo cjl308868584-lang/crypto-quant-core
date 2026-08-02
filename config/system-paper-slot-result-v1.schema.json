@@ -15,12 +15,14 @@
     "scheduled_for",
     "parent_slot_hash_or_null",
     "market_bundle_hash",
+    "instrument",
     "signal",
     "risk",
     "order",
     "ledger",
     "reconciliation",
     "runtime_snapshot",
+    "replay_inputs",
     "replay",
     "safety_counts",
     "warnings"
@@ -65,6 +67,26 @@
     },
     "market_bundle_hash": {
       "$ref": "#/$defs/hash"
+    },
+    "instrument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "instrument_id",
+        "metadata_hash",
+        "market_type",
+        "symbol",
+        "contract_multiplier"
+      ],
+      "properties": {
+        "provider": {"const": "BINANCE_MARKET_DATA_ONLY"},
+        "instrument_id": {"const": "BINANCE:SPOT:ETHUSDT"},
+        "metadata_hash": {"$ref": "#/$defs/hash"},
+        "market_type": {"const": "SPOT"},
+        "symbol": {"const": "ETHUSDT"},
+        "contract_multiplier": {"const": "1"}
+      }
     },
     "signal": {
       "type": "object",
@@ -158,7 +180,9 @@
           "additionalProperties": false,
           "required": [
             "local_order_id",
+            "instrument_id",
             "side",
+            "fill_policy_version",
             "state",
             "requested_quantity",
             "filled_quantity",
@@ -173,11 +197,17 @@
               "type": "string",
               "pattern": "^paper_order_[0-9a-f]{64}$"
             },
+            "instrument_id": {
+              "const": "BINANCE:SPOT:ETHUSDT"
+            },
             "side": {
               "enum": [
                 "BUY",
                 "SELL"
               ]
+            },
+            "fill_policy_version": {
+              "const": "SYSTEM_PAPER_CONSERVATIVE_BBO_V1"
             },
             "state": {
               "enum": [
@@ -239,6 +269,11 @@
         "entries",
         "debits_usdt",
         "credits_usdt",
+        "position_cost_relieved_usdt",
+        "position_cost_after_usdt",
+        "realized_pnl_usdt",
+        "cumulative_realized_pnl_usdt",
+        "cumulative_fees_usdt",
         "unrealized_pnl_usdt",
         "balanced"
       ],
@@ -262,9 +297,10 @@
               "account": {
                 "enum": [
                   "ETH_POSITION_COST",
-                  "ETH_POSITION_DISPOSAL",
                   "VIRTUAL_CASH",
-                  "TAKER_FEE_EXPENSE"
+                  "TAKER_FEE_EXPENSE",
+                  "REALIZED_GAIN",
+                  "REALIZED_LOSS"
                 ]
               },
               "side": {
@@ -283,6 +319,21 @@
           "$ref": "#/$defs/decimal"
         },
         "credits_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "position_cost_relieved_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "position_cost_after_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "realized_pnl_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "cumulative_realized_pnl_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "cumulative_fees_usdt": {
           "$ref": "#/$defs/decimal"
         },
         "unrealized_pnl_usdt": {
@@ -317,7 +368,10 @@
           "const": "0"
         },
         "status": {
-          "const": "RECONCILED"
+          "enum": [
+            "RECONCILED",
+            "OPEN_ORDER_RECONCILIATION_REQUIRED"
+          ]
         }
       }
     },
@@ -333,7 +387,10 @@
         "processed_slot_ids",
         "cash_usdt",
         "position_quantity",
+        "position_cost_usdt",
         "average_entry_price_or_null",
+        "cumulative_realized_pnl_usdt",
+        "cumulative_fees_usdt",
         "marked_equity_usdt",
         "peak_equity_usdt",
         "risk_state",
@@ -384,6 +441,9 @@
         "position_quantity": {
           "$ref": "#/$defs/decimal"
         },
+        "position_cost_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
         "average_entry_price_or_null": {
           "oneOf": [
             {
@@ -393,6 +453,12 @@
               "type": "null"
             }
           ]
+        },
+        "cumulative_realized_pnl_usdt": {
+          "$ref": "#/$defs/decimal"
+        },
+        "cumulative_fees_usdt": {
+          "$ref": "#/$defs/decimal"
         },
         "marked_equity_usdt": {
           "$ref": "#/$defs/decimal"
@@ -450,7 +516,8 @@
       "additionalProperties": false,
       "required": [
         "decision_hash_match",
-        "market_bundle_hash_match"
+        "market_bundle_hash_match",
+        "full_slot_hash_match"
       ],
       "properties": {
         "decision_hash_match": {
@@ -458,6 +525,52 @@
         },
         "market_bundle_hash_match": {
           "const": true
+        },
+        "full_slot_hash_match": {
+          "const": true
+        }
+      }
+    },
+    "replay_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan",
+        "scheduled_for",
+        "public_market_bundle",
+        "previous_runtime_snapshot",
+        "fill_scenario"
+      ],
+      "properties": {
+        "plan": {"type": "object"},
+        "scheduled_for": {"type": "string", "format": "date-time"},
+        "public_market_bundle": {"type": "object"},
+        "previous_runtime_snapshot": {"type": "object"},
+        "fill_scenario": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "partial_fill_ratio_or_null"],
+          "properties": {
+            "kind": {
+              "enum": [
+                "IMMEDIATE_FULL",
+                "PARTIAL_THEN_FULL",
+                "DISCONNECT_AFTER_SUBMIT",
+                "REJECTED",
+                "CANCEL_BEFORE_FILL",
+                "FILL_BEFORE_CANCEL",
+                "FILL_BEFORE_ACK_WITH_DUPLICATE",
+                "TIMEOUT_AFTER_ACK",
+                "IMPOSSIBLE_OVERFILL"
+              ]
+            },
+            "partial_fill_ratio_or_null": {
+              "oneOf": [
+                {"$ref": "#/$defs/decimal"},
+                {"type": "null"}
+              ]
+            }
+          }
         }
       }
     },

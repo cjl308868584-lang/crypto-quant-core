@@ -1,5 +1,6 @@
 import unittest
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from crypto_quant.instruments import (
@@ -227,6 +228,69 @@ class SimulatedBrokerLifecycleTests(unittest.TestCase):
         self.assertEqual(result.state, OrderState.EXPIRED)
         self.assertEqual(result.cumulative_filled_quantity, Decimal("0"))
         self.assertIsNone(result.average_fill_price)
+
+    def test_market_evidence_time_must_match_the_command_slot(self) -> None:
+        stale_market = replace(
+            self.market,
+            observed_at=NOW - timedelta(seconds=1),
+        )
+
+        with self.assertRaisesRegex(
+            ContractError,
+            "market evidence time must match",
+        ):
+            SimulatedBroker(FillScenario.partial_then_full("0.40")).submit(
+                self.command,
+                stale_market,
+            )
+
+    def test_conservative_fill_notional_never_exceeds_approved_notional(self) -> None:
+        command = replace(
+            self.command,
+            requested_quantity=Decimal("2"),
+            approved_notional_usdt_or_null=Decimal("100"),
+        )
+        market = replace(
+            self.market,
+            best_bid_price=Decimal("99.99"),
+            best_ask_price=Decimal("100"),
+            last_trade_price=Decimal("50"),
+            market_bundle_hash="f" * 64,
+        )
+        broker = SimulatedBroker(FillScenario.partial_then_full("0.40"))
+
+        first = broker.submit(command, market)
+        final = broker.reconcile(first.local_order_id)
+
+        self.assertLessEqual(
+            final.cumulative_filled_quantity * final.average_fill_price,
+            Decimal("100"),
+        )
+
+    def test_order_result_hash_binds_instrument_side_and_fill_policy(self) -> None:
+        result = SimulatedBroker(FillScenario.partial_then_full("0.40")).submit(
+            self.command,
+            self.market,
+        )
+
+        self.assertEqual(result.instrument_id, self.command.instrument_id)
+        self.assertEqual(result.side, OrderSide.BUY)
+        self.assertEqual(
+            result.fill_policy_version,
+            "SYSTEM_PAPER_CONSERVATIVE_BBO_V1",
+        )
+
+    def test_immediate_full_scenario_closes_the_entire_order(self) -> None:
+        result = SimulatedBroker(FillScenario.immediate_full()).submit(
+            self.command,
+            self.market,
+        )
+
+        self.assertEqual(result.state, OrderState.FILLED)
+        self.assertEqual(
+            result.cumulative_filled_quantity,
+            result.requested_quantity,
+        )
 
 
 if __name__ == "__main__":
