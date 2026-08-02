@@ -265,7 +265,7 @@ def _artifact_body(
         raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_INVALID")
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     directory = getattr(os, "O_DIRECTORY", 0)
-    root_fd = slots_fd = artifact_fd = None
+    root_fd = slots_fd = artifact_fd = current_fd = None
     try:
         root_fd = os.open(str(root), os.O_RDONLY | directory | nofollow)
         root_stat = os.fstat(root_fd)
@@ -309,12 +309,28 @@ def _artifact_body(
             or len(body) != before.st_size
         ):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_RACE")
+        try:
+            current_fd = os.open(name, os.O_RDONLY | nofollow, dir_fd=slots_fd)
+            current = os.fstat(current_fd)
+        except OSError as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_RACE"
+            ) from error
+        if (
+            not stat.S_ISREG(current.st_mode)
+            or current.st_nlink != 1
+            or current.st_uid != os.getuid()
+            or stat.S_IMODE(current.st_mode) != 0o600
+            or current.st_dev != before.st_dev
+            or current.st_ino != before.st_ino
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_RACE")
     except FileNotFoundError as error:
         raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_MISSING") from error
     except OSError as error:
         raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_UNSAFE") from error
     finally:
-        for descriptor in (artifact_fd, slots_fd, root_fd):
+        for descriptor in (current_fd, artifact_fd, slots_fd, root_fd):
             if descriptor is not None:
                 os.close(descriptor)
     if body != expected_bytes or _sha256(body) != expected_sha256:

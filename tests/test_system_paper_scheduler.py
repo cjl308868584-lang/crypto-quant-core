@@ -7,6 +7,7 @@ import unittest
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from crypto_quant.canonical import business_hash, canonical_json, stable_id
 from crypto_quant.evidence import artifact_self_hash
@@ -955,6 +956,39 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
                 target, output_root=linked_root
             )
 
+    def test_parent_chain_detects_target_entry_swap_during_real_read(self):
+        # Catches accepting an old fd after a safe-looking target entry replacement.
+        target, first, second, first_path, _second_path = self.prepare_successful_parent_pair()
+        replacement = first_path.with_name("replacement.json")
+        backup = first_path.with_name("original.json")
+        replacement.write_bytes(b"tampered replacement")
+        os.chmod(replacement, 0o600)
+        real_read = os.read
+        swapped = False
+
+        def swap_then_read(descriptor, size):
+            nonlocal swapped
+            if not swapped:
+                swapped = True
+                os.replace(first_path, backup)
+                os.replace(replacement, first_path)
+            return real_read(descriptor, size)
+
+        with patch(
+            "crypto_quant.system_paper_scheduler.os.read",
+            side_effect=swap_then_read,
+        ):
+            with self.assertRaisesRegex(SystemPaperScheduleError, "ARTIFACT_RACE"):
+                self.state.successful_parent_result_bodies(
+                    target, output_root=self.output_root
+                )
+        self.assertTrue(swapped)
+        self.assertEqual(first_path.read_bytes(), b"tampered replacement")
+        self.assertEqual(backup.read_bytes(), first["result_bytes"])
+        self.assertEqual(
+            _second_path.read_bytes(), second["result_bytes"]
+        )
+
     def test_result_prepare_rejects_expired_or_forged_claim_ownership(self):
         # Catches accepting a result after lease loss or from a stale attempt.
         claim, _input, result = self.prepare_slot(
@@ -982,6 +1016,82 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             self.state.connection.execute("SELECT COUNT(*) FROM prepared_results").fetchone()[0],
             0,
         )
+
+    def test_result_prepare_rejects_a_real_stale_claim_after_lease_reclaim(self):
+        # Catches accepting claim1 after claim2 has reclaimed the durable input.
+        claim1, _input, result = self.prepare_slot(
+            "2026-08-02T12:00:00.000Z",
+            build_initial_system_paper_runtime_snapshot(self.plan),
+        )
+        claim2 = self.state.claim(
+            claim1.slot,
+            worker_id="worker-b",
+            claimed_at=claim1.lease_expires_at,
+        )
+        self.assertEqual((claim2.outcome, claim2.attempt), ("RESUME_INPUT", 2))
+
+        with self.assertRaisesRegex(SystemPaperScheduleError, "RESULT_CLAIM_INVALID"):
+            self.state.prepare_result(
+                claim1,
+                result_bytes=canonical_json(result).encode("utf-8"),
+                parent_result_bodies=(),
+                prepared_at=claim1.claimed_at,
+            )
+
+    def test_result_prepare_rejects_rehashed_unsafe_unknown_candidate(self):
+        # Catches accepting UNKNOWN without both risk lock and active order.
+        slot = self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z")
+        claim = self.state.claim(slot, worker_id="worker-a", claimed_at=slot.due_at)
+        input_record = self.state.prepare_input(
+            claim,
+            plan=self.plan,
+            capture=SystemPaperInputCapture(
+                public_market_bundle=make_bundle(
+                    observed_at=slot.scheduled_for, long_signal=True
+                ),
+                capture_attempt_id="unsafe-unknown-capture",
+                captured_at=slot.due_at,
+                request_families=(
+                    "SPOT_AGG_TRADE", "SPOT_BBO", "SPOT_EXCHANGE_INFO",
+                    "SPOT_KLINE_4H_WARMUP",
+                ),
+                network_request_count=4,
+            ),
+            previous_runtime_snapshot=build_initial_system_paper_runtime_snapshot(self.plan),
+            fill_scenario=FillScenario.disconnect_after_submit(),
+            output_root_hash=self.output_root_hash,
+            prepared_at=slot.due_at,
+        )
+        payload = input_record["payload"]
+        valid = run_system_paper_slot(
+            SystemPaperSlotInputs(
+                plan=payload["plan"],
+                scheduled_for=payload["scheduled_for"],
+                public_market_bundle=payload["capture"]["public_market_bundle"],
+                previous_runtime_snapshot=payload["previous_runtime_snapshot"],
+                fill_scenario=FillScenario.disconnect_after_submit(),
+            )
+        )
+        self.assertEqual(valid["order"]["state"], "UNKNOWN")
+        forged = deepcopy(valid)
+        forged["runtime_snapshot"]["risk_state"] = "NORMAL"
+        forged["runtime_snapshot"]["active_order_or_null"] = None
+        forged["slot_hash"] = "0" * 64
+        forged["runtime_snapshot"]["snapshot_hash"] = "0" * 64
+        forged["runtime_snapshot"]["last_slot_hash_or_null"] = "0" * 64
+        forged["slot_hash"] = system_paper_slot_hash(forged)
+        forged["runtime_snapshot"]["last_slot_hash_or_null"] = forged["slot_hash"]
+        forged["runtime_snapshot"]["snapshot_hash"] = artifact_self_hash(
+            forged["runtime_snapshot"], "snapshot_hash"
+        )
+
+        with self.assertRaisesRegex(SystemPaperScheduleError, "PREPARED_RESULT_INVALID"):
+            self.state.prepare_result(
+                claim,
+                result_bytes=canonical_json(forged).encode("utf-8"),
+                parent_result_bodies=(),
+                prepared_at=claim.claimed_at,
+            )
 
     def test_result_prepare_rolls_back_event_when_result_insert_fails(self):
         # Catches an orphan RESULT_PREPARED event after an atomic insert failure.
