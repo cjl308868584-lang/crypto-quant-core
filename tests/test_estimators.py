@@ -508,6 +508,28 @@ class EvaluatorBuildTests(unittest.TestCase):
             expected,
         )
         self.assertIn("setup.py", expected)
+        self.assertIn(
+            "src/crypto_quant/system_paper_scheduler.py",
+            expected,
+        )
+        self.assertIn(
+            "tests/test_system_paper_scheduler.py",
+            expected,
+        )
+        self.assertIn(
+            "tests/test_system_paper_fault_injection.py",
+            expected,
+        )
+        self.assertIn(
+            "docs/superpowers/specs/"
+            "2026-08-02-system-paper-wal-scheduler-design.md",
+            expected,
+        )
+        self.assertIn(
+            "docs/superpowers/plans/"
+            "2026-08-02-system-paper-wal-scheduler.md",
+            expected,
+        )
 
     def test_manifest_binds_complete_evaluator_file_set(self):
         build = EvaluatorBuild.load(ROOT, self.registry)
@@ -517,6 +539,10 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
 
         self.assertEqual(set(manifest["file_hashes"]), expected)
+        self.assertEqual(crypto_quant.__version__, "0.57.0")
+        self.assertEqual(manifest["package_version"], "0.57.0")
+        self.assertEqual(manifest["manifest_version"], "1.51.0")
+        self.assertEqual(build.manifest_version, "1.51.0")
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
@@ -676,9 +702,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.50.0")
-        self.assertEqual(manifest["package_version"], "0.56.0")
-        self.assertEqual(crypto_quant.__version__, "0.56.0")
+        self.assertEqual(manifest["manifest_version"], "1.51.0")
+        self.assertEqual(manifest["package_version"], "0.57.0")
+        self.assertEqual(crypto_quant.__version__, "0.57.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
