@@ -730,7 +730,7 @@ def _sample_volatility(closes: Sequence[Decimal]) -> Decimal:
         return variance.sqrt() * annualizer
 
 
-def _baseline_decision(
+def build_baseline_paper_decision(
     klines: Sequence[Mapping[str, Any]],
     decision_time: datetime,
     market_hash: str,
@@ -1206,7 +1206,11 @@ def _build_offline_paper_run(
         "receipt_hashes": [item["receipt_hash"] for item in capture.receipts],
     }
     market_hash = business_hash(market)
-    decision, target = _baseline_decision(klines, decision_dt, market_hash)
+    decision, target = build_baseline_paper_decision(
+        klines,
+        decision_dt,
+        market_hash,
+    )
     baseline_fill = _conservative_fill(
         target,
         metadata,
