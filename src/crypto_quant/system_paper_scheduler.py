@@ -74,7 +74,7 @@ class SystemPaperInjectedFault(RuntimeError):
     """A test-only interruption at a documented durable boundary."""
 
 
-_FROZEN_FAULT_POINTS = frozenset(
+SYSTEM_PAPER_FROZEN_FAULT_POINTS = frozenset(
     (
         "AFTER_CLAIM_COMMIT",
         "BEFORE_CLAIM_COMMIT",
@@ -104,7 +104,7 @@ class SystemPaperFaultInjector:
         if not isinstance(points, Mapping) or any(
             not isinstance(point, str)
             or not isinstance(mode, str)
-            or point not in _FROZEN_FAULT_POINTS
+            or point not in SYSTEM_PAPER_FROZEN_FAULT_POINTS
             or mode not in _FROZEN_FAULT_MODES
             for point, mode in points.items()
         ):

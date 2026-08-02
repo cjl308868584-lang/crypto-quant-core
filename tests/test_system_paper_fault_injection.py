@@ -1,17 +1,25 @@
 """Full real-SQLite fault and recovery matrix for System Paper scheduling."""
 
+import hashlib
+import inspect
 import os
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
-from crypto_quant.system_paper_broker import FillScenario
+import crypto_quant.system_paper_scheduler as scheduler_module
+import crypto_quant.system_paper_runtime as runtime_module
+from crypto_quant.system_paper_broker import FillScenario, SimulatedBroker
 from crypto_quant.system_paper_plan import build_system_paper_plan
 from crypto_quant.errors import ContractError
 from crypto_quant.system_paper_scheduler import (
+    SYSTEM_PAPER_FROZEN_FAULT_POINTS,
     SystemPaperFaultInjector,
     SystemPaperInjectedFault,
     SystemPaperInputCapture,
+    SystemPaperInputRequest,
     SystemPaperScheduleError,
     SystemPaperSchedulePolicy,
     SystemPaperScheduleState,
@@ -21,7 +29,6 @@ from crypto_quant.system_paper_runtime import (
     SystemPaperRuntimeError,
     load_system_paper_slot_result_bytes,
 )
-from crypto_quant.evidence import artifact_self_hash
 from tests.test_system_paper_runtime import make_bundle
 
 
@@ -42,13 +49,58 @@ FROZEN_FAILPOINTS = (
     ("BEFORE_SUCCESS_COMMIT", "RESULT", 1),
 )
 
+LITERAL_FROZEN_FAULT_POINT_SET = frozenset((
+    "AFTER_CLAIM_COMMIT",
+    "BEFORE_CLAIM_COMMIT",
+    "BEFORE_INPUT_PROVIDER",
+    "AFTER_INPUT_PROVIDER_BEFORE_COMMIT",
+    "BEFORE_INPUT_PREPARED_COMMIT",
+    "AFTER_INPUT_PREPARED_COMMIT",
+    "AFTER_RUNTIME_BEFORE_RESULT_COMMIT",
+    "BEFORE_RESULT_PREPARED_COMMIT",
+    "AFTER_RESULT_PREPARED_COMMIT",
+    "DURING_ARTIFACT_WRITE",
+    "AFTER_ARTIFACT_FSYNC_BEFORE_COMMIT",
+    "AFTER_ARTIFACT_PUBLISH_BEFORE_SUCCESS",
+    "BEFORE_SUCCESS_COMMIT",
+))
+
+# (provider calls, network captures, candidate runtime calls, production loader calls)
+FROZEN_INVOCATION_BUDGETS = {
+    "BEFORE_CLAIM_COMMIT": ((0, 0, 0, 0), (1, 4, 1, 8)),
+    "AFTER_CLAIM_COMMIT": ((0, 0, 0, 0), (1, 4, 1, 8)),
+    "BEFORE_INPUT_PROVIDER": ((0, 0, 0, 0), (1, 4, 1, 8)),
+    "AFTER_INPUT_PROVIDER_BEFORE_COMMIT": ((1, 4, 0, 0), (1, 4, 1, 8)),
+    "BEFORE_INPUT_PREPARED_COMMIT": ((1, 4, 0, 0), (1, 4, 1, 8)),
+    "AFTER_INPUT_PREPARED_COMMIT": ((1, 4, 0, 0), (0, 0, 1, 8)),
+    "AFTER_RUNTIME_BEFORE_RESULT_COMMIT": ((1, 4, 1, 0), (0, 0, 1, 8)),
+    "BEFORE_RESULT_PREPARED_COMMIT": ((1, 4, 1, 1), (0, 0, 1, 8)),
+    "AFTER_RESULT_PREPARED_COMMIT": ((1, 4, 1, 1), (0, 0, 0, 13)),
+    "DURING_ARTIFACT_WRITE": ((1, 4, 1, 5), (0, 0, 0, 13)),
+    "AFTER_ARTIFACT_FSYNC_BEFORE_COMMIT": ((1, 4, 1, 5), (0, 0, 0, 13)),
+    "AFTER_ARTIFACT_PUBLISH_BEFORE_SUCCESS": ((1, 4, 1, 5), (0, 0, 0, 13)),
+    "BEFORE_SUCCESS_COMMIT": ((1, 4, 1, 8), (0, 0, 0, 13)),
+}
+
 
 class DeterministicPublicProvider:
     """The provider is real deterministic test input, not a business mock."""
 
     def __init__(self, captured_at):
         self.invocations = 0
+        self.credential_reads = 0
+        self.account_requests = 0
         self.captured_at = captured_at
+
+    @property
+    def credentials(self):
+        self.credential_reads += 1
+        raise AssertionError("System Paper provider must not read credentials")
+
+    @property
+    def account(self):
+        self.account_requests += 1
+        raise AssertionError("System Paper provider must not request an account")
 
     def __call__(self, request):
         self.invocations += 1
@@ -58,6 +110,51 @@ class DeterministicPublicProvider:
             captured_at=self.captured_at,
             request_families=request.request_families,
             network_request_count=4,
+        )
+
+
+class InvocationEvidence:
+    """Count passthrough calls at real scheduler/runtime boundaries."""
+
+    def __init__(self):
+        self.candidate_runtime_calls = 0
+        self.production_loader_calls = 0
+        self.simulated_broker_constructions = 0
+        self._real_candidate_runtime = scheduler_module.run_system_paper_slot
+        self._real_loader = scheduler_module.load_system_paper_slot_result_bytes
+        self._real_simulated_broker = runtime_module.SimulatedBroker
+
+    def candidate_runtime(self, *args, **kwargs):
+        self.candidate_runtime_calls += 1
+        return self._real_candidate_runtime(*args, **kwargs)
+
+    def loader(self, *args, **kwargs):
+        self.production_loader_calls += 1
+        return self._real_loader(*args, **kwargs)
+
+    @contextmanager
+    def patched(self):
+        evidence = self
+
+        class CountingSimulatedBroker(evidence._real_simulated_broker):
+            def __init__(self, *args, **kwargs):
+                evidence.simulated_broker_constructions += 1
+                super().__init__(*args, **kwargs)
+
+        with patch.object(
+            scheduler_module, "run_system_paper_slot", self.candidate_runtime
+        ), patch.object(
+            scheduler_module, "load_system_paper_slot_result_bytes", self.loader
+        ), patch.object(runtime_module, "SimulatedBroker", CountingSimulatedBroker):
+            yield self
+
+    @staticmethod
+    def counts(provider, evidence):
+        return (
+            provider.invocations,
+            provider.invocations * 4,
+            evidence.candidate_runtime_calls,
+            evidence.production_loader_calls,
         )
 
 
@@ -77,25 +174,33 @@ class FaultScenarioHarness:
     def close(self):
         self.temp.cleanup()
 
-    def run_first_invocation(self):
+    def run_first_invocation(self, *, evidence=None):
         return self.run(
             worker_id="fault-worker-a",
             clock_at=self.now,
             provider=self.provider,
             injector=SystemPaperFaultInjector({self.point: self.mode}),
+            evidence=evidence,
         )
 
-    def run(self, *, worker_id, clock_at, provider, injector=None, scenario=None):
-        return run_due_system_paper_slot(
-            state_path=self.state_path,
-            output_root=self.output_root,
-            plan=self.plan,
-            worker_id=worker_id,
-            public_input_provider=provider,
-            fill_scenario=scenario or FillScenario.immediate_full(),
-            clock=lambda: clock_at,
-            fault_injector=injector,
-        )
+    def run(
+        self, *, worker_id, clock_at, provider, injector=None, scenario=None,
+        evidence=None,
+    ):
+        kwargs = {
+            "state_path": self.state_path,
+            "output_root": self.output_root,
+            "plan": self.plan,
+            "worker_id": worker_id,
+            "public_input_provider": provider,
+            "fill_scenario": scenario or FillScenario.immediate_full(),
+            "clock": lambda: clock_at,
+            "fault_injector": injector,
+        }
+        if evidence is None:
+            return run_due_system_paper_slot(**kwargs)
+        with evidence.patched():
+            return run_due_system_paper_slot(**kwargs)
 
     def durable_facts(self):
         policy = SystemPaperSchedulePolicy.create(self.plan)
@@ -143,13 +248,36 @@ class FaultScenarioHarness:
             raise AssertionError(f"safety counts: {summary['safety_counts']!r}")
         path = Path(summary["result_path_or_null"])
         body = path.read_bytes()
-        if load_system_paper_slot_result_bytes(body)["slot_id"] != summary["slot_id"]:
+        policy = SystemPaperSchedulePolicy.create(self.plan)
+        slot = policy.current_slot(self.now)
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            prepared = state.connection.execute(
+                "SELECT result_bytes, result_sha256 FROM prepared_results WHERE slot_id=?",
+                (slot.slot_id,),
+            ).fetchone()
+            parents = state.successful_parent_result_bodies(
+                slot, output_root=self.output_root
+            )
+        if prepared is None:
+            raise AssertionError("completed slot is missing its immutable prepared result")
+        if body != prepared["result_bytes"]:
+            raise AssertionError("published bytes differ from immutable prepared result bytes")
+        if hashlib.sha256(body).hexdigest() != prepared["result_sha256"]:
+            raise AssertionError("published SHA-256 differs from immutable prepared result")
+        loaded = load_system_paper_slot_result_bytes(body, parent_result_bodies=parents)
+        if loaded["slot_id"] != summary["slot_id"]:
             raise AssertionError("full bytes-loader replay differs from runner summary")
+        if loaded["ledger"]["debits_usdt"] != loaded["ledger"]["credits_usdt"]:
+            raise AssertionError("full bytes-loader replay produced an unbalanced ledger")
         if self.durable_facts() != ("RESULT", 1, 1, 1, "SUCCEEDED"):
             raise AssertionError(f"final durable facts: {self.durable_facts()!r}")
 
 
 class SystemPaperFaultWiringTests(unittest.TestCase):
+    def test_public_failpoint_contract_equals_the_literal_frozen_set(self):
+        self.assertIsInstance(SYSTEM_PAPER_FROZEN_FAULT_POINTS, frozenset)
+        self.assertEqual(SYSTEM_PAPER_FROZEN_FAULT_POINTS, LITERAL_FROZEN_FAULT_POINT_SET)
+
     def test_every_frozen_failpoint_is_reached_at_its_exact_stage(self):
         for point, durable_stage, artifact_count in FROZEN_FAILPOINTS:
             with self.subTest(point=point):
@@ -164,40 +292,87 @@ class SystemPaperFaultWiringTests(unittest.TestCase):
                     harness.close()
 
 
+class SystemPaperSafetyBoundaryTests(unittest.TestCase):
+    def test_public_runner_and_provider_surfaces_are_credential_account_and_live_broker_free(self):
+        self.assertEqual(tuple(inspect.signature(run_due_system_paper_slot).parameters), (
+            "state_path", "output_root", "plan", "worker_id", "public_input_provider",
+            "fill_scenario", "clock", "fault_injector",
+        ))
+        self.assertEqual(tuple(SystemPaperInputRequest.__dataclass_fields__), (
+            "plan_hash", "slot_id", "scheduled_for", "capture_deadline",
+            "request_families",
+        ))
+        self.assertEqual(tuple(SystemPaperInputCapture.__dataclass_fields__), (
+            "public_market_bundle", "capture_attempt_id", "captured_at",
+            "request_families", "network_request_count",
+        ))
+        self.assertIs(runtime_module.SimulatedBroker, SimulatedBroker)
+
+
 class SystemPaperFaultRecoveryTests(unittest.TestCase):
     def test_crash_matrix_recovers_once_from_every_durable_stage(self):
         for point, durable_stage, artifact_count in FROZEN_FAILPOINTS:
             with self.subTest(point=point):
                 harness = FaultScenarioHarness(point=point, mode="CRASH")
                 try:
+                    first_evidence = InvocationEvidence()
                     with self.assertRaises(SystemPaperInjectedFault):
-                        harness.run_first_invocation()
+                        harness.run_first_invocation(evidence=first_evidence)
                     harness.assert_durable_stage_matches_contract(
                         durable_stage, artifact_count
+                    )
+                    self.assertEqual(
+                        InvocationEvidence.counts(harness.provider, first_evidence),
+                        FROZEN_INVOCATION_BUDGETS[point][0],
+                    )
+                    self.assertEqual(
+                        first_evidence.simulated_broker_constructions,
+                        first_evidence.candidate_runtime_calls
+                        + first_evidence.production_loader_calls,
+                    )
+                    self.assertEqual(
+                        (harness.provider.credential_reads, harness.provider.account_requests),
+                        (0, 0),
                     )
                     published_before = None
                     if artifact_count:
                         artifact = next((harness.output_root / "system-paper-slots").iterdir())
                         published_before = (artifact.read_bytes(), artifact.stat().st_ino)
+                    recovery_provider = DeterministicPublicProvider(
+                        "2026-08-02T12:20:12.000Z"
+                    )
+                    recovery_evidence = InvocationEvidence()
                     recovered = harness.run(
                         worker_id="fault-worker-b",
                         clock_at="2026-08-02T12:20:12.000Z",
-                        provider=DeterministicPublicProvider("2026-08-02T12:20:12.000Z"),
+                        provider=recovery_provider,
+                        evidence=recovery_evidence,
                     )
                     expected_outcome = (
                         "RESUMED_INPUT" if durable_stage == "INPUT" else
                         "RESUMED_RESULT" if durable_stage == "RESULT" else "EXECUTED"
                     )
                     harness.assert_finished(recovered, expected_outcome=expected_outcome)
-                    expected_counts = (
-                        (0, 0, 1) if durable_stage == "INPUT" else
-                        (0, 0, 0) if durable_stage == "RESULT" else (1, 4, 1)
+                    recovery_budget = FROZEN_INVOCATION_BUDGETS[point][1]
+                    self.assertEqual(
+                        InvocationEvidence.counts(recovery_provider, recovery_evidence),
+                        recovery_budget,
                     )
                     self.assertEqual(
                         tuple(recovered[key] for key in (
                             "provider_invocation_count", "network_request_count",
                             "candidate_runtime_invocation_count",
-                        )), expected_counts,
+                        )), recovery_budget[:3],
+                    )
+                    self.assertEqual(recovered["loader_replay_count"], 1)
+                    self.assertEqual(
+                        recovery_evidence.simulated_broker_constructions,
+                        recovery_evidence.candidate_runtime_calls
+                        + recovery_evidence.production_loader_calls,
+                    )
+                    self.assertEqual(
+                        (recovery_provider.credential_reads, recovery_provider.account_requests),
+                        (0, 0),
                     )
                     if published_before is not None:
                         artifact = next((harness.output_root / "system-paper-slots").iterdir())
@@ -273,7 +448,7 @@ class ProviderFaultMatrixTests(unittest.TestCase):
             return self._capture(now, request, network_request_count=3)
 
         def stale(request):
-            return self._capture(now, request, captured_at="2026-08-02T12:20:11.000Z")
+            return self._capture(now, request, captured_at="2026-08-02T12:04:59.999Z")
 
         def changed_hash(request):
             bundle = make_bundle(observed_at=request.scheduled_for)
@@ -283,7 +458,6 @@ class ProviderFaultMatrixTests(unittest.TestCase):
         def binary_float(request):
             bundle = make_bundle(observed_at=request.scheduled_for)
             bundle["bbo"] = {"bid_price": 99.99, "ask_price": "100.01"}
-            bundle["bundle_hash"] = artifact_self_hash(bundle, "bundle_hash")
             return self._capture(now, request, public_market_bundle=bundle)
 
         def private_account(request):
@@ -292,18 +466,24 @@ class ProviderFaultMatrixTests(unittest.TestCase):
             ))
 
         cases = (
-            ("malformed", malformed), ("duplicate", duplicate), ("reordered", reordered),
-            ("count", wrong_count), ("stale", stale), ("changed_hash", changed_hash),
-            ("float", binary_float), ("private_account", private_account),
+            ("malformed", malformed, "SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_INVALID"),
+            ("duplicate", duplicate, "SYSTEM_PAPER_SCHEDULE_INPUT_REQUEST_INVALID"),
+            ("reordered", reordered, "SYSTEM_PAPER_SCHEDULE_INPUT_REQUEST_INVALID"),
+            ("count", wrong_count, "SYSTEM_PAPER_SCHEDULE_INPUT_REQUEST_INVALID"),
+            ("stale", stale, "SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_WINDOW_INVALID"),
+            ("changed_hash", changed_hash, "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID"),
+            ("float", binary_float, "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID"),
+            ("private_account", private_account, "SYSTEM_PAPER_SCHEDULE_INPUT_REQUEST_INVALID"),
         )
-        for name, provider in cases:
+        for name, provider, reason_code in cases:
             with self.subTest(case=name):
                 harness = self._harness()
                 try:
-                    with self.assertRaises((SystemPaperScheduleError, ValueError, TypeError)):
+                    with self.assertRaises(SystemPaperScheduleError) as raised:
                         harness.run(
                             worker_id="provider-worker", clock_at=now, provider=provider
                         )
+                    self.assertEqual(raised.exception.reason_code, reason_code)
                     stage, artifacts, inputs, results, terminal = harness.durable_facts()
                     self.assertEqual((stage, artifacts, inputs, results, terminal), (
                         "NONE", 0, 0, 0, None
