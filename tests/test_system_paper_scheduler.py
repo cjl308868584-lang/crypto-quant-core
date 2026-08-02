@@ -16,6 +16,7 @@ from crypto_quant.system_paper_plan import build_system_paper_plan
 from crypto_quant.system_paper_runtime import (
     SystemPaperSlotInputs,
     build_initial_system_paper_runtime_snapshot,
+    load_system_paper_slot_result_bytes,
     run_system_paper_slot,
     system_paper_slot_hash,
 )
@@ -1486,15 +1487,40 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
         )
         self.assertEqual(summary["loader_replay_count"], loader_replays)
         self.assertIsInstance(summary["slot_id"], str)
-        for name in (
-            "result_path_or_null", "result_sha256_or_null", "slot_hash_or_null",
-            "runtime_snapshot_hash_or_null", "risk_state_or_null",
-        ):
-            self.assertTrue(summary[name] is None or isinstance(summary[name], str))
         self.assertEqual(summary["safety_counts"], {
             "credential_reads": 0, "account_requests": 0,
             "real_broker_calls": 0, "real_order_writes": 0,
         })
+
+    def assert_artifact_summary(self, summary):
+        directory = self.output_root.resolve() / "system-paper-slots"
+        artifacts = tuple(directory.iterdir())
+        self.assertEqual(len(artifacts), 1)
+        artifact = artifacts[0]
+        body = artifact.read_bytes()
+        loaded = load_system_paper_slot_result_bytes(body)
+        expected_path = str((directory / (loaded["slot_id"] + ".json")).resolve())
+        self.assertEqual(artifact.resolve(), Path(expected_path))
+        self.assertEqual(summary["slot_id"], loaded["slot_id"])
+        self.assertEqual(summary["result_path_or_null"], expected_path)
+        self.assertEqual(summary["result_sha256_or_null"], hashlib.sha256(body).hexdigest())
+        self.assertEqual(summary["slot_hash_or_null"], loaded["slot_hash"])
+        self.assertEqual(
+            summary["runtime_snapshot_hash_or_null"],
+            loaded["runtime_snapshot"]["snapshot_hash"],
+        )
+        self.assertEqual(
+            summary["risk_state_or_null"], loaded["runtime_snapshot"]["risk_state"]
+        )
+
+    def assert_empty_artifact_summary(self, summary):
+        self.assertEqual(
+            tuple(summary[name] for name in (
+                "result_path_or_null", "result_sha256_or_null", "slot_hash_or_null",
+                "runtime_snapshot_hash_or_null", "risk_state_or_null",
+            )),
+            (None, None, None, None, None),
+        )
 
     def test_run_then_same_slot_is_zero_capture_zero_runtime_idempotent(self):
         provider = RecordingProvider(self.now)
@@ -1503,6 +1529,8 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
 
         self.assert_summary_shape(first, outcome="EXECUTED", counts=(1, 4, 1), loader_replays=1)
         self.assert_summary_shape(second, outcome="ALREADY_SUCCEEDED", counts=(0, 0, 0), loader_replays=1)
+        self.assert_artifact_summary(first)
+        self.assert_artifact_summary(second)
 
         self.assertEqual(first["outcome"], "EXECUTED")
         self.assertEqual(second["outcome"], "ALREADY_SUCCEEDED")
@@ -1539,6 +1567,7 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             BombProvider(), worker_id="worker-b", clock=lambda: recovered_at
         )
         self.assert_summary_shape(resumed_input, outcome="RESUMED_INPUT", counts=(0, 0, 1), loader_replays=1)
+        self.assert_artifact_summary(resumed_input)
         self.assertEqual(resumed_input["outcome"], "RESUMED_INPUT")
         self.assertEqual(
             (resumed_input["provider_invocation_count"], resumed_input["network_request_count"]),
@@ -1559,6 +1588,7 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             BombProvider(), worker_id="worker-b", clock=lambda: recovered_at
         )
         self.assert_summary_shape(resumed_result, outcome="RESUMED_RESULT", counts=(0, 0, 0), loader_replays=1)
+        self.assert_artifact_summary(resumed_result)
         self.assertEqual(resumed_result["outcome"], "RESUMED_RESULT")
         self.assertEqual(
             (
@@ -1582,6 +1612,7 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             state.claim(policy.current_slot(self.now), worker_id="owner", claimed_at=self.now)
         result = self.invoke_runner(BombProvider(), clock=clock, worker_id="worker-b")
         self.assert_summary_shape(result, outcome="BUSY", counts=(0, 0, 0), loader_replays=0)
+        self.assert_empty_artifact_summary(result)
         self.assertEqual(reads, ["read"])
         self.assertEqual(result["outcome"], "BUSY")
         self.assertEqual(
@@ -1666,6 +1697,7 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
             state.connection.commit()
         result = self.invoke_runner(BombProvider())
         self.assert_summary_shape(result, outcome="TERMINAL_INELIGIBLE", counts=(0, 0, 0), loader_replays=0)
+        self.assert_empty_artifact_summary(result)
         self.assertEqual(result["outcome"], "TERMINAL_INELIGIBLE")
         self.assertEqual(
             tuple(result[name] for name in (
