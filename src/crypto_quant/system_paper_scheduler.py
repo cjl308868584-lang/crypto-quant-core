@@ -254,6 +254,18 @@ def _event_projection(
             raise SystemPaperScheduleError(
                 "SYSTEM_PAPER_SCHEDULE_EVENT_PAYLOAD_HASH_MISMATCH"
             )
+        event_identity = {
+            "sequence": sequence,
+            "event_type": event_type,
+            "slot_id": slot_id,
+            "event_time": event_time_text,
+            "payload_hash": payload_hash,
+            "previous_event_hash": previous_hash,
+        }
+        if source.get("event_id") != stable_id(
+            "system_paper_schedule_event", event_identity
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_EVENT_ID_MISMATCH")
         body = {
             "sequence": sequence,
             "event_id": source.get("event_id"),
@@ -505,6 +517,10 @@ class SystemPaperScheduleState:
                 raise SystemPaperScheduleError(
                     "SYSTEM_PAPER_SCHEDULE_EVENT_PAYLOAD_INVALID"
                 ) from error
+            if row["payload_json"] != canonical_json(payload):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_EVENT_PAYLOAD_CANONICAL_INVALID"
+                )
             events.append(
                 {
                     "sequence": row["sequence"],
@@ -640,6 +656,10 @@ class SystemPaperScheduleState:
     ) -> None:
         self._validate_slot(current_slot)
         recorded, recorded_text = _utc(recorded_at)
+        if current_slot != self.policy.current_slot(recorded):
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_CURRENT_SLOT_MISMATCH"
+            )
         try:
             self._transaction()
             self.verify_integrity()

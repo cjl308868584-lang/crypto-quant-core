@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import tempfile
@@ -5,7 +6,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
-from crypto_quant.canonical import stable_id
+from crypto_quant.canonical import business_hash, stable_id
 from crypto_quant.system_paper_plan import build_system_paper_plan
 from crypto_quant.system_paper_scheduler import (
     SystemPaperScheduleError,
@@ -140,13 +141,32 @@ class SystemPaperScheduleStateTests(unittest.TestCase):
     def test_event_time_must_not_go_backwards(self):
         self.claim("worker-a", self.now)
         with SystemPaperScheduleState(self.state_path, self.policy) as state:
+            state.connection.execute("BEGIN IMMEDIATE")
             with self.assertRaisesRegex(
                 SystemPaperScheduleError, "SYSTEM_PAPER_SCHEDULE_EVENT_TIME_ORDER_INVALID"
             ):
-                state.record_gaps(
-                    self.policy.current_slot("2026-08-02T20:05:11.000Z"),
-                    recorded_at="2026-08-02T12:05:10.000Z",
+                state._append_locked(
+                    "MISSED",
+                    self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z"),
+                    "2026-08-02T12:05:10.000Z",
+                    self.event_payload(
+                        self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z"),
+                        reason_code="MISSED_NO_CONTEMPORANEOUS_CAPTURE",
+                    ),
                 )
+            state.connection.rollback()
+
+    def test_record_gaps_rejects_a_future_slot_before_appending_events(self):
+        first = self.policy.current_slot("2026-08-02T04:05:11.000Z")
+        future = self.policy.current_slot("2026-08-02T16:05:11.000Z")
+        with SystemPaperScheduleState(self.state_path, self.policy) as state:
+            state.claim(first, worker_id="worker-a", claimed_at="2026-08-02T04:05:11.000Z")
+            before = state.events()
+            with self.assertRaisesRegex(
+                SystemPaperScheduleError, "SYSTEM_PAPER_SCHEDULE_CURRENT_SLOT_MISMATCH"
+            ):
+                state.record_gaps(future, recorded_at=self.now)
+            self.assertEqual(state.events(), before)
 
     def test_event_payload_or_hash_tampering_is_detected(self):
         self.claim("worker-a", self.now)
@@ -156,6 +176,57 @@ class SystemPaperScheduleStateTests(unittest.TestCase):
         connection.commit()
         connection.close()
         with self.assertRaisesRegex(SystemPaperScheduleError, "PAYLOAD_HASH_MISMATCH"):
+            SystemPaperScheduleState(self.state_path, self.policy)
+
+    def test_semantically_identical_noncanonical_payload_json_is_detected(self):
+        self.claim("worker-a", self.now)
+        connection = sqlite3.connect(str(self.state_path))
+        payload_json = connection.execute(
+            "SELECT payload_json FROM schedule_events WHERE sequence=1"
+        ).fetchone()[0]
+        connection.execute("DROP TRIGGER schedule_events_no_update")
+        connection.execute(
+            "UPDATE schedule_events SET payload_json=? WHERE sequence=1",
+            (
+                json.dumps(
+                    json.loads(payload_json), sort_keys=True, separators=(", ", ": ")
+                ),
+            ),
+        )
+        connection.commit()
+        connection.close()
+        with self.assertRaisesRegex(SystemPaperScheduleError, "PAYLOAD_CANONICAL"):
+            SystemPaperScheduleState(self.state_path, self.policy)
+
+    def test_tampered_event_id_is_detected_even_with_a_matching_event_hash(self):
+        self.claim("worker-a", self.now)
+        connection = sqlite3.connect(str(self.state_path))
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            "SELECT * FROM schedule_events WHERE sequence=1"
+        ).fetchone()
+        payload = json.loads(row["payload_json"])
+        tampered_id = "system_paper_schedule_event_" + "f" * 64
+        event_hash = business_hash(
+            {
+                "sequence": row["sequence"],
+                "event_id": tampered_id,
+                "event_type": row["event_type"],
+                "slot_id": row["slot_id"],
+                "event_time": row["event_time"],
+                "payload": payload,
+                "payload_hash": row["payload_hash"],
+                "previous_event_hash": row["previous_event_hash"],
+            }
+        )
+        connection.execute("DROP TRIGGER schedule_events_no_update")
+        connection.execute(
+            "UPDATE schedule_events SET event_id=?, event_hash=? WHERE sequence=1",
+            (tampered_id, event_hash),
+        )
+        connection.commit()
+        connection.close()
+        with self.assertRaisesRegex(SystemPaperScheduleError, "EVENT_ID_MISMATCH"):
             SystemPaperScheduleState(self.state_path, self.policy)
 
     def test_symlink_and_hardlinked_state_paths_are_rejected(self):
