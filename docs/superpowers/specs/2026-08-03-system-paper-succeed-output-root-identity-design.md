@@ -33,7 +33,8 @@ invocation 预检和发布所绑定的目录，因此这是发布阻断缺陷。
 - `SystemPaperScheduleState.succeed()` 新增必填 keyword-only 参数
   `expected_output_root_identity: Tuple[int, int]`；
 - runner 必须把保留句柄的 exact identity 传入状态层；
-- `_artifact_body()` 接受同一 expected identity，并在读取前验证按路径打开的 root 描述符；
+- `_artifact_body()` 接受可选的同一 expected identity，并在提供时验证按路径打开的 root
+  描述符；`succeed()` 调用此 helper 时必须提供身份，现有父链和只读 replay 调用不扩展接口；
 - `succeed()` 在 artifact 验证之后、提交 `SUCCEEDED` 前再次验证当前路径仍指向同一身份；
 - 身份缺失、格式非法或不匹配均失败关闭并回滚。
 
@@ -64,7 +65,7 @@ def succeed(
 
 1. 重放并验证事件链、claim 与 prepared result；
 2. 验证 prepared `output_root_hash` 与 artifact path 派生路径一致；
-3. `_artifact_body()` 使用 no-follow、owner-only 目录句柄打开 root，要求其
+3. `_artifact_body()` 使用 no-follow、owner-only 目录句柄打开 root，`succeed()` 要求其
    `(st_dev, st_ino)` 等于 expected identity；
 4. 读取并验证 exact artifact bytes、SHA-256、单链接、owner、模式、大小和当前文件身份；
 5. 再按路径 no-follow 打开 root，验证 owner/mode/identity，证明 pathname 仍附着于冻结目录；
