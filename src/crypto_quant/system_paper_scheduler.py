@@ -1,5 +1,6 @@
 """Crash-safe, append-only scheduling primitives for System Paper slots."""
 
+import errno
 import hashlib
 import json
 import os
@@ -8,7 +9,8 @@ import stat
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from types import MappingProxyType
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from .canonical import business_hash, canonical_json, stable_id, utc_datetime
 from .evidence import artifact_self_hash
@@ -20,10 +22,14 @@ from .system_paper_broker import (
 from .system_paper_plan import system_paper_plan_reasons
 from .system_paper_runtime import (
     SystemPaperRuntimeError,
+    SystemPaperSlotInputs,
     _verify_bundle,
     _verify_snapshot,
+    build_initial_system_paper_runtime_snapshot,
     load_system_paper_slot_result_bytes,
+    run_system_paper_slot,
 )
+from .market_data_cli import _publish_immutable
 
 
 _POLICY_TOKEN = object()
@@ -59,6 +65,55 @@ class SystemPaperScheduleError(ValueError):
     def __init__(self, reason_code: str):
         super().__init__(reason_code)
         self.reason_code = reason_code
+
+
+class SystemPaperInjectedFault(RuntimeError):
+    """A test-only interruption at a documented durable boundary."""
+
+
+_FROZEN_FAULT_POINTS = frozenset(
+    (
+        "AFTER_CLAIM_COMMIT",
+        "BEFORE_CLAIM_COMMIT",
+        "BEFORE_INPUT_PROVIDER",
+        "AFTER_INPUT_PROVIDER_BEFORE_COMMIT",
+        "BEFORE_INPUT_PREPARED_COMMIT",
+        "AFTER_INPUT_PREPARED_COMMIT",
+        "AFTER_RUNTIME_BEFORE_RESULT_COMMIT",
+        "BEFORE_RESULT_PREPARED_COMMIT",
+        "AFTER_RESULT_PREPARED_COMMIT",
+        "DURING_ARTIFACT_WRITE",
+        "AFTER_ARTIFACT_FSYNC_BEFORE_COMMIT",
+        "AFTER_ARTIFACT_PUBLISH_BEFORE_SUCCESS",
+        "BEFORE_SUCCESS_COMMIT",
+    )
+)
+_FROZEN_FAULT_MODES = frozenset(("CRASH", "ENOSPC"))
+
+
+@dataclass(frozen=True, init=False)
+class SystemPaperFaultInjector:
+    """Validated, immutable fault configuration; inert when empty."""
+
+    points: Mapping[str, str]
+
+    def __init__(self, points: Mapping[str, str]):
+        if not isinstance(points, Mapping) or any(
+            not isinstance(point, str)
+            or not isinstance(mode, str)
+            or point not in _FROZEN_FAULT_POINTS
+            or mode not in _FROZEN_FAULT_MODES
+            for point, mode in points.items()
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_FAULT_INVALID")
+        object.__setattr__(self, "points", MappingProxyType(dict(points)))
+
+    def maybe_raise(self, point: str) -> None:
+        mode = self.points.get(point)
+        if mode == "CRASH":
+            raise SystemPaperInjectedFault(point)
+        if mode == "ENOSPC":
+            raise OSError(errno.ENOSPC, point)
 
 
 def _sha256(value: bytes) -> str:
@@ -1607,4 +1662,355 @@ class SystemPaperScheduleState:
             )
         except Exception:
             self.connection.rollback()
+            raise
+
+    def fail(
+        self,
+        claim: SystemPaperClaim,
+        *,
+        reason_code: str,
+        failed_at: object,
+    ) -> None:
+        """Close only this owned attempt, retaining its durable input/result."""
+
+        if (
+            not isinstance(claim, SystemPaperClaim)
+            or not isinstance(reason_code, str)
+            or not reason_code
+            or not reason_code.isascii()
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_FAIL_INVALID")
+        self._validate_slot(claim.slot)
+        _, failed_text = _utc(failed_at)
+        try:
+            self._transaction()
+            self.verify_integrity()
+            state = self.slot_projection().get(claim.slot.slot_id)
+            active = None if state is None else state["active_claim"]
+            if (
+                state is None
+                or state["attempt_status"] != "CLAIMED"
+                or active is None
+                or active["worker_id"] != claim.worker_id
+                or active["attempt"] != claim.attempt
+                or active["claimed_at"] != claim.claimed_at
+                or active["lease_expires_at"] != claim.lease_expires_at
+            ):
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_FAIL_CLAIM_INVALID")
+            self._append_locked(
+                "FAILED",
+                claim.slot,
+                failed_text,
+                {
+                    **_slot_core(claim.slot, self.policy),
+                    "worker_id": claim.worker_id,
+                    "attempt": claim.attempt,
+                    "reason_code": reason_code,
+                },
+            )
+            self.verify_integrity()
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def succeed(
+        self,
+        claim: SystemPaperClaim,
+        *,
+        artifact_path: Path,
+        completed_at: object,
+    ) -> None:
+        """Commit success only after the prepared bytes are safely published."""
+
+        if not isinstance(claim, SystemPaperClaim):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_SUCCESS_INVALID")
+        self._validate_slot(claim.slot)
+        path = Path(artifact_path).expanduser()
+        if (
+            not path.is_absolute()
+            or path.name != claim.slot.slot_id + ".json"
+            or path.parent.name != "system-paper-slots"
+        ):
+            raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_RESULT_ARTIFACT_INVALID")
+        output_root = path.parent.parent
+        _, completed_text = _utc(completed_at)
+        try:
+            self._transaction()
+            self.verify_integrity()
+            state = self.slot_projection().get(claim.slot.slot_id)
+            active = None if state is None else state["active_claim"]
+            if (
+                state is None
+                or state["durable_stage"] != "RESULT"
+                or state["attempt_status"] != "CLAIMED"
+                or active is None
+                or active["worker_id"] != claim.worker_id
+                or active["attempt"] != claim.attempt
+                or active["claimed_at"] != claim.claimed_at
+                or active["lease_expires_at"] != claim.lease_expires_at
+            ):
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_SUCCESS_CLAIM_INVALID")
+            record = self._load_prepared_result(claim.slot)
+            row = self.connection.execute(
+                "SELECT output_root_hash FROM prepared_results WHERE slot_id=?",
+                (claim.slot.slot_id,),
+            ).fetchone()
+            if row is None or row["output_root_hash"] != _output_root_hash(output_root):
+                raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_MISMATCH")
+            _artifact_body(
+                output_root,
+                claim.slot,
+                expected_bytes=record["result_bytes"],
+                expected_sha256=record["result_sha256"],
+            )
+            self._append_locked(
+                "SUCCEEDED",
+                claim.slot,
+                completed_text,
+                {
+                    **_slot_core(claim.slot, self.policy),
+                    "worker_id": claim.worker_id,
+                    "attempt": claim.attempt,
+                    "result_sha256": record["result_sha256"],
+                    "runtime_snapshot_hash": record["payload"]["runtime_snapshot"][
+                        "snapshot_hash"
+                    ],
+                    "output_root_hash": row["output_root_hash"],
+                },
+            )
+            self.verify_integrity()
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+
+
+_RUNNER_SAFETY_COUNTS = {
+    "credential_reads": 0,
+    "account_requests": 0,
+    "real_broker_calls": 0,
+    "real_order_writes": 0,
+}
+
+
+def _runner_summary(
+    *,
+    outcome: str,
+    slot: SystemPaperSlot,
+    provider_invocation_count: int,
+    network_request_count: int,
+    candidate_runtime_invocation_count: int,
+    loader_replay_count: int,
+    result_path: Optional[Path] = None,
+    result_bytes: Optional[bytes] = None,
+    result: Optional[Mapping[str, Any]] = None,
+) -> Mapping[str, Any]:
+    if result_path is None or result_bytes is None or result is None:
+        result_path_text = result_sha256 = slot_hash = snapshot_hash = risk_state = None
+    else:
+        result_path_text = str(result_path.resolve())
+        result_sha256 = _sha256(result_bytes)
+        slot_hash = result["slot_hash"]
+        snapshot_hash = result["runtime_snapshot"]["snapshot_hash"]
+        risk_state = result["runtime_snapshot"]["risk_state"]
+    return {
+        "outcome": outcome,
+        "slot_id": slot.slot_id,
+        "provider_invocation_count": provider_invocation_count,
+        "network_request_count": network_request_count,
+        "candidate_runtime_invocation_count": candidate_runtime_invocation_count,
+        "loader_replay_count": loader_replay_count,
+        "result_path_or_null": result_path_text,
+        "result_sha256_or_null": result_sha256,
+        "slot_hash_or_null": slot_hash,
+        "runtime_snapshot_hash_or_null": snapshot_hash,
+        "risk_state_or_null": risk_state,
+        "safety_counts": dict(_RUNNER_SAFETY_COUNTS),
+    }
+
+
+def _load_runner_result(
+    state: SystemPaperScheduleState,
+    slot: SystemPaperSlot,
+    output_root: Path,
+) -> Tuple[bytes, Mapping[str, Any]]:
+    """Replay durable result bytes with the trusted, complete artifact parent chain."""
+
+    prepared = state.load_prepared_result(slot)
+    parents = state.successful_parent_result_bodies(slot, output_root=output_root)
+    result = load_system_paper_slot_result_bytes(
+        prepared["result_bytes"], parent_result_bodies=parents
+    )
+    return prepared["result_bytes"], result
+
+
+def run_due_system_paper_slot(
+    *,
+    state_path: Path,
+    output_root: Path,
+    plan: Mapping[str, Any],
+    worker_id: str,
+    public_input_provider: Callable[[SystemPaperInputRequest], SystemPaperInputCapture],
+    fill_scenario: FillScenario,
+    clock: Callable[[], str],
+    fault_injector: Optional[SystemPaperFaultInjector] = None,
+) -> Mapping[str, Any]:
+    """Run one due slot through the fixed durable capture→result→publish flow."""
+
+    sampled_at = clock()
+    injector = fault_injector or SystemPaperFaultInjector({})
+    if not isinstance(injector, SystemPaperFaultInjector):
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_FAULT_INVALID")
+    policy = SystemPaperSchedulePolicy.create(plan)
+    slot = policy.current_slot(sampled_at)
+    root = Path(output_root).expanduser().resolve()
+    root_hash = _output_root_hash(root)
+    result_path = root / "system-paper-slots" / (slot.slot_id + ".json")
+    claim: Optional[SystemPaperClaim] = None
+    provider_calls = 0
+    network_calls = 0
+    runtime_calls = 0
+
+    with SystemPaperScheduleState(Path(state_path), policy) as state:
+        try:
+            state.record_gaps(slot, recorded_at=sampled_at)
+            claim = state.claim(slot, worker_id=worker_id, claimed_at=sampled_at)
+            if claim.outcome == "BUSY":
+                return _runner_summary(
+                    outcome="BUSY",
+                    slot=slot,
+                    provider_invocation_count=0,
+                    network_request_count=0,
+                    candidate_runtime_invocation_count=0,
+                    loader_replay_count=0,
+                )
+            if claim.outcome == "TERMINAL_INELIGIBLE":
+                return _runner_summary(
+                    outcome="TERMINAL_INELIGIBLE",
+                    slot=slot,
+                    provider_invocation_count=0,
+                    network_request_count=0,
+                    candidate_runtime_invocation_count=0,
+                    loader_replay_count=0,
+                )
+            if claim.outcome == "ALREADY_SUCCEEDED":
+                result_bytes, result = _load_runner_result(state, slot, root)
+                _artifact_body(
+                    root,
+                    slot,
+                    expected_bytes=result_bytes,
+                    expected_sha256=_sha256(result_bytes),
+                )
+                return _runner_summary(
+                    outcome="ALREADY_SUCCEEDED",
+                    slot=slot,
+                    provider_invocation_count=0,
+                    network_request_count=0,
+                    candidate_runtime_invocation_count=0,
+                    loader_replay_count=1,
+                    result_path=result_path,
+                    result_bytes=result_bytes,
+                    result=result,
+                )
+
+            if claim.outcome == "CLAIMED":
+                injector.maybe_raise("BEFORE_INPUT_PROVIDER")
+                request = SystemPaperInputRequest.for_slot(policy, slot)
+                capture = public_input_provider(request)
+                provider_calls = 1
+                network_calls = capture.network_request_count if isinstance(
+                    capture, SystemPaperInputCapture
+                ) else 0
+                injector.maybe_raise("AFTER_INPUT_PROVIDER_BEFORE_COMMIT")
+                parents = state.successful_parent_result_bodies(slot, output_root=root)
+                previous_snapshot = (
+                    build_initial_system_paper_runtime_snapshot(plan)
+                    if not parents
+                    else load_system_paper_slot_result_bytes(
+                        parents[-1], parent_result_bodies=parents[:-1]
+                    )["runtime_snapshot"]
+                )
+                state.prepare_input(
+                    claim,
+                    plan=plan,
+                    capture=capture,
+                    previous_runtime_snapshot=previous_snapshot,
+                    fill_scenario=fill_scenario,
+                    output_root_hash=root_hash,
+                    prepared_at=sampled_at,
+                )
+                injector.maybe_raise("AFTER_INPUT_PREPARED_COMMIT")
+
+            prepared_input = state.load_prepared_input(slot)["payload"]
+            if prepared_input["output_root_hash"] != root_hash:
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_OUTPUT_ROOT_MISMATCH"
+                )
+            if claim.outcome != "RESUME_RESULT":
+                parents = state.successful_parent_result_bodies(slot, output_root=root)
+                candidate = run_system_paper_slot(
+                    SystemPaperSlotInputs(
+                        plan=prepared_input["plan"],
+                        scheduled_for=prepared_input["scheduled_for"],
+                        public_market_bundle=prepared_input["capture"]["public_market_bundle"],
+                        previous_runtime_snapshot=prepared_input["previous_runtime_snapshot"],
+                        fill_scenario=fill_scenario_from_payload(
+                            prepared_input["fill_scenario"]
+                        ),
+                    )
+                )
+                runtime_calls = 1
+                injector.maybe_raise("AFTER_RUNTIME_BEFORE_RESULT_COMMIT")
+                state.prepare_result(
+                    claim,
+                    result_bytes=canonical_json(candidate).encode("utf-8"),
+                    parent_result_bodies=parents,
+                    prepared_at=sampled_at,
+                )
+                injector.maybe_raise("AFTER_RESULT_PREPARED_COMMIT")
+
+            result_bytes, result = _load_runner_result(state, slot, root)
+            _publish_immutable(
+                root,
+                result_path.name,
+                result_bytes,
+                output_directory="system-paper-slots",
+                after_first_write=lambda: injector.maybe_raise("DURING_ARTIFACT_WRITE"),
+                after_payload_fsync=lambda: injector.maybe_raise(
+                    "AFTER_ARTIFACT_FSYNC_BEFORE_COMMIT"
+                ),
+            )
+            injector.maybe_raise("AFTER_ARTIFACT_PUBLISH_BEFORE_SUCCESS")
+            state.succeed(claim, artifact_path=result_path, completed_at=sampled_at)
+            outcome = {
+                "CLAIMED": "EXECUTED",
+                "RESUME_INPUT": "RESUMED_INPUT",
+                "RESUME_RESULT": "RESUMED_RESULT",
+            }[claim.outcome]
+            return _runner_summary(
+                outcome=outcome,
+                slot=slot,
+                provider_invocation_count=provider_calls,
+                network_request_count=network_calls,
+                candidate_runtime_invocation_count=runtime_calls,
+                loader_replay_count=1,
+                result_path=result_path,
+                result_bytes=result_bytes,
+                result=result,
+            )
+        except (SystemPaperInjectedFault, OSError):
+            raise
+        except Exception:
+            if claim is not None and claim.outcome in (
+                "CLAIMED", "RESUME_INPUT", "RESUME_RESULT",
+            ):
+                try:
+                    state.fail(
+                        claim,
+                        reason_code="SYSTEM_PAPER_RUNTIME_INTERRUPTED",
+                        failed_at=sampled_at,
+                    )
+                except Exception:
+                    pass
             raise

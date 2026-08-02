@@ -464,6 +464,43 @@ class MarketDataCliTests(unittest.TestCase):
                 if output.exists():
                     self.assertEqual(list(output.iterdir()), [])
 
+    def test_publisher_callbacks_are_optional_and_exception_safe(self):
+        from crypto_quant.market_data_cli import _publish_immutable
+
+        for callback_name in ("after_first_write", "after_payload_fsync"):
+            with self.subTest(callback_name=callback_name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary) / "root"
+                root.mkdir()
+                with self.assertRaisesRegex(RuntimeError, callback_name):
+                    _publish_immutable(
+                        root,
+                        "slot.json",
+                        b'{"slot":"exact"}',
+                        output_directory="system-paper-slots",
+                        **{callback_name: lambda name=callback_name: (_ for _ in ()).throw(RuntimeError(name))},
+                    )
+                self.assertFalse((root / "system-paper-slots" / "slot.json").exists())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            root.mkdir()
+            self.assertTrue(
+                _publish_immutable(
+                    root,
+                    "slot.json",
+                    b'{"slot":"exact"}',
+                    output_directory="system-paper-slots",
+                )
+            )
+            self.assertFalse(
+                _publish_immutable(
+                    root,
+                    "slot.json",
+                    b'{"slot":"exact"}',
+                    output_directory="system-paper-slots",
+                )
+            )
+
     def test_idempotent_returns_recheck_the_attached_directory_after_existing_and_collision_paths(self):
         import crypto_quant.market_data_cli as cli
 

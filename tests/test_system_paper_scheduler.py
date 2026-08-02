@@ -20,13 +20,39 @@ from crypto_quant.system_paper_runtime import (
     system_paper_slot_hash,
 )
 from crypto_quant.system_paper_scheduler import (
+    SystemPaperFaultInjector,
+    SystemPaperInjectedFault,
     SystemPaperInputCapture,
     SystemPaperInputRequest,
     SystemPaperScheduleError,
     SystemPaperSchedulePolicy,
     SystemPaperScheduleState,
+    run_due_system_paper_slot,
 )
 from tests.test_system_paper_runtime import make_bundle
+
+
+class RecordingProvider:
+    """A deterministic public-only capture boundary for runner behavior tests."""
+
+    def __init__(self, captured_at):
+        self.captured_at = captured_at
+        self.invocations = 0
+
+    def __call__(self, request):
+        self.invocations += 1
+        return SystemPaperInputCapture(
+            public_market_bundle=make_bundle(observed_at=request.scheduled_for),
+            capture_attempt_id="capture-" + request.slot_id[-12:],
+            captured_at=self.captured_at,
+            request_families=request.request_families,
+            network_request_count=4,
+        )
+
+
+class BombProvider:
+    def __call__(self, _request):
+        raise AssertionError("provider must not be invoked")
 
 
 class SystemPaperSchedulePolicyTests(unittest.TestCase):
@@ -1378,3 +1404,219 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
                 self.policy.slot_from_scheduled("2026-08-02T08:00:00.000Z"),
                 output_root=self.output_root,
             )
+
+
+class SystemPaperScheduleRunnerTests(unittest.TestCase):
+    """End-to-end exact-once behavior at the public runner boundary."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.state_path = Path(self.temp.name) / "state.sqlite"
+        self.output_root = Path(self.temp.name) / "output"
+        self.output_root.mkdir(mode=0o700)
+        os.chmod(self.output_root, 0o700)
+        self.plan = build_system_paper_plan()
+        self.now = "2026-08-02T12:05:11.000Z"
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def invoke_runner(self, provider, **extra):
+        return run_due_system_paper_slot(
+            state_path=self.state_path,
+            output_root=self.output_root,
+            plan=self.plan,
+            worker_id=extra.pop("worker_id", "worker-a"),
+            public_input_provider=provider,
+            fill_scenario=FillScenario.immediate_full(),
+            clock=extra.pop("clock", lambda: self.now),
+            **extra,
+        )
+
+    def test_run_then_same_slot_is_zero_capture_zero_runtime_idempotent(self):
+        provider = RecordingProvider(self.now)
+        first = self.invoke_runner(provider)
+        second = self.invoke_runner(BombProvider(), worker_id="worker-b")
+
+        self.assertEqual(first["outcome"], "EXECUTED")
+        self.assertEqual(second["outcome"], "ALREADY_SUCCEEDED")
+        self.assertEqual(
+            (
+                second["provider_invocation_count"],
+                second["network_request_count"],
+                second["candidate_runtime_invocation_count"],
+            ),
+            (0, 0, 0),
+        )
+        self.assertEqual(
+            Path(first["result_path_or_null"]).read_bytes(),
+            Path(second["result_path_or_null"]).read_bytes(),
+        )
+        self.assertEqual(first["safety_counts"], {
+            "credential_reads": 0,
+            "account_requests": 0,
+            "real_broker_calls": 0,
+            "real_order_writes": 0,
+        })
+
+    def test_recovery_uses_durable_input_then_durable_result_without_recapture(self):
+        provider = RecordingProvider(self.now)
+        with self.assertRaises(SystemPaperInjectedFault):
+            self.invoke_runner(
+                provider,
+                fault_injector=SystemPaperFaultInjector(
+                    {"AFTER_INPUT_PREPARED_COMMIT": "CRASH"}
+                ),
+            )
+        recovered_at = "2026-08-02T12:20:12.000Z"
+        resumed_input = self.invoke_runner(
+            BombProvider(), worker_id="worker-b", clock=lambda: recovered_at
+        )
+        self.assertEqual(resumed_input["outcome"], "RESUMED_INPUT")
+        self.assertEqual(
+            (resumed_input["provider_invocation_count"], resumed_input["network_request_count"]),
+            (0, 0),
+        )
+
+        second_state = Path(self.temp.name) / "result-state.sqlite"
+        self.state_path = second_state
+        provider = RecordingProvider(self.now)
+        with self.assertRaises(SystemPaperInjectedFault):
+            self.invoke_runner(
+                provider,
+                fault_injector=SystemPaperFaultInjector(
+                    {"AFTER_RESULT_PREPARED_COMMIT": "CRASH"}
+                ),
+            )
+        resumed_result = self.invoke_runner(
+            BombProvider(), worker_id="worker-b", clock=lambda: recovered_at
+        )
+        self.assertEqual(resumed_result["outcome"], "RESUMED_RESULT")
+        self.assertEqual(
+            (
+                resumed_result["provider_invocation_count"],
+                resumed_result["network_request_count"],
+                resumed_result["candidate_runtime_invocation_count"],
+                resumed_result["loader_replay_count"],
+            ),
+            (0, 0, 0, 1),
+        )
+
+    def test_runner_samples_clock_once_and_busy_has_no_artifact_summary(self):
+        reads = []
+
+        def clock():
+            reads.append("read")
+            return self.now
+
+        policy = SystemPaperSchedulePolicy.create(self.plan)
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            state.claim(policy.current_slot(self.now), worker_id="owner", claimed_at=self.now)
+        result = self.invoke_runner(BombProvider(), clock=clock, worker_id="worker-b")
+        self.assertEqual(reads, ["read"])
+        self.assertEqual(result["outcome"], "BUSY")
+        self.assertEqual(
+            (
+                result["provider_invocation_count"],
+                result["network_request_count"],
+                result["candidate_runtime_invocation_count"],
+                result["result_path_or_null"],
+                result["result_sha256_or_null"],
+                result["slot_hash_or_null"],
+                result["runtime_snapshot_hash_or_null"],
+                result["risk_state_or_null"],
+            ),
+            (0, 0, 0, None, None, None, None, None),
+        )
+
+    def test_prepared_input_is_bound_to_its_output_root_before_runtime(self):
+        with self.assertRaises(SystemPaperInjectedFault):
+            self.invoke_runner(
+                RecordingProvider(self.now),
+                fault_injector=SystemPaperFaultInjector(
+                    {"AFTER_INPUT_PREPARED_COMMIT": "CRASH"}
+                ),
+            )
+        other_root = Path(self.temp.name) / "other-output"
+        other_root.mkdir(mode=0o700)
+        os.chmod(other_root, 0o700)
+        original_root, self.output_root = self.output_root, other_root
+        try:
+            with self.assertRaisesRegex(SystemPaperScheduleError, "OUTPUT_ROOT_MISMATCH"):
+                self.invoke_runner(
+                    BombProvider(),
+                    worker_id="worker-b",
+                    clock=lambda: "2026-08-02T12:20:12.000Z",
+                )
+        finally:
+            self.output_root = original_root
+        self.assertFalse((other_root / "system-paper-slots").exists())
+        policy = SystemPaperSchedulePolicy.create(self.plan)
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            durable = state.slot_projection()[policy.current_slot(self.now).slot_id]
+        self.assertEqual((durable["attempt_status"], durable["durable_stage"]), ("FAILED", "INPUT"))
+
+    def test_post_publish_crash_adopts_the_same_inode_and_succeeds_on_recovery(self):
+        with self.assertRaises(SystemPaperInjectedFault):
+            self.invoke_runner(
+                RecordingProvider(self.now),
+                fault_injector=SystemPaperFaultInjector(
+                    {"AFTER_ARTIFACT_PUBLISH_BEFORE_SUCCESS": "CRASH"}
+                ),
+            )
+        artifact = next((self.output_root / "system-paper-slots").iterdir())
+        before = (artifact.read_bytes(), artifact.stat().st_ino)
+        recovered = self.invoke_runner(
+            BombProvider(),
+            worker_id="worker-b",
+            clock=lambda: "2026-08-02T12:20:12.000Z",
+        )
+        self.assertEqual(recovered["outcome"], "RESUMED_RESULT")
+        self.assertEqual(
+            (artifact.read_bytes(), artifact.stat().st_ino), before
+        )
+
+    def test_terminal_ineligible_never_calls_the_provider(self):
+        policy = SystemPaperSchedulePolicy.create(self.plan)
+        slot = policy.current_slot(self.now)
+        with SystemPaperScheduleState(self.state_path, policy) as state:
+            state.connection.execute("BEGIN IMMEDIATE")
+            state._append_locked(
+                "MISSED",
+                slot,
+                self.now,
+                {
+                    "plan_hash": self.plan["plan_hash"],
+                    "schedule_policy_hash": policy.schedule_policy_hash,
+                    "scheduled_for": slot.scheduled_for,
+                    "due_at": slot.due_at,
+                    "expires_at": slot.expires_at,
+                    "reason_code": "MISSED_NO_CONTEMPORANEOUS_CAPTURE",
+                },
+            )
+            state.connection.commit()
+        result = self.invoke_runner(BombProvider())
+        self.assertEqual(result["outcome"], "TERMINAL_INELIGIBLE")
+        self.assertEqual(
+            (result["provider_invocation_count"], result["candidate_runtime_invocation_count"]),
+            (0, 0),
+        )
+
+    def test_fault_injector_is_inert_defensive_and_rejects_unknown_contract_values(self):
+        source = {}
+        injector = SystemPaperFaultInjector(source)
+        source["AFTER_INPUT_PREPARED_COMMIT"] = "CRASH"
+        injector.maybe_raise("AFTER_INPUT_PREPARED_COMMIT")
+        with self.assertRaises(SystemPaperInjectedFault):
+            SystemPaperFaultInjector({"AFTER_INPUT_PREPARED_COMMIT": "CRASH"}).maybe_raise(
+                "AFTER_INPUT_PREPARED_COMMIT"
+            )
+        with self.assertRaises(OSError) as error:
+            SystemPaperFaultInjector({"AFTER_INPUT_PREPARED_COMMIT": "ENOSPC"}).maybe_raise(
+                "AFTER_INPUT_PREPARED_COMMIT"
+            )
+        self.assertEqual(error.exception.errno, 28)
+        with self.assertRaises(SystemPaperScheduleError):
+            SystemPaperFaultInjector({"NOT_A_POINT": "CRASH"})
+        with self.assertRaises(SystemPaperScheduleError):
+            SystemPaperFaultInjector({"AFTER_INPUT_PREPARED_COMMIT": "OTHER"})

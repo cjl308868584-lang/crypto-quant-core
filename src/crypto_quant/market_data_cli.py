@@ -73,7 +73,11 @@ def _open_output_directory(
     output_directory: str = _OUTPUT_DIRECTORY,
 ) -> int:
     try:
-        os.mkdir(output_directory, dir_fd=root_fd)
+        os.mkdir(
+            output_directory,
+            0o700 if output_directory == "system-paper-slots" else 0o777,
+            dir_fd=root_fd,
+        )
     except FileExistsError:
         pass
     try:
@@ -224,13 +228,20 @@ def _write_and_sync(
     descriptor: int,
     payload: bytes,
     identity: Tuple[int, int],
+    *,
+    after_first_write: Optional[Callable[[], None]] = None,
 ) -> None:
     offset = 0
+    first_write = True
     while offset < len(payload):
         written = os.write(descriptor, payload[offset:])
         if written <= 0:
             raise OSError("temporary artifact write failed")
         offset += written
+        if first_write:
+            first_write = False
+            if after_first_write is not None:
+                after_first_write()
     os.fsync(descriptor)
     written_stat = os.fstat(descriptor)
     if (
@@ -287,6 +298,9 @@ def _publish_in_directory(
     artifact_name: str,
     payload: bytes,
     output_directory: str = _OUTPUT_DIRECTORY,
+    *,
+    after_first_write: Optional[Callable[[], None]] = None,
+    after_payload_fsync: Optional[Callable[[], None]] = None,
 ) -> bool:
     _require_selected_attached_directory(
         root_fd, directory_fd, output_directory
@@ -313,7 +327,14 @@ def _publish_in_directory(
     published = False
     try:
         temporary_name, temporary_fd, identity = _open_temporary_artifact(directory_fd)
-        _write_and_sync(temporary_fd, payload, identity)
+        _write_and_sync(
+            temporary_fd,
+            payload,
+            identity,
+            after_first_write=after_first_write,
+        )
+        if after_payload_fsync is not None:
+            after_payload_fsync()
         os.close(temporary_fd)
         temporary_fd = None
         _require_selected_attached_directory(
@@ -356,7 +377,7 @@ def _publish_in_directory(
             root_fd, directory_fd, output_directory
         )
         return True
-    except (MarketDataError, OSError) as error:
+    except Exception as error:
         if temporary_fd is not None:
             _close_without_reversing_result(temporary_fd)
             temporary_fd = None
@@ -373,7 +394,9 @@ def _publish_in_directory(
             raise MarketDataError("ARTIFACT_PUBLISH_FAILED") from rollback_error
         if isinstance(error, MarketDataError):
             raise
-        raise MarketDataError("ARTIFACT_PUBLISH_FAILED") from error
+        if isinstance(error, OSError):
+            raise MarketDataError("ARTIFACT_PUBLISH_FAILED") from error
+        raise
     finally:
         if temporary_fd is not None:
             _close_without_reversing_result(temporary_fd)
@@ -385,6 +408,8 @@ def _publish_immutable(
     payload: bytes,
     *,
     output_directory: str = _OUTPUT_DIRECTORY,
+    after_first_write: Optional[Callable[[], None]] = None,
+    after_payload_fsync: Optional[Callable[[], None]] = None,
 ) -> bool:
     """Publish bytes below a no-follow directory boundary without replacement."""
 
@@ -398,6 +423,8 @@ def _publish_immutable(
             artifact_name,
             payload,
             output_directory,
+            after_first_write=after_first_write,
+            after_payload_fsync=after_payload_fsync,
         )
     finally:
         if directory_fd is not None:
