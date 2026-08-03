@@ -39,6 +39,10 @@ from .system_paper_broker import (
     fill_scenario_payload,
 )
 from .system_paper_plan import system_paper_plan_reasons
+from .system_paper_public_input import (
+    SystemPaperPublicInputError,
+    load_system_paper_market_bundle_bytes,
+)
 
 
 _ZERO_HASH = "0" * 64
@@ -62,18 +66,6 @@ _SNAPSHOT_KEYS = {
     "risk_state",
     "active_order_or_null",
 }
-_MARKET_BUNDLE_KEYS = {
-    "bundle_hash",
-    "provider",
-    "observed_at",
-    "instrument_metadata_schema_version",
-    "instrument_metadata",
-    "closed_4h_klines",
-    "bbo",
-    "source_receipt_hashes",
-}
-
-
 class SystemPaperRuntimeError(ValueError):
     """A slot input or deterministic invariant failed closed."""
 
@@ -295,21 +287,32 @@ def _verify_bundle(
     scheduled_dt: datetime,
     scheduled_for: str,
 ):
-    if not isinstance(bundle, Mapping) or set(bundle) != _MARKET_BUNDLE_KEYS:
+    if not isinstance(bundle, Mapping):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_BUNDLE_INVALID")
-    value = dict(bundle)
-    if value.get("bundle_hash") != artifact_self_hash(value, "bundle_hash"):
-        raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_BUNDLE_HASH_MISMATCH")
+    try:
+        value = load_system_paper_market_bundle_bytes(
+            canonical_json(bundle).encode("utf-8")
+        )
+    except (TypeError, ValueError, SystemPaperPublicInputError) as error:
+        raise SystemPaperRuntimeError(
+            "SYSTEM_PAPER_MARKET_BUNDLE_INVALID"
+        ) from error
     if value.get("provider") != plan["market_data_policy"]["provider"]:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_PROVIDER_MISMATCH")
-    _, observed_at = _time(value.get("observed_at"))
-    if observed_at != scheduled_for:
+    _, source_scheduled_for = _time(value.get("scheduled_for"))
+    captured_dt, _captured_at = _time(value.get("captured_at"))
+    if source_scheduled_for != scheduled_for:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_BUNDLE_TIME_MISMATCH")
     klines = value.get("closed_4h_klines")
     if not isinstance(klines, list) or len(klines) < 21:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_KLINES_INVALID")
     for row in klines:
-        if not isinstance(row, Mapping) or set(row) != {"close", "source_row_hash"}:
+        if not isinstance(row, Mapping) or set(row) != {
+            "open_time",
+            "close_time",
+            "close",
+            "source_row_hash",
+        }:
             raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_KLINES_INVALID")
         _decimal(row["close"], "SYSTEM_PAPER_MARKET_KLINES_INVALID")
         source_hash = row["source_row_hash"]
@@ -324,19 +327,6 @@ def _verify_bundle(
     ask = _decimal(bbo["ask_price"], "SYSTEM_PAPER_MARKET_BBO_INVALID")
     if bid <= 0 or ask <= 0 or bid > ask:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_BBO_INVALID")
-    receipts = value.get("source_receipt_hashes")
-    if (
-        not isinstance(receipts, list)
-        or len(receipts) != 4
-        or len(set(receipts)) != 4
-        or any(
-            not isinstance(item, str)
-            or len(item) != 64
-            or any(character not in "0123456789abcdef" for character in item)
-            for item in receipts
-        )
-    ):
-        raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_RECEIPTS_INVALID")
     try:
         metadata_payload = dict(value["instrument_metadata"])
         embedded_schema_version = metadata_payload.pop("schema_version")
@@ -362,10 +352,10 @@ def _verify_bundle(
     ):
         raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_INSTRUMENT_MISMATCH")
     try:
-        metadata.assert_effective(scheduled_dt)
+        metadata.assert_effective(captured_dt)
     except ContractError as error:
         raise SystemPaperRuntimeError("SYSTEM_PAPER_MARKET_METADATA_STALE") from error
-    return value, metadata, bid, ask
+    return value, metadata, bid, ask, captured_dt
 
 
 def _drawdown_policy(plan: Mapping[str, Any]) -> DrawdownPolicy:
@@ -471,7 +461,7 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
     plan = _verified_plan(inputs.plan)
     scheduled_dt, scheduled_for = _time(inputs.scheduled_for)
     previous = _verify_snapshot(inputs.previous_runtime_snapshot, plan)
-    bundle, metadata, bid, ask = _verify_bundle(
+    bundle, metadata, bid, ask, captured_dt = _verify_bundle(
         inputs.public_market_bundle,
         plan,
         scheduled_dt,
@@ -582,7 +572,7 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
         broker = SimulatedBroker(inputs.fill_scenario)
         broker_result = broker.submit(
             SimulatedOrderCommand(
-                scheduled_for=scheduled_dt,
+                scheduled_for=captured_dt,
                 instrument_id=metadata.instrument_id,
                 side=order_side,
                 order_type="MARKET",
@@ -595,7 +585,7 @@ def run_system_paper_slot(inputs: SystemPaperSlotInputs) -> Dict[str, Any]:
                 risk_approved=True,
             ),
             SimulatedMarketEvidence(
-                observed_at=scheduled_dt,
+                observed_at=captured_dt,
                 instrument_metadata=metadata,
                 best_bid_price=bid,
                 best_ask_price=ask,

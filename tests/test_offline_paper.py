@@ -23,6 +23,8 @@ from crypto_quant.offline_paper import (
     offline_paper_run_reasons,
     offline_paper_run_trust_hash,
     minimum_paper_run_recorded_at,
+    replay_offline_paper_capture,
+    verified_offline_paper_market,
     _read_bounded,
 )
 
@@ -232,6 +234,17 @@ class _Stream:
 
 
 class OfflinePaperTests(unittest.TestCase):
+    def test_verified_market_view_requires_and_replays_an_issued_capture(self):
+        capture, _transport = valid_capture()
+
+        market = verified_offline_paper_market(capture)
+        replayed = replay_offline_paper_capture(capture.receipts)
+
+        self.assertEqual(market["decision_time"], capture.decision_time)
+        self.assertEqual(replayed.receipts, capture.receipts)
+        with self.assertRaisesRegex(OfflinePaperError, "PAPER_CAPTURE_UNVERIFIED"):
+            verified_offline_paper_market({"receipts": capture.receipts})
+
     def test_production_transport_disables_proxies_and_rejects_non_frozen_request(self):
         with mock.patch.dict(
             "os.environ",

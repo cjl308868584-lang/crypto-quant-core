@@ -107,7 +107,10 @@ class DeterministicPublicProvider:
     def __call__(self, request):
         self.invocations += 1
         capture = SystemPaperInputCapture(
-            public_market_bundle=make_bundle(observed_at=request.scheduled_for),
+            public_market_bundle=make_bundle(
+                scheduled_for=request.scheduled_for,
+                captured_at=self.captured_at,
+            ),
             capture_attempt_id="fault-capture-" + request.slot_id[-12:],
             captured_at=self.captured_at,
             request_families=request.request_families,
@@ -569,7 +572,10 @@ class ProviderFaultMatrixTests(unittest.TestCase):
     @staticmethod
     def _capture(now, request, **changes):
         values = {
-            "public_market_bundle": make_bundle(observed_at=request.scheduled_for),
+            "public_market_bundle": make_bundle(
+                scheduled_for=request.scheduled_for,
+                captured_at=now,
+            ),
             "capture_attempt_id": "provider-fault-" + request.slot_id[-12:],
             "captured_at": now,
             "request_families": request.request_families,
@@ -601,12 +607,18 @@ class ProviderFaultMatrixTests(unittest.TestCase):
             return self._capture(now, request, captured_at="2026-08-02T12:04:59.999Z")
 
         def changed_hash(request):
-            bundle = make_bundle(observed_at=request.scheduled_for)
+            bundle = make_bundle(
+                scheduled_for=request.scheduled_for,
+                captured_at=now,
+            )
             bundle["bbo"] = {"bid_price": "98.99", "ask_price": "100.01"}
             return self._capture(now, request, public_market_bundle=bundle)
 
         def binary_float(request):
-            bundle = make_bundle(observed_at=request.scheduled_for)
+            bundle = make_bundle(
+                scheduled_for=request.scheduled_for,
+                captured_at=now,
+            )
             bundle["bbo"] = {"bid_price": 99.99, "ask_price": "100.01"}
             return self._capture(now, request, public_market_bundle=bundle)
 
