@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/system-paper-start-receipt-v1.schema.json",
+  "title": "System Paper Start Receipt V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema","schema_version","receipt_id","receipt_hash","published_at","source_binding","observation","first_slot","cohort_started_at","cohort_tail_end","expected_slot_count","security_boundary","warnings"],
+  "properties": {
+    "$schema": {"const": "./system-paper-start-receipt-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "receipt_id": {"type":"string","pattern":"^system_paper_start_receipt_[0-9a-f]{64}$"},
+    "receipt_hash": {"$ref":"#/$defs/hash"},
+    "published_at": {"$ref":"#/$defs/time"},
+    "source_binding": {"type":"object"},
+    "observation": {"type":"object"},
+    "first_slot": {"type":"object"},
+    "cohort_started_at": {"$ref":"#/$defs/time"},
+    "cohort_tail_end": {"$ref":"#/$defs/time"},
+    "expected_slot_count": {"const":540},
+    "security_boundary": {
+      "type":"object","additionalProperties":false,
+      "required":["launchctl_read_count","network_request_count","runtime_invocation_count","scheduler_invocation_count","state_write_count","credential_count","broker_request_count","order_submission_count"],
+      "properties":{
+        "launchctl_read_count":{"const":1},"network_request_count":{"const":0},"runtime_invocation_count":{"const":0},"scheduler_invocation_count":{"const":0},"state_write_count":{"const":0},"credential_count":{"const":0},"broker_request_count":{"const":0},"order_submission_count":{"const":0}
+      }
+    },
+    "warnings": {
+      "type":"array",
+      "prefixItems":[{"const":"START_RECEIPT_BEGINS_PAPER_RESEARCH_ONLY"},{"const":"NINETY_DAY_RESULT_NOT_YET_AVAILABLE"},{"const":"NO_PROFITABILITY_OR_AI_ADVANTAGE_CLAIM"},{"const":"NO_LIVE_TRADING_AUTHORITY"}],
+      "items":false,"minItems":4,"maxItems":4
+    }
+  },
+  "$defs": {
+    "hash":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "time":{"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"}
+  }
+}

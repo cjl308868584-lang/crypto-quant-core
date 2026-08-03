@@ -74,7 +74,7 @@ def _stat_payload(entry: os.stat_result, body: bytes) -> Dict[str, Any]:
         "owner_uid": entry.st_uid,
         "link_count": entry.st_nlink,
         "size_bytes": entry.st_size,
-        "mtime_ns": entry.st_mtime_ns,
+        "mtime_ns": str(entry.st_mtime_ns),
         "sha256": hashlib.sha256(body).hexdigest(),
     }
 
