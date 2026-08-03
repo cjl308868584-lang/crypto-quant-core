@@ -45,9 +45,9 @@ PYTHONPATH=src /usr/bin/python3 -m unittest tests.test_system_paper_evidence -v
 
 Expected: import/function failures or the raced target is overwritten.
 
-- [ ] **Step 3: Implement the dirfd publisher**
+- [ ] **Step 3: Implement the fail-sticky dirfd publisher**
 
-Use retained `O_DIRECTORY|O_NOFOLLOW` parent fd, `O_CREAT|O_EXCL|O_NOFOLLOW` temporary file, full write/fsync, `os.link(..., follow_symlinks=False)` publication, temp unlink and directory fsync. On `FileExistsError`, open the final name through the retained fd and compare stat plus exact bytes; never chmod or replace an existing target.
+Use retained `O_DIRECTORY|O_NOFOLLOW` parent fd and create the final name directly with `O_CREAT|O_EXCL|O_NOFOLLOW`. Fully write/fsync/close, fsync the directory, then replay pathname attachment and exact bytes. Never create a temporary pathname and never unlink or replace any public or private name. A failed write is deliberately fail-sticky: retain partial bytes as forensic evidence and reject all non-exact retries. On `FileExistsError`, open the final name through the retained fd and compare stat plus exact bytes; never chmod or replace an existing target. This replaces the initially planned temp/link/unlink protocol after independent review proved its source and cleanup pathname TOCTOU.
 
 - [ ] **Step 4: Replace all four v0.58 call-site imports**
 

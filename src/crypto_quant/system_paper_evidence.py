@@ -2,7 +2,6 @@
 
 import errno
 import os
-import secrets
 import stat
 from pathlib import Path
 from typing import Callable, Optional
@@ -148,10 +147,7 @@ def publish_owner_exact(
     if not isinstance(data, bytes) or not data:
         raise SystemPaperEvidenceError("SYSTEM_PAPER_EVIDENCE_BYTES_INVALID")
     parent_fd, parent_entry = _open_parent(target)
-    temporary_name = ".system-paper-evidence-" + secrets.token_hex(16) + ".tmp"
-    temporary_created = False
-    temporary_unlink_attempted = False
-    succeeded = False
+    descriptor = None
     failure = None
     try:
         if _existing_exact(parent_fd, target.name, data):
@@ -159,57 +155,21 @@ def publish_owner_exact(
                 raise SystemPaperEvidenceError(
                     "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED"
                 )
-            succeeded = True
         else:
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-            flags |= getattr(os, "O_NOFOLLOW", 0)
-            try:
-                descriptor = os.open(
-                    temporary_name,
-                    flags,
-                    0o600,
-                    dir_fd=parent_fd,
-                )
-            except OSError as error:
-                raise SystemPaperEvidenceError(
-                    "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
-                ) from error
-            temporary_created = True
-            try:
-                os.fchmod(descriptor, 0o600)
-                view = memoryview(data)
-                while view:
-                    written = os.write(descriptor, view)
-                    if written <= 0:
-                        raise OSError(errno.EIO, "short write")
-                    view = view[written:]
-                os.fsync(descriptor)
-                os.fstat(descriptor)
-            except OSError as error:
-                raise SystemPaperEvidenceError(
-                    "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
-                ) from error
-            finally:
-                try:
-                    os.close(descriptor)
-                except OSError as error:
-                    raise SystemPaperEvidenceError(
-                        "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
-                    ) from error
-
             if _before_link is not None:
                 _before_link()
             if not _same_parent(target, parent_entry):
                 raise SystemPaperEvidenceError(
                     "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED"
                 )
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            flags |= getattr(os, "O_NOFOLLOW", 0)
             try:
-                os.link(
-                    temporary_name,
+                descriptor = os.open(
                     target.name,
-                    src_dir_fd=parent_fd,
-                    dst_dir_fd=parent_fd,
-                    follow_symlinks=False,
+                    flags,
+                    0o600,
+                    dir_fd=parent_fd,
                 )
             except FileExistsError:
                 if not _existing_exact(parent_fd, target.name, data):
@@ -220,25 +180,47 @@ def publish_owner_exact(
                 raise SystemPaperEvidenceError(
                     "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
                 ) from error
+            if descriptor is not None:
+                try:
+                    os.fchmod(descriptor, 0o600)
+                    view = memoryview(data)
+                    while view:
+                        written = os.write(descriptor, view)
+                        if written <= 0:
+                            raise OSError(errno.EIO, "short write")
+                        view = view[written:]
+                    os.fsync(descriptor)
+                    entry = os.fstat(descriptor)
+                    if (
+                        not stat.S_ISREG(entry.st_mode)
+                        or entry.st_uid != os.getuid()
+                        or stat.S_IMODE(entry.st_mode) != 0o600
+                        or entry.st_nlink != 1
+                        or entry.st_size != len(data)
+                    ):
+                        raise OSError(errno.EIO, "published file identity changed")
+                except OSError as error:
+                    raise SystemPaperEvidenceError(
+                        "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
+                    ) from error
+                finally:
+                    try:
+                        os.close(descriptor)
+                    except OSError as error:
+                        raise SystemPaperEvidenceError(
+                            "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
+                        ) from error
+                    descriptor = None
 
-            temporary_unlink_attempted = True
-            try:
-                os.unlink(temporary_name, dir_fd=parent_fd)
-            except OSError as error:
-                raise SystemPaperEvidenceError(
-                    "SYSTEM_PAPER_EVIDENCE_CLEANUP_FAILED"
-                ) from error
-            temporary_created = False
-            os.fsync(parent_fd)
-            if not _same_parent(target, parent_entry):
-                raise SystemPaperEvidenceError(
-                    "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED"
-                )
-            if not _existing_exact(parent_fd, target.name, data):
-                raise SystemPaperEvidenceError(
-                    "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT"
-                )
-            succeeded = True
+                os.fsync(parent_fd)
+                if not _same_parent(target, parent_entry):
+                    raise SystemPaperEvidenceError(
+                        "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED"
+                    )
+                if not _existing_exact(parent_fd, target.name, data):
+                    raise SystemPaperEvidenceError(
+                        "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT"
+                    )
     except SystemPaperEvidenceError as error:
         failure = error
     except OSError as error:
@@ -246,23 +228,12 @@ def publish_owner_exact(
         failure.__cause__ = error
     finally:
         cleanup_failed = False
-        cleanup_changed = False
-        # Never unlink the public target after publication.  Standard unlinkat has
-        # no inode precondition, so rollback could delete a concurrent replacement.
-        # A failed private-temp unlink is likewise not retried after its pathname
-        # attachment becomes uncertain; the owner-only directory preserves it for
-        # failure forensics.
-        if not succeeded and temporary_created and not temporary_unlink_attempted:
+        # O_EXCL publishes directly to the final pathname.  Failure evidence is
+        # deliberately retained: unlinkat has no inode precondition, so rollback
+        # could delete a concurrent replacement.  Loaders reject partial bytes.
+        if descriptor is not None:
             try:
-                os.unlink(temporary_name, dir_fd=parent_fd)
-                cleanup_changed = True
-            except FileNotFoundError:
-                pass
-            except OSError:
-                cleanup_failed = True
-        if cleanup_changed:
-            try:
-                os.fsync(parent_fd)
+                os.close(descriptor)
             except OSError:
                 cleanup_failed = True
         try:

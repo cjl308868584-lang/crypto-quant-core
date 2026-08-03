@@ -142,33 +142,22 @@ class SystemPaperEvidenceTests(unittest.TestCase):
             publish_owner_exact(self.target, b"exact")
 
         self.target.unlink()
-        original_unlink = evidence_module.os.unlink
-        failed = {"done": False}
-
-        def fail_first_temp_unlink(name, *args, **kwargs):
-            if str(name).startswith(".system-paper-evidence-") and not failed["done"]:
-                failed["done"] = True
-                raise OSError("one-shot unlink failure")
-            return original_unlink(name, *args, **kwargs)
-
         with mock.patch.object(
-            evidence_module.os, "unlink", side_effect=fail_first_temp_unlink
+            evidence_module.os, "write", side_effect=OSError("write failure")
         ), self.assertRaisesRegex(
             SystemPaperEvidenceError,
-            "SYSTEM_PAPER_EVIDENCE_CLEANUP_FAILED",
+            "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED",
         ):
             publish_owner_exact(self.target, b"candidate")
-        self.assertEqual(self.target.read_bytes(), b"candidate")
-        retained_temps = [
-            item
-            for item in self.parent.iterdir()
-            if item.name.startswith(".system-paper-evidence-")
-        ]
-        self.assertEqual(len(retained_temps), 1)
-        self.assertEqual(retained_temps[0].read_bytes(), b"candidate")
+        self.assertTrue(self.target.exists())
+        self.assertEqual(self.target.read_bytes(), b"")
+        with self.assertRaisesRegex(
+            SystemPaperEvidenceError,
+            "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT",
+        ):
+            publish_owner_exact(self.target, b"candidate")
 
-        original_unlink(self.target)
-        original_unlink(retained_temps[0])
+        self.target.unlink()
 
         calls = {"count": 0}
         original_fsync = evidence_module.os.fsync
@@ -184,10 +173,28 @@ class SystemPaperEvidenceTests(unittest.TestCase):
         ), self.assertRaises(SystemPaperEvidenceError):
             publish_owner_exact(self.target, b"candidate")
         self.assertEqual(self.target.read_bytes(), b"candidate")
-        self.assertFalse(
-            any(item.name.startswith(".system-paper-evidence-") for item in self.parent.iterdir())
-        )
         publish_owner_exact(self.target, b"candidate")
+
+    def test_publication_uses_no_temporary_path_or_unlink(self):
+        def assert_no_temporary_path():
+            self.assertFalse(
+                any(
+                    item.name.startswith(".system-paper-evidence-")
+                    for item in self.parent.iterdir()
+                )
+            )
+
+        with mock.patch.object(
+            evidence_module.os,
+            "unlink",
+            side_effect=AssertionError("publisher attempted unlink"),
+        ):
+            publish_owner_exact(
+                self.target,
+                b"candidate",
+                _before_link=assert_no_temporary_path,
+            )
+        self.assertEqual(self.target.read_bytes(), b"candidate")
 
     def test_post_publish_failure_never_unlinks_concurrent_replacement(self):
         original_fsync = evidence_module.os.fsync

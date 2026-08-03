@@ -46,14 +46,22 @@ kickstart/start/enable/submit 或人工 Runner 入口。
 `research_corpus._publish_exact`。它必须：
 
 1. 使用 retained parent dirfd，要求目录当前 owner、exact `0700`、无 symlink；
-2. 使用 `O_CREAT|O_EXCL|O_NOFOLLOW`、mode `0600` 创建随机临时文件，完整
-   write/fsync；
-3. 使用同一 dirfd 内的 no-replace `link()` 公布，成功后 unlink temp 并
-   fsync directory；
+2. 直接在 retained dirfd 上使用 `O_CREAT|O_EXCL|O_NOFOLLOW`、mode `0600`
+   创建最终名称，完整 write/fsync/close 后 fsync directory；不得创建、链接或删除
+   私有临时路径；
+3. 成功返回前必须通过 retained fd 重新验证 pathname attachment、regular file、
+   owner、mode、link count、size 与 exact bytes。写入、fsync 或最终验证失败时保留
+   当前失败现场，绝不 rollback/unlink；loader 会拒绝 partial/different bytes，且该
+   fail-sticky 路径永久阻断同名重试并进入失败取证；
 4. `EEXIST` 时不 chmod、不 replace，只用 `O_NOFOLLOW` 打开已有目标，且仅在
    regular file、owner、mode `0600`、link count 1、size 和 exact bytes 全部一致时
    幂等成功；
 5. contract/plist 两个文件仍各自 no-overwrite，任一冲突都失败关闭。
+
+原先的 `temp → link(no-replace) → unlink(temp)` 方案在独立审查中被否决：POSIX
+`unlinkat` 没有 inode precondition，同 owner 并发替换可让错误清理删除未知文件，
+而 source pathname 也可能在 `linkat` 前被替换。直接 final-name `O_EXCL` 牺牲失败时
+的自动清理，换取可证明的“不覆盖、不删除未知文件”；这是刻意的失败关闭取舍。
 
 范围覆盖 launchd contract/plist、preflight receipt、install success/failure receipt 和
 start receipt。
