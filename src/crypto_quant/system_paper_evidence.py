@@ -56,7 +56,12 @@ def _open_parent(path: Path):
         or entry.st_uid != os.getuid()
         or stat.S_IMODE(entry.st_mode) != 0o700
     ):
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except OSError as error:
+            raise SystemPaperEvidenceError(
+                "SYSTEM_PAPER_EVIDENCE_PARENT_INVALID"
+            ) from error
         raise SystemPaperEvidenceError("SYSTEM_PAPER_EVIDENCE_PARENT_INVALID")
     return descriptor, entry
 
@@ -221,6 +226,10 @@ def publish_owner_exact(
                     raise SystemPaperEvidenceError(
                         "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT"
                     )
+        if not _same_parent(target, parent_entry):
+            raise SystemPaperEvidenceError(
+                "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED"
+            )
     except SystemPaperEvidenceError as error:
         failure = error
     except OSError as error:

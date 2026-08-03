@@ -87,6 +87,18 @@ class SystemPaperEvidenceTests(unittest.TestCase):
                 publish_owner_exact(self.target, b"candidate")
         self.assertFalse(self.target.exists())
 
+    def test_invalid_parent_close_failure_is_typed(self):
+        os.chmod(self.parent, 0o755)
+        with mock.patch.object(
+            evidence_module.os,
+            "close",
+            side_effect=OSError("close failure"),
+        ), self.assertRaisesRegex(
+            SystemPaperEvidenceError,
+            "SYSTEM_PAPER_EVIDENCE_PARENT_INVALID",
+        ):
+            publish_owner_exact(self.target, b"candidate")
+
     def test_parent_replacement_during_publication_fails_and_cleans_link(self):
         moved = self.parent.with_name("evidence-retained")
 
@@ -107,6 +119,34 @@ class SystemPaperEvidenceTests(unittest.TestCase):
 
         self.assertFalse(self.target.exists())
         self.assertFalse((moved / self.target.name).exists())
+
+    def test_eexist_race_rechecks_visible_parent_before_success(self):
+        moved = self.parent.with_name("evidence-retained")
+        original_open = evidence_module.os.open
+        injected = {"done": False}
+
+        def replace_parent_before_exclusive_open(path, flags, *args, **kwargs):
+            if path == self.target.name and flags & os.O_EXCL and not injected["done"]:
+                injected["done"] = True
+                self._write_target(b"candidate")
+                self.parent.rename(moved)
+                self.parent.mkdir(mode=0o700)
+                os.chmod(self.parent, 0o700)
+            return original_open(path, flags, *args, **kwargs)
+
+        with mock.patch.object(
+            evidence_module.os,
+            "open",
+            side_effect=replace_parent_before_exclusive_open,
+        ), self.assertRaisesRegex(
+            SystemPaperEvidenceError,
+            "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED",
+        ):
+            publish_owner_exact(self.target, b"candidate")
+
+        self.assertTrue(injected["done"])
+        self.assertFalse(self.target.exists())
+        self.assertEqual((moved / self.target.name).read_bytes(), b"candidate")
 
     def test_existing_exact_path_replacement_after_read_is_rejected(self):
         self._write_target(b"exact")
