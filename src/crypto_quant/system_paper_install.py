@@ -17,7 +17,7 @@ from jsonschema import Draft202012Validator
 
 from .canonical import canonical_json, stable_id, utc_datetime
 from .evidence import artifact_self_hash
-from .research_corpus import _publish_exact
+from .system_paper_evidence import SystemPaperEvidenceError, publish_owner_exact
 from .system_paper_launchd import (
     load_system_paper_launchd_contract,
     system_paper_launchd_contract_trust_hash,
@@ -770,12 +770,11 @@ def install_system_paper_launchd(
         raise SystemPaperInstallError("SYSTEM_PAPER_INSTALL_OUTPUT_INVALID")
     receipt_path = output / f"{receipt['receipt_id']}.json"
     try:
-        _publish_exact(receipt_path, canonical_json(receipt).encode("utf-8"))
-    except ValueError as error:
+        publish_owner_exact(receipt_path, canonical_json(receipt).encode("utf-8"))
+    except SystemPaperEvidenceError as error:
         raise SystemPaperInstallError(
             "SYSTEM_PAPER_INSTALL_RECEIPT_CONFLICT"
         ) from error
-    os.chmod(receipt_path, 0o600)
     return {
         "outcome": "INSTALLED_AND_LOADED",
         "install_action": action,

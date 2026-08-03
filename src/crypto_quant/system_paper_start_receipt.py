@@ -14,7 +14,7 @@ from jsonschema import Draft202012Validator
 
 from .canonical import canonical_json, stable_id, utc_datetime
 from .evidence import artifact_self_hash
-from .research_corpus import _publish_exact
+from .system_paper_evidence import SystemPaperEvidenceError, publish_owner_exact
 from .system_paper_install import load_system_paper_install_receipt
 from .system_paper_launchd import (
     load_system_paper_launchd_contract,
@@ -299,12 +299,11 @@ def publish_system_paper_start_receipt(
             "SYSTEM_PAPER_START_RECEIPT_OUTPUT_INVENTORY_INVALID"
         )
     try:
-        _publish_exact(path, canonical_json(receipt).encode("utf-8"))
-    except ValueError as error:
+        publish_owner_exact(path, canonical_json(receipt).encode("utf-8"))
+    except SystemPaperEvidenceError as error:
         raise SystemPaperStartReceiptError(
             "SYSTEM_PAPER_START_RECEIPT_CONFLICT"
         ) from error
-    os.chmod(path, 0o600)
     return {
         "outcome": "START_RECEIPT_PUBLISHED",
         "receipt_path": str(path),

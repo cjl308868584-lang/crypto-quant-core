@@ -20,7 +20,7 @@ from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_json, stable_id, utc_datetime
 from .evidence import artifact_self_hash
-from .research_corpus import _publish_exact
+from .system_paper_evidence import SystemPaperEvidenceError, publish_owner_exact
 from .system_paper_plan import build_system_paper_plan
 from .system_paper_scheduler import SystemPaperSchedulePolicy
 
@@ -1113,16 +1113,14 @@ def publish_system_paper_launchd_contract(
             "SYSTEM_PAPER_LAUNCHD_OUTPUT_INVENTORY_INVALID"
         )
     try:
-        _publish_exact(
+        publish_owner_exact(
             contract_path, canonical_json(contract).encode("utf-8")
         )
-        _publish_exact(plist_path, plist_bytes)
-    except ValueError as error:
+        publish_owner_exact(plist_path, plist_bytes)
+    except SystemPaperEvidenceError as error:
         raise SystemPaperLaunchdError(
             "SYSTEM_PAPER_LAUNCHD_PUBLISH_CONFLICT"
         ) from error
-    for path in (contract_path, plist_path):
-        os.chmod(path, 0o600)
     trust_hash = system_paper_launchd_contract_trust_hash(contract)
     return {
         "outcome": "GENERATED_NOT_INSTALLED",

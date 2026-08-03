@@ -24,7 +24,7 @@ from jsonschema import Draft202012Validator
 
 from .canonical import canonical_json, stable_id, utc_datetime
 from .evidence import artifact_self_hash
-from .research_corpus import _publish_exact
+from .system_paper_evidence import SystemPaperEvidenceError, publish_owner_exact
 from .runtime_health import (
     BinanceServerTimeTransport,
     RuntimeHealthError,
@@ -874,12 +874,11 @@ def run_system_paper_preflight(
         )
     receipt_path = preflight_root / f"{receipt['receipt_id']}.json"
     try:
-        _publish_exact(receipt_path, canonical_json(receipt).encode("utf-8"))
-    except ValueError as error:
+        publish_owner_exact(receipt_path, canonical_json(receipt).encode("utf-8"))
+    except SystemPaperEvidenceError as error:
         raise SystemPaperPreflightError(
             "SYSTEM_PAPER_PREFLIGHT_PUBLISH_CONFLICT"
         ) from error
-    os.chmod(receipt_path, 0o600)
     return {
         "outcome": status_value,
         "receipt_path": str(receipt_path),
