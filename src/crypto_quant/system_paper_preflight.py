@@ -896,6 +896,7 @@ def load_system_paper_preflight_receipt(
     machine_probe=None,
     filesystem_probe=None,
     clock=None,
+    _allow_expired_verified=False,
 ) -> Mapping[str, Any]:
     contract = load_system_paper_launchd_contract(
         contract_path=Path(contract_path), plist_path=Path(plist_path)
@@ -978,7 +979,10 @@ def load_system_paper_preflight_receipt(
             raise SystemPaperPreflightError(
                 "SYSTEM_PAPER_PREFLIGHT_ROOT_IDENTITY_MISMATCH"
             )
-    if receipt["status"] == "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE":
+    if (
+        receipt["status"] == "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE"
+        and not _allow_expired_verified
+    ):
         now_dt, _ = _utc((clock or _now)())
         expiry_dt, _ = _utc(receipt["expires_at_or_null"])
         if now_dt > expiry_dt:
