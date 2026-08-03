@@ -28,18 +28,27 @@ def _read_all(descriptor: int, expected_size: int) -> bytes:
 
 def _open_parent(path: Path):
     parent = path.parent
-    if (
-        not path.is_absolute()
-        or parent.resolve(strict=True) != parent
-        or path.name in ("", ".", "..")
-        or "/" in path.name
-    ):
+    if not path.is_absolute() or path.name in ("", ".", "..") or "/" in path.name:
+        raise SystemPaperEvidenceError("SYSTEM_PAPER_EVIDENCE_PARENT_INVALID")
+    try:
+        resolved_parent = parent.resolve(strict=True)
+    except OSError as error:
+        raise SystemPaperEvidenceError(
+            "SYSTEM_PAPER_EVIDENCE_PARENT_INVALID"
+        ) from error
+    if resolved_parent != parent:
         raise SystemPaperEvidenceError("SYSTEM_PAPER_EVIDENCE_PARENT_INVALID")
     flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = None
     try:
         descriptor = os.open(str(parent), flags)
         entry = os.fstat(descriptor)
     except OSError as error:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
         raise SystemPaperEvidenceError(
             "SYSTEM_PAPER_EVIDENCE_PARENT_INVALID"
         ) from error
@@ -51,6 +60,20 @@ def _open_parent(path: Path):
         os.close(descriptor)
         raise SystemPaperEvidenceError("SYSTEM_PAPER_EVIDENCE_PARENT_INVALID")
     return descriptor, entry
+
+
+def _entry_identity(entry: os.stat_result):
+    return (
+        entry.st_dev,
+        entry.st_ino,
+        entry.st_mode,
+        entry.st_uid,
+        entry.st_gid,
+        entry.st_nlink,
+        entry.st_size,
+        entry.st_mtime_ns,
+        entry.st_ctime_ns,
+    )
 
 
 def _same_parent(path: Path, retained: os.stat_result) -> bool:
@@ -81,22 +104,67 @@ def _existing_exact(parent_fd: int, name: str, data: bytes) -> bool:
         raise SystemPaperEvidenceError(
             "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT"
         ) from error
+    error = None
     try:
-        entry = os.fstat(descriptor)
+        before = os.fstat(descriptor)
         body = _read_all(descriptor, len(data))
-    finally:
+        after = os.fstat(descriptor)
+        attached = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except OSError as caught:
+        error = caught
+    try:
         os.close(descriptor)
+    except OSError as caught:
+        error = error or caught
+    if error is not None:
+        raise SystemPaperEvidenceError(
+            "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT"
+        ) from error
     if (
-        not stat.S_ISREG(entry.st_mode)
-        or entry.st_uid != os.getuid()
-        or stat.S_IMODE(entry.st_mode) != 0o600
-        or entry.st_nlink != 1
-        or entry.st_size != len(data)
+        _entry_identity(before) != _entry_identity(after)
+        or _entry_identity(after) != _entry_identity(attached)
+        or not stat.S_ISREG(after.st_mode)
+        or after.st_uid != os.getuid()
+        or stat.S_IMODE(after.st_mode) != 0o600
+        or after.st_nlink != 1
+        or after.st_size != len(data)
         or body != data
     ):
         raise SystemPaperEvidenceError(
             "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT"
         )
+    return True
+
+
+def _unlink_owned_entry(parent_fd: int, name: str, expected: os.stat_result) -> bool:
+    """Remove name only when it still names expected; return whether cleanup is safe."""
+
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = None
+    try:
+        descriptor = os.open(name, flags, dir_fd=parent_fd)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    try:
+        current = os.fstat(descriptor)
+    except OSError:
+        return False
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                return False
+    if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
+        return False
+    try:
+        os.unlink(name, dir_fd=parent_fd)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
     return True
 
 
@@ -115,99 +183,119 @@ def publish_owner_exact(
     temporary_name = ".system-paper-evidence-" + secrets.token_hex(16) + ".tmp"
     temporary_created = False
     final_created = False
+    temporary_entry = None
+    succeeded = False
+    failure = None
     try:
         if _existing_exact(parent_fd, target.name, data):
             if not _same_parent(target, parent_entry):
                 raise SystemPaperEvidenceError(
                     "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED"
                 )
-            return
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        try:
-            descriptor = os.open(
-                temporary_name,
-                flags,
-                0o600,
-                dir_fd=parent_fd,
-            )
-        except OSError as error:
-            raise SystemPaperEvidenceError(
-                "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
-            ) from error
-        temporary_created = True
-        try:
-            os.fchmod(descriptor, 0o600)
-            view = memoryview(data)
-            while view:
-                written = os.write(descriptor, view)
-                if written <= 0:
-                    raise OSError(errno.EIO, "short write")
-                view = view[written:]
-            os.fsync(descriptor)
-            temporary_entry = os.fstat(descriptor)
-        except OSError as error:
-            raise SystemPaperEvidenceError(
-                "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
-            ) from error
-        finally:
-            os.close(descriptor)
+            succeeded = True
+        else:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            try:
+                descriptor = os.open(
+                    temporary_name,
+                    flags,
+                    0o600,
+                    dir_fd=parent_fd,
+                )
+            except OSError as error:
+                raise SystemPaperEvidenceError(
+                    "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
+                ) from error
+            temporary_created = True
+            try:
+                os.fchmod(descriptor, 0o600)
+                view = memoryview(data)
+                while view:
+                    written = os.write(descriptor, view)
+                    if written <= 0:
+                        raise OSError(errno.EIO, "short write")
+                    view = view[written:]
+                os.fsync(descriptor)
+                temporary_entry = os.fstat(descriptor)
+            except OSError as error:
+                raise SystemPaperEvidenceError(
+                    "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
+                ) from error
+            finally:
+                try:
+                    os.close(descriptor)
+                except OSError as error:
+                    raise SystemPaperEvidenceError(
+                        "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
+                    ) from error
 
-        if _before_link is not None:
-            _before_link()
-        try:
-            os.link(
-                temporary_name,
-                target.name,
-                src_dir_fd=parent_fd,
-                dst_dir_fd=parent_fd,
-                follow_symlinks=False,
-            )
-            final_created = True
-        except FileExistsError:
+            if _before_link is not None:
+                _before_link()
+            try:
+                os.link(
+                    temporary_name,
+                    target.name,
+                    src_dir_fd=parent_fd,
+                    dst_dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+                final_created = True
+            except FileExistsError:
+                if not _existing_exact(parent_fd, target.name, data):
+                    raise SystemPaperEvidenceError(
+                        "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT"
+                    )
+            except OSError as error:
+                raise SystemPaperEvidenceError(
+                    "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
+                ) from error
+
+            os.unlink(temporary_name, dir_fd=parent_fd)
+            temporary_created = False
+            os.fsync(parent_fd)
+            if not _same_parent(target, parent_entry):
+                raise SystemPaperEvidenceError(
+                    "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED"
+                )
             if not _existing_exact(parent_fd, target.name, data):
                 raise SystemPaperEvidenceError(
                     "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT"
                 )
-        except OSError as error:
-            raise SystemPaperEvidenceError(
-                "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
-            ) from error
-
-        os.unlink(temporary_name, dir_fd=parent_fd)
-        temporary_created = False
-        os.fsync(parent_fd)
-        if not _same_parent(target, parent_entry):
-            if final_created:
-                try:
-                    final_descriptor = os.open(
-                        target.name,
-                        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
-                        dir_fd=parent_fd,
-                    )
-                    try:
-                        final_entry = os.fstat(final_descriptor)
-                    finally:
-                        os.close(final_descriptor)
-                    if (final_entry.st_dev, final_entry.st_ino) == (
-                        temporary_entry.st_dev,
-                        temporary_entry.st_ino,
-                    ):
-                        os.unlink(target.name, dir_fd=parent_fd)
-                        os.fsync(parent_fd)
-                except OSError:
-                    pass
-            raise SystemPaperEvidenceError(
-                "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED"
-            )
-        if not _existing_exact(parent_fd, target.name, data):
-            raise SystemPaperEvidenceError(
-                "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT"
-            )
+            succeeded = True
+    except SystemPaperEvidenceError as error:
+        failure = error
+    except OSError as error:
+        failure = SystemPaperEvidenceError("SYSTEM_PAPER_EVIDENCE_WRITE_FAILED")
+        failure.__cause__ = error
     finally:
-        if temporary_created:
+        cleanup_failed = False
+        cleanup_changed = False
+        if not succeeded and final_created and temporary_entry is not None:
+            if _unlink_owned_entry(parent_fd, target.name, temporary_entry):
+                cleanup_changed = True
+            else:
+                cleanup_failed = True
+        if not succeeded and temporary_created and temporary_entry is not None:
+            if _unlink_owned_entry(parent_fd, temporary_name, temporary_entry):
+                cleanup_changed = True
+            else:
+                cleanup_failed = True
+        if cleanup_changed:
             try:
-                os.unlink(temporary_name, dir_fd=parent_fd)
-            except FileNotFoundError:
-                pass
-        os.close(parent_fd)
+                os.fsync(parent_fd)
+            except OSError:
+                cleanup_failed = True
+        try:
+            os.close(parent_fd)
+        except OSError:
+            cleanup_failed = True
+        if cleanup_failed:
+            cleanup_error = SystemPaperEvidenceError(
+                "SYSTEM_PAPER_EVIDENCE_CLEANUP_FAILED"
+            )
+            if failure is not None:
+                cleanup_error.__cause__ = failure
+            failure = cleanup_error
+    if failure is not None:
+        raise failure

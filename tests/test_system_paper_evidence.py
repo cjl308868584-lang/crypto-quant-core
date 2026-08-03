@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import crypto_quant.system_paper_evidence as evidence_module
 from crypto_quant.system_paper_evidence import (
     SystemPaperEvidenceError,
     publish_owner_exact,
@@ -106,6 +107,76 @@ class SystemPaperEvidenceTests(unittest.TestCase):
 
         self.assertFalse(self.target.exists())
         self.assertFalse((moved / self.target.name).exists())
+
+    def test_existing_exact_path_replacement_after_read_is_rejected(self):
+        self._write_target(b"exact")
+        original = evidence_module._read_all
+
+        def replace_after_read(descriptor, expected_size):
+            body = original(descriptor, expected_size)
+            self.target.unlink()
+            self._write_target(b"evil!")
+            return body
+
+        with mock.patch.object(
+            evidence_module, "_read_all", side_effect=replace_after_read
+        ), self.assertRaisesRegex(
+            SystemPaperEvidenceError,
+            "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT",
+        ):
+            publish_owner_exact(self.target, b"exact")
+        self.assertEqual(self.target.read_bytes(), b"evil!")
+
+    def test_filesystem_failures_are_typed_and_do_not_leave_final_target(self):
+        missing = self.parent / "missing" / "receipt.json"
+        with self.assertRaises(SystemPaperEvidenceError):
+            publish_owner_exact(missing, b"candidate")
+
+        self._write_target(b"exact")
+        with mock.patch.object(
+            evidence_module.os, "read", side_effect=OSError("read failed")
+        ), self.assertRaisesRegex(
+            SystemPaperEvidenceError,
+            "SYSTEM_PAPER_EVIDENCE_PUBLISH_CONFLICT",
+        ):
+            publish_owner_exact(self.target, b"exact")
+
+        self.target.unlink()
+        original_unlink = evidence_module.os.unlink
+        failed = {"done": False}
+
+        def fail_first_temp_unlink(name, *args, **kwargs):
+            if str(name).startswith(".system-paper-evidence-") and not failed["done"]:
+                failed["done"] = True
+                raise OSError("one-shot unlink failure")
+            return original_unlink(name, *args, **kwargs)
+
+        with mock.patch.object(
+            evidence_module.os, "unlink", side_effect=fail_first_temp_unlink
+        ), self.assertRaises(SystemPaperEvidenceError):
+            publish_owner_exact(self.target, b"candidate")
+        self.assertFalse(self.target.exists())
+        self.assertFalse(
+            any(item.name.startswith(".system-paper-evidence-") for item in self.parent.iterdir())
+        )
+
+        calls = {"count": 0}
+        original_fsync = evidence_module.os.fsync
+
+        def fail_directory_fsync(descriptor):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise OSError("directory fsync failure")
+            return original_fsync(descriptor)
+
+        with mock.patch.object(
+            evidence_module.os, "fsync", side_effect=fail_directory_fsync
+        ), self.assertRaises(SystemPaperEvidenceError):
+            publish_owner_exact(self.target, b"candidate")
+        self.assertFalse(self.target.exists())
+        self.assertFalse(
+            any(item.name.startswith(".system-paper-evidence-") for item in self.parent.iterdir())
+        )
 
 
 if __name__ == "__main__":
