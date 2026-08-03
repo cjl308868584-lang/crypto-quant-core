@@ -560,7 +560,7 @@ def _receipt_reasons(receipt: Mapping[str, Any]) -> Tuple[str, ...]:
                 / f"{_LABEL}.plist"
             )
             or launchd["label"] != _LABEL
-            or launchd["run_at_load"] is not True
+            or launchd["run_at_load"] is not False
         ):
             reasons.append("SYSTEM_PAPER_PREFLIGHT_LAUNCHD_EVIDENCE_INVALID")
         if power["ac_sleep_safe"] != (power["ac_sleep_minutes"] == 0):
@@ -659,7 +659,7 @@ def run_system_paper_preflight(
         raise SystemPaperPreflightError(
             "SYSTEM_PAPER_PREFLIGHT_PLIST_INVALID"
         ) from error
-    if plist.get("Label") != _LABEL or plist.get("RunAtLoad") is not True:
+    if plist.get("Label") != _LABEL or plist.get("RunAtLoad") is not False:
         raise SystemPaperPreflightError("SYSTEM_PAPER_PREFLIGHT_PLIST_INVALID")
 
     selected_machine_probe = machine_probe or _default_machine_probe
@@ -840,7 +840,7 @@ def run_system_paper_preflight(
             "service_present": service_present,
             "target_plist_path": str(target_plist),
             "target_plist_present": target_present,
-            "run_at_load": True,
+            "run_at_load": False,
             "command_evidence": commands,
         },
         "power": {

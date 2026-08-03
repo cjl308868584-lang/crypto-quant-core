@@ -56,6 +56,7 @@ _MANIFEST_PATH = "config/evaluator-build-manifest-v1.json"
 _MAX_FILE_BYTES = 8 * 1024 * 1024
 _MAX_TREE_BYTES = 128 * 1024 * 1024
 _MAX_FILES = 2000
+_MAX_PYTHON_BYTES = 128 * 1024 * 1024
 _WARNINGS = (
     "SYSTEM_PAPER_NOT_INSTALLED",
     "PREFLIGHT_INSTALL_AND_FIRST_NATURAL_SLOT_RECEIPTS_REQUIRED",
@@ -213,17 +214,41 @@ def _validate_repository(path: Path) -> Path:
 
 
 def _validate_python(path: Path) -> Path:
+    _python_file_identity(path)
+    return path
+
+
+def _python_file_identity(path: Path) -> Dict[str, Any]:
     try:
-        entry = path.stat()
-    except OSError as error:
+        if not path.is_absolute() or path.resolve(strict=True) != path:
+            raise ValueError
+        before = path.lstat()
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_size <= 0
+            or before.st_size > _MAX_PYTHON_BYTES
+            or not os.access(path, os.X_OK)
+        ):
+            raise ValueError
+        body = path.read_bytes()
+        after = path.lstat()
+        if _stat_identity(before) != _stat_identity(after) or len(body) != before.st_size:
+            raise ValueError
+    except (OSError, ValueError) as error:
         raise SystemPaperLaunchdError(
             "SYSTEM_PAPER_LAUNCHD_PYTHON_INVALID"
         ) from error
-    if not stat.S_ISREG(entry.st_mode) or not os.access(path, os.X_OK):
-        raise SystemPaperLaunchdError(
-            "SYSTEM_PAPER_LAUNCHD_PYTHON_INVALID"
-        )
-    return path
+    return {
+        "path": str(path),
+        "device": after.st_dev,
+        "inode": after.st_ino,
+        "mode": stat.S_IMODE(after.st_mode),
+        "owner_uid": after.st_uid,
+        "link_count": after.st_nlink,
+        "size_bytes": after.st_size,
+        "sha256": hashlib.sha256(body).hexdigest(),
+    }
 
 
 def _secure_root(path: Path, reason: str) -> Path:
@@ -660,7 +685,8 @@ def _verify_snapshot_import(
     python: Path,
     command_runner,
     records: Sequence[Mapping[str, Any]],
-) -> None:
+) -> Mapping[str, Any]:
+    before = _python_file_identity(python)
     environment = {
         "PYTHONPATH": str(snapshot / "src"),
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -672,16 +698,41 @@ def _verify_snapshot_import(
         (
             str(python),
             "-c",
-            "import crypto_quant.system_paper_runtime_cli; print('SYSTEM_PAPER_SNAPSHOT_IMPORT_OK')",
+            "import crypto_quant, crypto_quant.system_paper_runtime_cli, json, sys; "
+            "print(json.dumps({'package_version': crypto_quant.__version__, "
+            "'sys_version': sys.version}, sort_keys=True, separators=(',', ':')))",
         ),
         snapshot,
         env=environment,
     )
-    if output.strip() != "SYSTEM_PAPER_SNAPSHOT_IMPORT_OK":
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError as error:
+        raise SystemPaperLaunchdError(
+            "SYSTEM_PAPER_LAUNCHD_SNAPSHOT_IMPORT_INVALID"
+        ) from error
+    if (
+        output != canonical_json(payload) + "\n"
+        or set(payload) != {"package_version", "sys_version"}
+        or payload["package_version"] != _RELEASE_VERSION
+        or not isinstance(payload["sys_version"], str)
+        or not 1 <= len(payload["sys_version"]) <= 1024
+    ):
         raise SystemPaperLaunchdError(
             "SYSTEM_PAPER_LAUNCHD_SNAPSHOT_IMPORT_INVALID"
         )
     _verify_snapshot(snapshot, records)
+    after = _python_file_identity(python)
+    if after != before:
+        raise SystemPaperLaunchdError("SYSTEM_PAPER_LAUNCHD_PYTHON_CHANGED")
+    return {
+        **after,
+        "sys_version": payload["sys_version"],
+        "package_version": payload["package_version"],
+        "requirements_lock_sha256": hashlib.sha256(
+            (snapshot / "requirements.lock").read_bytes()
+        ).hexdigest(),
+    }
 
 
 def _timezone_link_target() -> str:
@@ -732,7 +783,7 @@ def _plist_payload(snapshot: Path, runtime: Path, python: Path) -> Dict[str, Any
         "StartCalendarInterval": [
             {"Hour": hour, "Minute": _MINUTE} for hour in _HOURS
         ],
-        "RunAtLoad": True,
+        "RunAtLoad": False,
         "ProcessType": "Background",
         "ThrottleInterval": 60,
         "LowPriorityIO": True,
@@ -778,6 +829,7 @@ def _contract(
     created_at,
     runtime,
     python,
+    python_identity,
     snapshot,
     records,
     summary,
@@ -793,6 +845,7 @@ def _contract(
         "snapshot_tree_hash": summary["tree_hash"],
         "runtime_root": str(runtime),
         "python_executable": str(python),
+        "python_identity_hash": business_hash(python_identity),
         "launchd_plist_sha256": plist_hash,
     }
     value = {
@@ -823,13 +876,14 @@ def _contract(
             "start_receipts": str(runtime / "start-receipts"),
         },
         "python_executable": str(python),
+        "python_identity": dict(python_identity),
         "system_timezone": timezone_payload,
         "cadence": {
             "time_basis": "SYSTEM_LOCAL_ASIA_SHANGHAI_UTC_PLUS_08",
             "utc_slot_hours": list(_HOURS),
             "local_launch_hours": list(_HOURS),
             "minute": _MINUTE,
-            "run_at_load": True,
+            "run_at_load": False,
         },
         "program_arguments": list(_program_arguments(python, runtime)),
         "environment_variable_names": ["PYTHONPATH"],
@@ -864,6 +918,7 @@ def system_paper_launchd_contract_trust_hash(contract: Mapping[str, Any]) -> str
                 "release_commit": contract["release"]["release_commit"],
                 "snapshot_tree_hash": contract["execution_snapshot"]["tree_hash"],
                 "launchd_plist_sha256": contract["launchd_plist_sha256"],
+                "python_identity_hash": business_hash(contract["python_identity"]),
             }
         )
     except (KeyError, TypeError):
@@ -986,12 +1041,33 @@ def _contract_reasons(contract: Mapping[str, Any], plist_bytes: bytes) -> Tuple[
             runtime_root,
             Path(contract["python_executable"]),
         )
-        _validate_python(
-            _absolute(
-                contract["python_executable"],
-                "SYSTEM_PAPER_LAUNCHD_PYTHON_INVALID",
-            )
+        python_path = _absolute(
+            contract["python_executable"],
+            "SYSTEM_PAPER_LAUNCHD_PYTHON_INVALID",
         )
+        current_python = _python_file_identity(python_path)
+        recorded_python = contract["python_identity"]
+        if (
+            set(recorded_python)
+            != set(current_python)
+            | {
+                "sys_version",
+                "package_version",
+                "requirements_lock_sha256",
+            }
+            or any(
+                recorded_python.get(key) != value
+                for key, value in current_python.items()
+            )
+            or recorded_python.get("package_version") != _RELEASE_VERSION
+            or not isinstance(recorded_python.get("sys_version"), str)
+            or not 1 <= len(recorded_python["sys_version"]) <= 1024
+            or recorded_python.get("requirements_lock_sha256")
+            != hashlib.sha256(
+                (snapshot_root / "requirements.lock").read_bytes()
+            ).hexdigest()
+        ):
+            reasons.append("SYSTEM_PAPER_LAUNCHD_PYTHON_IDENTITY_MISMATCH")
         if (
             hashlib.sha256(plist_bytes).hexdigest()
             != contract["launchd_plist_sha256"]
@@ -1008,6 +1084,7 @@ def _contract_reasons(contract: Mapping[str, Any], plist_bytes: bytes) -> Tuple[
                 "snapshot_tree_hash": summary["tree_hash"],
                 "runtime_root": contract["runtime_root"],
                 "python_executable": contract["python_executable"],
+                "python_identity_hash": business_hash(contract["python_identity"]),
                 "launchd_plist_sha256": contract["launchd_plist_sha256"],
             },
         )
@@ -1072,7 +1149,7 @@ def publish_system_paper_launchd_contract(
         runtime, records, data_by_path, identities
     )
     try:
-        _verify_snapshot_import(snapshot, python, runner, records)
+        python_identity = _verify_snapshot_import(snapshot, python, runner, records)
         if _git_release(repository, runner) != git_release:
             raise SystemPaperLaunchdError(
                 "SYSTEM_PAPER_LAUNCHD_RELEASE_CHANGED"
@@ -1091,6 +1168,7 @@ def publish_system_paper_launchd_contract(
         created_at=created_at,
         runtime=runtime,
         python=python,
+        python_identity=python_identity,
         snapshot=snapshot,
         records=records,
         summary=summary,
@@ -1157,13 +1235,6 @@ def load_system_paper_launchd_contract(
     plist_bytes = plist_file.read_bytes()
     if _contract_reasons(contract, plist_bytes):
         raise SystemPaperLaunchdError("SYSTEM_PAPER_LAUNCHD_CONTRACT_INVALID")
-    snapshot = contract["execution_snapshot"]
-    _verify_snapshot_import(
-        Path(snapshot["repository_root"]),
-        Path(contract["python_executable"]),
-        _command_runner or _default_command_runner,
-        tuple(snapshot["files"]),
-    )
     if _contract_reasons(contract, plist_bytes):
         raise SystemPaperLaunchdError("SYSTEM_PAPER_LAUNCHD_CONTRACT_INVALID")
     return contract

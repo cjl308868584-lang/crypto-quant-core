@@ -77,7 +77,15 @@ class ReleaseCommandRunner:
         ):
             stdout = RELEASE_COMMIT + "\trefs/heads/main\n"
         elif command[0] == str(PYTHON_EXECUTABLE) and command[1] == "-c":
-            stdout = "SYSTEM_PAPER_SNAPSHOT_IMPORT_OK\n"
+            if "json.dumps" in command[2]:
+                stdout = canonical_json(
+                    {
+                        "package_version": "0.58.0",
+                        "sys_version": sys.version,
+                    }
+                ) + "\n"
+            else:
+                stdout = "SYSTEM_PAPER_SNAPSHOT_IMPORT_OK\n"
         else:
             return SimpleNamespace(
                 returncode=99,
@@ -185,7 +193,8 @@ class SystemPaperLaunchdTests(unittest.TestCase):
                     for hour in (0, 4, 8, 12, 16, 20)
                 ],
             )
-            self.assertTrue(plist["RunAtLoad"])
+            self.assertFalse(plist["RunAtLoad"])
+            self.assertFalse(contract["cadence"]["run_at_load"])
             snapshot = Path(contract["execution_snapshot"]["repository_root"])
             self.assertNotEqual(snapshot, repository)
             self.assertEqual(plist["WorkingDirectory"], str(snapshot))
@@ -223,6 +232,26 @@ class SystemPaperLaunchdTests(unittest.TestCase):
             self.assertEqual(contract["release"]["foundation_commit"], FOUNDATION_COMMIT)
             self.assertEqual(contract["release"]["manifest_version"], "1.52.0")
             self.assertEqual(contract["release"]["package_version"], "0.58.0")
+            executable_bytes = PYTHON_EXECUTABLE.read_bytes()
+            executable_stat = PYTHON_EXECUTABLE.stat()
+            self.assertEqual(
+                contract["python_identity"],
+                {
+                    "path": str(PYTHON_EXECUTABLE),
+                    "device": executable_stat.st_dev,
+                    "inode": executable_stat.st_ino,
+                    "mode": stat.S_IMODE(executable_stat.st_mode),
+                    "owner_uid": executable_stat.st_uid,
+                    "link_count": executable_stat.st_nlink,
+                    "size_bytes": len(executable_bytes),
+                    "sha256": hashlib.sha256(executable_bytes).hexdigest(),
+                    "sys_version": sys.version,
+                    "package_version": "0.58.0",
+                    "requirements_lock_sha256": hashlib.sha256(
+                        (snapshot / "requirements.lock").read_bytes()
+                    ).hexdigest(),
+                },
+            )
             self.assertEqual(
                 contract["execution_snapshot"]["file_count"],
                 len(contract["execution_snapshot"]["files"]),
@@ -262,6 +291,47 @@ class SystemPaperLaunchdTests(unittest.TestCase):
                 snapshot,
             ):
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+
+    def test_loader_is_command_free_and_rejects_python_identity_mutation(self):
+        class ForbiddenRunner:
+            def __call__(self, *args, **kwargs):
+                raise AssertionError("production loader executed a command")
+
+        with tempfile.TemporaryDirectory() as directory:
+            result, _repository, _runtime, _output, _runner = self.publish(directory)
+            contract_path = Path(result["contract_path"])
+            plist_path = Path(result["plist_path"])
+            loaded = load_system_paper_launchd_contract(
+                contract_path=contract_path,
+                plist_path=plist_path,
+                _command_runner=ForbiddenRunner(),
+            )
+            self.assertEqual(loaded["python_identity"]["path"], str(PYTHON_EXECUTABLE))
+
+            for field in ("device", "inode", "mode", "owner_uid", "link_count", "size_bytes", "sha256"):
+                with self.subTest(field=field):
+                    changed = deepcopy(loaded)
+                    current = changed["python_identity"][field]
+                    changed["python_identity"][field] = (
+                        "f" * 64 if field == "sha256" else current + 1
+                    )
+                    changed["contract_hash"] = artifact_self_hash(
+                        changed, "contract_hash"
+                    )
+                    contract_path.write_bytes(
+                        canonical_json(changed).encode("utf-8")
+                    )
+                    os.chmod(contract_path, 0o600)
+                    with self.assertRaises(SystemPaperLaunchdError):
+                        load_system_paper_launchd_contract(
+                            contract_path=contract_path,
+                            plist_path=plist_path,
+                            _command_runner=ForbiddenRunner(),
+                        )
+                    contract_path.write_bytes(
+                        canonical_json(loaded).encode("utf-8")
+                    )
+                    os.chmod(contract_path, 0o600)
 
     def test_release_git_and_manifest_mismatches_fail_before_snapshot(self):
         cases = (

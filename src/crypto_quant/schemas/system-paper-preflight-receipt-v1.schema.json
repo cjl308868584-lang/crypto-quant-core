@@ -97,7 +97,7 @@
         "label": {"const": "local.crypto-quant.system-paper-v1"},
         "login_domain_present": {"type": "boolean"}, "service_present": {"type": "boolean"},
         "target_plist_path": {"$ref": "#/$defs/path"}, "target_plist_present": {"type": "boolean"},
-        "run_at_load": {"const": true},
+        "run_at_load": {"const": false},
         "command_evidence": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/command"}}
       }
     },
