@@ -183,6 +183,47 @@ class SystemPaperInstallTests(unittest.TestCase):
         self.assertEqual(runner.calls, [])
         self.assertFalse(self.target.parent.exists())
 
+    def test_frozen_credential_presence_blocks_install_with_zero_authority(self):
+        environment = {
+            "BINANCE_API_KEY": "secret",
+            "BINANCE_API_SECRET": "secret",
+            "BINANCE_SECRET_KEY": "secret",
+            "CRYPTO_QUANT_API_KEY": "secret",
+            "CRYPTO_QUANT_API_SECRET": "secret",
+        }
+        credential_paths = (
+            self.preflight.home
+            / ".config"
+            / "crypto-quant"
+            / "credentials.json",
+            self.preflight.home
+            / ".config"
+            / "binance"
+            / "credentials.json",
+            self.preflight.home / ".binance" / "credentials.json",
+            self.preflight.runtime_root / "credentials",
+        )
+        for path in credential_paths:
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            path.write_text("secret", encoding="utf-8")
+            os.chmod(path, 0o600)
+
+        with patch.dict(os.environ, environment):
+            failed, _preflight_runner, _ping = self.preflight.execute()
+            receipt = json.loads(Path(failed["receipt_path"]).read_text())
+            runner = self.runner()
+            with self.assertRaisesRegex(SystemPaperInstallError, "PREFLIGHT"):
+                install_system_paper_launchd(
+                    **self.values(Path(failed["receipt_path"]), runner)
+                )
+
+        self.assertEqual(receipt["credential_boundary"]["credential_count"], 9)
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(self.target.parent.exists())
+        self.assertFalse(
+            (self.preflight.runtime_root / "install-receipts").exists()
+        )
+
     def test_close_delay_activation_window_fails_before_launchctl_or_write(self):
         preflight_path = self.verified_preflight_at(
             "2026-08-04T04:01:00.000Z"

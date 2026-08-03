@@ -4,6 +4,7 @@ import io
 import json
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -38,16 +39,24 @@ class PreflightCommandRunner:
         sleep_minutes=0,
         service_present=False,
         domain_present=True,
+        runtime_import_stdout=None,
+        runtime_import_returncode=0,
     ):
         self.uid = uid
         self.sleep_minutes = sleep_minutes
         self.service_present = service_present
         self.domain_present = domain_present
+        self.runtime_import_stdout = runtime_import_stdout
+        self.runtime_import_returncode = runtime_import_returncode
         self.calls = []
 
-    def __call__(self, argv):
+    def __call__(self, argv, *, cwd=None, env=None):
         command = tuple(str(item) for item in argv)
         self.calls.append(command)
+        self.call_details = getattr(self, "call_details", [])
+        self.call_details.append(
+            (command, None if cwd is None else str(cwd), env)
+        )
         if command == ("/bin/launchctl", "print", f"gui/{self.uid}"):
             return SimpleNamespace(
                 returncode=0 if self.domain_present else 113,
@@ -70,6 +79,22 @@ class PreflightCommandRunner:
                 stdout=(
                     "Battery Power:\n sleep 5\n"
                     f"AC Power:\n sleep {self.sleep_minutes}\n"
+                ),
+                stderr="",
+            )
+        if len(command) == 3 and command[1] == "-c":
+            return SimpleNamespace(
+                returncode=self.runtime_import_returncode,
+                stdout=(
+                    self.runtime_import_stdout
+                    if self.runtime_import_stdout is not None
+                    else canonical_json(
+                        {
+                            "package_version": "0.58.0",
+                            "sys_version": sys.version,
+                        }
+                    )
+                    + "\n"
                 ),
                 stderr="",
             )
@@ -137,6 +162,7 @@ class SystemPaperPreflightTests(unittest.TestCase):
         runner=None,
         machine=None,
         filesystem=None,
+        credential=None,
         ping=None,
         server_time=None,
         clock=None,
@@ -149,6 +175,7 @@ class SystemPaperPreflightTests(unittest.TestCase):
             command_runner=command_runner,
             machine_probe=machine or self.machine,
             filesystem_probe=filesystem or self.filesystem,
+            credential_probe=credential,
             server_time_transport=server_time or FakeTimeTransport(
                 fake_time_responses(
                     base=datetime(2026, 8, 4, 5, 0, 0, tzinfo=UTC)
@@ -194,7 +221,50 @@ class SystemPaperPreflightTests(unittest.TestCase):
                     f"gui/{self.uid}/local.crypto-quant.system-paper-v1",
                 ),
                 ("/usr/bin/pmset", "-g", "custom"),
+                (
+                    json.loads(self.contract_path.read_text())["python_executable"],
+                    "-c",
+                    "import crypto_quant, crypto_quant.system_paper_runtime_cli, json, sys; "
+                    "print(json.dumps({'package_version': crypto_quant.__version__, "
+                    "'sys_version': sys.version}, sort_keys=True, separators=(',', ':')))",
+                ),
             ],
+        )
+        contract = json.loads(self.contract_path.read_text())
+        self.assertEqual(
+            runner.call_details[-1][1],
+            contract["execution_snapshot"]["repository_root"],
+        )
+        self.assertEqual(
+            runner.call_details[-1][2],
+            {
+                "PYTHONPATH": str(
+                    Path(contract["execution_snapshot"]["repository_root"])
+                    / "src"
+                ),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "LANG": "C",
+                "LC_ALL": "C",
+            },
+        )
+        self.assertEqual(
+            receipt["runtime_import"],
+            {
+                "status": "VERIFIED",
+                "package_version_or_null": "0.58.0",
+                "sys_version_or_null": sys.version,
+                "command_evidence": {
+                    "argv": list(runner.calls[-1]),
+                    "transport_status": "COMPLETED",
+                    "returncode": 0,
+                    "stdout_sha256": receipt["runtime_import"]["command_evidence"][
+                        "stdout_sha256"
+                    ],
+                    "stderr_sha256": receipt["runtime_import"]["command_evidence"][
+                        "stderr_sha256"
+                    ],
+                },
+            },
         )
         self.assertEqual(ping.calls, 1)
         self.assertEqual(
@@ -228,7 +298,7 @@ class SystemPaperPreflightTests(unittest.TestCase):
             def __init__(self):
                 self.calls = []
 
-            def __call__(self, argv):
+            def __call__(self, argv, *, cwd=None, env=None):
                 self.calls.append(tuple(argv))
                 raise OSError("command transport unavailable")
 
@@ -240,10 +310,11 @@ class SystemPaperPreflightTests(unittest.TestCase):
             "SYSTEM_PAPER_PREFLIGHT_COMMAND_FAILED",
             receipt["failure_reasons"],
         )
-        self.assertEqual(len(runner.calls), 3)
+        self.assertEqual(len(runner.calls), 4)
         self.assertTrue(
             all(
                 item["returncode"] == 255
+                and item["transport_status"] == "FAILED"
                 for item in receipt["launchd"]["command_evidence"]
             )
         )
@@ -292,9 +363,162 @@ class SystemPaperPreflightTests(unittest.TestCase):
                 "SYSTEM_PAPER_PREFLIGHT_NETWORK_COUNT_INVALID",
             }.issubset(set(receipt["failure_reasons"]))
         )
-        self.assertEqual(len(runner.calls), 3)
+        self.assertEqual(len(runner.calls), 4)
         self.assertEqual(ping.calls, 1)
         self.assertEqual(receipt["network_request_count"], 2)
+
+    def test_loader_allows_free_space_drift_but_enforces_minimum(self):
+        def with_free_bytes(free_bytes):
+            def probe(path):
+                entry = Path(path).stat()
+                return {
+                    "device": entry.st_dev,
+                    "filesystem_id": entry.st_dev,
+                    "free_bytes": free_bytes,
+                    "is_local": True,
+                }
+
+            return probe
+
+        result, _runner, _ping = self.execute(
+            filesystem=with_free_bytes(10 * 1024 * 1024 * 1024)
+        )
+        receipt_path = Path(result["receipt_path"])
+        loaded = load_system_paper_preflight_receipt(
+            receipt_path=receipt_path,
+            contract_path=self.contract_path,
+            plist_path=self.plist_path,
+            machine_probe=self.machine,
+            filesystem_probe=with_free_bytes(9 * 1024 * 1024 * 1024),
+            clock=lambda: "2026-08-04T05:20:00.000Z",
+        )
+        self.assertEqual(loaded["status"], "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE")
+        with self.assertRaisesRegex(
+            SystemPaperPreflightError, "DISK_SPACE_INSUFFICIENT"
+        ):
+            load_system_paper_preflight_receipt(
+                receipt_path=receipt_path,
+                contract_path=self.contract_path,
+                plist_path=self.plist_path,
+                machine_probe=self.machine,
+                filesystem_probe=with_free_bytes(4 * 1024 * 1024 * 1024),
+                clock=lambda: "2026-08-04T05:20:00.000Z",
+            )
+
+    def test_frozen_credential_names_and_paths_fail_closed_without_values(self):
+        environment_names = [
+            "BINANCE_API_KEY",
+            "BINANCE_API_SECRET",
+            "BINANCE_SECRET_KEY",
+            "CRYPTO_QUANT_API_KEY",
+            "CRYPTO_QUANT_API_SECRET",
+        ]
+        file_paths = [
+            str(self.home / ".config" / "crypto-quant" / "credentials.json"),
+            str(self.home / ".config" / "binance" / "credentials.json"),
+            str(self.home / ".binance" / "credentials.json"),
+            str(self.runtime_root / "credentials"),
+        ]
+        secret = "must-never-appear"
+        result, runner, _ping = self.execute(
+            credential=lambda home, runtime_root: {
+                "environment_names": environment_names,
+                "file_paths": file_paths,
+                "test_secret": secret,
+            }
+        )
+        receipt_bytes = Path(result["receipt_path"]).read_bytes()
+        receipt = json.loads(receipt_bytes)
+        self.assertEqual(result["outcome"], "PREFLIGHT_FAILED_CLOSED")
+        self.assertEqual(
+            receipt["credential_boundary"],
+            {
+                "environment_names": environment_names,
+                "file_paths": file_paths,
+                "credential_count": 9,
+            },
+        )
+        self.assertNotIn(secret.encode(), receipt_bytes)
+        self.assertIn(
+            "SYSTEM_PAPER_PREFLIGHT_CREDENTIAL_BOUNDARY_PRESENT",
+            receipt["failure_reasons"],
+        )
+        self.assertEqual(len(runner.calls), 4)
+
+    def test_loader_is_command_free_and_rejects_new_credential_presence(self):
+        result, runner, _ping = self.execute()
+        calls_after_publish = list(runner.calls)
+        with self.assertRaisesRegex(SystemPaperPreflightError, "CREDENTIAL"):
+            load_system_paper_preflight_receipt(
+                receipt_path=Path(result["receipt_path"]),
+                contract_path=self.contract_path,
+                plist_path=self.plist_path,
+                machine_probe=self.machine,
+                filesystem_probe=self.filesystem,
+                credential_probe=lambda home, runtime_root: {
+                    "environment_names": ["BINANCE_API_KEY"],
+                    "file_paths": [],
+                },
+                clock=lambda: "2026-08-04T05:20:00.000Z",
+            )
+        self.assertEqual(runner.calls, calls_after_publish)
+
+    def test_failed_runtime_import_receipt_remains_command_free_loadable_evidence(self):
+        runner = PreflightCommandRunner(
+            uid=self.uid, runtime_import_stdout="not-json\n"
+        )
+        result, runner, _ping = self.execute(runner=runner)
+        calls_after_publish = list(runner.calls)
+        loaded = load_system_paper_preflight_receipt(
+            receipt_path=Path(result["receipt_path"]),
+            contract_path=self.contract_path,
+            plist_path=self.plist_path,
+            machine_probe=self.machine,
+            filesystem_probe=self.filesystem,
+            clock=lambda: "2026-08-04T05:20:00.000Z",
+        )
+        self.assertEqual(loaded["status"], "PREFLIGHT_FAILED_CLOSED")
+        self.assertEqual(loaded["runtime_import"]["status"], "FAILED")
+        self.assertEqual(runner.calls, calls_after_publish)
+
+    def test_signal_terminated_runtime_import_publishes_bounded_failed_evidence(self):
+        runner = PreflightCommandRunner(
+            uid=self.uid, runtime_import_returncode=-9
+        )
+        result, _runner, _ping = self.execute(runner=runner)
+        receipt = json.loads(Path(result["receipt_path"]).read_text())
+        self.assertEqual(result["outcome"], "PREFLIGHT_FAILED_CLOSED")
+        self.assertEqual(receipt["runtime_import"]["status"], "FAILED")
+        self.assertEqual(
+            receipt["runtime_import"]["command_evidence"]["returncode"], 255
+        )
+        self.assertEqual(
+            receipt["runtime_import"]["command_evidence"]["transport_status"],
+            "FAILED",
+        )
+        self.assertIn(
+            "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_FAILED",
+            receipt["failure_reasons"],
+        )
+
+    def test_real_exit_255_is_completed_invalid_import_not_transport_failure(self):
+        runner = PreflightCommandRunner(
+            uid=self.uid, runtime_import_returncode=255
+        )
+        result, _runner, _ping = self.execute(runner=runner)
+        receipt = json.loads(Path(result["receipt_path"]).read_text())
+        evidence = receipt["runtime_import"]["command_evidence"]
+        self.assertEqual(result["outcome"], "PREFLIGHT_FAILED_CLOSED")
+        self.assertEqual(evidence["returncode"], 255)
+        self.assertEqual(evidence["transport_status"], "COMPLETED")
+        self.assertIn(
+            "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_INVALID",
+            receipt["failure_reasons"],
+        )
+        self.assertNotIn(
+            "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_FAILED",
+            receipt["failure_reasons"],
+        )
 
     def test_invalid_contract_or_plist_creates_zero_preflight_files(self):
         self.contract_path.write_text("{}", encoding="utf-8")
@@ -302,6 +526,24 @@ class SystemPaperPreflightTests(unittest.TestCase):
         with self.assertRaises(Exception):
             self.execute()
         self.assertFalse(preflight_root.exists())
+
+    def test_late_ping_source_mutation_fails_before_receipt_publication(self):
+        original = self.plist_path.read_bytes()
+
+        class MutatingPing(FakePingTransport):
+            def get(inner_self):
+                self.plist_path.write_bytes(original + b"\n")
+                return super().get()
+
+        with self.assertRaisesRegex(
+            SystemPaperPreflightError, "RUNTIME_IDENTITY_CHANGED"
+        ):
+            self.execute(ping=MutatingPing())
+        preflight_root = self.runtime_root / "preflight-receipts"
+        self.assertEqual(
+            [] if not preflight_root.exists() else list(preflight_root.glob("*.json")),
+            [],
+        )
 
     def test_loader_rejects_expiry_machine_drift_root_replacement_and_duplicate(self):
         result, _runner, _ping = self.execute()
@@ -370,6 +612,52 @@ class SystemPaperPreflightTests(unittest.TestCase):
                 filesystem_probe=self.filesystem,
                 clock=lambda: "2026-08-04T05:20:00.000Z",
             )
+
+    def test_rehashed_claimed_runtime_import_failure_rejects_success_evidence(self):
+        result, _runner, _ping = self.execute()
+        receipt_path = Path(result["receipt_path"])
+        receipt = json.loads(receipt_path.read_text())
+        receipt["status"] = "PREFLIGHT_FAILED_CLOSED"
+        receipt["expires_at_or_null"] = None
+        receipt["failure_reasons"] = [
+            "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_FAILED"
+        ]
+        receipt["runtime_import"]["status"] = "FAILED"
+        receipt["runtime_import"]["package_version_or_null"] = None
+        receipt["runtime_import"]["sys_version_or_null"] = None
+        receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
+        receipt_path.write_text(canonical_json(receipt), encoding="utf-8")
+        with self.assertRaisesRegex(SystemPaperPreflightError, "INVALID"):
+            load_system_paper_preflight_receipt(
+                receipt_path=receipt_path,
+                contract_path=self.contract_path,
+                plist_path=self.plist_path,
+                machine_probe=self.machine,
+                filesystem_probe=self.filesystem,
+                clock=lambda: "2026-08-04T05:20:00.000Z",
+            )
+
+    def test_historical_credential_failure_loads_after_credential_remediation(self):
+        result, _runner, _ping = self.execute(
+            credential=lambda home, runtime_root: {
+                "environment_names": ["BINANCE_API_KEY"],
+                "file_paths": [],
+            }
+        )
+        loaded = load_system_paper_preflight_receipt(
+            receipt_path=Path(result["receipt_path"]),
+            contract_path=self.contract_path,
+            plist_path=self.plist_path,
+            machine_probe=self.machine,
+            filesystem_probe=self.filesystem,
+            credential_probe=lambda home, runtime_root: {
+                "environment_names": [],
+                "file_paths": [],
+            },
+            clock=lambda: "2026-08-04T05:20:00.000Z",
+        )
+        self.assertEqual(loaded["status"], "PREFLIGHT_FAILED_CLOSED")
+        self.assertEqual(loaded["credential_boundary"]["credential_count"], 1)
 
     def test_exact_publication_is_idempotent_and_same_identity_conflict_is_preserved(self):
         first, _runner, _ping = self.execute()

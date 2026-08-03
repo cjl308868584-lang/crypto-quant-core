@@ -15,14 +15,14 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any, Dict, Mapping, Sequence, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from jsonschema import Draft202012Validator
 
-from .canonical import canonical_json, stable_id, utc_datetime
+from .canonical import business_hash, canonical_json, stable_id, utc_datetime
 from .evidence import artifact_self_hash
 from .system_paper_evidence import SystemPaperEvidenceError, publish_owner_exact
 from .runtime_health import (
@@ -49,6 +49,19 @@ _MAX_BODY_BYTES = 1024
 _MAX_COMMAND_BYTES = 64 * 1024
 _MIN_FREE_BYTES = 5 * 1024 * 1024 * 1024
 _EXPIRY_MINUTES = 30
+_RELEASE_VERSION = "0.58.0"
+_CREDENTIAL_ENVIRONMENT_NAMES = (
+    "BINANCE_API_KEY",
+    "BINANCE_API_SECRET",
+    "BINANCE_SECRET_KEY",
+    "CRYPTO_QUANT_API_KEY",
+    "CRYPTO_QUANT_API_SECRET",
+)
+_RUNTIME_IMPORT_CODE = (
+    "import crypto_quant, crypto_quant.system_paper_runtime_cli, json, sys; "
+    "print(json.dumps({'package_version': crypto_quant.__version__, "
+    "'sys_version': sys.version}, sort_keys=True, separators=(',', ':')))"
+)
 _WARNINGS = (
     "PREFLIGHT_DOES_NOT_INSTALL_OR_START_SYSTEM_PAPER",
     "VERIFIED_RECEIPT_EXPIRES_AFTER_30_MINUTES",
@@ -301,20 +314,32 @@ def _filesystem(path: Path, probe) -> Dict[str, Any]:
     return {key: value[key] for key in required}
 
 
-def _default_command_runner(argv):
+def _default_command_runner(argv, *, cwd=None, env=None):
+    selected_environment = (
+        {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C"}
+        if env is None
+        else dict(env)
+    )
     return subprocess.run(
         list(argv),
         check=False,
         capture_output=True,
         text=True,
         timeout=10,
-        env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C"},
+        cwd=cwd,
+        env=selected_environment,
     )
 
 
-def _run_command(runner, argv) -> Tuple[Mapping[str, Any], str, str]:
+def _run_command(
+    runner, argv, *, cwd=None, env=None
+) -> Tuple[Mapping[str, Any], str, str]:
     try:
-        result = runner(tuple(argv))
+        result = (
+            runner(tuple(argv))
+            if cwd is None and env is None
+            else runner(tuple(argv), cwd=cwd, env=env)
+        )
         code = result.returncode
         stdout = result.stdout
         stderr = result.stderr
@@ -325,6 +350,8 @@ def _run_command(runner, argv) -> Tuple[Mapping[str, Any], str, str]:
     if (
         isinstance(code, bool)
         or not isinstance(code, int)
+        or code < 0
+        or code > 255
         or not isinstance(stdout, str)
         or not isinstance(stderr, str)
         or len(stdout.encode("utf-8")) > _MAX_COMMAND_BYTES
@@ -335,6 +362,7 @@ def _run_command(runner, argv) -> Tuple[Mapping[str, Any], str, str]:
         )
     evidence = {
         "argv": list(argv),
+        "transport_status": "COMPLETED",
         "returncode": code,
         "stdout_sha256": _sha256(stdout.encode("utf-8")),
         "stderr_sha256": _sha256(stderr.encode("utf-8")),
@@ -342,23 +370,141 @@ def _run_command(runner, argv) -> Tuple[Mapping[str, Any], str, str]:
     return evidence, stdout, stderr
 
 
-def _safe_run_command(runner, argv):
+def _safe_run_command(runner, argv, *, cwd=None, env=None):
     try:
-        evidence, stdout, stderr = _run_command(runner, argv)
+        evidence, stdout, stderr = _run_command(
+            runner, argv, cwd=cwd, env=env
+        )
         return evidence, stdout, stderr, None
     except SystemPaperPreflightError as error:
         empty_hash = _sha256(b"")
         return (
             {
                 "argv": list(argv),
+                "transport_status": "FAILED",
                 "returncode": 255,
                 "stdout_sha256": empty_hash,
                 "stderr_sha256": empty_hash,
             },
             "",
             "",
-            error.reason_code,
+            "SYSTEM_PAPER_PREFLIGHT_COMMAND_FAILED",
         )
+
+
+def _credential_paths(home: Path, runtime_root: Path) -> Tuple[Path, ...]:
+    return (
+        home / ".config" / "crypto-quant" / "credentials.json",
+        home / ".config" / "binance" / "credentials.json",
+        home / ".binance" / "credentials.json",
+        runtime_root / "credentials",
+    )
+
+
+def _default_credential_probe(
+    home: Path, runtime_root: Path
+) -> Mapping[str, Sequence[str]]:
+    return {
+        "environment_names": [
+            name for name in _CREDENTIAL_ENVIRONMENT_NAMES if name in os.environ
+        ],
+        "file_paths": [
+            str(path)
+            for path in _credential_paths(home, runtime_root)
+            if path.exists() or path.is_symlink()
+        ],
+    }
+
+
+def _credential_boundary(home: Path, runtime_root: Path, probe) -> Dict[str, Any]:
+    try:
+        value = dict(probe(home, runtime_root))
+        environment_names = value["environment_names"]
+        file_paths = value["file_paths"]
+    except Exception as error:
+        raise SystemPaperPreflightError(
+            "SYSTEM_PAPER_PREFLIGHT_CREDENTIAL_PROBE_INVALID"
+        ) from error
+    if (
+        isinstance(environment_names, (str, bytes))
+        or not isinstance(environment_names, Sequence)
+        or isinstance(file_paths, (str, bytes))
+        or not isinstance(file_paths, Sequence)
+        or any(not isinstance(item, str) for item in environment_names)
+        or any(not isinstance(item, str) for item in file_paths)
+    ):
+        raise SystemPaperPreflightError(
+            "SYSTEM_PAPER_PREFLIGHT_CREDENTIAL_PROBE_INVALID"
+        )
+    environment_set = set(environment_names)
+    file_set = set(file_paths)
+    allowed_paths = tuple(str(path) for path in _credential_paths(home, runtime_root))
+    if (
+        len(environment_set) != len(environment_names)
+        or len(file_set) != len(file_paths)
+        or not environment_set.issubset(_CREDENTIAL_ENVIRONMENT_NAMES)
+        or not file_set.issubset(allowed_paths)
+    ):
+        raise SystemPaperPreflightError(
+            "SYSTEM_PAPER_PREFLIGHT_CREDENTIAL_PROBE_INVALID"
+        )
+    ordered_environment = [
+        name for name in _CREDENTIAL_ENVIRONMENT_NAMES if name in environment_set
+    ]
+    ordered_paths = [path for path in allowed_paths if path in file_set]
+    return {
+        "environment_names": ordered_environment,
+        "file_paths": ordered_paths,
+        "credential_count": len(ordered_environment) + len(ordered_paths),
+    }
+
+
+def _runtime_import(contract: Mapping[str, Any], runner):
+    snapshot = Path(contract["execution_snapshot"]["repository_root"])
+    command = (contract["python_executable"], "-c", _RUNTIME_IMPORT_CODE)
+    environment = {
+        "PYTHONPATH": str(snapshot / "src"),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "LANG": "C",
+        "LC_ALL": "C",
+    }
+    evidence, stdout, stderr, command_failure = _safe_run_command(
+        runner, command, cwd=snapshot, env=environment
+    )
+    failure = (
+        "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_FAILED"
+        if command_failure
+        else None
+    )
+    payload = None
+    if failure is None:
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError:
+            failure = "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_INVALID"
+    identity = contract["python_identity"]
+    if (
+        failure is None
+        and (
+            evidence["returncode"] != 0
+            or stderr != ""
+            or not isinstance(payload, Mapping)
+            or set(payload) != {"package_version", "sys_version"}
+            or stdout != canonical_json(payload) + "\n"
+            or payload["package_version"] != identity["package_version"]
+            or payload["sys_version"] != identity["sys_version"]
+        )
+    ):
+        failure = "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_INVALID"
+    return (
+        {
+            "status": "FAILED" if failure else "VERIFIED",
+            "package_version_or_null": None if failure else payload["package_version"],
+            "sys_version_or_null": None if failure else payload["sys_version"],
+            "command_evidence": evidence,
+        },
+        failure,
+    )
 
 
 def _ac_sleep_minutes(output: str) -> int:
@@ -500,7 +646,9 @@ def _canonical_receipt(data: bytes) -> Mapping[str, Any]:
     return value
 
 
-def _receipt_reasons(receipt: Mapping[str, Any]) -> Tuple[str, ...]:
+def _receipt_reasons(
+    receipt: Mapping[str, Any], contract: Mapping[str, Any]
+) -> Tuple[str, ...]:
     reasons = []
     if tuple(_validator().iter_errors(receipt)):
         reasons.append("SYSTEM_PAPER_PREFLIGHT_RECEIPT_SCHEMA_INVALID")
@@ -535,6 +683,8 @@ def _receipt_reasons(receipt: Mapping[str, Any]) -> Tuple[str, ...]:
         disk = receipt["disk"]
         ping = receipt["ping_probe"]
         machine = receipt["machine_identity"]
+        credential = receipt["credential_boundary"]
+        runtime_import = receipt["runtime_import"]
         commands = launchd["command_evidence"]
         expected_commands = [
             ["/bin/launchctl", "print", f"gui/{machine['uid']}"],
@@ -547,6 +697,65 @@ def _receipt_reasons(receipt: Mapping[str, Any]) -> Tuple[str, ...]:
         ]
         if [item.get("argv") for item in commands] != expected_commands:
             reasons.append("SYSTEM_PAPER_PREFLIGHT_COMMAND_SET_MISMATCH")
+        for command in commands + [runtime_import["command_evidence"]]:
+            if command["transport_status"] == "FAILED" and (
+                command["returncode"] != 255
+                or command["stdout_sha256"] != _sha256(b"")
+                or command["stderr_sha256"] != _sha256(b"")
+            ):
+                reasons.append("SYSTEM_PAPER_PREFLIGHT_COMMAND_EVIDENCE_INVALID")
+        expected_import_command = [
+            receipt["contract_binding"]["python_executable"],
+            "-c",
+            _RUNTIME_IMPORT_CODE,
+        ]
+        if runtime_import["command_evidence"].get("argv") != expected_import_command:
+            reasons.append("SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_INVALID")
+        expected_credential_paths = [
+            str(path)
+            for path in _credential_paths(
+                Path(machine["home"]),
+                Path(receipt["root_identities"]["runtime"]["path"]),
+            )
+        ]
+        if (
+            credential["environment_names"]
+            != [
+                name
+                for name in _CREDENTIAL_ENVIRONMENT_NAMES
+                if name in credential["environment_names"]
+            ]
+            or credential["file_paths"]
+            != [
+                path
+                for path in expected_credential_paths
+                if path in credential["file_paths"]
+            ]
+        ):
+            reasons.append("SYSTEM_PAPER_PREFLIGHT_CREDENTIAL_EVIDENCE_INVALID")
+        if runtime_import["status"] == "VERIFIED":
+            import_payload = {
+                "package_version": runtime_import["package_version_or_null"],
+                "sys_version": runtime_import["sys_version_or_null"],
+            }
+            if (
+                import_payload["package_version"] != _RELEASE_VERSION
+                or not isinstance(import_payload["sys_version"], str)
+                or runtime_import["command_evidence"]["returncode"] != 0
+                or runtime_import["command_evidence"]["stdout_sha256"]
+                != _sha256((canonical_json(import_payload) + "\n").encode("utf-8"))
+                or runtime_import["command_evidence"]["stderr_sha256"]
+                != _sha256(b"")
+            ):
+                reasons.append("SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_INVALID")
+        elif runtime_import["status"] == "FAILED":
+            if (
+                runtime_import["package_version_or_null"] is not None
+                or runtime_import["sys_version_or_null"] is not None
+            ):
+                reasons.append("SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_INVALID")
+        else:
+            reasons.append("SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_INVALID")
         if (
             launchd["login_domain_present"]
             != (commands[0]["returncode"] == 0)
@@ -582,19 +791,103 @@ def _receipt_reasons(receipt: Mapping[str, Any]) -> Tuple[str, ...]:
         if (
             receipt["network_request_count"]
             != security["network_request_count"]
+            or credential["credential_count"]
+            != len(credential["environment_names"]) + len(credential["file_paths"])
             or security
             != {
                 "production_activation_enabled": False,
                 "launchctl_mutation_count": 0,
                 "runtime_invocation_count": 0,
                 "network_request_count": receipt["network_request_count"],
-                "credential_count": 0,
+                "credential_count": credential["credential_count"],
                 "broker_request_count": 0,
                 "order_submission_count": 0,
             }
             or receipt["warnings"] != list(_WARNINGS)
         ):
             reasons.append("SYSTEM_PAPER_PREFLIGHT_SECURITY_BOUNDARY_INVALID")
+        evidence_failures = []
+        if any(item["transport_status"] == "FAILED" for item in commands):
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_COMMAND_FAILED")
+        if commands[0]["returncode"] != 0:
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_LOGIN_DOMAIN_ABSENT")
+        if commands[1]["returncode"] == 0 or commands[1]["returncode"] not in (
+            0,
+            113,
+        ):
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_SERVICE_NOT_ABSENT")
+        if commands[2]["returncode"] != 0:
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_POWER_PROBE_FAILED")
+        elif power["ac_sleep_minutes"] is None:
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_AC_SLEEP_UNKNOWN")
+        elif power["ac_sleep_minutes"] != 0:
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_AC_SLEEP_UNSAFE")
+        if credential["credential_count"]:
+            evidence_failures.append(
+                "SYSTEM_PAPER_PREFLIGHT_CREDENTIAL_BOUNDARY_PRESENT"
+            )
+        import_evidence = runtime_import["command_evidence"]
+        expected_import_payload = {
+            "package_version": contract["python_identity"]["package_version"],
+            "sys_version": contract["python_identity"]["sys_version"],
+        }
+        expected_import_stdout_hash = _sha256(
+            (canonical_json(expected_import_payload) + "\n").encode("utf-8")
+        )
+        if runtime_import["status"] == "FAILED":
+            if import_evidence["transport_status"] == "FAILED":
+                evidence_failures.append(
+                    "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_FAILED"
+                )
+            elif (
+                import_evidence["returncode"] != 0
+                or import_evidence["stdout_sha256"]
+                != expected_import_stdout_hash
+                or import_evidence["stderr_sha256"] != _sha256(b"")
+            ):
+                evidence_failures.append(
+                    "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_INVALID"
+                )
+            else:
+                reasons.append("SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_INVALID")
+        if launchd["target_plist_present"]:
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_TARGET_PLIST_PRESENT")
+        for name in ("state", "artifacts"):
+            filesystem = disk["filesystems"][name]
+            if not filesystem["is_local"]:
+                evidence_failures.append(
+                    "SYSTEM_PAPER_PREFLIGHT_NETWORK_FILESYSTEM"
+                )
+            if filesystem["free_bytes"] < _MIN_FREE_BYTES:
+                evidence_failures.append(
+                    "SYSTEM_PAPER_PREFLIGHT_DISK_SPACE_INSUFFICIENT"
+                )
+            if filesystem["device"] != receipt["root_identities"][name]["device"]:
+                evidence_failures.append(
+                    "SYSTEM_PAPER_PREFLIGHT_FILESYSTEM_IDENTITY_MISMATCH"
+                )
+        if (
+            probe["sample_count"] == 0
+            and probe["reason_codes"]
+            == ["SYSTEM_PAPER_PREFLIGHT_CLOCK_PROBE_FAILED"]
+        ):
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_CLOCK_PROBE_FAILED")
+        elif probe["health_status"] not in (
+            "HEALTHY_ALIGNED",
+            "HEALTHY_CORRECTED",
+        ):
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_CLOCK_UNHEALTHY")
+        if (
+            ping["status"] != 200
+            or ping["request_count"] != 1
+            or ping["response_body_sha256"] != _sha256(b"{}")
+        ):
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_PING_RESPONSE_INVALID")
+        if receipt["network_request_count"] != 4:
+            evidence_failures.append("SYSTEM_PAPER_PREFLIGHT_NETWORK_COUNT_INVALID")
+        expected_failure_reasons = sorted(set(evidence_failures))
+        if failure_reasons != expected_failure_reasons:
+            reasons.append("SYSTEM_PAPER_PREFLIGHT_FAILURE_EVIDENCE_MISMATCH")
         if status_value == "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE":
             trusted_dt, _ = _utc(probe["trusted_completed_at_or_null"])
             verified_invariants = (
@@ -607,6 +900,10 @@ def _receipt_reasons(receipt: Mapping[str, Any]) -> Tuple[str, ...]:
                 and abs((trusted_dt - verified_dt).total_seconds()) <= 30
                 and ping["status"] == 200
                 and ping["request_count"] == 1
+                and credential["credential_count"] == 0
+                and runtime_import["status"] == "VERIFIED"
+                and runtime_import["package_version_or_null"] == _RELEASE_VERSION
+                and isinstance(runtime_import["sys_version_or_null"], str)
                 and launchd["login_domain_present"] is True
                 and launchd["service_present"] is False
                 and launchd["target_plist_present"] is False
@@ -639,6 +936,7 @@ def run_system_paper_preflight(
     command_runner=None,
     machine_probe=None,
     filesystem_probe=None,
+    credential_probe=None,
     server_time_transport=None,
     ping_transport=None,
     clock=None,
@@ -664,6 +962,7 @@ def run_system_paper_preflight(
 
     selected_machine_probe = machine_probe or _default_machine_probe
     selected_filesystem_probe = filesystem_probe or _default_filesystem_probe
+    selected_credential_probe = credential_probe or _default_credential_probe
     selected_runner = command_runner or _default_command_runner
     selected_time_transport = server_time_transport or BinanceServerTimeTransport()
     selected_ping_transport = ping_transport or BinancePublicPingTransport()
@@ -690,6 +989,11 @@ def run_system_paper_preflight(
     before["preflight_receipts"] = _path_identity(preflight_root)
 
     failures = []
+    credential_boundary = _credential_boundary(
+        Path(machine["home"]), runtime_root, selected_credential_probe
+    )
+    if credential_boundary["credential_count"]:
+        failures.append("SYSTEM_PAPER_PREFLIGHT_CREDENTIAL_BOUNDARY_PRESENT")
     commands = []
     domain_command = ("/bin/launchctl", "print", f"gui/{machine['uid']}")
     service_command = (
@@ -738,6 +1042,10 @@ def run_system_paper_preflight(
     if sleep_minutes is not None and not ac_sleep_safe:
         failures.append("SYSTEM_PAPER_PREFLIGHT_AC_SLEEP_UNSAFE")
 
+    runtime_import, import_failure = _runtime_import(contract, selected_runner)
+    if import_failure:
+        failures.append(import_failure)
+
     target_plist = (
         Path(machine["home"]) / "Library" / "LaunchAgents" / f"{_LABEL}.plist"
     )
@@ -774,8 +1082,8 @@ def run_system_paper_preflight(
 
     try:
         ping_probe = _ping_probe(selected_ping_transport)
-    except SystemPaperPreflightError as error:
-        failures.append(error.reason_code)
+    except SystemPaperPreflightError:
+        failures.append("SYSTEM_PAPER_PREFLIGHT_PING_RESPONSE_INVALID")
         ping_probe = {
             "url": _PING_URL,
             "http_method": "GET",
@@ -787,9 +1095,25 @@ def run_system_paper_preflight(
 
     after = {name: _path_identity(path) for name, path in root_paths.items()}
     if before != after:
-        failures.append("SYSTEM_PAPER_PREFLIGHT_ROOT_IDENTITY_CHANGED")
+        raise SystemPaperPreflightError(
+            "SYSTEM_PAPER_PREFLIGHT_ROOT_IDENTITY_CHANGED"
+        )
     if _machine_identity(selected_machine_probe) != machine:
-        failures.append("SYSTEM_PAPER_PREFLIGHT_MACHINE_IDENTITY_CHANGED")
+        raise SystemPaperPreflightError(
+            "SYSTEM_PAPER_PREFLIGHT_MACHINE_IDENTITY_CHANGED"
+        )
+    try:
+        contract_recheck = load_system_paper_launchd_contract(
+            contract_path=Path(contract_path), plist_path=Path(plist_path)
+        )
+    except SystemPaperLaunchdError as error:
+        raise SystemPaperPreflightError(
+            "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IDENTITY_CHANGED"
+        ) from error
+    if contract_recheck != contract:
+        raise SystemPaperPreflightError(
+            "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IDENTITY_CHANGED"
+        )
 
     network_count = getattr(selected_time_transport, "calls", 3) + getattr(
         selected_ping_transport, "calls", 1
@@ -815,6 +1139,8 @@ def run_system_paper_preflight(
         "launchd_plist_sha256": _sha256(plist_bytes),
         "release_commit": contract["release"]["release_commit"],
         "snapshot_tree_hash": contract["execution_snapshot"]["tree_hash"],
+        "python_executable": contract["python_executable"],
+        "python_identity_hash": business_hash(contract["python_identity"]),
     }
     identity = {
         "contract_id": contract_binding["contract_id"],
@@ -834,6 +1160,8 @@ def run_system_paper_preflight(
         "contract_binding": contract_binding,
         "machine_identity": machine,
         "root_identities": before,
+        "credential_boundary": credential_boundary,
+        "runtime_import": runtime_import,
         "launchd": {
             "label": _LABEL,
             "login_domain_present": login_domain_present,
@@ -861,14 +1189,14 @@ def run_system_paper_preflight(
             "launchctl_mutation_count": 0,
             "runtime_invocation_count": 0,
             "network_request_count": network_count,
-            "credential_count": 0,
+            "credential_count": credential_boundary["credential_count"],
             "broker_request_count": 0,
             "order_submission_count": 0,
         },
         "warnings": list(_WARNINGS),
     }
     receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
-    if _receipt_reasons(receipt):
+    if _receipt_reasons(receipt, contract):
         raise SystemPaperPreflightError(
             "SYSTEM_PAPER_PREFLIGHT_RECEIPT_INVALID"
         )
@@ -894,6 +1222,7 @@ def load_system_paper_preflight_receipt(
     plist_path: Path,
     machine_probe=None,
     filesystem_probe=None,
+    credential_probe=None,
     clock=None,
     _allow_expired_verified=False,
 ) -> Mapping[str, Any]:
@@ -914,6 +1243,10 @@ def load_system_paper_preflight_receipt(
                 item, "SYSTEM_PAPER_PREFLIGHT_OUTPUT_INVENTORY_INVALID"
             ).read_bytes()
         )
+        if _receipt_reasons(candidate, contract):
+            raise SystemPaperPreflightError(
+                "SYSTEM_PAPER_PREFLIGHT_OUTPUT_INVENTORY_INVALID"
+            )
         candidate_id = candidate.get("receipt_id")
         if (
             not isinstance(candidate_id, str)
@@ -925,7 +1258,9 @@ def load_system_paper_preflight_receipt(
             )
         seen_ids.add(candidate_id)
     receipt = _canonical_receipt(receipt_file.read_bytes())
-    if receipt_file.name != f"{receipt.get('receipt_id')}.json" or _receipt_reasons(receipt):
+    if receipt_file.name != f"{receipt.get('receipt_id')}.json" or _receipt_reasons(
+        receipt, contract
+    ):
         raise SystemPaperPreflightError(
             "SYSTEM_PAPER_PREFLIGHT_RECEIPT_INVALID"
         )
@@ -942,6 +1277,8 @@ def load_system_paper_preflight_receipt(
         "launchd_plist_sha256": _sha256(plist_bytes),
         "release_commit": contract["release"]["release_commit"],
         "snapshot_tree_hash": contract["execution_snapshot"]["tree_hash"],
+        "python_executable": contract["python_executable"],
+        "python_identity_hash": business_hash(contract["python_identity"]),
     }
     if binding != expected_binding:
         raise SystemPaperPreflightError(
@@ -953,6 +1290,28 @@ def load_system_paper_preflight_receipt(
             "SYSTEM_PAPER_PREFLIGHT_MACHINE_IDENTITY_MISMATCH"
         )
     runtime_root = Path(contract["runtime_root"])
+    credential_boundary = _credential_boundary(
+        Path(machine["home"]),
+        runtime_root,
+        credential_probe or _default_credential_probe,
+    )
+    if (
+        receipt["status"] == "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE"
+        and credential_boundary != receipt["credential_boundary"]
+    ):
+        raise SystemPaperPreflightError(
+            "SYSTEM_PAPER_PREFLIGHT_CREDENTIAL_BOUNDARY_MISMATCH"
+        )
+    runtime_import = receipt["runtime_import"]
+    if runtime_import["status"] == "VERIFIED" and (
+        runtime_import["package_version_or_null"]
+        != contract["python_identity"]["package_version"]
+        or runtime_import["sys_version_or_null"]
+        != contract["python_identity"]["sys_version"]
+    ):
+        raise SystemPaperPreflightError(
+            "SYSTEM_PAPER_PREFLIGHT_RUNTIME_IMPORT_MISMATCH"
+        )
     root_paths = {
         name: Path(value)
         for name, value in contract["root_paths"].items()
@@ -974,9 +1333,21 @@ def load_system_paper_preflight_receipt(
     probe = filesystem_probe or _default_filesystem_probe
     for name in ("state", "artifacts"):
         value = _filesystem(root_paths[name], probe)
-        if value != receipt["disk"]["filesystems"][name]:
+        recorded = receipt["disk"]["filesystems"][name]
+        if any(
+            value[key] != recorded[key]
+            for key in ("device", "filesystem_id", "is_local")
+        ):
             raise SystemPaperPreflightError(
                 "SYSTEM_PAPER_PREFLIGHT_ROOT_IDENTITY_MISMATCH"
+            )
+        if not value["is_local"]:
+            raise SystemPaperPreflightError(
+                "SYSTEM_PAPER_PREFLIGHT_NETWORK_FILESYSTEM"
+            )
+        if value["free_bytes"] < _MIN_FREE_BYTES:
+            raise SystemPaperPreflightError(
+                "SYSTEM_PAPER_PREFLIGHT_DISK_SPACE_INSUFFICIENT"
             )
     if (
         receipt["status"] == "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE"

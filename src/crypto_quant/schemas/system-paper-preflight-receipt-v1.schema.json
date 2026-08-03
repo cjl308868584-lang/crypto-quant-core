@@ -7,7 +7,8 @@
   "required": [
     "$schema", "schema_version", "receipt_id", "receipt_hash", "verified_at",
     "expires_at_or_null", "status", "failure_reasons", "contract_binding",
-    "machine_identity", "root_identities", "launchd", "power", "disk",
+    "machine_identity", "root_identities", "credential_boundary",
+    "runtime_import", "launchd", "power", "disk",
     "clock_probe", "clock_probe_trust_hash", "ping_probe",
     "network_request_count", "security_boundary", "warnings"
   ],
@@ -22,6 +23,8 @@
     "failure_reasons": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^SYSTEM_PAPER_PREFLIGHT_[A-Z0-9_]+$"}},
     "contract_binding": {"$ref": "#/$defs/contract"},
     "machine_identity": {"$ref": "#/$defs/machine"},
+    "credential_boundary": {"$ref": "#/$defs/credential"},
+    "runtime_import": {"$ref": "#/$defs/runtime_import"},
     "root_identities": {
       "type": "object", "additionalProperties": false,
       "required": ["runtime", "state", "log", "artifacts", "deployment", "preflight_receipts"],
@@ -55,12 +58,13 @@
     "path": {"type": "string", "pattern": "^/"},
     "contract": {
       "type": "object", "additionalProperties": false,
-      "required": ["contract_path", "plist_path", "contract_id", "contract_hash", "contract_trust_hash", "launchd_plist_sha256", "release_commit", "snapshot_tree_hash"],
+      "required": ["contract_path", "plist_path", "contract_id", "contract_hash", "contract_trust_hash", "launchd_plist_sha256", "release_commit", "snapshot_tree_hash", "python_executable", "python_identity_hash"],
       "properties": {
         "contract_path": {"$ref": "#/$defs/path"}, "plist_path": {"$ref": "#/$defs/path"},
         "contract_id": {"type": "string"}, "contract_hash": {"$ref": "#/$defs/hash"},
         "contract_trust_hash": {"$ref": "#/$defs/hash"}, "launchd_plist_sha256": {"$ref": "#/$defs/hash"},
-        "release_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "snapshot_tree_hash": {"$ref": "#/$defs/hash"}
+        "release_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "snapshot_tree_hash": {"$ref": "#/$defs/hash"},
+        "python_executable": {"$ref": "#/$defs/path"}, "python_identity_hash": {"$ref": "#/$defs/hash"}
       }
     },
     "machine": {
@@ -83,11 +87,34 @@
     },
     "command": {
       "type": "object", "additionalProperties": false,
-      "required": ["argv", "returncode", "stdout_sha256", "stderr_sha256"],
+      "required": ["argv", "transport_status", "returncode", "stdout_sha256", "stderr_sha256"],
       "properties": {
         "argv": {"type": "array", "minItems": 3, "maxItems": 4, "items": {"type": "string", "minLength": 1}},
+        "transport_status": {"enum": ["COMPLETED", "FAILED"]},
         "returncode": {"type": "integer", "minimum": 0, "maximum": 255},
         "stdout_sha256": {"$ref": "#/$defs/hash"}, "stderr_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "credential": {
+      "type": "object", "additionalProperties": false,
+      "required": ["environment_names", "file_paths", "credential_count"],
+      "properties": {
+        "environment_names": {
+          "type": "array", "uniqueItems": true, "maxItems": 5,
+          "items": {"enum": ["BINANCE_API_KEY", "BINANCE_API_SECRET", "BINANCE_SECRET_KEY", "CRYPTO_QUANT_API_KEY", "CRYPTO_QUANT_API_SECRET"]}
+        },
+        "file_paths": {"type": "array", "uniqueItems": true, "maxItems": 4, "items": {"$ref": "#/$defs/path"}},
+        "credential_count": {"type": "integer", "minimum": 0, "maximum": 9}
+      }
+    },
+    "runtime_import": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "package_version_or_null", "sys_version_or_null", "command_evidence"],
+      "properties": {
+        "status": {"enum": ["VERIFIED", "FAILED"]},
+        "package_version_or_null": {"oneOf": [{"const": "0.58.0"}, {"type": "null"}]},
+        "sys_version_or_null": {"oneOf": [{"type": "string", "minLength": 1, "maxLength": 1024}, {"type": "null"}]},
+        "command_evidence": {"$ref": "#/$defs/command"}
       }
     },
     "launchd": {
@@ -144,7 +171,7 @@
       "properties": {
         "production_activation_enabled": {"const": false}, "launchctl_mutation_count": {"const": 0},
         "runtime_invocation_count": {"const": 0}, "network_request_count": {"type": "integer", "minimum": 0, "maximum": 4},
-        "credential_count": {"const": 0}, "broker_request_count": {"const": 0}, "order_submission_count": {"const": 0}
+        "credential_count": {"type": "integer", "minimum": 0, "maximum": 9}, "broker_request_count": {"const": 0}, "order_submission_count": {"const": 0}
       }
     }
   }
