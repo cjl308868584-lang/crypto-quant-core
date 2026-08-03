@@ -1235,6 +1235,4 @@ def load_system_paper_launchd_contract(
     plist_bytes = plist_file.read_bytes()
     if _contract_reasons(contract, plist_bytes):
         raise SystemPaperLaunchdError("SYSTEM_PAPER_LAUNCHD_CONTRACT_INVALID")
-    if _contract_reasons(contract, plist_bytes):
-        raise SystemPaperLaunchdError("SYSTEM_PAPER_LAUNCHD_CONTRACT_INVALID")
     return contract

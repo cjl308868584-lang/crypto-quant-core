@@ -7,7 +7,7 @@ import secrets
 import stat
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
@@ -30,6 +30,8 @@ _LABEL = "local.crypto-quant.system-paper-v1"
 _LAUNCHCTL = "/bin/launchctl"
 _MAX_COMMAND_BYTES = 64 * 1024
 _MAX_RECEIPT_BYTES = 4 * 1024 * 1024
+_ACTIVATION_WINDOW_START = timedelta(minutes=30)
+_ACTIVATION_WINDOW_END = timedelta(hours=3, minutes=30)
 _WARNINGS = (
     "INSTALL_RECEIPT_DOES_NOT_PROVE_FIRST_NATURAL_SLOT",
     "INSTALLER_DOES_NOT_KICKSTART_OR_INVOKE_RUNTIME",
@@ -78,6 +80,18 @@ def _utc(value: object) -> str:
     if isinstance(value, str) and value != text:
         raise SystemPaperInstallError("SYSTEM_PAPER_INSTALL_TIME_INVALID")
     return text
+
+
+def _activation_window_safe(value: str) -> bool:
+    instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    boundary = instant.replace(
+        hour=(instant.hour // 4) * 4,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    offset = instant - boundary
+    return _ACTIVATION_WINDOW_START <= offset <= _ACTIVATION_WINDOW_END
 
 
 def _default_launchctl_runner(argv: Sequence[str]) -> LaunchctlResult:
@@ -519,6 +533,7 @@ def _receipt_reasons(
         if not (
             preflight_verified <= installed_at <= preflight_expires
             and installed_at <= verified_at
+            and _activation_window_safe(receipt["installed_at"])
         ):
             reasons.append("SYSTEM_PAPER_INSTALL_TIME_BINDING_INVALID")
         identity = {
@@ -579,8 +594,9 @@ def install_system_paper_launchd(
     _machine_probe=None,
     _filesystem_probe=None,
 ) -> Mapping[str, Any]:
-    installed_at = _utc((clock or _now)())
-    current_clock = lambda: installed_at
+    selected_clock = clock or _now
+    checked_at = _utc(selected_clock())
+    current_clock = lambda: checked_at
     try:
         contract, plist_bytes, preflight = _load_sources(
             contract_path=contract_path,
@@ -599,6 +615,10 @@ def install_system_paper_launchd(
             else "SYSTEM_PAPER_INSTALL_PREFLIGHT_INVALID"
         )
         raise SystemPaperInstallError(reason) from error
+    if not _activation_window_safe(checked_at):
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_ACTIVATION_WINDOW_UNSAFE"
+        )
     uid = preflight["machine_identity"]["uid"]
     home = Path(preflight["machine_identity"]["home"])
     target = home / "Library" / "LaunchAgents" / f"{_LABEL}.plist"
@@ -613,7 +633,14 @@ def install_system_paper_launchd(
         )
     preflight_print = _command_evidence(print_argv, first)
 
+    installed_at = _utc(selected_clock())
+    if not _activation_window_safe(installed_at):
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_ACTIVATION_WINDOW_UNSAFE"
+        )
+
     # Close the check/use race before the first installation write.
+    current_clock = lambda: installed_at
     contract2, plist_bytes2, preflight2 = _load_sources(
         contract_path=contract_path,
         plist_path=plist_path,
@@ -688,7 +715,7 @@ def install_system_paper_launchd(
         raise SystemPaperInstallError(
             "SYSTEM_PAPER_INSTALL_PRINT_VERIFY_FAILED"
         )
-    verified_at = _utc((clock or _now)())
+    verified_at = _utc(selected_clock())
     verified_print = _command_evidence(print_argv, verified_result)
     target_stat = _target_stat(target, uid)
     source_contract = {

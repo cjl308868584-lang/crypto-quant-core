@@ -7,22 +7,25 @@ import stat
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from crypto_quant.system_paper_install import (
     LaunchctlResult,
     SystemPaperInstallError,
+    _activation_window_safe,
     install_system_paper_launchd,
     load_system_paper_install_receipt,
 )
 from crypto_quant.system_paper_install_cli import main as install_main
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import canonical_json, stable_id
 from crypto_quant.evidence import artifact_self_hash
 import tests.test_system_paper_preflight as preflight_helpers
 
 
 LABEL = "local.crypto-quant.system-paper-v1"
+CHECK_AT = "2026-08-04T05:09:59.000Z"
 INSTALL_AT = "2026-08-04T05:10:00.000Z"
 VERIFY_AT = "2026-08-04T05:10:01.000Z"
 
@@ -119,8 +122,18 @@ class SystemPaperInstallTests(unittest.TestCase):
         result, _runner, _ping = self.preflight.execute()
         return Path(result["receipt_path"])
 
+    def verified_preflight_at(self, timestamp):
+        moment = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        result, _runner, _ping = self.preflight.execute(
+            clock=lambda: timestamp,
+            server_time=preflight_helpers.FakeTimeTransport(
+                preflight_helpers.fake_time_responses(base=moment)
+            ),
+        )
+        return Path(result["receipt_path"])
+
     def values(self, receipt_path, runner):
-        times = iter((INSTALL_AT, VERIFY_AT))
+        times = iter((CHECK_AT, INSTALL_AT, VERIFY_AT))
         return {
             "contract_path": self.preflight.contract_path,
             "plist_path": self.preflight.plist_path,
@@ -146,6 +159,14 @@ class SystemPaperInstallTests(unittest.TestCase):
             install_system_paper_launchd(**self.values(missing, runner))
         self.assertEqual(runner.calls, [])
         self.assertFalse(self.target.parent.exists())
+
+        verified = self.verified_preflight()
+        expired_values = self.values(verified, runner)
+        expired_values["clock"] = lambda: "2026-08-04T05:31:00.000Z"
+        with self.assertRaisesRegex(Exception, "EXPIRED"):
+            install_system_paper_launchd(**expired_values)
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(self.target.parent.exists())
         self.assertFalse((self.preflight.runtime_root / "install-receipts").exists())
 
         failed, _runner, _ping = self.preflight.execute(
@@ -161,13 +182,123 @@ class SystemPaperInstallTests(unittest.TestCase):
         self.assertEqual(runner.calls, [])
         self.assertFalse(self.target.parent.exists())
 
-        verified = self.verified_preflight()
-        expired_values = self.values(verified, runner)
-        expired_values["clock"] = lambda: "2026-08-04T05:31:00.000Z"
-        with self.assertRaisesRegex(Exception, "EXPIRED"):
-            install_system_paper_launchd(**expired_values)
+    def test_close_delay_activation_window_fails_before_launchctl_or_write(self):
+        preflight_path = self.verified_preflight_at(
+            "2026-08-04T04:01:00.000Z"
+        )
+        runner = self.runner()
+
+        with self.assertRaisesRegex(
+            SystemPaperInstallError,
+            "SYSTEM_PAPER_INSTALL_ACTIVATION_WINDOW_UNSAFE",
+        ):
+            install_system_paper_launchd(
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                clock=lambda: "2026-08-04T04:02:00.000Z",
+                _launchctl_runner=runner,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
         self.assertEqual(runner.calls, [])
         self.assertFalse(self.target.parent.exists())
+        self.assertFalse(
+            (self.preflight.runtime_root / "install-receipts").exists()
+        )
+
+    def test_frozen_activation_window_has_inclusive_edges(self):
+        self.assertFalse(_activation_window_safe("2026-08-04T04:29:59.999Z"))
+        self.assertTrue(_activation_window_safe("2026-08-04T04:30:00.000Z"))
+        self.assertTrue(_activation_window_safe("2026-08-04T07:30:00.000Z"))
+        self.assertFalse(_activation_window_safe("2026-08-04T07:30:00.001Z"))
+
+    def test_second_activation_check_blocks_clock_crossing_before_write(self):
+        preflight_path = self.verified_preflight_at(
+            "2026-08-04T07:28:00.000Z"
+        )
+        runner = self.runner()
+        times = iter(
+            (
+                "2026-08-04T07:29:00.000Z",
+                "2026-08-04T07:31:00.000Z",
+                "2026-08-04T07:31:01.000Z",
+            )
+        )
+
+        with self.assertRaisesRegex(
+            SystemPaperInstallError,
+            "SYSTEM_PAPER_INSTALL_ACTIVATION_WINDOW_UNSAFE",
+        ):
+            install_system_paper_launchd(
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                clock=lambda: next(times),
+                _launchctl_runner=runner,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
+        self.assertEqual(len(runner.calls), 1)
+        self.assertEqual(runner.calls[0][1], "print")
+        self.assertFalse(self.target.parent.exists())
+
+    def test_loader_replays_frozen_activation_window(self):
+        preflight_path = self.verified_preflight_at(
+            "2026-08-04T07:28:00.000Z"
+        )
+        runner = self.runner()
+        times = iter(
+            (
+                "2026-08-04T07:29:00.000Z",
+                "2026-08-04T07:29:01.000Z",
+                "2026-08-04T07:29:02.000Z",
+            )
+        )
+        result = install_system_paper_launchd(
+            contract_path=self.preflight.contract_path,
+            plist_path=self.preflight.plist_path,
+            preflight_receipt_path=preflight_path,
+            clock=lambda: next(times),
+            _launchctl_runner=runner,
+            _machine_probe=self.preflight.machine,
+            _filesystem_probe=self.preflight.filesystem,
+        )
+        receipt_path = Path(result["receipt_path"])
+        changed = json.loads(receipt_path.read_text())
+        changed["installed_at"] = "2026-08-04T07:31:00.000Z"
+        changed["verified_at"] = "2026-08-04T07:31:01.000Z"
+        changed["receipt_id"] = stable_id(
+            "system_paper_install_receipt",
+            {
+                "contract_hash": changed["source_contract"]["contract_hash"],
+                "preflight_receipt_hash": changed["preflight_receipt"]["receipt_hash"],
+                "target_path": changed["target_path"],
+                "target_inode": changed["target_stat"]["inode"],
+                "install_action": changed["install_action"],
+                "installed_at": changed["installed_at"],
+                "verified_at": changed["verified_at"],
+            },
+        )
+        changed["receipt_hash"] = artifact_self_hash(changed, "receipt_hash")
+        changed_path = receipt_path.with_name(f"{changed['receipt_id']}.json")
+        receipt_path.rename(changed_path)
+        changed_path.write_bytes(canonical_json(changed).encode("utf-8"))
+
+        with self.assertRaisesRegex(
+            SystemPaperInstallError,
+            "SYSTEM_PAPER_INSTALL_RECEIPT_INVALID",
+        ):
+            load_system_paper_install_receipt(
+                receipt_path=changed_path,
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
 
     def test_new_install_is_atomic_fixed_and_receipted_without_runtime_start(self):
         preflight_path = self.verified_preflight()
