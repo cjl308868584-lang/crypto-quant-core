@@ -77,6 +77,11 @@ _FROZEN_CONFIG_PATHS = (
     "config/release-metrics-v1.1.schema.json",
     "config/supporting-observation-bundle-v1.schema.json",
     "config/system-paper-plan-v1.schema.json",
+    "config/system-paper-market-bundle-v1.schema.json",
+    "config/system-paper-launchd-contract-v1.schema.json",
+    "config/system-paper-preflight-receipt-v1.schema.json",
+    "config/system-paper-install-receipt-v1.schema.json",
+    "config/system-paper-start-receipt-v1.schema.json",
     "config/system-paper-slot-result-v1.schema.json",
     "config/statistical-series-snapshot-v1.schema.json",
     "config/statistical-decision-snapshot-v1.schema.json",
@@ -127,11 +132,27 @@ _FROZEN_ARTIFACT_PATHS = (
     "artifacts/system-paper/system-paper-plan-v0.55.0.json",
 )
 _FROZEN_RELEASE_PATHS = (
+    "tests/system_paper_fixtures.py",
+    "tests/test_offline_paper.py",
     "tests/test_system_paper_scheduler.py",
     "tests/test_system_paper_fault_injection.py",
+    "tests/test_system_paper_public_input.py",
+    "tests/test_system_paper_runtime.py",
+    "tests/test_system_paper_runtime_cli.py",
+    "tests/test_system_paper_launchd.py",
+    "tests/test_system_paper_preflight.py",
+    "tests/test_system_paper_install.py",
+    "tests/test_system_paper_observer.py",
+    "tests/test_system_paper_start_receipt.py",
     "docs/superpowers/specs/"
     "2026-08-02-system-paper-wal-scheduler-design.md",
     "docs/superpowers/plans/2026-08-02-system-paper-wal-scheduler.md",
+    "docs/superpowers/specs/"
+    "2026-08-03-system-paper-deployment-trust-chain-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-03-system-paper-deployment-trust-chain.md",
+    "docs/adr/0058-system-paper-deployment-trust-chain.md",
+    "docs/implementation-status-v0.58.0.md",
 )
 
 
