@@ -25,6 +25,7 @@ import tests.test_system_paper_preflight as preflight_helpers
 
 
 LABEL = "local.crypto-quant.system-paper-v1"
+SOURCE_CHECK_AT = "2026-08-04T05:09:58.000Z"
 CHECK_AT = "2026-08-04T05:09:59.000Z"
 INSTALL_AT = "2026-08-04T05:10:00.000Z"
 VERIFY_AT = "2026-08-04T05:10:01.000Z"
@@ -133,7 +134,7 @@ class SystemPaperInstallTests(unittest.TestCase):
         return Path(result["receipt_path"])
 
     def values(self, receipt_path, runner):
-        times = iter((CHECK_AT, INSTALL_AT, VERIFY_AT))
+        times = iter((SOURCE_CHECK_AT, CHECK_AT, INSTALL_AT, VERIFY_AT))
         return {
             "contract_path": self.preflight.contract_path,
             "plist_path": self.preflight.plist_path,
@@ -222,8 +223,8 @@ class SystemPaperInstallTests(unittest.TestCase):
         times = iter(
             (
                 "2026-08-04T07:29:00.000Z",
+                "2026-08-04T07:29:00.000Z",
                 "2026-08-04T07:31:00.000Z",
-                "2026-08-04T07:31:01.000Z",
             )
         )
 
@@ -245,6 +246,38 @@ class SystemPaperInstallTests(unittest.TestCase):
         self.assertEqual(runner.calls[0][1], "print")
         self.assertFalse(self.target.parent.exists())
 
+    def test_source_replay_clock_advance_blocks_before_write(self):
+        preflight_path = self.verified_preflight_at(
+            "2026-08-04T07:28:00.000Z"
+        )
+        runner = self.runner()
+        current = {"time": "2026-08-04T07:29:00.000Z"}
+        probes = {"count": 0}
+
+        def advancing_machine_probe():
+            probes["count"] += 1
+            if probes["count"] == 2:
+                current["time"] = "2026-08-04T08:06:00.000Z"
+            return self.preflight.machine()
+
+        with self.assertRaisesRegex(
+            SystemPaperInstallError,
+            "SYSTEM_PAPER_INSTALL_ACTIVATION_WINDOW_UNSAFE",
+        ):
+            install_system_paper_launchd(
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                clock=lambda: current["time"],
+                _launchctl_runner=runner,
+                _machine_probe=advancing_machine_probe,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
+        self.assertEqual(probes["count"], 2)
+        self.assertEqual(len(runner.calls), 1)
+        self.assertFalse(self.target.parent.exists())
+
     def test_loader_replays_frozen_activation_window(self):
         preflight_path = self.verified_preflight_at(
             "2026-08-04T07:28:00.000Z"
@@ -252,6 +285,7 @@ class SystemPaperInstallTests(unittest.TestCase):
         runner = self.runner()
         times = iter(
             (
+                "2026-08-04T07:29:00.000Z",
                 "2026-08-04T07:29:00.000Z",
                 "2026-08-04T07:29:01.000Z",
                 "2026-08-04T07:29:02.000Z",

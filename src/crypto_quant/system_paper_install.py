@@ -94,6 +94,22 @@ def _activation_window_safe(value: str) -> bool:
     return _ACTIVATION_WINDOW_START <= offset <= _ACTIVATION_WINDOW_END
 
 
+def _require_activation_time(value: str, preflight: Mapping[str, Any]) -> None:
+    if not _activation_window_safe(value):
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_ACTIVATION_WINDOW_UNSAFE"
+        )
+    instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    verified = datetime.fromisoformat(
+        preflight["verified_at"].replace("Z", "+00:00")
+    )
+    expires = datetime.fromisoformat(
+        preflight["expires_at_or_null"].replace("Z", "+00:00")
+    )
+    if not verified <= instant <= expires:
+        raise SystemPaperInstallError("SYSTEM_PAPER_INSTALL_PREFLIGHT_EXPIRED")
+
+
 def _default_launchctl_runner(argv: Sequence[str]) -> LaunchctlResult:
     try:
         completed = subprocess.run(
@@ -595,8 +611,8 @@ def install_system_paper_launchd(
     _filesystem_probe=None,
 ) -> Mapping[str, Any]:
     selected_clock = clock or _now
-    checked_at = _utc(selected_clock())
-    current_clock = lambda: checked_at
+    source_checked_at = _utc(selected_clock())
+    current_clock = lambda: source_checked_at
     try:
         contract, plist_bytes, preflight = _load_sources(
             contract_path=contract_path,
@@ -615,10 +631,8 @@ def install_system_paper_launchd(
             else "SYSTEM_PAPER_INSTALL_PREFLIGHT_INVALID"
         )
         raise SystemPaperInstallError(reason) from error
-    if not _activation_window_safe(checked_at):
-        raise SystemPaperInstallError(
-            "SYSTEM_PAPER_INSTALL_ACTIVATION_WINDOW_UNSAFE"
-        )
+    checked_at = _utc(selected_clock())
+    _require_activation_time(checked_at, preflight)
     uid = preflight["machine_identity"]["uid"]
     home = Path(preflight["machine_identity"]["home"])
     target = home / "Library" / "LaunchAgents" / f"{_LABEL}.plist"
@@ -633,14 +647,8 @@ def install_system_paper_launchd(
         )
     preflight_print = _command_evidence(print_argv, first)
 
-    installed_at = _utc(selected_clock())
-    if not _activation_window_safe(installed_at):
-        raise SystemPaperInstallError(
-            "SYSTEM_PAPER_INSTALL_ACTIVATION_WINDOW_UNSAFE"
-        )
-
     # Close the check/use race before the first installation write.
-    current_clock = lambda: installed_at
+    current_clock = lambda: checked_at
     contract2, plist_bytes2, preflight2 = _load_sources(
         contract_path=contract_path,
         plist_path=plist_path,
@@ -653,6 +661,8 @@ def install_system_paper_launchd(
         raise SystemPaperInstallError(
             "SYSTEM_PAPER_INSTALL_SOURCE_CHANGED"
         )
+    installed_at = _utc(selected_clock())
+    _require_activation_time(installed_at, preflight2)
 
     target_exists = target.exists() or target.is_symlink()
     if first.returncode == 0:
