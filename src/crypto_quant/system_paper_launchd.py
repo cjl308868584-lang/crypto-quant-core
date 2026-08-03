@@ -812,6 +812,16 @@ def _contract(
             "files": [dict(item) for item in records],
         },
         "runtime_root": str(runtime),
+        "root_paths": {
+            "runtime": str(runtime),
+            "state": str(runtime / "state"),
+            "log": str(runtime / "log"),
+            "artifacts": str(runtime / "artifacts"),
+            "deployment": str(runtime / "deployment"),
+            "preflight_receipts": str(runtime / "preflight-receipts"),
+            "install_receipts": str(runtime / "install-receipts"),
+            "start_receipts": str(runtime / "start-receipts"),
+        },
         "python_executable": str(python),
         "system_timezone": timezone_payload,
         "cadence": {
@@ -888,6 +898,18 @@ def _contract_reasons(contract: Mapping[str, Any], plist_bytes: bytes) -> Tuple[
         )
         release = contract["release"]
         runtime_root = Path(contract["runtime_root"])
+        expected_root_paths = {
+            "runtime": str(runtime_root),
+            "state": str(runtime_root / "state"),
+            "log": str(runtime_root / "log"),
+            "artifacts": str(runtime_root / "artifacts"),
+            "deployment": str(runtime_root / "deployment"),
+            "preflight_receipts": str(runtime_root / "preflight-receipts"),
+            "install_receipts": str(runtime_root / "install-receipts"),
+            "start_receipts": str(runtime_root / "start-receipts"),
+        }
+        if contract.get("root_paths") != expected_root_paths:
+            reasons.append("SYSTEM_PAPER_LAUNCHD_ROOT_BINDING_MISMATCH")
         expected_snapshot_parent = (
             runtime_root / "deployment" / "system-paper-snapshots"
         )
@@ -1119,7 +1141,7 @@ def publish_system_paper_launchd_contract(
 
 
 def load_system_paper_launchd_contract(
-    *, contract_path: Path, plist_path: Path
+    *, contract_path: Path, plist_path: Path, _command_runner=None
 ) -> Mapping[str, Any]:
     contract_file = _secure_file(
         Path(contract_path), "SYSTEM_PAPER_LAUNCHD_CONTRACT_READ_INVALID"
@@ -1135,6 +1157,15 @@ def load_system_paper_launchd_contract(
         )
     contract = _canonical_contract(contract_file.read_bytes())
     plist_bytes = plist_file.read_bytes()
+    if _contract_reasons(contract, plist_bytes):
+        raise SystemPaperLaunchdError("SYSTEM_PAPER_LAUNCHD_CONTRACT_INVALID")
+    snapshot = contract["execution_snapshot"]
+    _verify_snapshot_import(
+        Path(snapshot["repository_root"]),
+        Path(contract["python_executable"]),
+        _command_runner or _default_command_runner,
+        tuple(snapshot["files"]),
+    )
     if _contract_reasons(contract, plist_bytes):
         raise SystemPaperLaunchdError("SYSTEM_PAPER_LAUNCHD_CONTRACT_INVALID")
     return contract

@@ -17,6 +17,7 @@
     "schedule_policy_hash",
     "execution_snapshot",
     "runtime_root",
+    "root_paths",
     "python_executable",
     "system_timezone",
     "cadence",
@@ -43,6 +44,24 @@
     "schedule_policy_hash": {"$ref": "#/$defs/hash"},
     "execution_snapshot": {"$ref": "#/$defs/snapshot"},
     "runtime_root": {"$ref": "#/$defs/path"},
+    "root_paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime", "state", "log", "artifacts", "deployment",
+        "preflight_receipts", "install_receipts", "start_receipts"
+      ],
+      "properties": {
+        "runtime": {"$ref": "#/$defs/path"},
+        "state": {"$ref": "#/$defs/path"},
+        "log": {"$ref": "#/$defs/path"},
+        "artifacts": {"$ref": "#/$defs/path"},
+        "deployment": {"$ref": "#/$defs/path"},
+        "preflight_receipts": {"$ref": "#/$defs/path"},
+        "install_receipts": {"$ref": "#/$defs/path"},
+        "start_receipts": {"$ref": "#/$defs/path"}
+      }
+    },
     "python_executable": {"$ref": "#/$defs/path"},
     "system_timezone": {"$ref": "#/$defs/timezone"},
     "cadence": {"$ref": "#/$defs/cadence"},

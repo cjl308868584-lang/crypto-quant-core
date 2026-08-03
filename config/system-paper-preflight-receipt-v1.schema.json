@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/system-paper-preflight-receipt-v1.schema.json",
+  "title": "System Paper Preflight Receipt V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_version", "receipt_id", "receipt_hash", "verified_at",
+    "expires_at_or_null", "status", "failure_reasons", "contract_binding",
+    "machine_identity", "root_identities", "launchd", "power", "disk",
+    "clock_probe", "clock_probe_trust_hash", "ping_probe",
+    "network_request_count", "security_boundary", "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./system-paper-preflight-receipt-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "receipt_id": {"type": "string", "pattern": "^system_paper_preflight_receipt_[0-9a-f]{64}$"},
+    "receipt_hash": {"$ref": "#/$defs/hash"},
+    "verified_at": {"$ref": "#/$defs/time"},
+    "expires_at_or_null": {"oneOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+    "status": {"enum": ["PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE", "PREFLIGHT_FAILED_CLOSED"]},
+    "failure_reasons": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^SYSTEM_PAPER_PREFLIGHT_[A-Z0-9_]+$"}},
+    "contract_binding": {"$ref": "#/$defs/contract"},
+    "machine_identity": {"$ref": "#/$defs/machine"},
+    "root_identities": {
+      "type": "object", "additionalProperties": false,
+      "required": ["runtime", "state", "log", "artifacts", "deployment", "preflight_receipts"],
+      "properties": {
+        "runtime": {"$ref": "#/$defs/root"}, "state": {"$ref": "#/$defs/root"},
+        "log": {"$ref": "#/$defs/root"}, "artifacts": {"$ref": "#/$defs/root"},
+        "deployment": {"$ref": "#/$defs/root"},
+        "preflight_receipts": {"$ref": "#/$defs/root"}
+      }
+    },
+    "launchd": {"$ref": "#/$defs/launchd"},
+    "power": {"$ref": "#/$defs/power"},
+    "disk": {"$ref": "#/$defs/disk"},
+    "clock_probe": {"type": "object", "minProperties": 10},
+    "clock_probe_trust_hash": {"$ref": "#/$defs/hash"},
+    "ping_probe": {"$ref": "#/$defs/ping"},
+    "network_request_count": {"type": "integer", "minimum": 0, "maximum": 4},
+    "security_boundary": {"$ref": "#/$defs/security"},
+    "warnings": {
+      "type": "array", "prefixItems": [
+        {"const": "PREFLIGHT_DOES_NOT_INSTALL_OR_START_SYSTEM_PAPER"},
+        {"const": "VERIFIED_RECEIPT_EXPIRES_AFTER_30_MINUTES"},
+        {"const": "PUBLIC_MARKET_ENDPOINTS_ONLY"},
+        {"const": "NO_LIVE_TRADING_AUTHORITY"}
+      ], "items": false, "minItems": 4, "maxItems": 4
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+    "path": {"type": "string", "pattern": "^/"},
+    "contract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_path", "plist_path", "contract_id", "contract_hash", "contract_trust_hash", "launchd_plist_sha256", "release_commit", "snapshot_tree_hash"],
+      "properties": {
+        "contract_path": {"$ref": "#/$defs/path"}, "plist_path": {"$ref": "#/$defs/path"},
+        "contract_id": {"type": "string"}, "contract_hash": {"$ref": "#/$defs/hash"},
+        "contract_trust_hash": {"$ref": "#/$defs/hash"}, "launchd_plist_sha256": {"$ref": "#/$defs/hash"},
+        "release_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "snapshot_tree_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "machine": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "home", "hostname", "timezone", "home_device", "home_inode"],
+      "properties": {
+        "uid": {"type": "integer", "minimum": 0}, "home": {"$ref": "#/$defs/path"},
+        "hostname": {"type": "string", "minLength": 1, "maxLength": 255}, "timezone": {"const": "Asia/Shanghai"},
+        "home_device": {"type": "integer", "minimum": 0}, "home_inode": {"type": "integer", "minimum": 1}
+      }
+    },
+    "root": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "device", "inode", "owner_uid", "mode"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"}, "device": {"type": "integer", "minimum": 0},
+        "inode": {"type": "integer", "minimum": 1}, "owner_uid": {"type": "integer", "minimum": 0},
+        "mode": {"const": 448}
+      }
+    },
+    "command": {
+      "type": "object", "additionalProperties": false,
+      "required": ["argv", "returncode", "stdout_sha256", "stderr_sha256"],
+      "properties": {
+        "argv": {"type": "array", "minItems": 3, "maxItems": 4, "items": {"type": "string", "minLength": 1}},
+        "returncode": {"type": "integer", "minimum": 0, "maximum": 255},
+        "stdout_sha256": {"$ref": "#/$defs/hash"}, "stderr_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "launchd": {
+      "type": "object", "additionalProperties": false,
+      "required": ["label", "login_domain_present", "service_present", "target_plist_path", "target_plist_present", "run_at_load", "command_evidence"],
+      "properties": {
+        "label": {"const": "local.crypto-quant.system-paper-v1"},
+        "login_domain_present": {"type": "boolean"}, "service_present": {"type": "boolean"},
+        "target_plist_path": {"$ref": "#/$defs/path"}, "target_plist_present": {"type": "boolean"},
+        "run_at_load": {"const": true},
+        "command_evidence": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/command"}}
+      }
+    },
+    "power": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "ac_sleep_minutes", "ac_sleep_safe"],
+      "properties": {
+        "source": {"const": "AC Power"},
+        "ac_sleep_minutes": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+        "ac_sleep_safe": {"type": "boolean"}
+      }
+    },
+    "filesystem": {
+      "type": "object", "additionalProperties": false,
+      "required": ["device", "filesystem_id", "free_bytes", "is_local"],
+      "properties": {
+        "device": {"type": "integer", "minimum": 0}, "filesystem_id": {"type": "integer", "minimum": 0},
+        "free_bytes": {"type": "integer", "minimum": 0}, "is_local": {"type": "boolean"}
+      }
+    },
+    "disk": {
+      "type": "object", "additionalProperties": false,
+      "required": ["minimum_free_bytes", "filesystems"],
+      "properties": {
+        "minimum_free_bytes": {"const": 5368709120},
+        "filesystems": {
+          "type": "object", "additionalProperties": false, "required": ["state", "artifacts"],
+          "properties": {"state": {"$ref": "#/$defs/filesystem"}, "artifacts": {"$ref": "#/$defs/filesystem"}}
+        }
+      }
+    },
+    "ping": {
+      "type": "object", "additionalProperties": false,
+      "required": ["url", "http_method", "security_type", "status", "response_body_sha256", "request_count"],
+      "properties": {
+        "url": {"const": "https://data-api.binance.vision/api/v3/ping"}, "http_method": {"const": "GET"},
+        "security_type": {"const": "NONE_PUBLIC"}, "status": {"type": "integer", "minimum": 0, "maximum": 599},
+        "response_body_sha256": {"$ref": "#/$defs/hash"}, "request_count": {"type": "integer", "minimum": 0, "maximum": 1}
+      }
+    },
+    "security": {
+      "type": "object", "additionalProperties": false,
+      "required": ["production_activation_enabled", "launchctl_mutation_count", "runtime_invocation_count", "network_request_count", "credential_count", "broker_request_count", "order_submission_count"],
+      "properties": {
+        "production_activation_enabled": {"const": false}, "launchctl_mutation_count": {"const": 0},
+        "runtime_invocation_count": {"const": 0}, "network_request_count": {"type": "integer", "minimum": 0, "maximum": 4},
+        "credential_count": {"const": 0}, "broker_request_count": {"const": 0}, "order_submission_count": {"const": 0}
+      }
+    }
+  }
+}

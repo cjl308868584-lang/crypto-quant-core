@@ -168,6 +168,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
             contract = load_system_paper_launchd_contract(
                 contract_path=Path(result["contract_path"]),
                 plist_path=Path(result["plist_path"]),
+                _command_runner=runner,
             )
             plist_bytes = Path(result["plist_path"]).read_bytes()
             plist = plistlib.loads(plist_bytes)
@@ -203,6 +204,19 @@ class SystemPaperLaunchdTests(unittest.TestCase):
                     "--output-root",
                     str(runtime_root / "artifacts"),
                 ],
+            )
+            self.assertEqual(
+                contract["root_paths"],
+                {
+                    "runtime": str(runtime_root),
+                    "state": str(runtime_root / "state"),
+                    "log": str(runtime_root / "log"),
+                    "artifacts": str(runtime_root / "artifacts"),
+                    "deployment": str(runtime_root / "deployment"),
+                    "preflight_receipts": str(runtime_root / "preflight-receipts"),
+                    "install_receipts": str(runtime_root / "install-receipts"),
+                    "start_receipts": str(runtime_root / "start-receipts"),
+                },
             )
             self.assertNotIn("challenger", plist_bytes.decode("utf-8").lower())
             self.assertEqual(contract["release"]["release_commit"], RELEASE_COMMIT)
