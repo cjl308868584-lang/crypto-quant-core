@@ -75,18 +75,21 @@ git commit -m "fix: publish system paper evidence without overwrite"
 
 **Files:**
 - Modify: `src/crypto_quant/system_paper_launchd.py`
+- Modify: `src/crypto_quant/system_paper_install.py`
 - Modify: `config/system-paper-launchd-contract-v1.schema.json`
 - Modify: `src/crypto_quant/schemas/system-paper-launchd-contract-v1.schema.json`
 - Modify: `tests/test_system_paper_launchd.py`
+- Modify: `tests/test_system_paper_install.py`
 
 **Interfaces:**
 - Contract cadence: `run_at_load == false` and plist `RunAtLoad == false`.
 - Contract `python_identity`: exact `path`, `device`, `inode`, `mode`, `owner_uid`, `link_count`, `size_bytes`, `sha256`, `sys_version`, `package_version`, `requirements_lock_sha256`.
 - `load_system_paper_launchd_contract(...)` performs zero commands; renderer remains the only render-time import runner.
+- Installer activation is allowed only from UTC-cycle `+00:30:00` through `+03:30:00`, rechecked before any command and immediately before target/bootstrap mutation; outside it fails with zero launchctl/write.
 
 - [ ] **Step 1: Write red activation and command-free loader tests**
 
-Assert `RunAtLoad=false`; a bootstrap fake only records load and cannot invoke runtime; next eligible slot is strictly after install. Render a contract with an injected command runner, then load it with a runner that raises on any call and require success. Mutate every Python identity field separately and require rejection.
+Assert `RunAtLoad=false`; a bootstrap fake only records load and cannot invoke runtime; next eligible slot is strictly after install. Add the HH:02→HH:05 regression and both frozen safe-window edges, requiring unsafe cases to stop before launchctl/write. Render a contract with an injected command runner, then load it with a runner that raises on any call and require success. Mutate every Python identity field separately and require rejection.
 
 - [ ] **Step 2: Run red tests**
 
@@ -100,6 +103,8 @@ Expected: old `RunAtLoad=true`, missing `python_identity`, or hidden loader impo
 
 Change plist/contract constants to false. Capture executable bytes and stat before/after render-time `python -c`; run `python -c` once for JSON containing `sys.version` and imported package version; bind `requirements.lock` SHA-256. Remove `_verify_snapshot_import` from the loader and leave `_verify_snapshot` plus exact Python file stat/hash verification.
 
+Implement the frozen UTC activation-window predicate in the installer. Validate it once after source loading but before the first launchctl print and again immediately before target/bootstrap mutation; bind `installed_at` to the second check and replay the predicate in the receipt loader. Do not sleep, reschedule, bootstrap, write, or publish failure evidence for an unsafe attempt.
+
 - [ ] **Step 4: Mirror and validate Schema**
 
 ```bash
@@ -112,6 +117,7 @@ cmp config/system-paper-launchd-contract-v1.schema.json \
 ```bash
 PYTHONPATH=src /usr/bin/python3 -m unittest tests.test_system_paper_launchd -q
 git add src/crypto_quant/system_paper_launchd.py \
+  src/crypto_quant/system_paper_install.py tests/test_system_paper_install.py \
   config/system-paper-launchd-contract-v1.schema.json \
   src/crypto_quant/schemas/system-paper-launchd-contract-v1.schema.json \
   tests/test_system_paper_launchd.py

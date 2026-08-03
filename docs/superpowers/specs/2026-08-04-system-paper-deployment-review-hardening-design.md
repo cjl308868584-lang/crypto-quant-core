@@ -36,6 +36,13 @@ kickstart/start/enable/submit 或人工 Runner 入口。
   runtime、network、scheduler、Broker 或 order 调用。
 - install receipt 成功发布后，下一个严格晚于 `installed_at` 的 UTC 4h 边界才是
   `first_eligible_slot`。
+- calendar-only activation 只允许发生在每个 UTC 4h 周期的冻结安全窗：周期边界
+  `+00:30:00`（含）至下一边界前 `00:30:00`（含）。安装器在任何 launchctl
+  命令前及首次 target 写入/bootstrap 前各读取一次时钟并复核；窗外返回
+  `SYSTEM_PAPER_INSTALL_ACTIVATION_WINDOW_UNSAFE`，且 launchctl/write 均为零。
+  receipt 的 `installed_at` 使用第二次、紧邻写入前的安全窗时间，loader 必须重放
+  同一规则。该 30 分钟双边余量覆盖固定 launchctl 超时并避免 HH:00–HH:05
+  close-delay 自然触发执行安装前槽位。
 - 重启不保证补停机期间的槽位。下一个自然日历触发由 scheduler 按已冻结
   no-backfill 状态机处理；如果因停机形成缺槽，必须永久失败而不是借
   RunAtLoad 补运行。
@@ -129,7 +136,8 @@ start receipt。
 每个审查 finding 都必须先有独立红灯回归，至少包含：
 
 1. bootstrap fake 尝试执行 runtime 时证明 `RunAtLoad=false` 不运行，observer 派生
-   安装后下一自然槽；
+   安装后下一自然槽；覆盖 HH:00–HH:05 及边界前 30 分钟安全窗外安装在零
+   launchctl/零写入时失败；
 2. 并发目标在 publish 前创建，发布器不覆盖；只有 exact safe 目标幂等；
 3. 协调修改 event-chain/prepared/log/first-slot 字段后重算 receipt hash 仍被 loader
    拒绝；后续合法槽追加后首槽 receipt 仍可重放；
