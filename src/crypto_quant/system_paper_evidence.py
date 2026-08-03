@@ -136,38 +136,6 @@ def _existing_exact(parent_fd: int, name: str, data: bytes) -> bool:
     return True
 
 
-def _unlink_owned_entry(parent_fd: int, name: str, expected: os.stat_result) -> bool:
-    """Remove name only when it still names expected; return whether cleanup is safe."""
-
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = None
-    try:
-        descriptor = os.open(name, flags, dir_fd=parent_fd)
-    except FileNotFoundError:
-        return True
-    except OSError:
-        return False
-    try:
-        current = os.fstat(descriptor)
-    except OSError:
-        return False
-    finally:
-        if descriptor is not None:
-            try:
-                os.close(descriptor)
-            except OSError:
-                return False
-    if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
-        return False
-    try:
-        os.unlink(name, dir_fd=parent_fd)
-    except FileNotFoundError:
-        return True
-    except OSError:
-        return False
-    return True
-
-
 def publish_owner_exact(
     path: Path,
     data: bytes,
@@ -182,8 +150,7 @@ def publish_owner_exact(
     parent_fd, parent_entry = _open_parent(target)
     temporary_name = ".system-paper-evidence-" + secrets.token_hex(16) + ".tmp"
     temporary_created = False
-    final_created = False
-    temporary_entry = None
+    temporary_unlink_attempted = False
     succeeded = False
     failure = None
     try:
@@ -217,7 +184,7 @@ def publish_owner_exact(
                         raise OSError(errno.EIO, "short write")
                     view = view[written:]
                 os.fsync(descriptor)
-                temporary_entry = os.fstat(descriptor)
+                os.fstat(descriptor)
             except OSError as error:
                 raise SystemPaperEvidenceError(
                     "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
@@ -232,6 +199,10 @@ def publish_owner_exact(
 
             if _before_link is not None:
                 _before_link()
+            if not _same_parent(target, parent_entry):
+                raise SystemPaperEvidenceError(
+                    "SYSTEM_PAPER_EVIDENCE_PARENT_CHANGED"
+                )
             try:
                 os.link(
                     temporary_name,
@@ -240,7 +211,6 @@ def publish_owner_exact(
                     dst_dir_fd=parent_fd,
                     follow_symlinks=False,
                 )
-                final_created = True
             except FileExistsError:
                 if not _existing_exact(parent_fd, target.name, data):
                     raise SystemPaperEvidenceError(
@@ -251,7 +221,13 @@ def publish_owner_exact(
                     "SYSTEM_PAPER_EVIDENCE_WRITE_FAILED"
                 ) from error
 
-            os.unlink(temporary_name, dir_fd=parent_fd)
+            temporary_unlink_attempted = True
+            try:
+                os.unlink(temporary_name, dir_fd=parent_fd)
+            except OSError as error:
+                raise SystemPaperEvidenceError(
+                    "SYSTEM_PAPER_EVIDENCE_CLEANUP_FAILED"
+                ) from error
             temporary_created = False
             os.fsync(parent_fd)
             if not _same_parent(target, parent_entry):
@@ -271,15 +247,18 @@ def publish_owner_exact(
     finally:
         cleanup_failed = False
         cleanup_changed = False
-        if not succeeded and final_created and temporary_entry is not None:
-            if _unlink_owned_entry(parent_fd, target.name, temporary_entry):
+        # Never unlink the public target after publication.  Standard unlinkat has
+        # no inode precondition, so rollback could delete a concurrent replacement.
+        # A failed private-temp unlink is likewise not retried after its pathname
+        # attachment becomes uncertain; the owner-only directory preserves it for
+        # failure forensics.
+        if not succeeded and temporary_created and not temporary_unlink_attempted:
+            try:
+                os.unlink(temporary_name, dir_fd=parent_fd)
                 cleanup_changed = True
-            else:
-                cleanup_failed = True
-        if not succeeded and temporary_created and temporary_entry is not None:
-            if _unlink_owned_entry(parent_fd, temporary_name, temporary_entry):
-                cleanup_changed = True
-            else:
+            except FileNotFoundError:
+                pass
+            except OSError:
                 cleanup_failed = True
         if cleanup_changed:
             try:

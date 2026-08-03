@@ -127,7 +127,7 @@ class SystemPaperEvidenceTests(unittest.TestCase):
             publish_owner_exact(self.target, b"exact")
         self.assertEqual(self.target.read_bytes(), b"evil!")
 
-    def test_filesystem_failures_are_typed_and_do_not_leave_final_target(self):
+    def test_filesystem_failures_are_typed_and_never_remove_published_name(self):
         missing = self.parent / "missing" / "receipt.json"
         with self.assertRaises(SystemPaperEvidenceError):
             publish_owner_exact(missing, b"candidate")
@@ -153,12 +153,22 @@ class SystemPaperEvidenceTests(unittest.TestCase):
 
         with mock.patch.object(
             evidence_module.os, "unlink", side_effect=fail_first_temp_unlink
-        ), self.assertRaises(SystemPaperEvidenceError):
+        ), self.assertRaisesRegex(
+            SystemPaperEvidenceError,
+            "SYSTEM_PAPER_EVIDENCE_CLEANUP_FAILED",
+        ):
             publish_owner_exact(self.target, b"candidate")
-        self.assertFalse(self.target.exists())
-        self.assertFalse(
-            any(item.name.startswith(".system-paper-evidence-") for item in self.parent.iterdir())
-        )
+        self.assertEqual(self.target.read_bytes(), b"candidate")
+        retained_temps = [
+            item
+            for item in self.parent.iterdir()
+            if item.name.startswith(".system-paper-evidence-")
+        ]
+        self.assertEqual(len(retained_temps), 1)
+        self.assertEqual(retained_temps[0].read_bytes(), b"candidate")
+
+        original_unlink(self.target)
+        original_unlink(retained_temps[0])
 
         calls = {"count": 0}
         original_fsync = evidence_module.os.fsync
@@ -173,10 +183,33 @@ class SystemPaperEvidenceTests(unittest.TestCase):
             evidence_module.os, "fsync", side_effect=fail_directory_fsync
         ), self.assertRaises(SystemPaperEvidenceError):
             publish_owner_exact(self.target, b"candidate")
-        self.assertFalse(self.target.exists())
+        self.assertEqual(self.target.read_bytes(), b"candidate")
         self.assertFalse(
             any(item.name.startswith(".system-paper-evidence-") for item in self.parent.iterdir())
         )
+        publish_owner_exact(self.target, b"candidate")
+
+    def test_post_publish_failure_never_unlinks_concurrent_replacement(self):
+        original_fsync = evidence_module.os.fsync
+        original_unlink = evidence_module.os.unlink
+        calls = {"count": 0}
+
+        def replace_public_name_then_fail(descriptor):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                original_unlink(self.target)
+                self._write_target(b"replacement")
+                raise OSError("directory fsync failure")
+            return original_fsync(descriptor)
+
+        with mock.patch.object(
+            evidence_module.os,
+            "fsync",
+            side_effect=replace_public_name_then_fail,
+        ), self.assertRaises(SystemPaperEvidenceError):
+            publish_owner_exact(self.target, b"candidate")
+
+        self.assertEqual(self.target.read_bytes(), b"replacement")
 
 
 if __name__ == "__main__":
