@@ -117,6 +117,25 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             for _name, sql in triggers:
                 connection.execute(sql)
 
+    def corrupt_schedule_event_hash(self, value):
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        with sqlite3.connect(str(state_path)) as connection:
+            triggers = connection.execute(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type='trigger' ORDER BY name"
+            ).fetchall()
+            for name, _sql in triggers:
+                connection.execute("DROP TRIGGER " + name)
+            sequence = connection.execute(
+                "SELECT sequence FROM schedule_events ORDER BY sequence LIMIT 1"
+            ).fetchone()[0]
+            connection.execute(
+                "UPDATE schedule_events SET event_hash=? WHERE sequence=?",
+                (value, sequence),
+            )
+            for _name, sql in triggers:
+                connection.execute(sql)
+
     def remove_result_constraints_and_duplicate_row(self):
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
         with sqlite3.connect(str(state_path)) as connection:
@@ -1154,7 +1173,10 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                 "install_receipt_hash",
                 "contract_hash",
                 "start_receipt_hash",
-                "event_chain_end_hash",
+                "state_binding_kind",
+                "state_binding_hash",
+                "event_chain_end_hash_or_null",
+                "raw_state_group_hash",
             },
         )
         expected_safety_thresholds = {
@@ -1264,11 +1286,6 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
 
     def test_inconclusive_identity_uses_strict_sources_and_actual_inventory(self):
         """A final inconclusive id must name the real replay evidence, not placeholders."""
-        artifact = _recompute_system_paper_evaluation(
-            **self.values(
-                _clock=lambda: "2026-11-02T08:05:00.000Z",
-            )
-        )
         plan = json.loads(self.plan_path.read_bytes())
         contract = json.loads(self.contract_path.read_bytes())
         install = json.loads(self.install_receipt_path.read_bytes())
@@ -1281,6 +1298,36 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                 "SELECT event_hash FROM schedule_events "
                 "ORDER BY sequence DESC LIMIT 1"
             ).fetchone()[0]
+
+        raw_members = []
+        for suffix, candidate in (
+            ("main", state_path),
+            ("-wal", Path(str(state_path) + "-wal")),
+            ("-shm", Path(str(state_path) + "-shm")),
+        ):
+            present = candidate.exists()
+            raw_members.append(
+                {
+                    "suffix": suffix,
+                    "state": "PRESENT" if present else "ABSENT",
+                    "sha256_or_null": (
+                        hashlib.sha256(candidate.read_bytes()).hexdigest()
+                        if present
+                        else None
+                    ),
+                }
+            )
+        raw_state_group_hash = business_hash(
+            {
+                "purpose": "SYSTEM_PAPER_RAW_SQLITE_GROUP_V1",
+                "members": raw_members,
+            }
+        )
+        artifact = _recompute_system_paper_evaluation(
+            **self.values(
+                _clock=lambda: "2026-11-02T08:05:00.000Z",
+            )
+        )
 
         self.assertEqual(
             artifact["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
@@ -1299,7 +1346,10 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                 "install_receipt_hash": install["receipt_hash"],
                 "contract_hash": contract["contract_hash"],
                 "start_receipt_hash": start["receipt_hash"],
-                "event_chain_end_hash": event_chain_end_hash,
+                "state_binding_kind": "EVENT_CHAIN_END",
+                "state_binding_hash": event_chain_end_hash,
+                "event_chain_end_hash_or_null": event_chain_end_hash,
+                "raw_state_group_hash": raw_state_group_hash,
             },
         )
         self.assertEqual(len(artifact["evidence_inventory"]["slots"]), 1)
@@ -1726,6 +1776,157 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                 _machine_probe=self.start.observer.install.preflight.machine,
                 _filesystem_probe=self.start.observer.install.preflight.filesystem,
             )
+
+    def test_initial_mismatch_snapshot_cannot_be_recaptured(self):
+        """Restoring an entry after the first mismatch cannot mint a final."""
+        from crypto_quant import system_paper_evaluation as module
+
+        first_path = Path(
+            json.loads(self.start_receipt_path.read_bytes())["first_slot"][
+                "result_path"
+            ]
+        )
+        first_body = first_path.read_bytes()
+        first_path.unlink()
+        original_surface = module._inventory_surface_state
+        restored = {"done": False}
+
+        def surface_then_restore(*args, **kwargs):
+            state = original_surface(*args, **kwargs)
+            if not restored["done"]:
+                restored["done"] = True
+                first_path.write_bytes(first_body)
+                first_path.chmod(0o600)
+            return state
+
+        with patch.object(
+            module,
+            "_inventory_surface_state",
+            side_effect=surface_then_restore,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "SOURCE_CHANGED"
+            ):
+                evaluate_system_paper(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+        self.assertTrue(restored["done"])
+        self.assertFalse(self.output_root.exists())
+
+    def test_surface_to_exact_scan_change_is_source_changed(self):
+        """A change after the first PRESENT scan cannot become evidence."""
+        from crypto_quant import system_paper_evaluation as module
+
+        extra = self.slot_root / "surface-to-exact-change.json"
+        original_surface = module._inventory_surface_state
+
+        def surface_then_change(*args, **kwargs):
+            state = original_surface(*args, **kwargs)
+            extra.write_bytes(b"{}")
+            extra.chmod(0o600)
+            return state
+
+        with patch.object(
+            module,
+            "_inventory_surface_state",
+            side_effect=surface_then_change,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "SOURCE_CHANGED"
+            ):
+                evaluate_system_paper(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+        self.assertFalse(self.output_root.exists())
+
+    def _assert_raw_bound_inconclusive(self, expected_reason):
+        artifact = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.assertEqual(
+            artifact["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.assertEqual(artifact["reason_code_or_null"], expected_reason)
+        sources = artifact["sources"]
+        self.assertEqual(sources["state_binding_kind"], "RAW_SQLITE_GROUP")
+        self.assertEqual(
+            sources["state_binding_hash"], sources["raw_state_group_hash"]
+        )
+        self.assertIsNone(sources["event_chain_end_hash_or_null"])
+        path = self.output_root / (artifact["result_id"] + ".json")
+        self.assertEqual(
+            load_system_paper_evaluation(
+                evaluation_path=path,
+                _machine_probe=self.start.observer.install.preflight.machine,
+                _filesystem_probe=self.start.observer.install.preflight.filesystem,
+            ),
+            artifact,
+        )
+        return artifact
+
+    def test_stable_event_state_corruption_publishes_raw_bound_inconclusive(self):
+        """Stable invalid event bytes are sealed as raw-state evidence."""
+        self.corrupt_schedule_event_hash("0" * 64)
+        self._assert_raw_bound_inconclusive(
+            "SYSTEM_PAPER_EVALUATION_STATE_REPLAY_INVALID"
+        )
+
+    def test_stable_prepared_corruption_publishes_inconclusive(self):
+        """Stable invalid prepared metadata produces a raw-bound final."""
+        self.mutate_state_metadata("prepared_inputs", "plan_hash", "0" * 64)
+        self._assert_raw_bound_inconclusive(
+            "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+        )
+
+    def test_raw_state_binding_changes_result_identity(self):
+        """Distinct stable corrupt SQLite bytes cannot share a result id."""
+        self.mutate_state_metadata("prepared_inputs", "plan_hash", "0" * 64)
+        first = _recompute_system_paper_evaluation(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.mutate_state_metadata("prepared_inputs", "plan_hash", "1" * 64)
+        second = _recompute_system_paper_evaluation(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.assertNotEqual(
+            first["sources"]["raw_state_group_hash"],
+            second["sources"]["raw_state_group_hash"],
+        )
+        self.assertNotEqual(first["result_id"], second["result_id"])
+
+    def test_raw_state_capture_after_change_is_hard_failure(self):
+        """A byte change after raw capture never publishes corruption."""
+        from crypto_quant import system_paper_evaluation as module
+
+        self.mutate_state_metadata("prepared_inputs", "plan_hash", "0" * 64)
+        original_copy = module._write_retained_copy
+        changed = {"done": False}
+
+        def copy_then_change(retained, target):
+            original_copy(retained, target)
+            if not changed["done"] and Path(target).name == "system-paper.sqlite":
+                changed["done"] = True
+                self.mutate_state_metadata(
+                    "prepared_inputs", "plan_hash", "1" * 64
+                )
+
+        with patch.object(
+            module, "_write_retained_copy", side_effect=copy_then_change
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "SOURCE_CHANGED"
+            ):
+                evaluate_system_paper(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+        self.assertTrue(changed["done"])
+        self.assertFalse(self.output_root.exists())
 
     def test_loader_replay_has_no_publication_side_effect(self):
         """A loader must be able to verify an artifact while publication is forbidden."""
@@ -2182,12 +2383,14 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             ),
         )
 
-    def test_post_tail_prepared_input_byte_mutation_fails_authority(self):
+    def test_post_tail_prepared_input_byte_corruption_publishes_inconclusive(self):
         self.extend_to_complete_cohort()
         self.mutate_prepared_bytes(
             "prepared_inputs", "input_bytes", 270, b"{}"
         )
-        self.assert_post_tail_authority_invalid()
+        self._assert_raw_bound_inconclusive(
+            "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+        )
 
     def test_start_loader_rejects_later_prepared_blob_mutation(self):
         self.extend_to_complete_cohort()
@@ -2206,14 +2409,16 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                 _filesystem_probe=preflight.filesystem,
             )
 
-    def test_post_tail_prepared_result_byte_mutation_fails_authority(self):
+    def test_post_tail_prepared_result_byte_corruption_publishes_inconclusive(self):
         self.extend_to_complete_cohort()
         self.mutate_prepared_bytes(
             "prepared_results", "result_bytes", 270, b"{}"
         )
-        self.assert_post_tail_authority_invalid()
+        self._assert_raw_bound_inconclusive(
+            "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+        )
 
-    def test_post_tail_output_root_identity_mutation_fails_authority(self):
+    def test_post_tail_output_root_binding_corruption_publishes_inconclusive(self):
         self.extend_to_complete_cohort()
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
         slot_id = self.cohort_slot(270).slot_id
@@ -2230,7 +2435,9 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             270,
             canonical_json(envelope).encode("utf-8"),
         )
-        self.assert_post_tail_authority_invalid()
+        self._assert_raw_bound_inconclusive(
+            "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+        )
 
     def test_post_tail_snapshot_prefix_mutation_fails_replay(self):
         self.extend_to_complete_cohort()
@@ -2250,7 +2457,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         self.mutate_slot_artifact(270, break_parent)
         self.assert_post_tail_replay_invalid()
 
-    def test_post_tail_event_hash_mutation_fails_state_replay(self):
+    def test_post_tail_event_hash_corruption_publishes_raw_inconclusive(self):
         self.extend_to_complete_cohort()
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
         with sqlite3.connect(str(state_path)) as connection:
@@ -2270,12 +2477,9 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             )
             for _name, sql in triggers:
                 connection.execute(sql)
-        with self.assertRaisesRegex(
-            SystemPaperEvaluationError, "STATE_REPLAY_INVALID"
-        ):
-            observe_system_paper_evaluation_readiness(
-                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
-            )
+        self._assert_raw_bound_inconclusive(
+            "SYSTEM_PAPER_EVALUATION_STATE_REPLAY_INVALID"
+        )
 
     def test_post_tail_wrong_first_receipt_fails_before_cohort(self):
         receipt = json.loads(self.start_receipt_path.read_bytes())

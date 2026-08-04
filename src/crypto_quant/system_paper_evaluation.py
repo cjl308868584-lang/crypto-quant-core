@@ -514,8 +514,10 @@ class _RetainedAuthorityAbsence:
                 "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
             ) from error
         if (
-            _stat_identity(self.parent_entry) != _stat_identity(retained)
-            or _stat_identity(retained) != _stat_identity(current)
+            _directory_attachment_identity(self.parent_entry)
+            != _directory_attachment_identity(retained)
+            or _directory_attachment_identity(retained)
+            != _directory_attachment_identity(current)
         ):
             raise SystemPaperEvaluationError(
                 "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
@@ -585,8 +587,10 @@ class _RetainedAuthorityEntry:
                 "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
             ) from error
         if (
-            _stat_identity(self.parent_entry) != _stat_identity(retained)
-            or _stat_identity(retained) != _stat_identity(current_parent)
+            _directory_attachment_identity(self.parent_entry)
+            != _directory_attachment_identity(retained)
+            or _directory_attachment_identity(retained)
+            != _directory_attachment_identity(current_parent)
             or _stat_identity(self.entry) != _stat_identity(current)
         ):
             raise SystemPaperEvaluationError(
@@ -776,7 +780,7 @@ class _RetainedCohortSources:
         self.entry = None
         self.snapshot = None
 
-    def capture_directory(self, path: Path, expected_names=None):
+    def capture_directory(self, path: Path):
         descriptor = None
         try:
             flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
@@ -784,11 +788,7 @@ class _RetainedCohortSources:
             flags |= getattr(os, "O_CLOEXEC", 0)
             descriptor = os.open(path, flags)
             before = os.fstat(descriptor)
-            if (
-                not stat.S_ISDIR(before.st_mode)
-                or before.st_uid != os.getuid()
-                or stat.S_IMODE(before.st_mode) != 0o700
-            ):
+            if not stat.S_ISDIR(before.st_mode):
                 raise SystemPaperEvaluationError(
                     "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE"
                 )
@@ -798,14 +798,9 @@ class _RetainedCohortSources:
             if (
                 _stat_identity(before) != _stat_identity(after)
                 or _stat_identity(after) != _stat_identity(current)
-                or (
-                    expected_names is not None
-                    and snapshot.bounded_names
-                    != tuple(sorted(expected_names))
-                )
             ):
                 raise SystemPaperEvaluationError(
-                    "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE"
+                    "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
                 )
             self.path = path
             self.descriptor = descriptor
@@ -1035,6 +1030,58 @@ def _copy_event_metadata(
     return replay
 
 
+def _raw_state_group_hash(
+    state_files: Mapping[str, Optional[_RetainedAuthorityFile]],
+) -> str:
+    members = []
+    for suffix in ("main", "-wal", "-shm"):
+        retained = state_files[suffix]
+        members.append(
+            {
+                "suffix": suffix,
+                "state": "PRESENT" if retained is not None else "ABSENT",
+                "sha256_or_null": (
+                    retained.content_sha256 if retained is not None else None
+                ),
+            }
+        )
+    return business_hash(
+        {
+            "purpose": "SYSTEM_PAPER_RAW_SQLITE_GROUP_V1",
+            "members": members,
+        }
+    )
+
+
+def _state_binding(
+    *,
+    replay: Optional[Mapping[str, Any]],
+    raw_state_group_hash: str,
+) -> Mapping[str, Any]:
+    if replay is None:
+        return {
+            "state_binding_kind": "RAW_SQLITE_GROUP",
+            "state_binding_hash": raw_state_group_hash,
+            "event_chain_end_hash_or_null": None,
+            "raw_state_group_hash": raw_state_group_hash,
+        }
+    events = tuple(replay.get("events", ()))
+    event_hash = events[-1]["event_hash"] if events else _ZERO_HASH
+    return {
+        "state_binding_kind": "EVENT_CHAIN_END",
+        "state_binding_hash": event_hash,
+        "event_chain_end_hash_or_null": event_hash,
+        "raw_state_group_hash": raw_state_group_hash,
+    }
+
+
+def _stable_replay_reason(error: SystemPaperEvaluationError) -> str:
+    cause = error.__cause__
+    if cause is not None and "PREPARED" in str(cause):
+        return "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+    return "SYSTEM_PAPER_EVALUATION_STATE_REPLAY_INVALID"
+
+
 def _evaluate_complete_cohort(*_args, **kwargs):
     economic = _evaluate_complete_system_paper_cohort(kwargs["cohort"])
     cohort = tuple(kwargs["cohort"])
@@ -1073,7 +1120,10 @@ def _evaluate_complete_cohort(*_args, **kwargs):
             "install_receipt_hash": kwargs["install"]["receipt_hash"],
             "contract_hash": kwargs["contract"]["contract_hash"],
             "start_receipt_hash": kwargs["start"]["receipt_hash"],
-            "event_chain_end_hash": events[-1]["event_hash"],
+            **_state_binding(
+                replay=replay,
+                raw_state_group_hash=kwargs["raw_state_group_hash"],
+            ),
         },
         "evidence_inventory": inventory,
         "security_counts": activity,
@@ -1526,51 +1576,44 @@ def _retained_evidence(retained: _RetainedAuthorityFile) -> Mapping[str, Any]:
     }
 
 
-def _inventory_surface_state(slot_root: Path) -> str:
-    """Classify the no-follow inventory without reading any entry bytes."""
+def _inventory_surface_state(
+    slot_root: Path,
+    *,
+    retained_sources: _RetainedCohortSources,
+    retained_attachment: _RetainedAuthoritySet,
+) -> str:
+    """Retain and classify the one authoritative post-tail inventory scan."""
 
-    descriptor = None
     try:
+        retained_sources.capture_directory(slot_root)
+    except SystemPaperEvaluationError as original_error:
+        if original_error.reason_code == "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED":
+            raise
         try:
-            entry = os.stat(slot_root, follow_symlinks=False)
-        except FileNotFoundError:
+            retained_attachment.capture_absent(slot_root)
             return "MISSING"
-        if (
-            not stat.S_ISDIR(entry.st_mode)
-            or entry.st_uid != os.getuid()
-            or stat.S_IMODE(entry.st_mode) != 0o700
-        ):
+        except SystemPaperEvaluationError:
+            try:
+                retained_attachment.capture_entry(slot_root)
+            except SystemPaperEvaluationError:
+                raise original_error
             return "UNSAFE"
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        flags |= getattr(os, "O_CLOEXEC", 0)
-        descriptor = os.open(slot_root, flags)
-        retained = os.fstat(descriptor)
-        snapshot = _scan_inventory_directory(descriptor)
-        current = os.stat(slot_root, follow_symlinks=False)
-        if (
-            _stat_identity(entry) != _stat_identity(retained)
-            or _stat_identity(retained) != _stat_identity(current)
-        ):
-            raise SystemPaperEvaluationError(
-                "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
-            )
-        if snapshot.entry_count == 0:
-            return "EMPTY"
-        if snapshot.entry_count > _MAX_INVENTORY_ENTRIES:
-            return "UNSAFE"
-        if snapshot.has_unsafe_entry:
-            return "UNSAFE"
-        return "PRESENT"
-    except SystemPaperEvaluationError:
-        raise
-    except OSError as error:
+    entry = retained_sources.entry
+    snapshot = retained_sources.snapshot
+    if entry is None or snapshot is None:
         raise SystemPaperEvaluationError(
             "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
-        ) from error
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
+        )
+    if (
+        entry.st_uid != os.getuid()
+        or stat.S_IMODE(entry.st_mode) != 0o700
+        or snapshot.entry_count > _MAX_INVENTORY_ENTRIES
+        or snapshot.has_unsafe_entry
+    ):
+        return "UNSAFE"
+    if snapshot.entry_count == 0:
+        return "EMPTY"
+    return "PRESENT"
 
 
 def _inconclusive_inventory(
@@ -1581,39 +1624,38 @@ def _inconclusive_inventory(
     state_files: Mapping[str, Optional[_RetainedAuthorityFile]],
     plan: Mapping[str, Any],
     replay: Mapping[str, Any],
+    inventory_state: str,
 ) -> Mapping[str, Any]:
-    """Retain and describe the exact pathname/byte inventory that was observed."""
+    """Describe only the retained first inventory without recapturing it."""
 
-    try:
-        names = retained_sources.capture_directory(slot_root)
-    except SystemPaperEvaluationError as original_error:
-        try:
-            retained_attachment.capture_absent(slot_root)
-        except SystemPaperEvaluationError:
-            try:
-                retained = retained_attachment.capture_entry(slot_root)
-            except SystemPaperEvaluationError:
-                raise original_error
-            root = retained.entry
-            if stat.S_ISLNK(root.st_mode):
-                status_code = "UNSAFE_ROOT_SYMLINK"
-            elif not stat.S_ISDIR(root.st_mode):
-                status_code = "UNSAFE_ROOT_TYPE"
-            elif root.st_uid != os.getuid():
-                status_code = "UNSAFE_ROOT_OWNER"
-            elif stat.S_IMODE(root.st_mode) != 0o700:
-                status_code = "UNSAFE_ROOT_MODE"
-            else:
-                raise original_error
-            return {
-                "inventory_state": "UNSAFE",
-                "slots": (
-                    _unsafe_inventory_evidence(
-                        ".", root, status_code
-                    ),
-                ),
-            }
+    if inventory_state == "MISSING":
+        retained_attachment.verify()
         return {"inventory_state": "MISSING", "slots": ()}
+    if retained_sources.descriptor is None:
+        entries = retained_attachment.files
+        if not entries:
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
+            )
+        root = entries[-1].entry
+        if stat.S_ISLNK(root.st_mode):
+            status_code = "UNSAFE_ROOT_SYMLINK"
+        elif not stat.S_ISDIR(root.st_mode):
+            status_code = "UNSAFE_ROOT_TYPE"
+        elif root.st_uid != os.getuid():
+            status_code = "UNSAFE_ROOT_OWNER"
+        elif stat.S_IMODE(root.st_mode) != 0o700:
+            status_code = "UNSAFE_ROOT_MODE"
+        else:
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
+            )
+        retained_attachment.verify()
+        return {
+            "inventory_state": "UNSAFE",
+            "slots": (_unsafe_inventory_evidence(".", root, status_code),),
+        }
+    names = retained_sources.snapshot.bounded_names
     input_rows = ()
     result_rows = ()
     snapshot = retained_sources.snapshot
@@ -1657,6 +1699,27 @@ def _inconclusive_inventory(
     }
     records = []
     unsafe = False
+    if names is None:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
+        )
+    root_entry = retained_sources.entry
+    if (
+        root_entry.st_uid != os.getuid()
+        or stat.S_IMODE(root_entry.st_mode) != 0o700
+    ):
+        status_code = (
+            "UNSAFE_ROOT_OWNER"
+            if root_entry.st_uid != os.getuid()
+            else "UNSAFE_ROOT_MODE"
+        )
+        retained_sources.verify()
+        return {
+            "inventory_state": "UNSAFE",
+            "slots": (
+                _unsafe_inventory_evidence(".", root_entry, status_code),
+            ),
+        }
     for name in names:
         source, unsafe_evidence = retained_sources.capture_inventory_artifact(
             slot_root / name
@@ -1763,7 +1826,16 @@ def _replay_system_paper_cohort(
             "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE"
         )
     expected_names = {slot.slot_id + ".json" for slot in expected_slots}
-    retained_sources.capture_directory(slot_root, expected_names)
+    if (
+        retained_sources.descriptor is None
+        or retained_sources.snapshot is None
+        or retained_sources.snapshot.bounded_names
+        != tuple(sorted(expected_names))
+    ):
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE"
+        )
+    retained_sources.verify()
     try:
         artifact_sources = tuple(
             retained_sources.capture_artifact(
@@ -1935,7 +2007,8 @@ def _inconclusive_readiness(
     plan: Mapping[str, Any],
     install: Mapping[str, Any],
     contract: Mapping[str, Any],
-    replay: Mapping[str, Any],
+    replay: Optional[Mapping[str, Any]],
+    raw_state_group_hash: str,
     reason_code: str,
     inventory: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -1953,10 +2026,9 @@ def _inconclusive_readiness(
             "install_receipt_hash": install["receipt_hash"],
             "contract_hash": contract["contract_hash"],
             "start_receipt_hash": start["receipt_hash"],
-            "event_chain_end_hash": (
-                replay["events"][-1]["event_hash"]
-                if replay["events"]
-                else _ZERO_HASH
+            **_state_binding(
+                replay=replay,
+                raw_state_group_hash=raw_state_group_hash,
             ),
         },
         "evidence_inventory": inventory,
@@ -2081,13 +2153,57 @@ def observe_system_paper_evaluation_readiness(
                 maximum_bytes=_MAX_STATE_BYTES,
                 retain_body=False,
             )
-        replay = _copy_event_metadata(
-            state_files,
-            plan=plan,
-            temporary_parent=_PRIVATE_TMP,
-        )
+        raw_state_hash = _raw_state_group_hash(state_files)
         start_at, start_text = _utc(start["cohort_started_at"])
         tail_at, tail_text = _utc(start["cohort_tail_end"])
+        try:
+            replay = _copy_event_metadata(
+                state_files,
+                plan=plan,
+                temporary_parent=_PRIVATE_TMP,
+            )
+        except SystemPaperEvaluationError as error:
+            retained.verify()
+            state_retained.verify()
+            if (
+                observed < tail_at + _TAIL_SETTLE_DELAY
+                or error.reason_code
+                != "SYSTEM_PAPER_EVALUATION_STATE_REPLAY_INVALID"
+            ):
+                raise
+            surface_state = _inventory_surface_state(
+                paths["slot_root"],
+                retained_sources=cohort_retained,
+                retained_attachment=authority.inconclusive_attachment,
+            )
+            inventory = _inconclusive_inventory(
+                paths["slot_root"],
+                retained_sources=cohort_retained,
+                retained_attachment=authority.inconclusive_attachment,
+                state_files=state_files,
+                plan=plan,
+                replay={},
+                inventory_state=surface_state,
+            )
+            retained.verify()
+            state_retained.verify()
+            if cohort_retained.descriptor is not None:
+                cohort_retained.verify()
+            return _inconclusive_readiness(
+                observed_at=observed_at,
+                start_text=start_text,
+                tail_text=tail_text,
+                start=start,
+                successes=0,
+                incidents=0,
+                plan=plan,
+                install=install,
+                contract=contract,
+                replay=None,
+                raw_state_group_hash=raw_state_hash,
+                reason_code=_stable_replay_reason(error),
+                inventory=inventory,
+            )
         projection = replay["projection"]
         incidents = sum(
             event["event_type"] in ("FAILED", "MISSED", "EXPIRED")
@@ -2098,15 +2214,20 @@ def observe_system_paper_evaluation_readiness(
             for item in projection.values()
         )
         if observed >= tail_at + _TAIL_SETTLE_DELAY:
-            surface_state = _inventory_surface_state(paths["slot_root"])
+            surface_state = _inventory_surface_state(
+                paths["slot_root"],
+                retained_sources=cohort_retained,
+                retained_attachment=authority.inconclusive_attachment,
+            )
             if surface_state != "PRESENT":
                 inventory = _inconclusive_inventory(
                     paths["slot_root"],
-                    retained_sources=authority.inconclusive_inventory,
+                    retained_sources=cohort_retained,
                     retained_attachment=authority.inconclusive_attachment,
                     state_files=state_files,
                     plan=plan,
                     replay=replay,
+                    inventory_state=surface_state,
                 )
                 retained.verify()
                 state_retained.verify()
@@ -2121,18 +2242,49 @@ def observe_system_paper_evaluation_readiness(
                     install=install,
                     contract=contract,
                     replay=replay,
+                    raw_state_group_hash=raw_state_hash,
                     reason_code="SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE",
                     inventory=inventory,
                 )
-            replayed_start = load_system_paper_start_receipt(
-                receipt_path=paths["start"],
-                contract_path=paths["contract"],
-                plist_path=plist_path,
-                preflight_receipt_path=preflight_path,
-                install_receipt_path=paths["install"],
-                _machine_probe=_machine_probe,
-                _filesystem_probe=_filesystem_probe,
-            )
+            try:
+                replayed_start = load_system_paper_start_receipt(
+                    receipt_path=paths["start"],
+                    contract_path=paths["contract"],
+                    plist_path=plist_path,
+                    preflight_receipt_path=preflight_path,
+                    install_receipt_path=paths["install"],
+                    _machine_probe=_machine_probe,
+                    _filesystem_probe=_filesystem_probe,
+                )
+            except Exception:
+                retained.verify()
+                state_retained.verify()
+                inventory = _inconclusive_inventory(
+                    paths["slot_root"],
+                    retained_sources=cohort_retained,
+                    retained_attachment=authority.inconclusive_attachment,
+                    state_files=state_files,
+                    plan=plan,
+                    replay=replay,
+                    inventory_state=surface_state,
+                )
+                return _inconclusive_readiness(
+                    observed_at=observed_at,
+                    start_text=start_text,
+                    tail_text=tail_text,
+                    start=start,
+                    successes=successes,
+                    incidents=incidents,
+                    plan=plan,
+                    install=install,
+                    contract=contract,
+                    replay=None,
+                    raw_state_group_hash=raw_state_hash,
+                    reason_code=(
+                        "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+                    ),
+                    inventory=inventory,
+                )
             if replayed_start != start:
                 raise SystemPaperEvaluationError(
                     "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
@@ -2165,14 +2317,16 @@ def observe_system_paper_evaluation_readiness(
                     install=install,
                     contract=contract,
                     replay=replay,
+                    raw_state_group_hash=raw_state_hash,
                     reason_code=error.reason_code,
                     inventory=_inconclusive_inventory(
                         paths["slot_root"],
-                        retained_sources=authority.inconclusive_inventory,
+                        retained_sources=cohort_retained,
                         retained_attachment=authority.inconclusive_attachment,
                         state_files=state_files,
                         plan=plan,
                         replay=replay,
+                        inventory_state=surface_state,
                     ),
                 )
             complete = _evaluate_complete_cohort(
@@ -2184,6 +2338,7 @@ def observe_system_paper_evaluation_readiness(
                 cohort=cohort,
                 observed_at=observed_at,
                 slot_root=paths["slot_root"],
+                raw_state_group_hash=raw_state_hash,
             )
             cohort_retained.verify()
             retained.verify()
@@ -2254,7 +2409,7 @@ def _result_identity(result: Mapping[str, Any]) -> Mapping[str, Any]:
     return {
         "contract_hash": result["sources"]["contract_hash"],
         "start_receipt_hash": result["sources"]["start_receipt_hash"],
-        "event_chain_end_hash": result["sources"]["event_chain_end_hash"],
+        "state_binding_hash": result["sources"]["state_binding_hash"],
         "slot_inventory_hash": result["evidence_inventory"]["inventory_hash"],
     }
 
@@ -2485,7 +2640,12 @@ def _final_artifact(
             "install_receipt_hash": binding["install_receipt_hash"],
             "contract_hash": binding["contract_hash"],
             "start_receipt_hash": binding["start_receipt_hash"],
-            "event_chain_end_hash": binding["event_chain_end_hash"],
+            "state_binding_kind": binding["state_binding_kind"],
+            "state_binding_hash": binding["state_binding_hash"],
+            "event_chain_end_hash_or_null": binding[
+                "event_chain_end_hash_or_null"
+            ],
+            "raw_state_group_hash": binding["raw_state_group_hash"],
         },
         "evidence_inventory": {
             "expected_slot_count": observation.get("expected_slot_count", 540),
