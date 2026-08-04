@@ -539,10 +539,10 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
 
         self.assertEqual(set(manifest["file_hashes"]), expected)
-        self.assertEqual(crypto_quant.__version__, "0.58.0")
-        self.assertEqual(manifest["package_version"], "0.58.0")
-        self.assertEqual(manifest["manifest_version"], "1.52.0")
-        self.assertEqual(build.manifest_version, "1.52.0")
+        self.assertEqual(crypto_quant.__version__, "0.59.0")
+        self.assertEqual(manifest["package_version"], "0.59.0")
+        self.assertEqual(manifest["manifest_version"], "1.53.0")
+        self.assertEqual(build.manifest_version, "1.53.0")
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
@@ -654,6 +654,19 @@ class EvaluatorBuildTests(unittest.TestCase):
             "2026-08-04-system-paper-deployment-review-hardening.md",
             "docs/adr/0058-system-paper-deployment-trust-chain.md",
             "docs/implementation-status-v0.58.0.md",
+            "README.md",
+            "config/system-paper-evaluation-v1.schema.json",
+            "src/crypto_quant/system_paper_evaluation.py",
+            "src/crypto_quant/system_paper_evaluation_cli.py",
+            "src/crypto_quant/schemas/system-paper-evaluation-v1.schema.json",
+            "tests/test_system_paper_evaluation.py",
+            "tests/test_system_paper_evaluation_cli.py",
+            "docs/superpowers/specs/"
+            "2026-08-04-system-paper-fixed-tail-evaluation-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-04-system-paper-fixed-tail-evaluation.md",
+            "docs/adr/0059-system-paper-fixed-tail-evaluation.md",
+            "docs/implementation-status-v0.59.0.md",
         ):
             self.assertIn(path, expected)
         self.assertIn(
@@ -741,9 +754,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.52.0")
-        self.assertEqual(manifest["package_version"], "0.58.0")
-        self.assertEqual(crypto_quant.__version__, "0.58.0")
+        self.assertEqual(manifest["manifest_version"], "1.53.0")
+        self.assertEqual(manifest["package_version"], "0.59.0")
+        self.assertEqual(crypto_quant.__version__, "0.59.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",

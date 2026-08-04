@@ -83,6 +83,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/system-paper-install-receipt-v1.schema.json",
     "config/system-paper-start-receipt-v1.schema.json",
     "config/system-paper-slot-result-v1.schema.json",
+    "config/system-paper-evaluation-v1.schema.json",
     "config/statistical-series-snapshot-v1.schema.json",
     "config/statistical-decision-snapshot-v1.schema.json",
     "config/server-time-probe-v1.schema.json",
@@ -161,6 +162,15 @@ _FROZEN_RELEASE_PATHS = (
     "2026-08-04-system-paper-deployment-review-hardening.md",
     "docs/adr/0058-system-paper-deployment-trust-chain.md",
     "docs/implementation-status-v0.58.0.md",
+    "README.md",
+    "tests/test_system_paper_evaluation.py",
+    "tests/test_system_paper_evaluation_cli.py",
+    "docs/superpowers/specs/"
+    "2026-08-04-system-paper-fixed-tail-evaluation-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-04-system-paper-fixed-tail-evaluation.md",
+    "docs/adr/0059-system-paper-fixed-tail-evaluation.md",
+    "docs/implementation-status-v0.59.0.md",
 )
 
 
