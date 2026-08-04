@@ -1552,6 +1552,243 @@ def _copy_full_state_rows(
     return inputs, results
 
 
+def _replay_retained_prepared_state(
+    *,
+    state_files: Mapping[str, Optional[_RetainedAuthorityFile]],
+    plan: Mapping[str, Any],
+    start: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    replay: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Replay prepared SQLite rows without opening the slot inventory."""
+
+    policy = SystemPaperSchedulePolicy.create(plan)
+    try:
+        started, _started_text = _utc(start["cohort_started_at"])
+        expected_slots = tuple(
+            policy.slot_from_scheduled(started + timedelta(hours=4 * index))
+            for index in range(start["expected_slot_count"])
+        )
+        expected_by_id = {slot.slot_id: slot for slot in expected_slots}
+        input_rows, result_rows = _copy_full_state_rows(
+            state_files, plan=plan, replay=replay
+        )
+        inputs_by_slot = {row["slot_id"]: row for row in input_rows}
+        results_by_slot = {row["slot_id"]: row for row in result_rows}
+        input_events = {
+            event["slot_id"]: event
+            for event in replay["events"]
+            if event["event_type"] == "INPUT_PREPARED"
+        }
+        result_events = {
+            event["slot_id"]: event
+            for event in replay["events"]
+            if event["event_type"] == "RESULT_PREPARED"
+        }
+        if (
+            len(inputs_by_slot) != len(input_rows)
+            or len(results_by_slot) != len(result_rows)
+            or len(input_events)
+            != sum(
+                event["event_type"] == "INPUT_PREPARED"
+                for event in replay["events"]
+            )
+            or len(result_events)
+            != sum(
+                event["event_type"] == "RESULT_PREPARED"
+                for event in replay["events"]
+            )
+            or set(inputs_by_slot) != set(input_events)
+            or set(results_by_slot) != set(result_events)
+            or not set(results_by_slot).issubset(inputs_by_slot)
+            or not set(inputs_by_slot).issubset(expected_by_id)
+        ):
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+            )
+        expected_output_root_hash = business_hash(
+            {
+                "purpose": "SYSTEM_PAPER_IMMUTABLE_OUTPUT_ROOT",
+                "resolved_path": str(
+                    Path(contract["root_paths"]["artifacts"]).resolve()
+                ),
+            }
+        )
+        ordered_inputs = []
+        envelopes = {}
+        for slot in expected_slots:
+            row = inputs_by_slot.get(slot.slot_id)
+            if row is None:
+                continue
+            body = row["input_bytes"]
+            if not isinstance(body, bytes):
+                raise SystemPaperEvaluationError(
+                    "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+                )
+            try:
+                envelope = _strict_prepared_input(body)
+            except SystemPaperEvaluationError as error:
+                raise SystemPaperEvaluationError(
+                    "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+                ) from error
+            expected_hashes = {
+                "input_sha256": hashlib.sha256(body).hexdigest(),
+                "plan_hash": plan["plan_hash"],
+                "market_bundle_hash": envelope["capture"][
+                    "public_market_bundle"
+                ]["bundle_hash"],
+                "previous_snapshot_hash": envelope[
+                    "previous_runtime_snapshot"
+                ]["snapshot_hash"],
+                "fill_scenario_hash": business_hash(
+                    envelope["fill_scenario"]
+                ),
+                "output_root_hash": expected_output_root_hash,
+            }
+            event = input_events[slot.slot_id]
+            if (
+                row["source_event_id"] != event["event_id"]
+                or any(
+                    row[name] != value
+                    for name, value in expected_hashes.items()
+                )
+                or envelope.get("slot_id") != row["slot_id"]
+                or envelope.get("scheduled_for") != slot.scheduled_for
+                or envelope.get("plan") != plan
+                or envelope.get("schedule_policy_hash")
+                != policy.schedule_policy_hash
+                or envelope.get("output_root_hash")
+                != expected_output_root_hash
+            ):
+                raise SystemPaperEvaluationError(
+                    "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+                )
+            envelopes[slot.slot_id] = envelope
+            ordered_inputs.append(row)
+
+        ordered_results = tuple(
+            results_by_slot[slot.slot_id]
+            for slot in expected_slots
+            if slot.slot_id in results_by_slot
+        )
+        ordered_result_slots = tuple(
+            expected_by_id[row["slot_id"]] for row in ordered_results
+        )
+        result_bodies = tuple(row["result_bytes"] for row in ordered_results)
+        if (
+            not result_bodies
+            or any(not isinstance(body, bytes) for body in result_bodies)
+            or ordered_result_slots
+            != expected_slots[: len(ordered_result_slots)]
+        ):
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+            )
+        load_system_paper_slot_result_bytes(
+            result_bodies[-1], parent_result_bodies=result_bodies[:-1]
+        )
+        parsed_results = tuple(
+            json.loads(body.decode("utf-8")) for body in result_bodies
+        )
+        prefix = []
+        for slot, row, result in zip(
+            ordered_result_slots, ordered_results, parsed_results
+        ):
+            envelope = envelopes[slot.slot_id]
+            body = row["result_bytes"]
+            prefix.append(slot.slot_id)
+            expected_hashes = {
+                "result_sha256": hashlib.sha256(body).hexdigest(),
+                "slot_hash": result["slot_hash"],
+                "runtime_snapshot_hash": result["runtime_snapshot"][
+                    "snapshot_hash"
+                ],
+                "parent_slot_hash": result["parent_slot_hash_or_null"]
+                or _ZERO_HASH,
+                "output_root_hash": expected_output_root_hash,
+            }
+            event = result_events[slot.slot_id]
+            if (
+                row["source_event_id"] != event["event_id"]
+                or any(
+                    row[name] != value
+                    for name, value in expected_hashes.items()
+                )
+                or result.get("slot_id") != slot.slot_id
+                or result.get("scheduled_for") != slot.scheduled_for
+                or result.get("plan_hash") != plan["plan_hash"]
+                or result.get("replay_inputs")
+                != {
+                    "plan": envelope["plan"],
+                    "scheduled_for": envelope["scheduled_for"],
+                    "public_market_bundle": envelope["capture"][
+                        "public_market_bundle"
+                    ],
+                    "previous_runtime_snapshot": envelope[
+                        "previous_runtime_snapshot"
+                    ],
+                    "fill_scenario": envelope["fill_scenario"],
+                }
+                or result["runtime_snapshot"]["processed_slot_ids"]
+                != prefix
+            ):
+                raise SystemPaperEvaluationError(
+                    "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+                )
+
+        first_slot = expected_slots[0]
+        first_input = inputs_by_slot.get(first_slot.slot_id)
+        first_result = results_by_slot.get(first_slot.slot_id)
+        first_value = parsed_results[0]
+        first_success = next(
+            (
+                event
+                for event in replay["events"]
+                if event["event_type"] == "SUCCEEDED"
+                and event["slot_id"] == first_slot.slot_id
+            ),
+            None,
+        )
+        first = start["first_slot"]
+        expected_result_path = str(
+            Path(contract["root_paths"]["artifacts"])
+            / "system-paper-slots"
+            / (first_slot.slot_id + ".json")
+        )
+        if (
+            first_input is None
+            or first_result is None
+            or first_success is None
+            or first["slot_id"] != first_slot.slot_id
+            or first["scheduled_for"] != first_slot.scheduled_for
+            or first["result_path"] != expected_result_path
+            or first["artifact_evidence"]["path"] != expected_result_path
+            or first["result_sha256"]
+            != hashlib.sha256(first_result["result_bytes"]).hexdigest()
+            or first["prepared_input_sha256"]
+            != hashlib.sha256(first_input["input_bytes"]).hexdigest()
+            or first["prepared_result_sha256"]
+            != hashlib.sha256(first_result["result_bytes"]).hexdigest()
+            or first["slot_hash"] != first_value["slot_hash"]
+            or first["runtime_snapshot_hash"]
+            != first_value["runtime_snapshot"]["snapshot_hash"]
+            or first["event_chain_end_hash"] != first_success["event_hash"]
+        ):
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
+            )
+        return {
+            "input_rows": tuple(ordered_inputs),
+            "result_rows": ordered_results,
+        }
+    except SystemPaperEvaluationError:
+        raise
+    except (KeyError, TypeError, ValueError, SystemPaperRuntimeError) as error:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+        ) from error
+
+
 def _retained_evidence(retained: _RetainedAuthorityFile) -> Mapping[str, Any]:
     entry = retained.entry
     return {
@@ -2212,11 +2449,61 @@ def observe_system_paper_evaluation_readiness(
             for slot_id in expected_slot_ids
         )
         if observed >= tail_at + _TAIL_SETTLE_DELAY:
+            prepared_replay_reason = None
+            try:
+                _replay_retained_prepared_state(
+                    state_files=state_files,
+                    plan=plan,
+                    start=start,
+                    contract=contract,
+                    replay=replay,
+                )
+            except SystemPaperEvaluationError as error:
+                retained.verify()
+                state_retained.verify()
+                if (
+                    error.reason_code
+                    != "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+                ):
+                    raise
+                prepared_replay_reason = error.reason_code
+            else:
+                retained.verify()
+                state_retained.verify()
             surface_state = _inventory_surface_state(
                 paths["slot_root"],
                 retained_sources=cohort_retained,
                 retained_attachment=authority.inconclusive_attachment,
             )
+            if prepared_replay_reason is not None:
+                inventory = _inconclusive_inventory(
+                    paths["slot_root"],
+                    retained_sources=cohort_retained,
+                    retained_attachment=authority.inconclusive_attachment,
+                    state_files=state_files,
+                    plan=plan,
+                    replay=replay,
+                    inventory_state=surface_state,
+                )
+                retained.verify()
+                state_retained.verify()
+                if cohort_retained.descriptor is not None:
+                    cohort_retained.verify()
+                return _inconclusive_readiness(
+                    observed_at=observed_at,
+                    start_text=start_text,
+                    tail_text=tail_text,
+                    start=start,
+                    successes=successes,
+                    incidents=incidents,
+                    plan=plan,
+                    install=install,
+                    contract=contract,
+                    replay=None,
+                    raw_state_group_hash=raw_state_hash,
+                    reason_code=prepared_replay_reason,
+                    inventory=inventory,
+                )
             if surface_state != "PRESENT":
                 inventory = _inconclusive_inventory(
                     paths["slot_root"],
@@ -2229,6 +2516,8 @@ def observe_system_paper_evaluation_readiness(
                 )
                 retained.verify()
                 state_retained.verify()
+                if cohort_retained.descriptor is not None:
+                    cohort_retained.verify()
                 return _inconclusive_readiness(
                     observed_at=observed_at,
                     start_text=start_text,
@@ -2254,43 +2543,14 @@ def observe_system_paper_evaluation_readiness(
                     _machine_probe=_machine_probe,
                     _filesystem_probe=_filesystem_probe,
                 )
-            except Exception as error:
-                if (
-                    isinstance(error, SystemPaperStartReceiptError)
-                    and error.reason_code
-                    == "SYSTEM_PAPER_START_RECEIPT_INVALID"
-                ):
-                    raise SystemPaperEvaluationError(
-                        "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
-                    ) from error
+            except SystemPaperStartReceiptError as error:
                 retained.verify()
                 state_retained.verify()
-                inventory = _inconclusive_inventory(
-                    paths["slot_root"],
-                    retained_sources=cohort_retained,
-                    retained_attachment=authority.inconclusive_attachment,
-                    state_files=state_files,
-                    plan=plan,
-                    replay=replay,
-                    inventory_state=surface_state,
-                )
-                return _inconclusive_readiness(
-                    observed_at=observed_at,
-                    start_text=start_text,
-                    tail_text=tail_text,
-                    start=start,
-                    successes=successes,
-                    incidents=incidents,
-                    plan=plan,
-                    install=install,
-                    contract=contract,
-                    replay=None,
-                    raw_state_group_hash=raw_state_hash,
-                    reason_code=(
-                        "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
-                    ),
-                    inventory=inventory,
-                )
+                if cohort_retained.descriptor is not None:
+                    cohort_retained.verify()
+                raise SystemPaperEvaluationError(
+                    "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
+                ) from error
             if replayed_start != start:
                 raise SystemPaperEvaluationError(
                     "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"

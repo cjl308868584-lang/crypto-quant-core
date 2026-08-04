@@ -2017,6 +2017,165 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
         )
 
+    def test_stable_prepared_corruption_with_empty_inventory_is_raw_bound(self):
+        """Prepared corruption selects raw binding before empty inventory."""
+        self.mutate_prepared_bytes("prepared_inputs", "input_bytes", 0, b"{}")
+        first_path = Path(
+            json.loads(self.start_receipt_path.read_bytes())["first_slot"][
+                "result_path"
+            ]
+        )
+        first_path.unlink()
+
+        artifact = self._assert_raw_bound_inconclusive(
+            "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+        )
+
+        self.assertEqual(
+            artifact["sources"]["state_binding_kind"], "RAW_SQLITE_GROUP"
+        )
+        self.assertIsNone(
+            artifact["sources"]["event_chain_end_hash_or_null"]
+        )
+        self.assertEqual(
+            artifact["reason_code_or_null"],
+            "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID",
+        )
+        self.assertEqual(
+            artifact["evidence_inventory"]["inventory_state"], "EMPTY"
+        )
+
+    def test_stable_prepared_corruption_with_missing_inventory_is_raw_bound(self):
+        """Prepared corruption selects raw binding before missing inventory."""
+        self.mutate_prepared_bytes("prepared_inputs", "input_bytes", 0, b"{}")
+        retained_root = self.slot_root.with_name(self.slot_root.name + ".missing")
+        self.slot_root.rename(retained_root)
+        try:
+            artifact = self._assert_raw_bound_inconclusive(
+                "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+            )
+
+            self.assertEqual(
+                artifact["sources"]["state_binding_kind"],
+                "RAW_SQLITE_GROUP",
+            )
+            self.assertIsNone(
+                artifact["sources"]["event_chain_end_hash_or_null"]
+            )
+            self.assertEqual(
+                artifact["reason_code_or_null"],
+                "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID",
+            )
+            self.assertEqual(
+                artifact["evidence_inventory"]["inventory_state"],
+                "MISSING",
+            )
+        finally:
+            retained_root.rename(self.slot_root)
+
+    def test_stable_prepared_corruption_with_unsafe_inventory_is_raw_bound(self):
+        """Prepared corruption selects raw binding before unsafe inventory."""
+        self.mutate_prepared_bytes("prepared_inputs", "input_bytes", 0, b"{}")
+        first_path = Path(
+            json.loads(self.start_receipt_path.read_bytes())["first_slot"][
+                "result_path"
+            ]
+        )
+        unsafe_path = self.slot_root / "unsafe-prepared-corruption.json"
+        unsafe_path.symlink_to(first_path)
+        try:
+            artifact = self._assert_raw_bound_inconclusive(
+                "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
+            )
+
+            self.assertEqual(
+                artifact["sources"]["state_binding_kind"],
+                "RAW_SQLITE_GROUP",
+            )
+            self.assertIsNone(
+                artifact["sources"]["event_chain_end_hash_or_null"]
+            )
+            self.assertEqual(
+                artifact["reason_code_or_null"],
+                "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID",
+            )
+            self.assertEqual(
+                artifact["evidence_inventory"]["inventory_state"],
+                "UNSAFE",
+            )
+        finally:
+            unsafe_path.unlink()
+
+    def test_authority_tamper_with_empty_inventory_remains_hard_failure(self):
+        """Empty inventory cannot conceal a tampered start authority."""
+        receipt = json.loads(self.start_receipt_path.read_bytes())
+        receipt["first_slot"]["result_sha256"] = "0" * 64
+        receipt["observation"]["first_slot"]["result_sha256"] = "0" * 64
+        receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
+        self.start_receipt_path.write_bytes(
+            canonical_json(receipt).encode("utf-8")
+        )
+        self.start_receipt_path.chmod(0o600)
+        Path(receipt["first_slot"]["result_path"]).unlink()
+
+        with self.assertRaises(SystemPaperEvaluationError) as captured:
+            evaluate_system_paper(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+        self.assertEqual(
+            captured.exception.reason_code,
+            "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID",
+        )
+        self.assertEqual(
+            tuple(self.output_root.glob("system_paper_evaluation_*.json"))
+            if self.output_root.exists()
+            else (),
+            (),
+        )
+
+    def test_prepared_capture_after_change_with_empty_inventory_is_source_changed(self):
+        """A post-replay prepared mutation stays a hard source change."""
+        from crypto_quant import system_paper_evaluation as module
+
+        first_path = Path(
+            json.loads(self.start_receipt_path.read_bytes())["first_slot"][
+                "result_path"
+            ]
+        )
+        first_path.unlink()
+        original_replay = module._replay_retained_prepared_state
+
+        def replay_then_change(*args, **kwargs):
+            replayed = original_replay(*args, **kwargs)
+            self.mutate_state_metadata(
+                "prepared_inputs", "plan_hash", "0" * 64
+            )
+            return replayed
+
+        with patch.object(
+            module,
+            "_replay_retained_prepared_state",
+            side_effect=replay_then_change,
+        ):
+            with self.assertRaises(SystemPaperEvaluationError) as captured:
+                evaluate_system_paper(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+
+        self.assertEqual(
+            captured.exception.reason_code,
+            "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED",
+        )
+        self.assertEqual(
+            tuple(self.output_root.glob("system_paper_evaluation_*.json"))
+            if self.output_root.exists()
+            else (),
+            (),
+        )
+
     def test_raw_state_binding_changes_result_identity(self):
         """Distinct stable corrupt SQLite bytes cannot share a result id."""
         self.mutate_state_metadata("prepared_inputs", "plan_hash", "0" * 64)
