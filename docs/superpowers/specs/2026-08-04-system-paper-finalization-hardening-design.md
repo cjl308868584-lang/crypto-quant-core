@@ -1,8 +1,8 @@
 # System Paper Finalization Hardening Design
 
-日期：2026-08-04  
-目标版本：`v0.59.0`  
-基线：`c38c30a9408fc3dd3c4c453c37e980a14fe0a1b0`  
+日期：2026-08-04
+目标版本：`v0.59.0`
+基线：`c38c30a9408fc3dd3c4c453c37e980a14fe0a1b0`
 适用分支：`codex/v0.59-system-paper-evaluation`
 
 ## 1. 决策摘要

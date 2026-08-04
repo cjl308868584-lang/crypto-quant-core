@@ -145,7 +145,7 @@
     "docs/superpowers/specs/2026-08-02-system-paper-wal-scheduler-design.md": "ba7a327bb3d243045b9522796135521adba0c38acf708749220be558c473b549",
     "docs/superpowers/specs/2026-08-03-system-paper-deployment-trust-chain-design.md": "acf72abafc844ac98a7c2e11334d31278a5af626c8b54a2c639fe5e93e0372f8",
     "docs/superpowers/specs/2026-08-04-system-paper-deployment-review-hardening-design.md": "38244e35ee0782dc66f2430d81655f6101fcb5e8e4b232317a7b72ca77b32b30",
-    "docs/superpowers/specs/2026-08-04-system-paper-finalization-hardening-design.md": "9dffb8eaf71d65be3808a42490a004900b0aeb9b77342dc8f45f20957a64af40",
+    "docs/superpowers/specs/2026-08-04-system-paper-finalization-hardening-design.md": "92a5c105a0dcd138c184c09f85edd7225b9bad89f7a7d365459ddd18e42eeadf",
     "docs/superpowers/specs/2026-08-04-system-paper-fixed-tail-evaluation-design.md": "7651364aa39e0820e865cd079e9b59de343501510132992068cdbebf9c3a793e",
     "pyproject.toml": "28338b70fd740cfb70c89f33134eef5f77d8402cf5f4049afa5ce93112d08dab",
     "requirements.lock": "71aa777f1717f056886f3de1fb2e1013a5dec5210d681ed30943056edf7ccbed",
@@ -338,7 +338,7 @@
     "tests/test_system_paper_scheduler.py": "bd602843f290cc40bcf84693955e4fd4296e21ffc1656496379fe1b7a634c13a",
     "tests/test_system_paper_start_receipt.py": "1c8b06335e2e426e59ba4c67873517e5492f2fb31bb79937670172181e6ede20"
   },
-  "build_input_tree_hash": "2503b3c115eadfe287e1b4dc93183f13e08f2a280a93bcad0db9b1daf5689ca3",
+  "build_input_tree_hash": "05d661a847ba46767dfe4e77ee146fa6295d55f4288d460db8c279edd9e87e93",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -346,5 +346,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "fff49f3ae08f551e621b7596655b0c37a0c5a18858b0bbc850795a9f27404cc4"
+  "manifest_hash": "3e3720baecb480f2510bddbaf7b04db51c2817b3875183a1c461c5f368293fb7"
 }
