@@ -1564,10 +1564,40 @@ def _replay_retained_prepared_state(
 
     policy = SystemPaperSchedulePolicy.create(plan)
     try:
-        started, _started_text = _utc(start["cohort_started_at"])
+        projection = replay["projection"]
+        state_slots = tuple(
+            sorted(
+                projection.values(),
+                key=lambda item: _utc(item["scheduled_for"])[0],
+            )
+        )
+        if not state_slots:
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
+            )
+        state_first = state_slots[0]
+        started, started_text = _utc(state_first["scheduled_for"])
+        receipt_started, receipt_started_text = _utc(
+            start["cohort_started_at"]
+        )
+        receipt_tail, receipt_tail_text = _utc(start["cohort_tail_end"])
+        first = start["first_slot"]
+        if (
+            start["expected_slot_count"] != 540
+            or receipt_started != started
+            or receipt_started_text != started_text
+            or receipt_tail != started + timedelta(days=90)
+            or receipt_tail_text
+            != utc_datetime(started + timedelta(days=90))
+            or first["slot_id"] != state_first["slot_id"]
+            or first["scheduled_for"] != state_first["scheduled_for"]
+        ):
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
+            )
         expected_slots = tuple(
             policy.slot_from_scheduled(started + timedelta(hours=4 * index))
-            for index in range(start["expected_slot_count"])
+            for index in range(540)
         )
         expected_by_id = {slot.slot_id: slot for slot in expected_slots}
         input_rows, result_rows = _copy_full_state_rows(
@@ -1749,7 +1779,6 @@ def _replay_retained_prepared_state(
             ),
             None,
         )
-        first = start["first_slot"]
         expected_result_path = str(
             Path(contract["root_paths"]["artifacts"])
             / "system-paper-slots"

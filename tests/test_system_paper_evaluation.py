@@ -2134,6 +2134,58 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             (),
         )
 
+    def test_shifted_start_schedule_with_empty_inventory_is_authority_invalid(self):
+        """Retained event schedule outranks an internally shifted receipt."""
+        receipt = json.loads(self.start_receipt_path.read_bytes())
+        shifted_start = datetime.fromisoformat(
+            receipt["cohort_started_at"].replace("Z", "+00:00")
+        ) + timedelta(hours=4)
+        shifted_start_text = self.utc_text(shifted_start)
+        receipt["cohort_started_at"] = shifted_start_text
+        receipt["cohort_tail_end"] = self.utc_text(
+            shifted_start + timedelta(days=90)
+        )
+        receipt["first_slot"]["scheduled_for"] = shifted_start_text
+        receipt["observation"]["first_slot"][
+            "scheduled_for"
+        ] = shifted_start_text
+        receipt["receipt_id"] = stable_id(
+            "system_paper_start_receipt",
+            {
+                "contract_hash": receipt["source_binding"]["contract_hash"],
+                "install_receipt_hash": receipt["source_binding"][
+                    "install_receipt_hash"
+                ],
+                "first_slot_id": receipt["first_slot"]["slot_id"],
+                "cohort_started_at": shifted_start_text,
+            },
+        )
+        receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
+        shifted_path = self.start_receipt_path.with_name(
+            receipt["receipt_id"] + ".json"
+        )
+        self.start_receipt_path.rename(shifted_path)
+        shifted_path.write_bytes(canonical_json(receipt).encode("utf-8"))
+        shifted_path.chmod(0o600)
+        self.start_receipt_path = shifted_path
+        Path(receipt["first_slot"]["result_path"]).unlink()
+
+        with self.assertRaises(SystemPaperEvaluationError) as captured:
+            evaluate_system_paper(
+                **self.values(_clock=lambda: "2026-11-02T12:05:00.000Z")
+            )
+
+        self.assertEqual(
+            captured.exception.reason_code,
+            "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID",
+        )
+        self.assertEqual(
+            tuple(self.output_root.glob("system_paper_evaluation_*.json"))
+            if self.output_root.exists()
+            else (),
+            (),
+        )
+
     def test_prepared_capture_after_change_with_empty_inventory_is_source_changed(self):
         """A post-replay prepared mutation stays a hard source change."""
         from crypto_quant import system_paper_evaluation as module
