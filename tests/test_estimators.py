@@ -1,4 +1,6 @@
+import ast
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -532,17 +534,45 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
 
     def test_manifest_binds_complete_evaluator_file_set(self):
-        build = EvaluatorBuild.load(ROOT, self.registry)
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         manifest = load_json_strict(
             ROOT / "config" / "evaluator-build-manifest-v1.json"
         )
 
+        pyproject_match = re.search(
+            r'^version = "([^"]+)"$',
+            (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(pyproject_match)
+        setup_tree = ast.parse(
+            (ROOT / "setup.py").read_text(encoding="utf-8")
+        )
+        setup_version = next(
+            keyword.value.value
+            for node in ast.walk(setup_tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "setup"
+            for keyword in node.keywords
+            if keyword.arg == "version"
+            and isinstance(keyword.value, ast.Constant)
+            and isinstance(keyword.value.value, str)
+        )
+        semantic_versions = {
+            tuple(int(part) for part in version.split("."))
+            for version in (
+                pyproject_match.group(1),
+                setup_version,
+                crypto_quant.__version__,
+            )
+        }
+
         self.assertEqual(set(manifest["file_hashes"]), expected)
-        self.assertEqual(crypto_quant.__version__, "0.58.0")
-        self.assertEqual(manifest["package_version"], "0.58.0")
-        self.assertEqual(manifest["manifest_version"], "1.52.0")
-        self.assertEqual(build.manifest_version, "1.52.0")
+        self.assertEqual(semantic_versions, {(0, 59, 0)})
+        self.assertEqual(crypto_quant.__version__, "0.59.0")
+        self.assertEqual(manifest["package_version"], "0.59.0")
+        self.assertEqual(manifest["manifest_version"], "1.53.0")
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
@@ -618,6 +648,7 @@ class EvaluatorBuildTests(unittest.TestCase):
             expected,
         )
         for path in (
+            "tests/test_estimators.py",
             "config/system-paper-market-bundle-v1.schema.json",
             "config/system-paper-launchd-contract-v1.schema.json",
             "config/system-paper-preflight-receipt-v1.schema.json",
@@ -654,6 +685,28 @@ class EvaluatorBuildTests(unittest.TestCase):
             "2026-08-04-system-paper-deployment-review-hardening.md",
             "docs/adr/0058-system-paper-deployment-trust-chain.md",
             "docs/implementation-status-v0.58.0.md",
+            "README.md",
+            "config/system-paper-evaluation-v1.schema.json",
+            "src/crypto_quant/system_paper_evaluation.py",
+            "src/crypto_quant/system_paper_evaluation_cli.py",
+            "src/crypto_quant/schemas/system-paper-evaluation-v1.schema.json",
+            "tests/test_system_paper_evaluation.py",
+            "tests/test_system_paper_evaluation_cli.py",
+            "docs/superpowers/specs/"
+            "2026-08-04-system-paper-fixed-tail-evaluation-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-04-system-paper-fixed-tail-evaluation.md",
+            "docs/superpowers/specs/"
+            "2026-08-04-system-paper-finalization-hardening-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-04-system-paper-finalization-hardening.md",
+            "docs/superpowers/specs/"
+            "2026-08-05-system-paper-finalization-residual-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-05-system-paper-finalization-residual.md",
+            "docs/adr/0059-system-paper-fixed-tail-evaluation.md",
+            "docs/implementation-status-v0.59.0.md",
+            "scripts/refresh_evaluator_build_manifest.py",
         ):
             self.assertIn(path, expected)
         self.assertIn(
@@ -741,15 +794,17 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.52.0")
-        self.assertEqual(manifest["package_version"], "0.58.0")
-        self.assertEqual(crypto_quant.__version__, "0.58.0")
+        self.assertEqual(manifest["manifest_version"], "1.53.0")
+        self.assertEqual(manifest["package_version"], "0.59.0")
+        self.assertEqual(crypto_quant.__version__, "0.59.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
         )
         self.assertEqual(manifest["metric_catalog_version"], "1.1.6")
         self.assertEqual(manifest["golden_vector_count"], 41)
+        build = EvaluatorBuild.load(ROOT, self.registry)
+        self.assertEqual(build.manifest_version, "1.53.0")
         self.assertEqual(build.executable_estimator_count, 26)
         self.assertEqual(build.unavailable_estimator_count, 32)
         self.assertEqual(build.build_hash, manifest["manifest_hash"])

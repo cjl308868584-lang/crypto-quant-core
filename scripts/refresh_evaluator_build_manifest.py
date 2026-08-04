@@ -1,4 +1,4 @@
-"""Refresh only the deterministic hashes and release versions in the build manifest."""
+"""Refresh deterministic hashes without changing frozen release versions."""
 
 import json
 import os
@@ -12,12 +12,16 @@ from crypto_quant.evidence import artifact_self_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "config" / "evaluator-build-manifest-v1.json"
+EXPECTED_MANIFEST_VERSION = "1.53.0"
+EXPECTED_PACKAGE_VERSION = "0.59.0"
 
 
 def main() -> int:
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    manifest["manifest_version"] = "1.52.0"
-    manifest["package_version"] = "0.58.0"
+    if manifest.get("manifest_version") != EXPECTED_MANIFEST_VERSION:
+        raise SystemExit("refusing to change frozen manifest version")
+    if manifest.get("package_version") != EXPECTED_PACKAGE_VERSION:
+        raise SystemExit("refusing to change frozen package version")
     paths = EvaluatorBuild.expected_file_paths(ROOT)
     hashes = EvaluatorBuild.file_hashes(ROOT, paths)
     manifest["file_hashes"] = hashes

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 import stat
 import subprocess
 import tempfile
@@ -28,13 +29,15 @@ from .system_paper_plan import build_system_paper_plan
 from .system_paper_runtime import load_system_paper_slot_result_bytes
 from .system_paper_scheduler import (
     SystemPaperSchedulePolicy,
-    SystemPaperScheduleState,
+    load_system_paper_schedule_event_metadata,
 )
 
 
 _LABEL = "local.crypto-quant.system-paper-v1"
 _LAUNCHCTL = "/bin/launchctl"
 _MAX_EVIDENCE_BYTES = 32 * 1024 * 1024
+_MAX_STATE_EVIDENCE_BYTES = 128 * 1024 * 1024
+_MAX_SLOT_EVIDENCE_BYTES = 1024 * 1024
 _MAX_COMMAND_BYTES = 64 * 1024
 
 
@@ -91,10 +94,18 @@ class _RetainedFile:
     path: Path
     descriptor: int
     before: os.stat_result
-    body: bytes
+    body: Optional[bytes]
+    content_sha256: str
 
     @classmethod
-    def open(cls, path: Path, *, allow_empty: bool = False):
+    def open(
+        cls,
+        path: Path,
+        *,
+        allow_empty: bool = False,
+        maximum_bytes: int = _MAX_EVIDENCE_BYTES,
+        retain_body: bool = True,
+    ):
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         descriptor = None
         try:
@@ -105,26 +116,30 @@ class _RetainedFile:
                 or entry.st_uid != os.getuid()
                 or entry.st_nlink != 1
                 or stat.S_IMODE(entry.st_mode) != 0o600
-                or entry.st_size > _MAX_EVIDENCE_BYTES
+                or entry.st_size > maximum_bytes
                 or (not allow_empty and entry.st_size == 0)
             ):
                 raise SystemPaperObserverError(
                     "SYSTEM_PAPER_OBSERVER_EVIDENCE_FILE_UNSAFE"
                 )
             chunks = []
-            remaining = _MAX_EVIDENCE_BYTES + 1
+            digest = hashlib.sha256()
+            remaining = maximum_bytes + 1
             while remaining:
                 chunk = os.read(descriptor, min(65536, remaining))
                 if not chunk:
                     break
-                chunks.append(chunk)
+                digest.update(chunk)
+                if retain_body:
+                    chunks.append(chunk)
                 remaining -= len(chunk)
-            body = b"".join(chunks)
-            if len(body) != entry.st_size:
+            bytes_read = maximum_bytes + 1 - remaining
+            body = b"".join(chunks) if retain_body else None
+            if bytes_read != entry.st_size:
                 raise SystemPaperObserverError(
                     "SYSTEM_PAPER_OBSERVER_EVIDENCE_FILE_RACE"
                 )
-            return cls(path, descriptor, entry, body)
+            return cls(path, descriptor, entry, body, digest.hexdigest())
         except Exception:
             if descriptor is not None:
                 os.close(descriptor)
@@ -132,20 +147,38 @@ class _RetainedFile:
 
     @property
     def evidence(self):
-        return {"path": str(self.path), **_stat_payload(self.before, self.body)}
+        return {
+            "path": str(self.path),
+            "device": self.before.st_dev,
+            "inode": self.before.st_ino,
+            "mode": stat.S_IMODE(self.before.st_mode),
+            "owner_uid": self.before.st_uid,
+            "link_count": self.before.st_nlink,
+            "size_bytes": self.before.st_size,
+            "mtime_ns": str(self.before.st_mtime_ns),
+            "sha256": self.content_sha256,
+        }
 
     def verify_unchanged(self):
         try:
             retained = os.fstat(self.descriptor)
             current = os.stat(str(self.path), follow_symlinks=False)
             os.lseek(self.descriptor, 0, os.SEEK_SET)
-            chunks = []
+            offset = 0
+            digest = hashlib.sha256()
             while True:
                 chunk = os.read(self.descriptor, 65536)
                 if not chunk:
                     break
-                chunks.append(chunk)
-            body = b"".join(chunks)
+                digest.update(chunk)
+                if (
+                    self.body is not None
+                    and self.body[offset : offset + len(chunk)] != chunk
+                ):
+                    raise SystemPaperObserverError(
+                        "SYSTEM_PAPER_OBSERVER_EVIDENCE_CHANGED"
+                    )
+                offset += len(chunk)
         except OSError as error:
             raise SystemPaperObserverError(
                 "SYSTEM_PAPER_OBSERVER_EVIDENCE_CHANGED"
@@ -162,7 +195,8 @@ class _RetainedFile:
         if (
             any(getattr(retained, name) != getattr(self.before, name) for name in fields)
             or any(getattr(current, name) != getattr(self.before, name) for name in fields)
-            or body != self.body
+            or offset != self.before.st_size
+            or digest.hexdigest() != self.content_sha256
         ):
             raise SystemPaperObserverError(
                 "SYSTEM_PAPER_OBSERVER_EVIDENCE_CHANGED"
@@ -178,7 +212,15 @@ class _EvidenceSet:
         self.absent = []
         self.directories = []
 
-    def capture_file(self, path: Path, *, optional=False, allow_empty=False):
+    def capture_file(
+        self,
+        path: Path,
+        *,
+        optional=False,
+        allow_empty=False,
+        maximum_bytes=_MAX_EVIDENCE_BYTES,
+        retain_body=True,
+    ):
         if not path.exists() and not path.is_symlink():
             if optional:
                 self.absent.append(path)
@@ -186,7 +228,12 @@ class _EvidenceSet:
             raise SystemPaperObserverError(
                 "SYSTEM_PAPER_OBSERVER_EVIDENCE_MISSING"
             )
-        retained = _RetainedFile.open(path, allow_empty=allow_empty)
+        retained = _RetainedFile.open(
+            path,
+            allow_empty=allow_empty,
+            maximum_bytes=maximum_bytes,
+            retain_body=retain_body,
+        )
         self.files.append(retained)
         return retained
 
@@ -241,6 +288,8 @@ class _EvidenceSet:
 
 def _copy_state_and_replay(
     state_files: Mapping[str, Optional[_RetainedFile]],
+    *,
+    expected_slot_id: str,
 ):
     main = state_files["main"]
     if main is None:
@@ -261,26 +310,63 @@ def _copy_state_and_replay(
             if retained is None:
                 continue
             target = copy_path if suffix == "main" else Path(str(copy_path) + suffix)
-            target.write_bytes(retained.body)
+            os.lseek(retained.descriptor, 0, os.SEEK_SET)
+            with target.open("xb") as handle:
+                while True:
+                    chunk = os.read(retained.descriptor, 65536)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
             target.chmod(0o600)
-        with SystemPaperScheduleState(copy_path, policy) as state:
-            chain_end = state.verify_integrity()
-            events = state.events()
-            projection = state.slot_projection()
+        replay = load_system_paper_schedule_event_metadata(copy_path, policy)
+        connection = sqlite3.connect(str(copy_path), timeout=0)
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute("PRAGMA query_only = ON")
             prepared_inputs = {}
+            for row in connection.execute(
+                "SELECT slot_id, input_bytes, input_sha256 "
+                "FROM prepared_inputs ORDER BY slot_id"
+            ):
+                body = row["input_bytes"]
+                if (
+                    not isinstance(body, bytes)
+                    or hashlib.sha256(body).hexdigest()
+                    != row["input_sha256"]
+                ):
+                    raise SystemPaperObserverError(
+                        "SYSTEM_PAPER_OBSERVER_PREPARED_EVIDENCE_INVALID"
+                    )
+                if row["slot_id"] == expected_slot_id:
+                    prepared_inputs[row["slot_id"]] = {
+                        "input_bytes": row["input_bytes"],
+                        "input_sha256": row["input_sha256"],
+                    }
             prepared_results = {}
-            for value in projection.values():
-                slot = policy.slot_from_scheduled(value["scheduled_for"])
-                if value["input_event_id"] is not None:
-                    record = state.load_prepared_input(slot)
-                    prepared_inputs[slot.slot_id] = record
-                if value["result_event_id"] is not None:
-                    record = state.load_prepared_result(slot)
-                    prepared_results[slot.slot_id] = record
+            for row in connection.execute(
+                "SELECT slot_id, result_bytes, result_sha256 "
+                "FROM prepared_results ORDER BY slot_id"
+            ):
+                body = row["result_bytes"]
+                if (
+                    not isinstance(body, bytes)
+                    or hashlib.sha256(body).hexdigest()
+                    != row["result_sha256"]
+                ):
+                    raise SystemPaperObserverError(
+                        "SYSTEM_PAPER_OBSERVER_PREPARED_EVIDENCE_INVALID"
+                    )
+                if row["slot_id"] == expected_slot_id:
+                    prepared_results[row["slot_id"]] = {
+                        "result_bytes": row["result_bytes"],
+                        "result_sha256": row["result_sha256"],
+                    }
+        finally:
+            connection.close()
     return {
-        "events": events,
-        "projection": projection,
-        "event_chain_end_hash": chain_end,
+        "events": replay["events"],
+        "projection": replay["projection"],
+        "event_chain_end_hash": replay["event_chain_end_hash"],
         "prepared_inputs": prepared_inputs,
         "prepared_results": prepared_results,
     }
@@ -502,12 +588,24 @@ def replay_system_paper_first_slot_evidence(
         )
         recorded_state = observation["state_evidence"]
         state_files = {
-            "main": evidence.capture_file(state_path),
+            "main": evidence.capture_file(
+                state_path,
+                maximum_bytes=_MAX_STATE_EVIDENCE_BYTES,
+                retain_body=False,
+            ),
             "-wal": evidence.capture_file(
-                Path(str(state_path) + "-wal"), optional=True, allow_empty=True
+                Path(str(state_path) + "-wal"),
+                optional=True,
+                allow_empty=True,
+                maximum_bytes=_MAX_STATE_EVIDENCE_BYTES,
+                retain_body=False,
             ),
             "-shm": evidence.capture_file(
-                Path(str(state_path) + "-shm"), optional=True, allow_empty=True
+                Path(str(state_path) + "-shm"),
+                optional=True,
+                allow_empty=True,
+                maximum_bytes=_MAX_STATE_EVIDENCE_BYTES,
+                retain_body=False,
             ),
         }
         for suffix, retained in state_files.items():
@@ -532,7 +630,9 @@ def replay_system_paper_first_slot_evidence(
             / "system-paper-slots"
             / f"{first_slot_id}.json"
         )
-        artifact = evidence.capture_file(artifact_path)
+        artifact = evidence.capture_file(
+            artifact_path, maximum_bytes=_MAX_SLOT_EVIDENCE_BYTES
+        )
         stdout = evidence.capture_file(stdout_path, allow_empty=False)
         stderr = evidence.capture_file(stderr_path, allow_empty=True)
         if artifact.evidence != first_recorded["artifact_evidence"]:
@@ -552,7 +652,9 @@ def replay_system_paper_first_slot_evidence(
                 "SYSTEM_PAPER_OBSERVER_STDERR_INVALID"
             )
 
-        replay = _copy_state_and_replay(state_files)
+        replay = _copy_state_and_replay(
+            state_files, expected_slot_id=first_slot_id
+        )
         events = replay["events"]
         succeeded = [
             event for event in events if event["event_type"] == "SUCCEEDED"
@@ -713,9 +815,21 @@ def observe_system_paper_first_slot(
                 "SYSTEM_PAPER_OBSERVER_SOURCE_CHANGED"
             )
         state_files = {
-            "main": evidence.capture_file(state_path, optional=True),
-            "-wal": evidence.capture_file(Path(str(state_path) + "-wal"), optional=True, allow_empty=True),
-            "-shm": evidence.capture_file(Path(str(state_path) + "-shm"), optional=True, allow_empty=True),
+            "main": evidence.capture_file(
+                state_path, optional=True, retain_body=False
+            ),
+            "-wal": evidence.capture_file(
+                Path(str(state_path) + "-wal"),
+                optional=True,
+                allow_empty=True,
+                retain_body=False,
+            ),
+            "-shm": evidence.capture_file(
+                Path(str(state_path) + "-shm"),
+                optional=True,
+                allow_empty=True,
+                retain_body=False,
+            ),
         }
         stdout = evidence.capture_file(stdout_path, optional=True, allow_empty=True)
         stderr = evidence.capture_file(stderr_path, optional=True, allow_empty=True)
@@ -730,9 +844,14 @@ def observe_system_paper_first_slot(
                 raise SystemPaperObserverError(
                     "SYSTEM_PAPER_OBSERVER_ARTIFACT_INVENTORY_INVALID"
                 )
-            artifacts[name] = evidence.capture_file(slots_directory / name)
+            artifacts[name] = evidence.capture_file(
+                slots_directory / name,
+                maximum_bytes=_MAX_SLOT_EVIDENCE_BYTES,
+            )
 
-        replay = _copy_state_and_replay(state_files)
+        replay = _copy_state_and_replay(
+            state_files, expected_slot_id=first_slot.slot_id
+        )
         events = replay["events"]
         failed_runtime = any(
             item["event_type"] in ("FAILED", "MISSED", "EXPIRED")

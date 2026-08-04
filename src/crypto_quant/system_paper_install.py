@@ -671,28 +671,30 @@ def _receipt_reasons(
             / "LaunchAgents"
             / f"{_LABEL}.plist"
         )
-        if (
-            receipt["domain"] != domain
-            or receipt["service"] != service
-            or receipt["target_path"] != str(target)
-            or target != expected_target
-        ):
+        target_binding_valid = (
+            receipt["domain"] == domain
+            and receipt["service"] == service
+            and receipt["target_path"] == str(target)
+            and target == expected_target
+        )
+        if not target_binding_valid:
             reasons.append("SYSTEM_PAPER_INSTALL_TARGET_BINDING_MISMATCH")
-        actual = _target_stat(target, uid, expected_bytes=plist_bytes)
         recorded = receipt["target_stat"]
-        if any(
-            actual[key] != recorded[key]
-            for key in (
-                "device",
-                "inode",
-                "owner_uid",
-                "mode",
-                "link_count",
-                "size_bytes",
-                "sha256",
-            )
-        ):
-            reasons.append("SYSTEM_PAPER_INSTALL_TARGET_STAT_MISMATCH")
+        if target_binding_valid:
+            actual = _target_stat(target, uid, expected_bytes=plist_bytes)
+            if any(
+                actual[key] != recorded[key]
+                for key in (
+                    "device",
+                    "inode",
+                    "owner_uid",
+                    "mode",
+                    "link_count",
+                    "size_bytes",
+                    "sha256",
+                )
+            ):
+                reasons.append("SYSTEM_PAPER_INSTALL_TARGET_STAT_MISMATCH")
         print_argv = [_LAUNCHCTL, "print", service]
         bootstrap_argv = [_LAUNCHCTL, "bootstrap", domain, str(target)]
         if receipt["preflight_print"]["argv"] != print_argv:

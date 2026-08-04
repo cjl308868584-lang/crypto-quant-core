@@ -914,6 +914,287 @@ class SystemPaperInputCapture:
     network_request_count: int
 
 
+def load_system_paper_schedule_event_metadata(
+    path: Path, policy: SystemPaperSchedulePolicy
+) -> Mapping[str, Any]:
+    """Replay event continuity without decoding prepared input/result blobs."""
+
+    if not isinstance(policy, SystemPaperSchedulePolicy):
+        raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_POLICY_INVALID")
+    state_path = Path(path)
+    _validate_state_path(state_path)
+    expected_columns = {
+        "schedule_events": (
+            "sequence",
+            "event_id",
+            "event_type",
+            "slot_id",
+            "event_time",
+            "payload_json",
+            "payload_hash",
+            "previous_event_hash",
+            "event_hash",
+        ),
+        "prepared_inputs": (
+            "source_event_id",
+            "slot_id",
+            "input_bytes",
+            "input_sha256",
+            "plan_hash",
+            "market_bundle_hash",
+            "previous_snapshot_hash",
+            "fill_scenario_hash",
+            "output_root_hash",
+        ),
+        "prepared_results": (
+            "source_event_id",
+            "slot_id",
+            "result_bytes",
+            "result_sha256",
+            "slot_hash",
+            "runtime_snapshot_hash",
+            "parent_slot_hash",
+            "output_root_hash",
+        ),
+    }
+    expected_table_sql = {
+        "schedule_events": """
+            CREATE TABLE schedule_events (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL UNIQUE,
+                event_type TEXT NOT NULL,
+                slot_id TEXT NOT NULL,
+                event_time TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                previous_event_hash TEXT NOT NULL,
+                event_hash TEXT NOT NULL UNIQUE
+            )
+        """,
+        "prepared_inputs": """
+            CREATE TABLE prepared_inputs (
+                source_event_id TEXT PRIMARY KEY,
+                slot_id TEXT NOT NULL UNIQUE,
+                input_bytes BLOB NOT NULL,
+                input_sha256 TEXT NOT NULL,
+                plan_hash TEXT NOT NULL,
+                market_bundle_hash TEXT NOT NULL,
+                previous_snapshot_hash TEXT NOT NULL,
+                fill_scenario_hash TEXT NOT NULL,
+                output_root_hash TEXT NOT NULL,
+                FOREIGN KEY(source_event_id) REFERENCES schedule_events(event_id)
+            )
+        """,
+        "prepared_results": """
+            CREATE TABLE prepared_results (
+                source_event_id TEXT PRIMARY KEY,
+                slot_id TEXT NOT NULL UNIQUE,
+                result_bytes BLOB NOT NULL,
+                result_sha256 TEXT NOT NULL,
+                slot_hash TEXT NOT NULL,
+                runtime_snapshot_hash TEXT NOT NULL,
+                parent_slot_hash TEXT NOT NULL,
+                output_root_hash TEXT NOT NULL,
+                FOREIGN KEY(source_event_id) REFERENCES schedule_events(event_id)
+            )
+        """,
+    }
+    connection = None
+    try:
+        connection = sqlite3.connect(str(state_path), timeout=0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only = ON")
+        actual_table_sql = {
+            row["name"]: " ".join(str(row["sql"]).split())
+            for row in connection.execute(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        }
+        normalized_expected_table_sql = {
+            name: " ".join(sql.split())
+            for name, sql in expected_table_sql.items()
+        }
+        if actual_table_sql != normalized_expected_table_sql:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_METADATA_SCHEMA_INVALID"
+            )
+        for table, columns in expected_columns.items():
+            actual = tuple(
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(" + table + ")"
+                ).fetchall()
+            )
+            if actual != columns:
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_METADATA_SCHEMA_INVALID"
+                )
+        actual_triggers = {
+            row["name"]: " ".join(str(row["sql"]).split())
+            for row in connection.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type='trigger'"
+            ).fetchall()
+        }
+        expected_triggers = {
+            name: " ".join(sql.split())
+            for name, sql in _IMMUTABILITY_TRIGGERS.items()
+        }
+        if actual_triggers != expected_triggers:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_IMMUTABILITY_TRIGGER_INVALID"
+            )
+        events = []
+        for row in connection.execute(
+            "SELECT sequence, event_id, event_type, slot_id, event_time, "
+            "payload_json, payload_hash, previous_event_hash, event_hash "
+            "FROM schedule_events ORDER BY sequence"
+        ).fetchall():
+            try:
+                payload = json.loads(row["payload_json"])
+            except json.JSONDecodeError as error:
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_EVENT_PAYLOAD_INVALID"
+                ) from error
+            if row["payload_json"] != canonical_json(payload):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_EVENT_PAYLOAD_CANONICAL_INVALID"
+                )
+            events.append(
+                {
+                    "sequence": row["sequence"],
+                    "event_id": row["event_id"],
+                    "event_type": row["event_type"],
+                    "slot_id": row["slot_id"],
+                    "event_time": row["event_time"],
+                    "payload": payload,
+                    "payload_hash": row["payload_hash"],
+                    "previous_event_hash": row["previous_event_hash"],
+                    "event_hash": row["event_hash"],
+                }
+            )
+        event_values = tuple(events)
+        projection = _event_projection(event_values, policy)
+        input_ids = {
+            item["input_event_id"]
+            for item in projection.values()
+            if item["input_event_id"] is not None
+        }
+        result_ids = {
+            item["result_event_id"]
+            for item in projection.values()
+            if item["result_event_id"] is not None
+        }
+        input_rows = connection.execute(
+            "SELECT source_event_id FROM prepared_inputs"
+        ).fetchall()
+        actual_inputs = {
+            row["source_event_id"]
+            for row in input_rows
+        }
+        result_rows = connection.execute(
+            "SELECT source_event_id FROM prepared_results"
+        ).fetchall()
+        actual_results = {
+            row["source_event_id"]
+            for row in result_rows
+        }
+        if len(input_rows) != len(input_ids) or actual_inputs != input_ids:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_SET_MISMATCH"
+            )
+        if len(result_rows) != len(result_ids) or actual_results != result_ids:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_SET_MISMATCH"
+            )
+        events_by_id = {event["event_id"]: event for event in event_values}
+        input_fields = (
+            "input_sha256",
+            "plan_hash",
+            "market_bundle_hash",
+            "previous_snapshot_hash",
+            "fill_scenario_hash",
+            "output_root_hash",
+        )
+        for row in connection.execute(
+            "SELECT source_event_id, slot_id, input_sha256, plan_hash, "
+            "market_bundle_hash, previous_snapshot_hash, fill_scenario_hash, "
+            "output_root_hash FROM prepared_inputs"
+        ).fetchall():
+            event = events_by_id.get(row["source_event_id"])
+            if (
+                event is None
+                or event["event_type"] != "INPUT_PREPARED"
+                or row["slot_id"] != event["slot_id"]
+                or any(
+                    row[field] != event["payload"].get(field)
+                    for field in input_fields
+                )
+            ):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_PREPARED_INPUT_EVENT_MISMATCH"
+                )
+        result_fields = (
+            "result_sha256",
+            "slot_hash",
+            "runtime_snapshot_hash",
+            "parent_slot_hash",
+            "output_root_hash",
+        )
+        for row in connection.execute(
+            "SELECT source_event_id, slot_id, result_sha256, slot_hash, "
+            "runtime_snapshot_hash, parent_slot_hash, output_root_hash "
+            "FROM prepared_results"
+        ).fetchall():
+            event = events_by_id.get(row["source_event_id"])
+            if (
+                event is None
+                or event["event_type"] != "RESULT_PREPARED"
+                or row["slot_id"] != event["slot_id"]
+                or any(
+                    row[field] != event["payload"].get(field)
+                    for field in result_fields
+                )
+            ):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_PREPARED_RESULT_EVENT_MISMATCH"
+                )
+        success_rows = {
+            row["slot_id"]: {
+                "result_sha256": row["result_sha256"],
+                "runtime_snapshot_hash": row["runtime_snapshot_hash"],
+                "output_root_hash": row["output_root_hash"],
+            }
+            for row in connection.execute(
+                "SELECT slot_id, result_sha256, runtime_snapshot_hash, "
+                "output_root_hash FROM prepared_results"
+            ).fetchall()
+        }
+        for state in projection.values():
+            if state["terminal_state"] == "SUCCEEDED" and (
+                success_rows.get(state["slot_id"]) != state["success_binding"]
+            ):
+                raise SystemPaperScheduleError(
+                    "SYSTEM_PAPER_SCHEDULE_SUCCESS_BINDING_MISMATCH"
+                )
+        return {
+            "events": event_values,
+            "projection": projection,
+            "event_chain_end_hash": (
+                event_values[-1]["event_hash"] if event_values else _GENESIS_HASH
+            ),
+        }
+    except SystemPaperScheduleError:
+        raise
+    except (OSError, sqlite3.Error, TypeError, ValueError) as error:
+        raise SystemPaperScheduleError(
+            "SYSTEM_PAPER_SCHEDULE_METADATA_INVALID"
+        ) from error
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 class SystemPaperScheduleState:
     """SQLite WAL event chain for System Paper; all durable rows are immutable."""
 

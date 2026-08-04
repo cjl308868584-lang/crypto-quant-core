@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crypto-quant-core"
-version = "0.58.0"
+version = "0.59.0"
 description = "Fail-closed deterministic core for the personal crypto quant system"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
   "jsonschema>=4.25,<5",
 ]
+
+[project.scripts]
+system-paper-evaluation = "crypto_quant.system_paper_evaluation_cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

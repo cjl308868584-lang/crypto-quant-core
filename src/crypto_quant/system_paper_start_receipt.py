@@ -526,7 +526,7 @@ def publish_system_paper_start_receipt(
         retained.close()
 
 
-def load_system_paper_start_receipt(
+def _load_system_paper_start_receipt_metadata_bundle(
     *,
     receipt_path: Path,
     contract_path: Path,
@@ -535,7 +535,7 @@ def load_system_paper_start_receipt(
     install_receipt_path: Path,
     _machine_probe=None,
     _filesystem_probe=None,
-) -> Mapping[str, Any]:
+):
     contract = load_system_paper_launchd_contract(
         contract_path=contract_path, plist_path=plist_path
     )
@@ -578,8 +578,67 @@ def load_system_paper_start_receipt(
             "SYSTEM_PAPER_START_RECEIPT_INVALID"
         )
     observation = receipt["observation"]
-    first = observation["first_slot"]
     retained = _RetainedSourceSet.capture(_source_evidences(observation))
+    try:
+        retained.verify()
+    except Exception:
+        retained.close()
+        raise
+    return receipt, contract, install, retained
+
+
+def load_system_paper_start_receipt_metadata(
+    *,
+    receipt_path: Path,
+    contract_path: Path,
+    plist_path: Path,
+    preflight_receipt_path: Path,
+    install_receipt_path: Path,
+    _machine_probe=None,
+    _filesystem_probe=None,
+) -> Mapping[str, Any]:
+    """Validate immutable start authority without replaying slot economics."""
+
+    receipt, _contract, _install, retained = (
+        _load_system_paper_start_receipt_metadata_bundle(
+            receipt_path=receipt_path,
+            contract_path=contract_path,
+            plist_path=plist_path,
+            preflight_receipt_path=preflight_receipt_path,
+            install_receipt_path=install_receipt_path,
+            _machine_probe=_machine_probe,
+            _filesystem_probe=_filesystem_probe,
+        )
+    )
+    try:
+        retained.verify()
+        return receipt
+    finally:
+        retained.close()
+
+
+def load_system_paper_start_receipt(
+    *,
+    receipt_path: Path,
+    contract_path: Path,
+    plist_path: Path,
+    preflight_receipt_path: Path,
+    install_receipt_path: Path,
+    _machine_probe=None,
+    _filesystem_probe=None,
+) -> Mapping[str, Any]:
+    receipt, contract, install, retained = (
+        _load_system_paper_start_receipt_metadata_bundle(
+            receipt_path=receipt_path,
+            contract_path=contract_path,
+            plist_path=plist_path,
+            preflight_receipt_path=preflight_receipt_path,
+            install_receipt_path=install_receipt_path,
+            _machine_probe=_machine_probe,
+            _filesystem_probe=_filesystem_probe,
+        )
+    )
+    observation = receipt["observation"]
     try:
         try:
             replayed = replay_system_paper_first_slot_evidence(
