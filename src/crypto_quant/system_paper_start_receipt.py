@@ -20,12 +20,17 @@ from .system_paper_launchd import (
     load_system_paper_launchd_contract,
     system_paper_launchd_contract_trust_hash,
 )
-from .system_paper_observer import observe_system_paper_first_slot
-from .system_paper_runtime import load_system_paper_slot_result
+from .system_paper_observer import (
+    SystemPaperObserverError,
+    observe_system_paper_first_slot,
+    replay_system_paper_first_slot_evidence,
+)
 
 
 _SCHEMA = "system-paper-start-receipt-v1.schema.json"
 _EXPECTED_SLOT_COUNT = 540
+_MAX_RECEIPT_BYTES = 4 * 1024 * 1024
+_MAX_SOURCE_EVIDENCE_BYTES = 32 * 1024 * 1024
 _WARNINGS = (
     "START_RECEIPT_BEGINS_PAPER_RESEARCH_ONLY",
     "NINETY_DAY_RESULT_NOT_YET_AVAILABLE",
@@ -134,6 +139,7 @@ def _receipt_reasons(receipt, *, contract, source, install):
             observation["status"] != "FIRST_NATURAL_SLOT_VERIFIED"
             or receipt["first_slot"] != first
             or first["scheduled_for"] != receipt["cohort_started_at"]
+            or receipt["published_at"] != observation["observed_at"]
         ):
             reasons.append("SYSTEM_PAPER_START_RECEIPT_OBSERVATION_INVALID")
         started, started_text = _utc(receipt["cohort_started_at"])
@@ -172,10 +178,42 @@ def _receipt_reasons(receipt, *, contract, source, install):
 
 def _file_matches(evidence):
     path = Path(evidence["path"])
+    descriptor = None
     try:
-        entry = path.lstat()
-        body = path.read_bytes()
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        descriptor = os.open(path, flags)
+        entry = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(entry.st_mode)
+            or not 0 <= entry.st_size <= _MAX_SOURCE_EVIDENCE_BYTES
+        ):
+            return False
+        chunks = []
+        total = 0
+        while total <= _MAX_SOURCE_EVIDENCE_BYTES:
+            chunk = os.read(
+                descriptor,
+                min(64 * 1024, _MAX_SOURCE_EVIDENCE_BYTES + 1 - total),
+            )
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        body = b"".join(chunks)
+        retained = os.fstat(descriptor)
+        current = os.stat(path, follow_symlinks=False)
     except OSError:
+        return False
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if (
+        len(body) != entry.st_size
+        or len(body) > _MAX_SOURCE_EVIDENCE_BYTES
+        or _stat_identity(entry) != _stat_identity(retained)
+        or _stat_identity(retained) != _stat_identity(current)
+    ):
         return False
     actual = {
         "path": str(path),
@@ -205,6 +243,98 @@ def _observation_evidences(observation):
         )
     )
     return values
+
+
+def _source_evidences(observation):
+    return tuple(observation["source_evidence"].values())
+
+
+def _stat_identity(entry):
+    return (
+        entry.st_dev,
+        entry.st_ino,
+        entry.st_mode,
+        entry.st_uid,
+        entry.st_nlink,
+        entry.st_size,
+        entry.st_mtime_ns,
+        entry.st_ctime_ns,
+    )
+
+
+def _read_bounded_receipt(path, expected_root):
+    if path.parent != expected_root or path.name in {"", ".", ".."}:
+        raise SystemPaperStartReceiptError(
+            "SYSTEM_PAPER_START_RECEIPT_READ_INVALID"
+        )
+    root_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    root_flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    file_flags |= getattr(os, "O_CLOEXEC", 0)
+    root_fd = None
+    file_fd = None
+    try:
+        root_fd = os.open(expected_root, root_flags)
+        root_before = os.fstat(root_fd)
+        if (
+            not stat.S_ISDIR(root_before.st_mode)
+            or root_before.st_uid != os.getuid()
+            or stat.S_IMODE(root_before.st_mode) != 0o700
+        ):
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_READ_INVALID"
+            )
+        file_fd = os.open(path.name, file_flags, dir_fd=root_fd)
+        entry_before = os.fstat(file_fd)
+        if (
+            not stat.S_ISREG(entry_before.st_mode)
+            or entry_before.st_uid != os.getuid()
+            or entry_before.st_nlink != 1
+            or stat.S_IMODE(entry_before.st_mode) != 0o600
+            or not 0 < entry_before.st_size <= _MAX_RECEIPT_BYTES
+        ):
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_READ_INVALID"
+            )
+
+        chunks = []
+        total = 0
+        while total <= _MAX_RECEIPT_BYTES:
+            chunk = os.read(
+                file_fd,
+                min(64 * 1024, _MAX_RECEIPT_BYTES + 1 - total),
+            )
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        body = b"".join(chunks)
+        entry_after = os.fstat(file_fd)
+        path_after = os.stat(path.name, dir_fd=root_fd, follow_symlinks=False)
+        inventory = set(os.listdir(root_fd))
+        root_after = os.fstat(root_fd)
+        if (
+            len(body) != entry_before.st_size
+            or len(body) > _MAX_RECEIPT_BYTES
+            or _stat_identity(entry_before) != _stat_identity(entry_after)
+            or _stat_identity(entry_after) != _stat_identity(path_after)
+            or _stat_identity(root_before) != _stat_identity(root_after)
+        ):
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_READ_INVALID"
+            )
+        return body, inventory
+    except SystemPaperStartReceiptError:
+        raise
+    except OSError as error:
+        raise SystemPaperStartReceiptError(
+            "SYSTEM_PAPER_START_RECEIPT_READ_INVALID"
+        ) from error
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+        if root_fd is not None:
+            os.close(root_fd)
 
 
 def publish_system_paper_start_receipt(
@@ -337,29 +467,23 @@ def load_system_paper_start_receipt(
         _filesystem_probe=_filesystem_probe,
     )
     path = Path(receipt_path)
+    expected_root = Path(contract["root_paths"]["start_receipts"])
     try:
-        entry = path.lstat()
-        body = path.read_bytes()
+        body, inventory = _read_bounded_receipt(path, expected_root)
         receipt = json.loads(body.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise SystemPaperStartReceiptError(
             "SYSTEM_PAPER_START_RECEIPT_READ_INVALID"
         ) from error
-    expected_root = Path(contract["root_paths"]["start_receipts"])
     if (
-        path.resolve(strict=True) != path
-        or path.parent != expected_root
+        not isinstance(receipt, Mapping)
         or path.name != f"{receipt.get('receipt_id')}.json"
-        or not stat.S_ISREG(entry.st_mode)
-        or entry.st_uid != os.getuid()
-        or entry.st_nlink != 1
-        or stat.S_IMODE(entry.st_mode) != 0o600
         or canonical_json(receipt).encode("utf-8") != body
     ):
         raise SystemPaperStartReceiptError(
             "SYSTEM_PAPER_START_RECEIPT_READ_INVALID"
         )
-    if {item.name for item in expected_root.iterdir()} != {path.name}:
+    if inventory != {path.name}:
         raise SystemPaperStartReceiptError(
             "SYSTEM_PAPER_START_RECEIPT_OUTPUT_INVENTORY_INVALID"
         )
@@ -374,20 +498,34 @@ def load_system_paper_start_receipt(
         )
     observation = receipt["observation"]
     first = observation["first_slot"]
-    if not all(
-        _file_matches(item) for item in _observation_evidences(observation)
-    ):
+    if not all(_file_matches(item) for item in _source_evidences(observation)):
         raise SystemPaperStartReceiptError(
             "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
         )
-    result = load_system_paper_slot_result(Path(first["result_path"]))
-    if (
-        result["slot_id"] != first["slot_id"]
-        or result["slot_hash"] != first["slot_hash"]
-        or result["runtime_snapshot"]["snapshot_hash"]
-        != first["runtime_snapshot_hash"]
-    ):
+    try:
+        replayed = replay_system_paper_first_slot_evidence(
+            observation=observation, contract=contract, install=install
+        )
+    except SystemPaperObserverError as error:
+        if error.reason_code == "SYSTEM_PAPER_OBSERVER_STORED_LAUNCHCTL_INVALID":
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_INVALID"
+            ) from error
         raise SystemPaperStartReceiptError(
-            "SYSTEM_PAPER_START_RECEIPT_RESULT_INVALID"
+            "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
+        ) from error
+    if any(
+        observation[key] != replayed[key]
+        for key in (
+            "status",
+            "first_eligible_slot",
+            "successful_slot_count",
+            "terminal_slot_count",
+            "first_slot",
+            "launchd",
+        )
+    ) or receipt["first_slot"] != replayed["first_slot"]:
+        raise SystemPaperStartReceiptError(
+            "SYSTEM_PAPER_START_RECEIPT_INVALID"
         )
     return receipt

@@ -1,6 +1,7 @@
 """Descriptor-retained, read-only observer for the first System Paper slot."""
 
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -379,14 +380,14 @@ def _default_launchctl_runner(argv: Sequence[str]) -> LaunchctlResult:
     )
 
 
-def _runner_log_summary(
-    stdout: _RetainedFile,
+def _runner_summary_line(
+    body: bytes,
     expected_result_path: Path,
     expected_result_body: bytes,
     result,
 ):
     try:
-        text = stdout.body.decode("utf-8")
+        text = body.decode("utf-8")
         if not text.endswith("\n") or "\n" in text[:-1]:
             raise ValueError
         value = json.loads(text[:-1])
@@ -424,6 +425,241 @@ def _runner_log_summary(
             "SYSTEM_PAPER_OBSERVER_STDOUT_MISMATCH"
         )
     return value
+
+
+def _runner_log_summary(
+    stdout: _RetainedFile,
+    expected_result_path: Path,
+    expected_result_body: bytes,
+    result,
+):
+    return _runner_summary_line(
+        stdout.body, expected_result_path, expected_result_body, result
+    )
+
+
+def _stable_evidence_matches(
+    recorded: Mapping[str, Any], retained: _RetainedFile, expected_path: Path
+) -> bool:
+    current = retained.evidence
+    return recorded.get("path") == str(expected_path) and all(
+        recorded.get(key) == current[key]
+        for key in (
+            "device",
+            "inode",
+            "mode",
+            "owner_uid",
+            "link_count",
+        )
+    )
+
+
+def _replay_stored_launchd(
+    launchd: Mapping[str, Any], *, contract, install
+) -> Mapping[str, Any]:
+    try:
+        stdout = base64.b64decode(launchd["stdout_base64"], validate=True)
+        stderr = base64.b64decode(launchd["stderr_base64"], validate=True)
+    except (KeyError, TypeError, ValueError, binascii.Error) as error:
+        raise SystemPaperObserverError(
+            "SYSTEM_PAPER_OBSERVER_STORED_LAUNCHCTL_INVALID"
+        ) from error
+    if (
+        len(stdout) != launchd.get("stdout_size_bytes")
+        or len(stderr) != launchd.get("stderr_size_bytes")
+        or hashlib.sha256(stdout).hexdigest() != launchd.get("stdout_sha256")
+        or hashlib.sha256(stderr).hexdigest() != launchd.get("stderr_sha256")
+    ):
+        raise SystemPaperObserverError(
+            "SYSTEM_PAPER_OBSERVER_STORED_LAUNCHCTL_INVALID"
+        )
+    replayed = _validate_launchctl_result(
+        LaunchctlResult(0, stdout, stderr),
+        contract=contract,
+        install=install,
+        success_count=1,
+    )
+    if replayed != launchd:
+        raise SystemPaperObserverError(
+            "SYSTEM_PAPER_OBSERVER_STORED_LAUNCHCTL_INVALID"
+        )
+    return replayed
+
+
+def replay_system_paper_first_slot_evidence(
+    *, observation: Mapping[str, Any], contract: Mapping[str, Any], install
+) -> Mapping[str, Any]:
+    """Purely reconstruct the immutable first-slot prefix without commands."""
+
+    evidence = _EvidenceSet()
+    try:
+        state_path = Path(contract["root_paths"]["state"]) / "system-paper.sqlite"
+        stdout_path = (
+            Path(contract["root_paths"]["log"]) / "system-paper.stdout.log"
+        )
+        stderr_path = (
+            Path(contract["root_paths"]["log"]) / "system-paper.stderr.log"
+        )
+        recorded_state = observation["state_evidence"]
+        state_files = {
+            "main": evidence.capture_file(state_path),
+            "-wal": evidence.capture_file(
+                Path(str(state_path) + "-wal"), optional=True, allow_empty=True
+            ),
+            "-shm": evidence.capture_file(
+                Path(str(state_path) + "-shm"), optional=True, allow_empty=True
+            ),
+        }
+        for suffix, retained in state_files.items():
+            recorded = recorded_state[suffix]
+            expected_path = (
+                state_path if suffix == "main" else Path(str(state_path) + suffix)
+            )
+            if (recorded is None) != (retained is None) or (
+                recorded is not None
+                and not _stable_evidence_matches(
+                    recorded, retained, expected_path
+                )
+            ):
+                raise SystemPaperObserverError(
+                    "SYSTEM_PAPER_OBSERVER_EVOLVING_STATE_INVALID"
+                )
+
+        first_recorded = observation["first_slot"]
+        first_slot_id = first_recorded["slot_id"]
+        artifact_path = (
+            Path(contract["root_paths"]["artifacts"])
+            / "system-paper-slots"
+            / f"{first_slot_id}.json"
+        )
+        artifact = evidence.capture_file(artifact_path)
+        stdout = evidence.capture_file(stdout_path, allow_empty=False)
+        stderr = evidence.capture_file(stderr_path, allow_empty=True)
+        if artifact.evidence != first_recorded["artifact_evidence"]:
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_FIRST_ARTIFACT_CHANGED"
+            )
+        if not _stable_evidence_matches(
+            first_recorded["stdout_evidence"], stdout, stdout_path
+        ) or not _stable_evidence_matches(
+            first_recorded["stderr_evidence"], stderr, stderr_path
+        ):
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_LOG_IDENTITY_INVALID"
+            )
+        if stderr.body:
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_STDERR_INVALID"
+            )
+
+        replay = _copy_state_and_replay(state_files)
+        events = replay["events"]
+        succeeded = [
+            event for event in events if event["event_type"] == "SUCCEEDED"
+        ]
+        if not succeeded:
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_FIRST_SLOT_PREFIX_INVALID"
+            )
+        terminal = succeeded[0]
+        prefix = tuple(
+            event for event in events if event["sequence"] <= terminal["sequence"]
+        )
+        if (
+            terminal["slot_id"] != first_slot_id
+            or any(
+                event["event_type"] in ("FAILED", "MISSED", "EXPIRED")
+                for event in prefix
+            )
+            or sum(event["event_type"] == "SUCCEEDED" for event in prefix) != 1
+        ):
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_FIRST_SLOT_PREFIX_INVALID"
+            )
+        prepared_input = replay["prepared_inputs"].get(first_slot_id)
+        prepared_result = replay["prepared_results"].get(first_slot_id)
+        if prepared_input is None or prepared_result is None:
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_PREPARED_EVIDENCE_MISSING"
+            )
+        if prepared_result["result_bytes"] != artifact.body:
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_PREPARED_RESULT_MISMATCH"
+            )
+        result = load_system_paper_slot_result_bytes(artifact.body)
+        first_line_end = stdout.body.find(b"\n")
+        if first_line_end < 0:
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_STDOUT_INVALID"
+            )
+        first_line = stdout.body[: first_line_end + 1]
+        runner_summary = _runner_summary_line(
+            first_line, artifact.path, artifact.body, result
+        )
+        recorded_stdout = first_recorded["stdout_evidence"]
+        if (
+            recorded_stdout.get("size_bytes") != len(first_line)
+            or recorded_stdout.get("sha256")
+            != hashlib.sha256(first_line).hexdigest()
+            or not stdout.body.startswith(first_line)
+            or first_recorded["stderr_evidence"].get("size_bytes") != 0
+            or first_recorded["stderr_evidence"].get("sha256")
+            != hashlib.sha256(b"").hexdigest()
+        ):
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_LOG_PREFIX_INVALID"
+            )
+
+        policy = SystemPaperSchedulePolicy.create(build_system_paper_plan())
+        eligible = _first_slot_after_install(install["installed_at"], policy)
+        if eligible.slot_id != first_slot_id:
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_FIRST_SLOT_IDENTITY_MISMATCH"
+            )
+        launchd = _replay_stored_launchd(
+            observation["launchd"], contract=contract, install=install
+        )
+        replayed_first = {
+            "slot_id": result["slot_id"],
+            "scheduled_for": result["scheduled_for"],
+            "result_path": str(artifact.path),
+            "result_sha256": hashlib.sha256(artifact.body).hexdigest(),
+            "slot_hash": result["slot_hash"],
+            "runtime_snapshot_hash": result["runtime_snapshot"]["snapshot_hash"],
+            "prepared_input_sha256": hashlib.sha256(
+                prepared_input["input_bytes"]
+            ).hexdigest(),
+            "prepared_result_sha256": hashlib.sha256(
+                prepared_result["result_bytes"]
+            ).hexdigest(),
+            "event_chain_end_hash": terminal["event_hash"],
+            "artifact_evidence": artifact.evidence,
+            "stdout_evidence": dict(recorded_stdout),
+            "stderr_evidence": dict(first_recorded["stderr_evidence"]),
+            "runner_summary": runner_summary,
+        }
+        evidence.verify_unchanged()
+        return {
+            "status": "FIRST_NATURAL_SLOT_VERIFIED",
+            "first_eligible_slot": {
+                "slot_id": eligible.slot_id,
+                "scheduled_for": eligible.scheduled_for,
+                "due_at": eligible.due_at,
+                "expires_at": eligible.expires_at,
+            },
+            "successful_slot_count": 1,
+            "terminal_slot_count": 1,
+            "first_slot": replayed_first,
+            "launchd": launchd,
+        }
+    except SystemPaperObserverError:
+        raise
+    except Exception as error:
+        raise SystemPaperObserverError(
+            "SYSTEM_PAPER_OBSERVER_FIRST_SLOT_REPLAY_INVALID"
+        ) from error
+    finally:
+        evidence.close()
 
 
 def observe_system_paper_first_slot(

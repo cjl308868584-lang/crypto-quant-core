@@ -1,6 +1,7 @@
 """Immutable System Paper 90-day start receipt tests."""
 
 import io
+import copy
 import json
 import os
 import stat
@@ -126,6 +127,137 @@ class SystemPaperStartReceiptTests(unittest.TestCase):
         self.observer.stdout_path.write_bytes(b"changed\n")
         with self.assertRaisesRegex(SystemPaperStartReceiptError, "SOURCE"):
             self.load(path)
+
+    def test_loader_replays_immutable_first_slot_against_coordinated_rehashes(self):
+        self.observer.create_success()
+        result = publish_system_paper_start_receipt(
+            **self.values(
+                observer_helpers.ObserverLaunchctl(self.observer.install, runs=1),
+                "2026-08-04T08:10:00.000Z",
+            )
+        )
+        path = Path(result["receipt_path"])
+        original = path.read_bytes()
+
+        def change_both_first(receipt, key, value):
+            receipt["first_slot"][key] = copy.deepcopy(value)
+            receipt["observation"]["first_slot"][key] = copy.deepcopy(value)
+
+        mutations = {
+            "event_chain": lambda value: change_both_first(
+                value, "event_chain_end_hash", "0" * 64
+            ),
+            "prepared_input": lambda value: change_both_first(
+                value, "prepared_input_sha256", "1" * 64
+            ),
+            "prepared_result": lambda value: change_both_first(
+                value, "prepared_result_sha256", "2" * 64
+            ),
+            "runner_summary": lambda value: change_both_first(
+                value,
+                "runner_summary",
+                {
+                    **value["first_slot"]["runner_summary"],
+                    "outcome": "RESUMED_INPUT",
+                },
+            ),
+            "first_eligible": lambda value: value["observation"][
+                "first_eligible_slot"
+            ].__setitem__("due_at", "2026-08-04T08:06:00.000Z"),
+            "terminal_count": lambda value: value["observation"].__setitem__(
+                "terminal_slot_count", 2
+            ),
+            "launchd_semantics": lambda value: (
+                value["observation"]["launchd"].__setitem__("run_count", 2),
+                value["observation"]["launchd"]["service_snapshot"].__setitem__(
+                    "runs", 2
+                ),
+            ),
+        }
+        try:
+            for name, mutate in mutations.items():
+                with self.subTest(name=name):
+                    changed = json.loads(original)
+                    mutate(changed)
+                    changed["receipt_hash"] = artifact_self_hash(
+                        changed, "receipt_hash"
+                    )
+                    path.write_bytes(canonical_json(changed).encode("utf-8"))
+                    with self.assertRaisesRegex(
+                        SystemPaperStartReceiptError, "INVALID"
+                    ):
+                        self.load(path)
+        finally:
+            path.write_bytes(original)
+            path.chmod(0o600)
+
+    def test_loader_accepts_later_append_only_slot_and_jsonl_growth(self):
+        self.observer.create_success()
+        result = publish_system_paper_start_receipt(
+            **self.values(
+                observer_helpers.ObserverLaunchctl(self.observer.install, runs=1),
+                "2026-08-04T08:10:00.000Z",
+            )
+        )
+        path = Path(result["receipt_path"])
+        first_stdout = self.observer.stdout_path.read_bytes()
+        self.observer.create_success("2026-08-04T12:00:00.000Z")
+        second_stdout = self.observer.stdout_path.read_bytes()
+        self.observer.stdout_path.write_bytes(first_stdout + second_stdout)
+        self.observer.stdout_path.chmod(0o600)
+
+        receipt = self.load(path)
+        self.assertEqual(
+            receipt["first_slot"]["scheduled_for"],
+            "2026-08-04T08:00:00.000Z",
+        )
+
+    def test_loader_rejects_receipt_over_four_mib_before_json_parse(self):
+        self.root.mkdir(mode=0o700, parents=False)
+        path = self.root / ("system_paper_start_receipt_" + "0" * 64 + ".json")
+        with path.open("wb") as handle:
+            handle.truncate(4 * 1024 * 1024 + 1)
+        path.chmod(0o600)
+
+        original_read_bytes = Path.read_bytes
+        calls = {"receipt": 0}
+
+        def reject_oversized_read(candidate):
+            if candidate == path:
+                calls["receipt"] += 1
+                raise AssertionError("oversized receipt bytes were read")
+            return original_read_bytes(candidate)
+
+        with patch.object(Path, "read_bytes", reject_oversized_read):
+            with self.assertRaisesRegex(
+                SystemPaperStartReceiptError, "READ_INVALID"
+            ):
+                self.load(path)
+        self.assertEqual(calls["receipt"], 0)
+
+    def test_loader_does_not_reopen_receipt_after_path_validation(self):
+        self.observer.create_success()
+        result = publish_system_paper_start_receipt(
+            **self.values(
+                observer_helpers.ObserverLaunchctl(self.observer.install, runs=1),
+                "2026-08-04T08:10:00.000Z",
+            )
+        )
+        path = Path(result["receipt_path"])
+        original_read_bytes = Path.read_bytes
+        calls = {"receipt": 0}
+
+        def replace_before_path_read(candidate):
+            if candidate == path:
+                calls["receipt"] += 1
+                candidate.write_bytes(b"x" * (4 * 1024 * 1024 + 1))
+                candidate.chmod(0o600)
+            return original_read_bytes(candidate)
+
+        with patch.object(Path, "read_bytes", replace_before_path_read):
+            receipt = self.load(path)
+        self.assertEqual(receipt["receipt_id"], result["receipt_id"])
+        self.assertEqual(calls["receipt"], 0)
 
     def test_cli_accepts_only_four_source_paths(self):
         expected = {"outcome": "START_RECEIPT_PENDING"}
