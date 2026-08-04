@@ -298,7 +298,7 @@
     "src/crypto_quant/statistical_decision.py": "cf98dbbf554f1afe40bd7ddafda4b579d1dcb3fa5e2894440b06b2fafd204cfd",
     "src/crypto_quant/statistics.py": "341e402eb65b7b006ba776b184ea28b2e05127e265f188294dd7a92f8fb7498f",
     "src/crypto_quant/system_paper_broker.py": "273f7ad291faaec7e3515526378355b287e58785c859ac680da36933f2102af7",
-    "src/crypto_quant/system_paper_evaluation.py": "47595a809709a93dcbdb2316b3ba84989435d30608ada6470b284d03c25ec789",
+    "src/crypto_quant/system_paper_evaluation.py": "10ead1d09fd3156c53f240fb6c22dd88e5df33a2ad7f75ff85c4b5e226d47177",
     "src/crypto_quant/system_paper_evaluation_cli.py": "bf94a7a94bc8eff87cded2d2a9beb1affaac0a091f0e3464d48b2961d006f200",
     "src/crypto_quant/system_paper_evidence.py": "d519a7b43643f5ab6655eef0a33472bd222fe502878fb5137cc29d4aadcf7f61",
     "src/crypto_quant/system_paper_install.py": "f0a68e0381996500dfa4e21f06ba374a27a4e3f6e36ebf5022d7d881f1bd82f1",
@@ -338,7 +338,7 @@
     "tests/test_system_paper_scheduler.py": "bd602843f290cc40bcf84693955e4fd4296e21ffc1656496379fe1b7a634c13a",
     "tests/test_system_paper_start_receipt.py": "1c8b06335e2e426e59ba4c67873517e5492f2fb31bb79937670172181e6ede20"
   },
-  "build_input_tree_hash": "59b058897db8c174fe64d5ceeb21d293f60a1c9268041ac7bd336bdbd025f8e4",
+  "build_input_tree_hash": "2503b3c115eadfe287e1b4dc93183f13e08f2a280a93bcad0db9b1daf5689ca3",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -346,5 +346,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "f67a7b90fa0afc16f86d9a3a54effb763dd942a31388e0c8a2c83700c87763aa"
+  "manifest_hash": "fff49f3ae08f551e621b7596655b0c37a0c5a18858b0bbc850795a9f27404cc4"
 }

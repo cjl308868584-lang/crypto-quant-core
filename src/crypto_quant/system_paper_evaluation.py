@@ -40,6 +40,7 @@ from .system_paper_runtime import (
     load_system_paper_slot_result_bytes,
 )
 from .system_paper_start_receipt import (
+    SystemPaperStartReceiptError,
     load_system_paper_start_receipt,
     load_system_paper_start_receipt_metadata,
 )
@@ -2279,7 +2280,15 @@ def observe_system_paper_evaluation_readiness(
                     _machine_probe=_machine_probe,
                     _filesystem_probe=_filesystem_probe,
                 )
-            except Exception:
+            except Exception as error:
+                if (
+                    isinstance(error, SystemPaperStartReceiptError)
+                    and error.reason_code
+                    == "SYSTEM_PAPER_START_RECEIPT_INVALID"
+                ):
+                    raise SystemPaperEvaluationError(
+                        "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
+                    ) from error
                 retained.verify()
                 state_retained.verify()
                 inventory = _inconclusive_inventory(
