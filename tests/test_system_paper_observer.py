@@ -1,5 +1,6 @@
 """Read-only System Paper first-natural-slot observer tests."""
 
+import base64
 import io
 import hashlib
 import json
@@ -41,6 +42,7 @@ class ObserverLaunchctl:
         self.exit_code = exit_code
         self.callback = callback
         self.calls = []
+        self.last_result = None
 
     def __call__(self, argv):
         call = tuple(str(item) for item in argv)
@@ -52,22 +54,22 @@ class ObserverLaunchctl:
         )
         if call != expected:
             raise AssertionError(f"unexpected observer authority: {call}")
-        values = [
-            expected[-1],
-            "local.crypto-quant.system-paper-v1",
-            str(self.fixture.target),
-            self.fixture.contract["python_executable"],
-            "crypto_quant.system_paper_runtime_cli",
-            self.fixture.contract["program_arguments"][4],
-            self.fixture.contract["program_arguments"][6],
-            self.fixture.contract["execution_snapshot"]["repository_root"],
-            f"runs = {self.runs}",
-        ]
-        if self.exit_code is not None:
-            values.append(f"last exit code = {self.exit_code}")
-        result = install_helpers.LaunchctlResult(
-            0, ("\n".join(values) + "\n").encode("utf-8"), b""
+        output = self.fixture.runner(preloaded=True).print_bytes()
+        replacement = (
+            b"\truns = 0\n\tlast exit code = (never exited)\n"
+            if self.runs == 0
+            else (
+                f"\truns = {self.runs}\n"
+                f"\tlast exit code = {self.exit_code}\n"
+            ).encode("utf-8")
         )
+        output = output.replace(
+            b"\truns = 0\n\tlast exit code = (never exited)\n",
+            replacement,
+            1,
+        )
+        result = install_helpers.LaunchctlResult(0, output, b"")
+        self.last_result = result
         if self.callback is not None:
             self.callback()
         return result
@@ -140,6 +142,93 @@ class SystemPaperObserverTests(unittest.TestCase):
         self.assertEqual(waiting["security_boundary"]["network_request_count"], 0)
         self.assertEqual(waiting["security_boundary"]["runtime_invocation_count"], 0)
         self.assertFalse(self.state_path.exists())
+
+    def test_contract_is_loader_bound_without_raw_path_read(self):
+        runner = ObserverLaunchctl(self.install, runs=0)
+        original = Path.read_text
+
+        def reject_old_raw_contract_read(path, *args, **kwargs):
+            if path == self.install.preflight.contract_path:
+                raise AssertionError("observer raw-reloaded validated contract path")
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, "read_text", reject_old_raw_contract_read):
+            observation = observe_system_paper_first_slot(
+                **self.values(runner, "2026-08-04T07:59:59.000Z")
+            )
+        self.assertEqual(observation["status"], "WAITING_BEFORE_FIRST_NATURAL_SLOT")
+        self.assertEqual(len(runner.calls), 1)
+
+    def test_late_loader_probe_source_mutation_fails_final_descriptor_check(self):
+        runner = ObserverLaunchctl(self.install, runs=0)
+        contract_path = self.install.preflight.contract_path
+        original = contract_path.read_bytes()
+        calls = {"count": 0}
+
+        def mutate_during_replay(path):
+            calls["count"] += 1
+            value = self.install.preflight.filesystem(path)
+            if calls["count"] == 4:
+                contract_path.write_bytes(original + b"\n")
+            return value
+
+        values = self.values(runner, "2026-08-04T07:59:59.000Z")
+        values["_filesystem_probe"] = mutate_during_replay
+        try:
+            with self.assertRaisesRegex(
+                SystemPaperObserverError, "EVIDENCE_CHANGED"
+            ):
+                observe_system_paper_first_slot(**values)
+        finally:
+            contract_path.write_bytes(original)
+            contract_path.chmod(0o600)
+        self.assertEqual(calls["count"], 4)
+        self.assertEqual(len(runner.calls), 1)
+
+    def test_launchctl_raw_bytes_round_trip_and_semantic_snapshot(self):
+        runner = ObserverLaunchctl(self.install, runs=0)
+        with patch(
+            "crypto_quant.system_paper_observer.subprocess.run",
+            side_effect=AssertionError("hidden command invocation"),
+        ) as hidden_command:
+            observation = observe_system_paper_first_slot(
+                **self.values(runner, "2026-08-04T07:59:59.000Z")
+            )
+        hidden_command.assert_not_called()
+        self.assertEqual(len(runner.calls), 1)
+        launchd = observation["launchd"]
+        self.assertEqual(
+            base64.b64decode(launchd["stdout_base64"], validate=True),
+            runner.last_result.stdout,
+        )
+        self.assertEqual(
+            base64.b64decode(launchd["stderr_base64"], validate=True), b""
+        )
+        self.assertEqual(launchd["stdout_size_bytes"], len(runner.last_result.stdout))
+        self.assertEqual(launchd["stderr_size_bytes"], 0)
+        self.assertEqual(
+            launchd["service_snapshot"],
+            {
+                "label": "local.crypto-quant.system-paper-v1",
+                "service": runner.calls[0][-1],
+                "path": str(self.install.target),
+                "program": self.install.contract["python_executable"],
+                "arguments": list(self.install.contract["program_arguments"]),
+                "working_directory": self.install.contract["execution_snapshot"][
+                    "repository_root"
+                ],
+                "environment": {
+                    "PYTHONPATH": self.install.contract["execution_snapshot"][
+                        "repository_root"
+                    ]
+                    + "/src",
+                    "XPC_SERVICE_NAME": "local.crypto-quant.system-paper-v1",
+                },
+                "runs": 0,
+                "state": "not running",
+                "last_exit_status": None,
+            },
+        )
 
     def test_one_exact_success_replays_state_prepared_result_artifact_and_logs(self):
         summary = self.create_success()

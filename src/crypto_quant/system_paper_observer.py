@@ -1,5 +1,6 @@
 """Descriptor-retained, read-only observer for the first System Paper slot."""
 
+import base64
 import hashlib
 import json
 import os
@@ -17,6 +18,11 @@ from .system_paper_install import (
     LaunchctlResult,
     load_system_paper_install_receipt,
 )
+from .system_paper_launchctl import (
+    SystemPaperLaunchctlParseError,
+    parse_system_paper_launchctl_print,
+)
+from .system_paper_launchd import load_system_paper_launchd_contract
 from .system_paper_plan import build_system_paper_plan
 from .system_paper_runtime import load_system_paper_slot_result_bytes
 from .system_paper_scheduler import (
@@ -302,33 +308,31 @@ def _validate_launchctl_result(result, *, contract, install, success_count):
             "SYSTEM_PAPER_OBSERVER_LAUNCHCTL_INVALID"
         )
     try:
-        text = result.stdout.decode("utf-8")
-    except UnicodeDecodeError as error:
+        snapshot = parse_system_paper_launchctl_print(result.stdout)
+    except SystemPaperLaunchctlParseError as error:
         raise SystemPaperObserverError(
             "SYSTEM_PAPER_OBSERVER_LAUNCHCTL_INVALID"
         ) from error
-    required = (
-        install["service"],
-        _LABEL,
-        install["target_path"],
-        contract["python_executable"],
-        "crypto_quant.system_paper_runtime_cli",
-        contract["program_arguments"][4],
-        contract["program_arguments"][6],
-        contract["execution_snapshot"]["repository_root"],
-    )
-    if not all(value in text for value in required):
+    repository_root = contract["execution_snapshot"]["repository_root"]
+    expected_static = {
+        "label": _LABEL,
+        "service": install["service"],
+        "path": install["target_path"],
+        "program": contract["python_executable"],
+        "arguments": list(contract["program_arguments"]),
+        "working_directory": repository_root,
+        "environment": {
+            "PYTHONPATH": str(Path(repository_root) / "src"),
+            "XPC_SERVICE_NAME": _LABEL,
+        },
+        "state": "not running",
+    }
+    if any(snapshot[key] != value for key, value in expected_static.items()):
         raise SystemPaperObserverError(
             "SYSTEM_PAPER_OBSERVER_SERVICE_BINDING_INVALID"
         )
-    runs = re.search(r"(?m)^\s*runs\s*=\s*(\d+)\s*$", text)
-    exit_code = re.search(r"(?m)^\s*last exit code\s*=\s*(-?\d+)\s*$", text)
-    if runs is None:
-        raise SystemPaperObserverError(
-            "SYSTEM_PAPER_OBSERVER_LAUNCHCTL_INVALID"
-        )
-    run_count = int(runs.group(1))
-    last_exit = None if exit_code is None else int(exit_code.group(1))
+    run_count = snapshot["runs"]
+    last_exit = snapshot["last_exit_status"]
     if last_exit not in (None, 0) or (run_count > 0 and last_exit is None):
         raise SystemPaperObserverError(
             "SYSTEM_PAPER_OBSERVER_NONZERO_EXIT"
@@ -341,8 +345,13 @@ def _validate_launchctl_result(result, *, contract, install, success_count):
         "service": install["service"],
         "run_count": run_count,
         "last_exit_code": last_exit,
+        "service_snapshot": snapshot,
+        "stdout_size_bytes": len(result.stdout),
+        "stderr_size_bytes": len(result.stderr),
         "stdout_sha256": hashlib.sha256(result.stdout).hexdigest(),
         "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
+        "stdout_base64": base64.b64encode(result.stdout).decode("ascii"),
+        "stderr_base64": base64.b64encode(result.stderr).decode("ascii"),
     }
 
 
@@ -429,6 +438,9 @@ def observe_system_paper_first_slot(
     _clock=None,
 ) -> Mapping[str, Any]:
     observed_dt, observed_at = _utc((_clock or _now)())
+    contract = load_system_paper_launchd_contract(
+        contract_path=Path(contract_path), plist_path=Path(plist_path)
+    )
     install = load_system_paper_install_receipt(
         receipt_path=Path(install_receipt_path),
         contract_path=Path(contract_path),
@@ -437,7 +449,6 @@ def observe_system_paper_first_slot(
         _machine_probe=_machine_probe,
         _filesystem_probe=_filesystem_probe,
     )
-    contract = json.loads(Path(contract_path).read_text(encoding="utf-8"))
     policy = SystemPaperSchedulePolicy.create(build_system_paper_plan())
     first_slot = _first_slot_after_install(install["installed_at"], policy)
     state_path = Path(contract["root_paths"]["state"]) / "system-paper.sqlite"
@@ -459,6 +470,12 @@ def observe_system_paper_first_slot(
                 Path(install["target_path"])
             ),
         }
+        if source_files["contract"].body != canonical_json(contract).encode(
+            "utf-8"
+        ):
+            raise SystemPaperObserverError(
+                "SYSTEM_PAPER_OBSERVER_SOURCE_CHANGED"
+            )
         state_files = {
             "main": evidence.capture_file(state_path, optional=True),
             "-wal": evidence.capture_file(Path(str(state_path) + "-wal"), optional=True, allow_empty=True),
@@ -512,7 +529,6 @@ def observe_system_paper_first_slot(
             install=install,
             success_count=len(successes),
         )
-        evidence.verify_unchanged()
         replayed_install = load_system_paper_install_receipt(
             receipt_path=Path(install_receipt_path),
             contract_path=Path(contract_path),
@@ -525,6 +541,7 @@ def observe_system_paper_first_slot(
             raise SystemPaperObserverError(
                 "SYSTEM_PAPER_OBSERVER_SOURCE_CHANGED"
             )
+        evidence.verify_unchanged()
         if failed_runtime:
             raise SystemPaperObserverError(
                 "SYSTEM_PAPER_OBSERVER_FAILED_CLOSED"
