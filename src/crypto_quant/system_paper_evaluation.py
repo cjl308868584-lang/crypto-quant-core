@@ -389,7 +389,7 @@ class _RetainedCohortSources:
         self.entry = None
         self.names = None
 
-    def capture_directory(self, path: Path, expected_names) -> None:
+    def capture_directory(self, path: Path, expected_names=None):
         descriptor = None
         try:
             flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
@@ -406,7 +406,10 @@ class _RetainedCohortSources:
                 or stat.S_IMODE(before.st_mode) != 0o700
                 or _stat_identity(before) != _stat_identity(after)
                 or _stat_identity(after) != _stat_identity(current)
-                or names != set(expected_names)
+                or (
+                    expected_names is not None
+                    and names != set(expected_names)
+                )
             ):
                 raise SystemPaperEvaluationError(
                     "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE"
@@ -415,6 +418,7 @@ class _RetainedCohortSources:
             self.descriptor = descriptor
             self.entry = before
             self.names = set(names)
+            return tuple(sorted(names))
         except SystemPaperEvaluationError:
             if descriptor is not None:
                 os.close(descriptor)
@@ -464,6 +468,30 @@ class _RetainedCohortSources:
         if self.descriptor is not None:
             os.close(self.descriptor)
             self.descriptor = None
+
+
+class _RetainedEvaluationAuthority:
+    """Keep the observer's first authority capture live through publication."""
+
+    def __init__(self):
+        self.files = _RetainedAuthoritySet()
+        self.state = _RetainedAuthoritySet()
+        self.cohort = _RetainedCohortSources()
+        self.inconclusive_inventory = _RetainedCohortSources()
+
+    def verify(self) -> None:
+        self.files.verify()
+        self.state.verify()
+        if self.cohort.descriptor is not None:
+            self.cohort.verify()
+        if self.inconclusive_inventory.descriptor is not None:
+            self.inconclusive_inventory.verify()
+
+    def close(self) -> None:
+        self.inconclusive_inventory.close()
+        self.cohort.close()
+        self.state.close()
+        self.files.close()
 
 
 def _absolute_paths(values: Mapping[str, Path]) -> Dict[str, Path]:
@@ -582,6 +610,7 @@ def _evaluate_complete_cohort(*_args, **kwargs):
         raise SystemPaperEvaluationError("SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE")
     inventory = tuple(
         {
+            "artifact_name": Path(slot.artifact_path).name,
             "slot_id": slot.slot_id,
             "scheduled_for": slot.scheduled_for,
             "artifact_sha256": slot.artifact_sha256,
@@ -606,6 +635,8 @@ def _evaluate_complete_cohort(*_args, **kwargs):
         **economic,
         "tail_end": kwargs["start"]["cohort_tail_end"],
         "source_binding": {
+            "plan_hash": kwargs["plan"]["plan_hash"],
+            "install_receipt_hash": kwargs["install"]["receipt_hash"],
             "contract_hash": kwargs["contract"]["contract_hash"],
             "start_receipt_hash": kwargs["start"]["receipt_hash"],
             "event_chain_end_hash": events[-1]["event_hash"],
@@ -874,16 +905,25 @@ def _evaluate_complete_system_paper_cohort_decimal(
         "safety": {
             "passed": safety_passed,
             "duplicate_order_events": duplicate_order_events,
+            "duplicate_order_events_threshold": 0,
             "unrecorded_fills": unrecorded_fills,
+            "unrecorded_fills_threshold": 0,
             "hard_risk_violations": hard_risk_violations,
+            "hard_risk_violations_threshold": 0,
             "reconciliation_exposure_increases": (
                 reconciliation_exposure_increases
             ),
+            "reconciliation_exposure_increases_threshold": 0,
             "forbidden_activity_count": forbidden_activity_count,
+            "forbidden_activity_count_threshold": 0,
             "final_active_order": final_active_order,
+            "final_active_order_threshold": False,
             "final_risk_locked": final_risk_locked,
+            "final_risk_locked_threshold": False,
             "traceability_ratio": traceability_ratio,
+            "traceability_ratio_threshold": Decimal("1"),
             "full_replay_ratio": full_replay_ratio,
+            "full_replay_ratio_threshold": Decimal("1"),
         },
         "cost": {
             "passed": cost_passed,
@@ -1052,39 +1092,79 @@ def _retained_evidence(retained: _RetainedAuthorityFile) -> Mapping[str, Any]:
     }
 
 
-def _inconclusive_inventory(slot_root: Path) -> Tuple[Mapping[str, Any], ...]:
-    """Hash the actual no-follow directory inventory for an incomplete cohort."""
-    retained = _RetainedAuthoritySet()
-    directory = None
+def _inconclusive_inventory(
+    slot_root: Path,
+    *,
+    retained_sources: _RetainedCohortSources,
+    state_files: Mapping[str, Optional[_RetainedAuthorityFile]],
+    plan: Mapping[str, Any],
+    replay: Mapping[str, Any],
+) -> Tuple[Mapping[str, Any], ...]:
+    """Retain and describe the exact pathname/byte inventory that was observed."""
+
+    names = retained_sources.capture_directory(slot_root)
+    sources = tuple(
+        retained_sources.capture_artifact(slot_root / name)
+        for name in names
+    )
+    input_rows = ()
+    result_rows = ()
     try:
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-        directory = os.open(slot_root, flags)
-        entry = os.fstat(directory)
-        if not stat.S_ISDIR(entry.st_mode) or entry.st_uid != os.getuid() or stat.S_IMODE(entry.st_mode) != 0o700:
-            raise SystemPaperEvaluationError("SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE")
-        names = sorted(os.listdir(directory))
-        records = []
-        for name in names:
-            source = retained.capture(slot_root / name, maximum_bytes=_MAX_SLOT_ARTIFACT_BYTES)
-            records.append({
-                "slot_id": name,
-                "scheduled_for": "1970-01-01T00:00:00.000Z",
+        input_rows, result_rows = _copy_full_state_rows(
+            state_files, plan=plan, replay=replay
+        )
+    except SystemPaperEvaluationError:
+        # The final reason already records invalid/incomplete replay.  Preserve
+        # the exact files even when the prepared-row metadata cannot be trusted.
+        pass
+    inputs = {
+        row.get("slot_id"): row
+        for row in input_rows
+        if isinstance(row, Mapping)
+    }
+    results = {
+        row.get("slot_id"): row
+        for row in result_rows
+        if isinstance(row, Mapping)
+    }
+    records = []
+    for name, source in zip(names, sources):
+        slot_id = None
+        scheduled_for = None
+        slot_hash = None
+        runtime_snapshot_hash = None
+        try:
+            value = _strict_prepared_input(source.body)
+            if isinstance(value.get("slot_id"), str):
+                slot_id = value["slot_id"]
+            if isinstance(value.get("scheduled_for"), str):
+                scheduled_for = value["scheduled_for"]
+            if isinstance(value.get("slot_hash"), str):
+                slot_hash = value["slot_hash"]
+            snapshot = value.get("runtime_snapshot")
+            if (
+                isinstance(snapshot, Mapping)
+                and isinstance(snapshot.get("snapshot_hash"), str)
+            ):
+                runtime_snapshot_hash = snapshot["snapshot_hash"]
+        except SystemPaperEvaluationError:
+            pass
+        input_row = inputs.get(slot_id, {})
+        result_row = results.get(slot_id, {})
+        records.append(
+            {
+                "artifact_name": name,
+                "slot_id": slot_id,
+                "scheduled_for": scheduled_for,
                 "artifact_sha256": source.content_sha256,
-                "prepared_input_sha256": source.content_sha256,
-                "prepared_result_sha256": source.content_sha256,
-                "slot_hash": source.content_sha256,
-                "runtime_snapshot_hash": source.content_sha256,
-            })
-        retained.verify()
-        if _stat_identity(entry) != _stat_identity(os.fstat(directory)):
-            raise SystemPaperEvaluationError("SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED")
-        return tuple(records)
-    except FileNotFoundError:
-        return ()
-    finally:
-        retained.close()
-        if directory is not None:
-            os.close(directory)
+                "prepared_input_sha256": input_row.get("input_sha256"),
+                "prepared_result_sha256": result_row.get("result_sha256"),
+                "slot_hash": slot_hash,
+                "runtime_snapshot_hash": runtime_snapshot_hash,
+            }
+        )
+    retained_sources.verify()
+    return tuple(records)
 
 
 def _replay_system_paper_cohort(
@@ -1315,6 +1395,7 @@ def observe_system_paper_evaluation_readiness(
     _clock=None,
     _machine_probe=None,
     _filesystem_probe=None,
+    _retained_authority=None,
 ) -> Mapping[str, Any]:
     """Observe readiness without reading any slot economic artifact pre-tail."""
 
@@ -1330,9 +1411,11 @@ def observe_system_paper_evaluation_readiness(
         }
     )
     observed, observed_at = _utc((_clock or _now)())
-    retained = _RetainedAuthoritySet()
-    state_retained = _RetainedAuthoritySet()
-    cohort_retained = _RetainedCohortSources()
+    authority = _retained_authority or _RetainedEvaluationAuthority()
+    owns_authority = _retained_authority is None
+    retained = authority.files
+    state_retained = authority.state
+    cohort_retained = authority.cohort
     try:
         try:
             install_source = retained.capture(
@@ -1473,11 +1556,19 @@ def observe_system_paper_evaluation_readiness(
                     "verified_terminal_slot_count": successes,
                     "incident_count": incidents,
                     "source_binding": {
+                        "plan_hash": plan["plan_hash"],
+                        "install_receipt_hash": install["receipt_hash"],
                         "contract_hash": contract["contract_hash"],
                         "start_receipt_hash": start["receipt_hash"],
                         "event_chain_end_hash": replay["events"][-1]["event_hash"] if replay["events"] else _ZERO_HASH,
                     },
-                    "evidence_inventory": _inconclusive_inventory(paths["slot_root"]),
+                    "evidence_inventory": _inconclusive_inventory(
+                        paths["slot_root"],
+                        retained_sources=authority.inconclusive_inventory,
+                        state_files=state_files,
+                        plan=plan,
+                        replay=replay,
+                    ),
                 }
             complete = _evaluate_complete_cohort(
                 plan=plan,
@@ -1534,9 +1625,8 @@ def observe_system_paper_evaluation_readiness(
             "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
         ) from error
     finally:
-        cohort_retained.close()
-        state_retained.close()
-        retained.close()
+        if owns_authority:
+            authority.close()
 
 
 @lru_cache(maxsize=1)
@@ -1645,6 +1735,8 @@ def _final_artifact(
             "slot_root": str(paths["slot_root"]),
             "runtime_root": str(paths["runtime_root"]),
             "output_root": str(paths["output_root"]),
+            "plan_hash": binding["plan_hash"],
+            "install_receipt_hash": binding["install_receipt_hash"],
             "contract_hash": binding["contract_hash"],
             "start_receipt_hash": binding["start_receipt_hash"],
             "event_chain_end_hash": binding["event_chain_end_hash"],
@@ -1703,30 +1795,38 @@ def evaluate_system_paper(
             "output_root": output_root,
         }
     )
-    observation = observe_system_paper_evaluation_readiness(
-        plan_path=paths["plan"], start_receipt_path=paths["start"],
-        install_receipt_path=paths["install"], contract_path=paths["contract"],
-        slot_root=paths["slot_root"], runtime_root=paths["runtime_root"],
-        output_root=paths["output_root"], _clock=_clock,
-        _machine_probe=_machine_probe, _filesystem_probe=_filesystem_probe,
-    )
-    if observation["status"] == "SYSTEM_PAPER_EVALUATION_PENDING_BEFORE_TAIL":
-        return observation
-    artifact = _final_artifact(observation=observation, paths=paths)
-    if _publish:
-        try:
-            _secure_output_root(paths["output_root"])
-            publish_owner_exact(
-                _result_path(paths["output_root"], artifact["result_id"]),
-                canonical_json(artifact).encode("utf-8"),
-            )
-        except SystemPaperEvaluationError:
-            raise
-        except Exception as error:
-            raise SystemPaperEvaluationError(
-                "SYSTEM_PAPER_EVALUATION_RESULT_CONFLICT"
-            ) from error
-    return artifact
+    authority = _RetainedEvaluationAuthority()
+    try:
+        observation = observe_system_paper_evaluation_readiness(
+            plan_path=paths["plan"], start_receipt_path=paths["start"],
+            install_receipt_path=paths["install"], contract_path=paths["contract"],
+            slot_root=paths["slot_root"], runtime_root=paths["runtime_root"],
+            output_root=paths["output_root"], _clock=_clock,
+            _machine_probe=_machine_probe, _filesystem_probe=_filesystem_probe,
+            _retained_authority=authority,
+        )
+        if observation["status"] == "SYSTEM_PAPER_EVALUATION_PENDING_BEFORE_TAIL":
+            return observation
+        artifact = _final_artifact(observation=observation, paths=paths)
+        authority.verify()
+        if _publish:
+            try:
+                _secure_output_root(paths["output_root"])
+                authority.verify()
+                publish_owner_exact(
+                    _result_path(paths["output_root"], artifact["result_id"]),
+                    canonical_json(artifact).encode("utf-8"),
+                    _before_link=authority.verify,
+                )
+            except SystemPaperEvaluationError:
+                raise
+            except Exception as error:
+                raise SystemPaperEvaluationError(
+                    "SYSTEM_PAPER_EVALUATION_RESULT_CONFLICT"
+                ) from error
+        return artifact
+    finally:
+        authority.close()
 
 
 def load_system_paper_evaluation(

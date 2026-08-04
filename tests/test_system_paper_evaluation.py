@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import stat
 import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, localcontext
@@ -1117,6 +1118,302 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             with self.subTest(forged=forged):
                 self.assertTrue(tuple(_evaluation_validator().iter_errors(forged)))
 
+    def test_schema_enforces_complete_gates_and_three_state_contract(self):
+        """Status claims cannot outrun complete evidence or their frozen gates."""
+        from crypto_quant.system_paper_evaluation import _evaluation_validator
+
+        self.extend_to_complete_cohort()
+        artifact = evaluate_system_paper(
+            **self.values(
+                _clock=lambda: "2026-11-02T08:05:00.000Z",
+                _publish=False,
+            )
+        )
+        self.assertFalse(tuple(_evaluation_validator().iter_errors(artifact)))
+        self.assertEqual(
+            set(artifact["sources"])
+            - {
+                "plan_path",
+                "start_receipt_path",
+                "install_receipt_path",
+                "contract_path",
+                "slot_root",
+                "runtime_root",
+                "output_root",
+            },
+            {
+                "plan_hash",
+                "install_receipt_hash",
+                "contract_hash",
+                "start_receipt_hash",
+                "event_chain_end_hash",
+            },
+        )
+        expected_safety_thresholds = {
+                "duplicate_order_events_threshold": 0,
+                "unrecorded_fills_threshold": 0,
+                "hard_risk_violations_threshold": 0,
+                "reconciliation_exposure_increases_threshold": 0,
+                "forbidden_activity_count_threshold": 0,
+                "final_active_order_threshold": False,
+                "final_risk_locked_threshold": False,
+                "traceability_ratio_threshold": "1",
+                "full_replay_ratio_threshold": "1",
+            }
+        self.assertTrue(
+            set(expected_safety_thresholds)
+            <= set(artifact["gates"]["safety"])
+        )
+        self.assertEqual(
+            {
+                name: artifact["gates"]["safety"][name]
+                for name in expected_safety_thresholds
+            },
+            expected_safety_thresholds,
+        )
+
+        def complete_with(status, passed):
+            value = json.loads(canonical_json(artifact))
+            value["status"] = status
+            value["reason_code_or_null"] = None
+            for gate in value["gates"].values():
+                gate["passed"] = True
+            if not passed:
+                value["gates"]["safety"]["passed"] = False
+            return value
+
+        valid_pass = complete_with("SYSTEM_PAPER_GATE_PASS", True)
+        valid_did_not_pass = complete_with(
+            "SYSTEM_PAPER_GATE_DID_NOT_PASS", False
+        )
+        inconclusive = json.loads(canonical_json(artifact))
+        inconclusive["status"] = "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        inconclusive["gates"] = {}
+        inconclusive[
+            "reason_code_or_null"
+        ] = "SYSTEM_PAPER_EVALUATION_COHORT_REPLAY_INVALID"
+        for valid in (valid_pass, valid_did_not_pass, inconclusive):
+            with self.subTest(valid_status=valid["status"]):
+                self.assertFalse(
+                    tuple(_evaluation_validator().iter_errors(valid))
+                )
+
+        pass_with_false_gate = complete_with("SYSTEM_PAPER_GATE_PASS", False)
+        did_not_pass_with_all_true = complete_with(
+            "SYSTEM_PAPER_GATE_DID_NOT_PASS", True
+        )
+        pass_with_539_evidence = complete_with(
+            "SYSTEM_PAPER_GATE_PASS", True
+        )
+        pass_with_539_evidence["evidence_inventory"][
+            "verified_terminal_slot_count"
+        ] = 539
+        pass_with_539_evidence["evidence_inventory"]["slots"].pop()
+        pass_with_duplicate_evidence = complete_with(
+            "SYSTEM_PAPER_GATE_PASS", True
+        )
+        pass_with_duplicate_evidence["evidence_inventory"]["slots"][-1] = (
+            pass_with_duplicate_evidence["evidence_inventory"]["slots"][0]
+        )
+        did_not_pass_with_reason = complete_with(
+            "SYSTEM_PAPER_GATE_DID_NOT_PASS", False
+        )
+        did_not_pass_with_reason[
+            "reason_code_or_null"
+        ] = "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE"
+        inconclusive_with_gates = json.loads(canonical_json(inconclusive))
+        inconclusive_with_gates["gates"] = valid_pass["gates"]
+        inconclusive_without_reason = json.loads(canonical_json(inconclusive))
+        inconclusive_without_reason["reason_code_or_null"] = None
+        inconclusive_unknown_reason = json.loads(canonical_json(inconclusive))
+        inconclusive_unknown_reason["reason_code_or_null"] = "UNREVIEWED_REASON"
+        for inflated in (
+            pass_with_false_gate,
+            did_not_pass_with_all_true,
+            pass_with_539_evidence,
+            pass_with_duplicate_evidence,
+            did_not_pass_with_reason,
+            inconclusive_with_gates,
+            inconclusive_without_reason,
+            inconclusive_unknown_reason,
+        ):
+            with self.subTest(inflated=inflated["status"]):
+                self.assertTrue(
+                    tuple(_evaluation_validator().iter_errors(inflated))
+                )
+
+    def test_inconclusive_identity_uses_strict_sources_and_actual_inventory(self):
+        """A final inconclusive id must name the real replay evidence, not placeholders."""
+        artifact = evaluate_system_paper(
+            **self.values(
+                _clock=lambda: "2026-11-02T08:05:00.000Z",
+                _publish=False,
+            )
+        )
+        plan = json.loads(self.plan_path.read_bytes())
+        contract = json.loads(self.contract_path.read_bytes())
+        install = json.loads(self.install_receipt_path.read_bytes())
+        start = json.loads(self.start_receipt_path.read_bytes())
+        first_path = Path(start["first_slot"]["result_path"])
+        first = json.loads(first_path.read_bytes())
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        with sqlite3.connect(str(state_path)) as connection:
+            event_chain_end_hash = connection.execute(
+                "SELECT event_hash FROM schedule_events "
+                "ORDER BY sequence DESC LIMIT 1"
+            ).fetchone()[0]
+
+        self.assertEqual(
+            artifact["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.assertEqual(
+            artifact["sources"],
+            {
+                "plan_path": str(self.plan_path),
+                "start_receipt_path": str(self.start_receipt_path),
+                "install_receipt_path": str(self.install_receipt_path),
+                "contract_path": str(self.contract_path),
+                "slot_root": str(self.slot_root),
+                "runtime_root": str(self.runtime_root),
+                "output_root": str(self.output_root),
+                "plan_hash": plan["plan_hash"],
+                "install_receipt_hash": install["receipt_hash"],
+                "contract_hash": contract["contract_hash"],
+                "start_receipt_hash": start["receipt_hash"],
+                "event_chain_end_hash": event_chain_end_hash,
+            },
+        )
+        self.assertEqual(len(artifact["evidence_inventory"]["slots"]), 1)
+        evidence = artifact["evidence_inventory"]["slots"][0]
+        self.assertEqual(evidence["artifact_name"], first_path.name)
+        self.assertEqual(evidence["slot_id"], first["slot_id"])
+        self.assertEqual(evidence["scheduled_for"], first["scheduled_for"])
+        self.assertEqual(
+            evidence["artifact_sha256"], hashlib.sha256(first_path.read_bytes()).hexdigest()
+        )
+
+        def sqlite_container_hashes():
+            return tuple(
+                hashlib.sha256(candidate.read_bytes()).hexdigest()
+                if candidate.exists()
+                else None
+                for candidate in (
+                    state_path,
+                    Path(str(state_path) + "-wal"),
+                    Path(str(state_path) + "-shm"),
+                )
+            )
+
+        before_database_hashes = sqlite_container_hashes()
+        with sqlite3.connect(str(state_path)) as connection:
+            current_user_version = connection.execute(
+                "PRAGMA user_version"
+            ).fetchone()[0]
+            connection.execute(
+                "PRAGMA user_version = " + str(current_user_version + 1)
+            )
+        self.assertNotEqual(before_database_hashes, sqlite_container_hashes())
+        same_events = evaluate_system_paper(
+            **self.values(
+                _clock=lambda: "2026-11-02T08:05:00.000Z",
+                _publish=False,
+            )
+        )
+        self.assertEqual(same_events["result_id"], artifact["result_id"])
+
+        extra = self.slot_root / "unexpected.json"
+        extra.write_bytes(b"{}")
+        extra.chmod(0o600)
+        different_inventory = evaluate_system_paper(
+            **self.values(
+                _clock=lambda: "2026-11-02T08:05:00.000Z",
+                _publish=False,
+            )
+        )
+        self.assertNotEqual(
+            different_inventory["result_id"], artifact["result_id"]
+        )
+
+    def test_publication_rechecks_initial_authority_after_publish_hook_replacement(self):
+        """Authority, SQLite, cohort directory and files stay bound until publish."""
+        from crypto_quant import system_paper_evaluation as module
+
+        original_publish = module.publish_owner_exact
+        first_path = Path(
+            json.loads(self.start_receipt_path.read_bytes())["first_slot"][
+                "result_path"
+            ]
+        )
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        for label, target in (
+            ("authority", self.contract_path),
+            ("sqlite", state_path),
+            ("cohort_file", first_path),
+        ):
+            with self.subTest(label=label):
+                body = target.read_bytes()
+                retained = target.with_name(target.name + ".publish-retained")
+
+                def replace_then_publish(path, data, **kwargs):
+                    target.rename(retained)
+                    target.write_bytes(body)
+                    target.chmod(0o600)
+                    return original_publish(path, data, **kwargs)
+
+                try:
+                    with patch.object(
+                        module,
+                        "publish_owner_exact",
+                        side_effect=replace_then_publish,
+                    ):
+                        with self.assertRaisesRegex(
+                            SystemPaperEvaluationError, "SOURCE_CHANGED"
+                        ):
+                            evaluate_system_paper(
+                                **self.values(
+                                    _clock=lambda: "2026-11-02T08:05:00.000Z"
+                                )
+                            )
+                finally:
+                    if retained.exists():
+                        target.unlink()
+                        retained.rename(target)
+
+        retained_root = self.slot_root.with_name(
+            self.slot_root.name + ".publish-retained"
+        )
+        first_body = first_path.read_bytes()
+
+        def replace_directory_then_publish(path, data, **kwargs):
+            self.slot_root.rename(retained_root)
+            self.slot_root.mkdir(mode=0o700)
+            replacement = self.slot_root / first_path.name
+            replacement.write_bytes(first_body)
+            replacement.chmod(0o600)
+            return original_publish(path, data, **kwargs)
+
+        try:
+            with patch.object(
+                module,
+                "publish_owner_exact",
+                side_effect=replace_directory_then_publish,
+            ):
+                with self.assertRaisesRegex(
+                    SystemPaperEvaluationError, "SOURCE_CHANGED"
+                ):
+                    evaluate_system_paper(
+                        **self.values(
+                            _clock=lambda: "2026-11-02T08:05:00.000Z"
+                        )
+                    )
+        finally:
+            if retained_root.exists():
+                for child in self.slot_root.iterdir():
+                    child.unlink()
+                self.slot_root.rmdir()
+                retained_root.rename(self.slot_root)
+        self.assertEqual(list(self.output_root.glob("*.json")), [])
+
     def test_loader_replay_has_no_publication_side_effect(self):
         """A loader must be able to verify an artifact while publication is forbidden."""
         self.extend_to_complete_cohort()
@@ -1139,6 +1436,131 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                 ),
                 artifact,
             )
+
+    def test_publication_is_owner_only_idempotent_and_never_overwrites_same_id(self):
+        """A stable id may only reuse exact owner-only bytes and inode."""
+        artifact = evaluate_system_paper(
+            **self.values(
+                _clock=lambda: "2026-11-02T08:05:00.000Z",
+                _publish=False,
+            )
+        )
+        self.output_root.mkdir(mode=0o700)
+        path = self.output_root / (artifact["result_id"] + ".json")
+        path.write_bytes(b"{}")
+        path.chmod(0o600)
+        conflict = os.stat(path, follow_symlinks=False)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "RESULT_CONFLICT"
+        ):
+            evaluate_system_paper(
+                **self.values(
+                    _clock=lambda: "2026-11-02T08:05:00.000Z"
+                )
+            )
+        self.assertEqual(path.read_bytes(), b"{}")
+        self.assertEqual(os.stat(path, follow_symlinks=False).st_ino, conflict.st_ino)
+
+        path.unlink()
+        first = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        first_entry = os.stat(path, follow_symlinks=False)
+        second = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-03T08:05:00.000Z")
+        )
+        second_entry = os.stat(path, follow_symlinks=False)
+        self.assertEqual(first, second)
+        self.assertEqual(first_entry.st_ino, second_entry.st_ino)
+        self.assertEqual(first_entry.st_mtime_ns, second_entry.st_mtime_ns)
+        self.assertEqual(stat.S_IMODE(os.stat(self.output_root).st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(second_entry.st_mode), 0o600)
+
+        path.chmod(0o644)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "RESULT_CONFLICT"
+        ):
+            evaluate_system_paper(
+                **self.values(
+                    _clock=lambda: "2026-11-02T08:05:00.000Z"
+                )
+            )
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o644)
+
+    def test_publication_rejects_unsafe_output_root_without_artifact(self):
+        """Evaluation never chmods or writes through an unsafe output root."""
+        self.output_root.mkdir(mode=0o755)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "OUTPUT_INVALID"
+        ):
+            evaluate_system_paper(
+                **self.values(
+                    _clock=lambda: "2026-11-02T08:05:00.000Z"
+                )
+            )
+        self.assertEqual(stat.S_IMODE(os.stat(self.output_root).st_mode), 0o755)
+        self.assertEqual(list(self.output_root.iterdir()), [])
+
+    def test_loader_bounds_pre_read_and_missing_path_generates_nothing(self):
+        """Missing and oversized evaluation paths stop before parsing or replay."""
+        from crypto_quant import system_paper_evaluation as module
+
+        missing = self.output_root / ("system_paper_evaluation_" + "0" * 64 + ".json")
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "RESULT_INVALID"
+        ):
+            load_system_paper_evaluation(evaluation_path=missing)
+        self.assertFalse(self.output_root.exists())
+
+        self.output_root.mkdir(mode=0o700)
+        oversized = self.output_root / (
+            "system_paper_evaluation_" + "1" * 64 + ".json"
+        )
+        oversized.write_bytes(b"x" * (module._MAX_EVALUATION_BYTES + 1))
+        oversized.chmod(0o600)
+        with patch.object(
+            module._RetainedAuthorityFile,
+            "_read",
+            side_effect=AssertionError("oversized artifact was read"),
+        ) as reader:
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "RESULT_INVALID"
+            ):
+                load_system_paper_evaluation(evaluation_path=oversized)
+        reader.assert_not_called()
+        self.assertEqual(
+            os.stat(oversized, follow_symlinks=False).st_size,
+            module._MAX_EVALUATION_BYTES + 1,
+        )
+
+    def test_loader_rejects_same_bytes_new_inode_during_replay(self):
+        """The loaded artifact pathname remains attached throughout full replay."""
+        from crypto_quant import system_paper_evaluation as module
+
+        artifact = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        path = self.output_root / (artifact["result_id"] + ".json")
+        body = path.read_bytes()
+        original_evaluate = module.evaluate_system_paper
+
+        def replace_then_replay(**kwargs):
+            path.rename(path.with_suffix(".retained"))
+            path.write_bytes(body)
+            path.chmod(0o600)
+            return original_evaluate(**kwargs)
+
+        with patch.object(
+            module, "evaluate_system_paper", side_effect=replace_then_replay
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "RESULT_INVALID"
+            ):
+                load_system_paper_evaluation(
+                    evaluation_path=path,
+                    _machine_probe=self.start.observer.install.preflight.machine,
+                    _filesystem_probe=self.start.observer.install.preflight.filesystem,
+                )
 
     def test_post_tail_tampered_artifact_stops_before_economic_evaluation(self):
         self.extend_to_complete_cohort()
