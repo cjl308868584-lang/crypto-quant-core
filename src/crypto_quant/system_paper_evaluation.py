@@ -41,6 +41,7 @@ _MAX_AUTHORITY_BYTES = 32 * 1024 * 1024
 _MAX_STATE_BYTES = 128 * 1024 * 1024
 _MAX_SLOT_ARTIFACT_BYTES = 1024 * 1024
 _MAX_INVENTORY_ENTRIES = 1024
+_INVENTORY_DIGEST_MODULUS = 1 << 256
 _PRIVATE_TMP = Path("/private/tmp")
 _TAIL_SETTLE_DELAY = timedelta(minutes=5)
 _STARTING_EQUITY = Decimal("1000")
@@ -492,6 +493,104 @@ def _unsafe_inventory_evidence(
     }
 
 
+@dataclass(frozen=True)
+class _InventoryDirectorySnapshot:
+    """Constant-memory, order-independent identity for one directory scan."""
+
+    entry_count: int
+    digest_xor: str
+    digest_sum: str
+    digest_sum_squares: str
+    bounded_names: Optional[Tuple[str, ...]]
+    has_unsafe_entry: bool
+
+
+def _inventory_entry_digest(name: str, entry: os.stat_result) -> int:
+    digest = hashlib.sha256()
+    digest.update(b"SYSTEM_PAPER_INVENTORY_ENTRY_V1\x00")
+    name_bytes = os.fsencode(name)
+    digest.update(len(name_bytes).to_bytes(8, "big"))
+    digest.update(name_bytes)
+    for value in _stat_identity(entry):
+        encoded = str(value).encode("ascii")
+        digest.update(len(encoded).to_bytes(2, "big"))
+        digest.update(encoded)
+    return int.from_bytes(digest.digest(), "big")
+
+
+def _scan_inventory_directory(
+    descriptor: int,
+) -> _InventoryDirectorySnapshot:
+    """Fingerprint every no-follow child without materializing the directory."""
+
+    entry_count = 0
+    digest_xor = 0
+    digest_sum = 0
+    digest_sum_squares = 0
+    bounded_names = []
+    has_unsafe_entry = False
+    try:
+        with os.scandir(descriptor) as entries:
+            for candidate in entries:
+                name = candidate.name
+                child = os.stat(
+                    name,
+                    dir_fd=descriptor,
+                    follow_symlinks=False,
+                )
+                entry_digest = _inventory_entry_digest(name, child)
+                entry_count += 1
+                digest_xor ^= entry_digest
+                digest_sum = (
+                    digest_sum + entry_digest
+                ) % _INVENTORY_DIGEST_MODULUS
+                digest_sum_squares = (
+                    digest_sum_squares + entry_digest * entry_digest
+                ) % _INVENTORY_DIGEST_MODULUS
+                has_unsafe_entry = (
+                    has_unsafe_entry
+                    or _unsafe_inventory_status(child) is not None
+                )
+                if bounded_names is not None:
+                    if entry_count <= _MAX_INVENTORY_ENTRIES:
+                        bounded_names.append(name)
+                    else:
+                        bounded_names = None
+    except OSError as error:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
+        ) from error
+    return _InventoryDirectorySnapshot(
+        entry_count=entry_count,
+        digest_xor=f"{digest_xor:064x}",
+        digest_sum=f"{digest_sum:064x}",
+        digest_sum_squares=f"{digest_sum_squares:064x}",
+        bounded_names=(
+            None
+            if bounded_names is None
+            else tuple(sorted(bounded_names))
+        ),
+        has_unsafe_entry=has_unsafe_entry,
+    )
+
+
+def _inventory_snapshot_hash(
+    directory_entry: os.stat_result,
+    snapshot: _InventoryDirectorySnapshot,
+) -> str:
+    return business_hash(
+        {
+            "directory_stat_identity": tuple(
+                str(value) for value in _stat_identity(directory_entry)
+            ),
+            "entry_count": snapshot.entry_count,
+            "entry_digest_xor": snapshot.digest_xor,
+            "entry_digest_sum": snapshot.digest_sum,
+            "entry_digest_sum_squares": snapshot.digest_sum_squares,
+        }
+    )
+
+
 class _RetainedCohortSources:
     """Retain the exact artifact directory and every slot through evaluation."""
 
@@ -500,8 +599,7 @@ class _RetainedCohortSources:
         self.path = None
         self.descriptor = None
         self.entry = None
-        self.names = None
-        self.unsafe_entries = {}
+        self.snapshot = None
 
     def capture_directory(self, path: Path, expected_names=None):
         descriptor = None
@@ -511,18 +609,24 @@ class _RetainedCohortSources:
             flags |= getattr(os, "O_CLOEXEC", 0)
             descriptor = os.open(path, flags)
             before = os.fstat(descriptor)
-            names = set(os.listdir(descriptor))
-            after = os.fstat(descriptor)
-            current = os.stat(path, follow_symlinks=False)
             if (
                 not stat.S_ISDIR(before.st_mode)
                 or before.st_uid != os.getuid()
                 or stat.S_IMODE(before.st_mode) != 0o700
-                or _stat_identity(before) != _stat_identity(after)
+            ):
+                raise SystemPaperEvaluationError(
+                    "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE"
+                )
+            snapshot = _scan_inventory_directory(descriptor)
+            after = os.fstat(descriptor)
+            current = os.stat(path, follow_symlinks=False)
+            if (
+                _stat_identity(before) != _stat_identity(after)
                 or _stat_identity(after) != _stat_identity(current)
                 or (
                     expected_names is not None
-                    and names != set(expected_names)
+                    and snapshot.bounded_names
+                    != tuple(sorted(expected_names))
                 )
             ):
                 raise SystemPaperEvaluationError(
@@ -531,8 +635,8 @@ class _RetainedCohortSources:
             self.path = path
             self.descriptor = descriptor
             self.entry = before
-            self.names = set(names)
-            return tuple(sorted(names))
+            self.snapshot = snapshot
+            return snapshot.bounded_names
         except SystemPaperEvaluationError:
             if descriptor is not None:
                 os.close(descriptor)
@@ -567,7 +671,6 @@ class _RetainedCohortSources:
         status_code = _unsafe_inventory_status(entry)
         if status_code is None:
             return self.capture_artifact(path), None
-        self.unsafe_entries[path.name] = entry
         return None, _unsafe_inventory_evidence(
             path.name, entry, status_code
         )
@@ -578,7 +681,7 @@ class _RetainedCohortSources:
             self.descriptor is None
             or self.path is None
             or self.entry is None
-            or self.names is None
+            or self.snapshot is None
         ):
             raise SystemPaperEvaluationError(
                 "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
@@ -586,15 +689,7 @@ class _RetainedCohortSources:
         try:
             retained = os.fstat(self.descriptor)
             current = os.stat(self.path, follow_symlinks=False)
-            names = set(os.listdir(self.descriptor))
-            unsafe_entries = {
-                name: os.stat(
-                    name,
-                    dir_fd=self.descriptor,
-                    follow_symlinks=False,
-                )
-                for name in self.unsafe_entries
-            }
+            snapshot = _scan_inventory_directory(self.descriptor)
         except OSError as error:
             raise SystemPaperEvaluationError(
                 "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
@@ -602,12 +697,7 @@ class _RetainedCohortSources:
         if (
             _stat_identity(self.entry) != _stat_identity(retained)
             or _stat_identity(retained) != _stat_identity(current)
-            or names != self.names
-            or any(
-                _stat_identity(self.unsafe_entries[name])
-                != _stat_identity(unsafe_entries[name])
-                for name in self.unsafe_entries
-            )
+            or snapshot != self.snapshot
         ):
             raise SystemPaperEvaluationError(
                 "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
@@ -1265,7 +1355,7 @@ def _inventory_surface_state(slot_root: Path) -> str:
         flags |= getattr(os, "O_CLOEXEC", 0)
         descriptor = os.open(slot_root, flags)
         retained = os.fstat(descriptor)
-        names = tuple(sorted(os.listdir(descriptor)))
+        snapshot = _scan_inventory_directory(descriptor)
         current = os.stat(slot_root, follow_symlinks=False)
         if (
             _stat_identity(entry) != _stat_identity(retained)
@@ -1274,16 +1364,12 @@ def _inventory_surface_state(slot_root: Path) -> str:
             raise SystemPaperEvaluationError(
                 "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
             )
-        if not names:
+        if snapshot.entry_count == 0:
             return "EMPTY"
-        if len(names) > _MAX_INVENTORY_ENTRIES:
+        if snapshot.entry_count > _MAX_INVENTORY_ENTRIES:
             return "UNSAFE"
-        for name in names:
-            child = os.stat(
-                name, dir_fd=descriptor, follow_symlinks=False
-            )
-            if _unsafe_inventory_status(child) is not None:
-                return "UNSAFE"
+        if snapshot.has_unsafe_entry:
+            return "UNSAFE"
         return "PRESENT"
     except SystemPaperEvaluationError:
         raise
@@ -1339,7 +1425,12 @@ def _inconclusive_inventory(
         return {"inventory_state": "MISSING", "slots": ()}
     input_rows = ()
     result_rows = ()
-    if len(names) > _MAX_INVENTORY_ENTRIES:
+    snapshot = retained_sources.snapshot
+    if snapshot is None:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
+        )
+    if snapshot.entry_count > _MAX_INVENTORY_ENTRIES:
         retained_sources.verify()
         return {
             "inventory_state": "UNSAFE",
@@ -1347,16 +1438,10 @@ def _inconclusive_inventory(
                 {
                     "artifact_name": ".",
                     "entry_status": "UNSAFE_ENTRY_COUNT",
-                    "entry_identity_hash": business_hash(
-                        {
-                            "directory_stat_identity": tuple(
-                                str(value)
-                                for value in _stat_identity(
-                                    retained_sources.entry
-                                )
-                            ),
-                            "entry_names": names,
-                        }
+                    "entry_count": snapshot.entry_count,
+                    "entry_identity_hash": _inventory_snapshot_hash(
+                        retained_sources.entry,
+                        snapshot,
                     ),
                 },
             ),

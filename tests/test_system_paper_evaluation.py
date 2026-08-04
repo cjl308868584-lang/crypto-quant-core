@@ -1786,6 +1786,149 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                     if result_path is not None and result_path.exists():
                         result_path.unlink()
 
+    def _add_over_count_inventory(self):
+        created = []
+        for index in range(1024):
+            path = self.slot_root / ("over-count-%04d.json" % index)
+            path.write_bytes(b"x")
+            path.chmod(0o600)
+            created.append(path)
+        with os.scandir(self.slot_root) as entries:
+            self.assertEqual(sum(1 for _entry in entries), 1025)
+        return created
+
+    def test_over_count_inventory_streams_without_listdir_materialization(self):
+        """A 1025-entry inventory publishes one bounded count/fingerprint marker."""
+        from crypto_quant import system_paper_evaluation as module
+
+        self._add_over_count_inventory()
+        slot_root_entry = os.stat(self.slot_root, follow_symlinks=False)
+        original_listdir = module.os.listdir
+        original_scandir = module.os.scandir
+        original_read = module.os.read
+        child_identities = set()
+        with original_scandir(self.slot_root) as entries:
+            for candidate in entries:
+                entry = candidate.stat(follow_symlinks=False)
+                child_identities.add((entry.st_dev, entry.st_ino))
+
+        def is_slot_root(path):
+            entry = (
+                os.fstat(path)
+                if isinstance(path, int)
+                else os.stat(path, follow_symlinks=False)
+            )
+            return (
+                entry.st_dev == slot_root_entry.st_dev
+                and entry.st_ino == slot_root_entry.st_ino
+            )
+
+        class StreamingScandirProbe:
+            def __init__(self, iterator):
+                self.iterator = iterator
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                self.iterator.close()
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                return next(self.iterator)
+
+            def __length_hint__(self):
+                raise AssertionError("scandir iterator was materialized")
+
+        def reject_slot_root_listdir(path):
+            if is_slot_root(path):
+                raise AssertionError("slot inventory was materialized")
+            return original_listdir(path)
+
+        def probe_slot_root_scandir(path):
+            iterator = original_scandir(path)
+            if is_slot_root(path):
+                return StreamingScandirProbe(iterator)
+            return iterator
+
+        def reject_inventory_body_read(descriptor, count):
+            entry = os.fstat(descriptor)
+            if (entry.st_dev, entry.st_ino) in child_identities:
+                raise AssertionError("over-count child body was read")
+            return original_read(descriptor, count)
+
+        with patch.object(
+            module.os, "listdir", side_effect=reject_slot_root_listdir
+        ), patch.object(
+            module.os, "scandir", side_effect=probe_slot_root_scandir
+        ), patch.object(
+            module.os, "read", side_effect=reject_inventory_body_read
+        ):
+            try:
+                artifact = evaluate_system_paper(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+            except SystemPaperEvaluationError as error:
+                self.fail(
+                    "over-count inventory did not stream: "
+                    + error.reason_code
+                )
+        self.assertEqual(
+            artifact["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.assertEqual(
+            artifact["evidence_inventory"]["inventory_state"], "UNSAFE"
+        )
+        self.assertEqual(len(artifact["evidence_inventory"]["slots"]), 1)
+        marker = artifact["evidence_inventory"]["slots"][0]
+        self.assertEqual(marker["artifact_name"], ".")
+        self.assertEqual(marker["entry_status"], "UNSAFE_ENTRY_COUNT")
+        self.assertEqual(marker["entry_count"], 1025)
+        self.assertRegex(marker["entry_identity_hash"], r"^[0-9a-f]{64}$")
+        result_path = self.output_root / (artifact["result_id"] + ".json")
+        self.assertEqual(
+            result_path.read_bytes(), canonical_json(artifact).encode("utf-8")
+        )
+        self.assertEqual(
+            load_system_paper_evaluation(
+                evaluation_path=result_path,
+                _machine_probe=self.start.observer.install.preflight.machine,
+                _filesystem_probe=self.start.observer.install.preflight.filesystem,
+            ),
+            artifact,
+        )
+
+    def test_over_count_child_stat_change_at_publish_is_rejected(self):
+        """Same-name child mutation after capture cannot publish over-count evidence."""
+        from crypto_quant import system_paper_evaluation as module
+
+        target = self._add_over_count_inventory()[512]
+        original_publish = module.publish_owner_exact
+
+        def mutate_child_then_publish(path, data, **kwargs):
+            target.write_bytes(b"y")
+            target.chmod(0o640)
+            return original_publish(path, data, **kwargs)
+
+        with patch.object(
+            module,
+            "publish_owner_exact",
+            side_effect=mutate_child_then_publish,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "SOURCE_CHANGED"
+            ):
+                evaluate_system_paper(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+        self.assertEqual(list(self.output_root.glob("*.json")), [])
+
     def test_loader_bounds_pre_read_and_missing_path_generates_nothing(self):
         """Missing and oversized evaluation paths stop before parsing or replay."""
         from crypto_quant import system_paper_evaluation as module
