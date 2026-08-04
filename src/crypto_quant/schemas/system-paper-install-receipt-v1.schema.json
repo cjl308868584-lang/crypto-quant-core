@@ -8,7 +8,8 @@
     "$schema", "schema_version", "receipt_id", "receipt_hash", "installed_at",
     "verified_at", "source_contract", "preflight_receipt", "domain", "service",
     "target_path", "target_stat", "install_action", "preflight_print",
-    "bootstrap_or_null", "verified_print", "installation_status",
+    "bootstrap_or_null", "verified_print", "service_snapshot_or_null",
+    "installation_status",
     "run_at_load_status", "security_boundary", "warnings"
   ],
   "properties": {
@@ -28,7 +29,8 @@
     "preflight_print": {"$ref": "#/$defs/command"},
     "bootstrap_or_null": {"oneOf": [{"$ref": "#/$defs/command"}, {"type": "null"}]},
     "verified_print": {"$ref": "#/$defs/command"},
-    "installation_status": {"const": "INSTALLED_AND_LOADED"},
+    "service_snapshot_or_null": {"oneOf": [{"$ref": "#/$defs/service_snapshot"}, {"type": "null"}]},
+    "installation_status": {"enum": ["INSTALLED_AND_LOADED", "LOADED_VERIFICATION_FAILED"]},
     "run_at_load_status": {"const": "FIRST_NATURAL_SLOT_NOT_OBSERVED"},
     "security_boundary": {"$ref": "#/$defs/security"},
     "warnings": {
@@ -78,13 +80,33 @@
     },
     "command": {
       "type": "object", "additionalProperties": false,
-      "required": ["argv", "returncode", "stdout_size_bytes", "stderr_size_bytes", "stdout_sha256", "stderr_sha256"],
+      "required": ["argv", "transport_status", "returncode", "stdout_size_bytes", "stderr_size_bytes", "stdout_sha256", "stderr_sha256", "stdout_base64", "stderr_base64"],
       "properties": {
         "argv": {"type": "array", "minItems": 3, "maxItems": 4, "items": {"type": "string", "minLength": 1}},
+        "transport_status": {"enum": ["COMPLETED", "FAILED"]},
         "returncode": {"type": "integer", "minimum": 0, "maximum": 255},
         "stdout_size_bytes": {"type": "integer", "minimum": 0, "maximum": 65536},
         "stderr_size_bytes": {"type": "integer", "minimum": 0, "maximum": 65536},
-        "stdout_sha256": {"$ref": "#/$defs/hash"}, "stderr_sha256": {"$ref": "#/$defs/hash"}
+        "stdout_sha256": {"$ref": "#/$defs/hash"}, "stderr_sha256": {"$ref": "#/$defs/hash"},
+        "stdout_base64": {"type": "string", "maxLength": 87384, "pattern": "^[A-Za-z0-9+/]*={0,2}$"},
+        "stderr_base64": {"type": "string", "maxLength": 87384, "pattern": "^[A-Za-z0-9+/]*={0,2}$"}
+      }
+    },
+    "service_snapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["label", "service", "path", "program", "arguments", "working_directory", "environment", "runs", "state", "last_exit_status"],
+      "properties": {
+        "label": {"const": "local.crypto-quant.system-paper-v1"},
+        "service": {"type": "string", "pattern": "^gui/[0-9]+/local\\.crypto-quant\\.system-paper-v1$"},
+        "path": {"$ref": "#/$defs/path"}, "program": {"$ref": "#/$defs/path"},
+        "arguments": {"type": "array", "minItems": 7, "maxItems": 7, "items": {"type": "string", "minLength": 1}},
+        "working_directory": {"$ref": "#/$defs/path"},
+        "environment": {
+          "type": "object", "additionalProperties": false, "required": ["PYTHONPATH", "XPC_SERVICE_NAME"],
+          "properties": {"PYTHONPATH": {"$ref": "#/$defs/path"}, "XPC_SERVICE_NAME": {"const": "local.crypto-quant.system-paper-v1"}}
+        },
+        "runs": {"const": 0}, "state": {"const": "not running"},
+        "last_exit_status": {"type": "null"}
       }
     },
     "security": {

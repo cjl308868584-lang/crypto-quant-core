@@ -1,5 +1,7 @@
 """Preflight-gated atomic installer for the System Paper LaunchAgent."""
 
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -23,6 +25,10 @@ from .system_paper_launchd import (
     system_paper_launchd_contract_trust_hash,
 )
 from .system_paper_preflight import load_system_paper_preflight_receipt
+from .system_paper_launchctl import (
+    SystemPaperLaunchctlParseError,
+    parse_system_paper_launchctl_print,
+)
 
 
 _SCHEMA = "system-paper-install-receipt-v1.schema.json"
@@ -167,36 +173,90 @@ def _call(runner, argv) -> LaunchctlResult:
 def _command_evidence(argv, result: LaunchctlResult) -> Dict[str, Any]:
     return {
         "argv": list(argv),
+        "transport_status": "COMPLETED",
         "returncode": result.returncode,
         "stdout_size_bytes": len(result.stdout),
         "stderr_size_bytes": len(result.stderr),
         "stdout_sha256": hashlib.sha256(result.stdout).hexdigest(),
         "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
+        "stdout_base64": base64.b64encode(result.stdout).decode("ascii"),
+        "stderr_base64": base64.b64encode(result.stderr).decode("ascii"),
     }
 
 
-def _print_bindings_valid(
+def _failed_command_evidence(argv) -> Dict[str, Any]:
+    empty_hash = hashlib.sha256(b"").hexdigest()
+    return {
+        "argv": list(argv),
+        "transport_status": "FAILED",
+        "returncode": 255,
+        "stdout_size_bytes": 0,
+        "stderr_size_bytes": 0,
+        "stdout_sha256": empty_hash,
+        "stderr_sha256": empty_hash,
+        "stdout_base64": "",
+        "stderr_base64": "",
+    }
+
+
+def _replay_command_bytes(command: Mapping[str, Any]):
+    try:
+        stdout = base64.b64decode(command["stdout_base64"], validate=True)
+        stderr = base64.b64decode(command["stderr_base64"], validate=True)
+    except (KeyError, TypeError, ValueError, binascii.Error) as error:
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_COMMAND_EVIDENCE_INVALID"
+        ) from error
+    if (
+        len(stdout) != command["stdout_size_bytes"]
+        or len(stderr) != command["stderr_size_bytes"]
+        or hashlib.sha256(stdout).hexdigest() != command["stdout_sha256"]
+        or hashlib.sha256(stderr).hexdigest() != command["stderr_sha256"]
+    ):
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_COMMAND_EVIDENCE_INVALID"
+        )
+    return stdout, stderr
+
+
+def _expected_service_snapshot(
+    *, contract: Mapping[str, Any], service: str, target: Path
+) -> Mapping[str, Any]:
+    snapshot = contract["execution_snapshot"]["repository_root"]
+    return {
+        "label": _LABEL,
+        "service": service,
+        "path": str(target),
+        "program": contract["python_executable"],
+        "arguments": list(contract["program_arguments"]),
+        "working_directory": snapshot,
+        "environment": {
+            "PYTHONPATH": str(Path(snapshot) / "src"),
+            "XPC_SERVICE_NAME": _LABEL,
+        },
+        "runs": 0,
+        "state": "not running",
+        "last_exit_status": None,
+    }
+
+
+def _parsed_print(
     data: bytes,
     *,
     contract: Mapping[str, Any],
     service: str,
     target: Path,
-) -> bool:
+) -> Optional[Mapping[str, Any]]:
     try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        return False
-    required = (
-        service,
-        _LABEL,
-        str(target),
-        contract["python_executable"],
-        "crypto_quant.system_paper_runtime_cli",
-        contract["program_arguments"][4],
-        contract["program_arguments"][6],
-        contract["execution_snapshot"]["repository_root"],
+        parsed = parse_system_paper_launchctl_print(data)
+    except SystemPaperLaunchctlParseError:
+        return None
+    expected = _expected_service_snapshot(
+        contract=contract,
+        service=service,
+        target=target,
     )
-    return all(value in text for value in required)
+    return parsed if parsed == expected else None
 
 
 def _secure_home(home: Path, uid: int) -> Path:
@@ -268,6 +328,17 @@ def _open_parent(path: Path) -> int:
         ) from error
 
 
+def _require_safe_target_parent(entry, uid: int) -> None:
+    if (
+        not stat.S_ISDIR(entry.st_mode)
+        or entry.st_uid != uid
+        or stat.S_IMODE(entry.st_mode) != 0o700
+    ):
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_TARGET_PARENT_INVALID"
+        )
+
+
 def _read_fd(descriptor: int, maximum: int) -> bytes:
     chunks = []
     total = 0
@@ -316,6 +387,7 @@ def _existing_target(parent_fd: int, name: str, data: bytes, uid: int):
 def _atomic_install(path: Path, data: bytes, uid: int):
     parent_fd = _open_parent(path.parent)
     try:
+        _require_safe_target_parent(os.fstat(parent_fd), uid)
         existing = _existing_target(parent_fd, path.name, data, uid)
         if existing is not None:
             return False, existing
@@ -401,9 +473,12 @@ def _rollback_new_target(path: Path, identity) -> None:
         os.close(parent_fd)
 
 
-def _target_stat(path: Path, uid: int) -> Dict[str, Any]:
+def _target_stat(
+    path: Path, uid: int, *, expected_bytes: Optional[bytes] = None
+) -> Dict[str, Any]:
     parent_fd = _open_parent(path.parent)
     try:
+        _require_safe_target_parent(os.fstat(parent_fd), uid)
         descriptor = _target_fd(parent_fd, path.name)
         try:
             entry = os.fstat(descriptor)
@@ -421,6 +496,7 @@ def _target_stat(path: Path, uid: int) -> Dict[str, Any]:
         or entry.st_uid != uid
         or entry.st_nlink != 1
         or stat.S_IMODE(entry.st_mode) != 0o600
+        or (expected_bytes is not None and data != expected_bytes)
     ):
         raise SystemPaperInstallError("SYSTEM_PAPER_INSTALL_TARGET_INVALID")
     return {
@@ -432,6 +508,116 @@ def _target_stat(path: Path, uid: int) -> Dict[str, Any]:
         "size_bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
     }
+
+
+def _fd_target_stat(
+    descriptor: int, uid: int, *, expected_bytes: Optional[bytes] = None
+) -> Dict[str, Any]:
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        entry = os.fstat(descriptor)
+        data = _read_fd(descriptor, 2 * 1024 * 1024)
+    except OSError as error:
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_TARGET_IDENTITY_CHANGED"
+        ) from error
+    if (
+        not stat.S_ISREG(entry.st_mode)
+        or entry.st_uid != uid
+        or entry.st_nlink != 1
+        or stat.S_IMODE(entry.st_mode) != 0o600
+        or (expected_bytes is not None and data != expected_bytes)
+    ):
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_TARGET_IDENTITY_CHANGED"
+        )
+    return {
+        "device": entry.st_dev,
+        "inode": entry.st_ino,
+        "owner_uid": entry.st_uid,
+        "mode": stat.S_IMODE(entry.st_mode),
+        "link_count": entry.st_nlink,
+        "size_bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def _retain_target(path: Path, uid: int, expected_bytes: bytes):
+    parent_fd = _open_parent(path.parent)
+    try:
+        _require_safe_target_parent(os.fstat(parent_fd), uid)
+        target_fd = _target_fd(parent_fd, path.name)
+    except SystemPaperInstallError:
+        os.close(parent_fd)
+        raise
+    except OSError as error:
+        os.close(parent_fd)
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_TARGET_IDENTITY_CHANGED"
+        ) from error
+    try:
+        parent_entry = os.fstat(parent_fd)
+        target_stat = _fd_target_stat(
+            target_fd, uid, expected_bytes=expected_bytes
+        )
+        if target_stat["sha256"] != hashlib.sha256(expected_bytes).hexdigest():
+            raise SystemPaperInstallError(
+                "SYSTEM_PAPER_INSTALL_TARGET_IDENTITY_CHANGED"
+            )
+        return parent_fd, target_fd, parent_entry, target_stat
+    except Exception:
+        os.close(target_fd)
+        os.close(parent_fd)
+        raise
+
+
+def _recheck_retained_target(
+    path: Path,
+    uid: int,
+    expected_bytes: bytes,
+    parent_fd: int,
+    target_fd: int,
+    parent_before,
+    target_before: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    retained_parent = os.fstat(parent_fd)
+    retained_target = _fd_target_stat(
+        target_fd, uid, expected_bytes=expected_bytes
+    )
+    current_parent_fd = _open_parent(path.parent)
+    try:
+        current_parent = os.fstat(current_parent_fd)
+        _require_safe_target_parent(current_parent, uid)
+        current_target_fd = _target_fd(current_parent_fd, path.name)
+        try:
+            current_target = _fd_target_stat(
+                current_target_fd, uid, expected_bytes=expected_bytes
+            )
+        finally:
+            os.close(current_target_fd)
+    except OSError as error:
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_TARGET_IDENTITY_CHANGED"
+        ) from error
+    finally:
+        os.close(current_parent_fd)
+    parent_identity = lambda item: (
+        item.st_dev,
+        item.st_ino,
+        item.st_uid,
+        stat.S_IMODE(item.st_mode),
+    )
+    if (
+        parent_identity(parent_before) != parent_identity(retained_parent)
+        or parent_identity(parent_before) != parent_identity(current_parent)
+        or retained_target != target_before
+        or current_target != target_before
+        or retained_target["sha256"] != hashlib.sha256(expected_bytes).hexdigest()
+    ):
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_TARGET_IDENTITY_CHANGED"
+        )
+    return dict(target_before)
 
 
 @lru_cache(maxsize=1)
@@ -492,33 +678,101 @@ def _receipt_reasons(
             or target != expected_target
         ):
             reasons.append("SYSTEM_PAPER_INSTALL_TARGET_BINDING_MISMATCH")
-        actual = _target_stat(target, uid)
+        actual = _target_stat(target, uid, expected_bytes=plist_bytes)
         recorded = receipt["target_stat"]
         if any(
             actual[key] != recorded[key]
-            for key in ("inode", "owner_uid", "mode", "link_count", "size_bytes", "sha256")
+            for key in (
+                "device",
+                "inode",
+                "owner_uid",
+                "mode",
+                "link_count",
+                "size_bytes",
+                "sha256",
+            )
         ):
             reasons.append("SYSTEM_PAPER_INSTALL_TARGET_STAT_MISMATCH")
         print_argv = [_LAUNCHCTL, "print", service]
         bootstrap_argv = [_LAUNCHCTL, "bootstrap", domain, str(target)]
         if receipt["preflight_print"]["argv"] != print_argv:
             reasons.append("SYSTEM_PAPER_INSTALL_COMMAND_EVIDENCE_INVALID")
-        if (
-            receipt["verified_print"]["argv"] != print_argv
-            or receipt["verified_print"]["returncode"] != 0
-        ):
+        if receipt["verified_print"]["argv"] != print_argv:
             reasons.append("SYSTEM_PAPER_INSTALL_COMMAND_EVIDENCE_INVALID")
+        commands = (
+            receipt["preflight_print"],
+            receipt["verified_print"],
+        ) + (() if receipt["bootstrap_or_null"] is None else (receipt["bootstrap_or_null"],))
+        replayed_commands = {}
+        for command in commands:
+            try:
+                replayed_commands[id(command)] = _replay_command_bytes(command)
+            except SystemPaperInstallError:
+                reasons.append("SYSTEM_PAPER_INSTALL_COMMAND_EVIDENCE_INVALID")
+            if command["transport_status"] == "FAILED" and command != {
+                **_failed_command_evidence(command["argv"]),
+            }:
+                reasons.append("SYSTEM_PAPER_INSTALL_COMMAND_EVIDENCE_INVALID")
+        expected_snapshot = _expected_service_snapshot(
+            contract=contract, service=service, target=target
+        )
+        verified_stdout = replayed_commands.get(
+            id(receipt["verified_print"]), (None, None)
+        )[0]
+        derived_snapshot = (
+            _parsed_print(
+                verified_stdout,
+                contract=contract,
+                service=service,
+                target=target,
+            )
+            if verified_stdout is not None
+            and receipt["verified_print"]["transport_status"] == "COMPLETED"
+            and receipt["verified_print"]["returncode"] == 0
+            else None
+        )
+        if receipt["service_snapshot_or_null"] != derived_snapshot:
+            reasons.append("SYSTEM_PAPER_INSTALL_STATUS_EVIDENCE_INVALID")
+        status_value = receipt["installation_status"]
+        verified_success = (
+            receipt["verified_print"]["transport_status"] == "COMPLETED"
+            and receipt["verified_print"]["returncode"] == 0
+            and derived_snapshot == expected_snapshot
+        )
+        if (
+            status_value == "INSTALLED_AND_LOADED" and not verified_success
+        ) or (
+            status_value == "LOADED_VERIFICATION_FAILED" and verified_success
+        ):
+            reasons.append("SYSTEM_PAPER_INSTALL_STATUS_EVIDENCE_INVALID")
         action = receipt["install_action"]
         bootstrap = receipt["bootstrap_or_null"]
         if action == "ALREADY_INSTALLED_AND_LOADED":
-            if bootstrap is not None or receipt["preflight_print"]["returncode"] != 0:
+            first_stdout = replayed_commands.get(
+                id(receipt["preflight_print"]), (None, None)
+            )[0]
+            first_snapshot = (
+                _parsed_print(
+                    first_stdout,
+                    contract=contract,
+                    service=service,
+                    target=target,
+                )
+                if first_stdout is not None
+                and receipt["preflight_print"]["transport_status"] == "COMPLETED"
+                and receipt["preflight_print"]["returncode"] == 0
+                else None
+            )
+            if bootstrap is not None or first_snapshot != expected_snapshot:
                 reasons.append("SYSTEM_PAPER_INSTALL_BOOTSTRAP_EVIDENCE_INVALID")
             expected_count = 2
         else:
             if (
                 not isinstance(bootstrap, Mapping)
                 or bootstrap.get("argv") != bootstrap_argv
+                or bootstrap.get("transport_status") != "COMPLETED"
                 or bootstrap.get("returncode") != 0
+                or receipt["preflight_print"]["transport_status"] != "COMPLETED"
                 or receipt["preflight_print"]["returncode"] != 113
             ):
                 reasons.append("SYSTEM_PAPER_INSTALL_BOOTSTRAP_EVIDENCE_INVALID")
@@ -560,6 +814,7 @@ def _receipt_reasons(
             "install_action": action,
             "installed_at": receipt["installed_at"],
             "verified_at": receipt["verified_at"],
+            "installation_status": status_value,
         }
         if receipt["receipt_id"] != stable_id(
             "system_paper_install_receipt", identity
@@ -568,6 +823,33 @@ def _receipt_reasons(
     except (KeyError, TypeError, ValueError, SystemPaperInstallError):
         reasons.append("SYSTEM_PAPER_INSTALL_RECEIPT_SEMANTIC_INVALID")
     return tuple(sorted(set(reasons)))
+
+
+def _inventory_receipt_valid(receipt: Mapping[str, Any]) -> bool:
+    try:
+        if tuple(_validator().iter_errors(receipt)):
+            return False
+        if receipt["receipt_hash"] != artifact_self_hash(
+            receipt, "receipt_hash"
+        ):
+            return False
+        identity = {
+            "contract_hash": receipt["source_contract"]["contract_hash"],
+            "preflight_receipt_hash": receipt["preflight_receipt"][
+                "receipt_hash"
+            ],
+            "target_path": receipt["target_path"],
+            "target_inode": receipt["target_stat"]["inode"],
+            "install_action": receipt["install_action"],
+            "installed_at": receipt["installed_at"],
+            "verified_at": receipt["verified_at"],
+            "installation_status": receipt["installation_status"],
+        }
+        return receipt["receipt_id"] == stable_id(
+            "system_paper_install_receipt", identity
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def _load_sources(
@@ -666,19 +948,22 @@ def install_system_paper_launchd(
 
     target_exists = target.exists() or target.is_symlink()
     if first.returncode == 0:
+        first_snapshot = _parsed_print(
+            first.stdout, contract=contract, service=service, target=target
+        )
         if (
             not target_exists
             or target.is_symlink()
             or target.read_bytes() != plist_bytes
-            or not _print_bindings_valid(
-                first.stdout, contract=contract, service=service, target=target
-            )
+            or first_snapshot is None
         ):
             raise SystemPaperInstallError(
                 "SYSTEM_PAPER_INSTALL_EXISTING_SERVICE_CONFLICT"
             )
         action = "ALREADY_INSTALLED_AND_LOADED"
         bootstrap_evidence = None
+        created = False
+        installed_identity = None
     else:
         _ensure_target_parent(_secure_home(home, uid), uid)
         created, installed_identity = _atomic_install(target, plist_bytes, uid)
@@ -698,36 +983,65 @@ def install_system_paper_launchd(
                 "SYSTEM_PAPER_INSTALL_TARGET_IDENTITY_CHANGED"
             )
         bootstrap_argv = (_LAUNCHCTL, "bootstrap", domain, str(target))
-        try:
-            bootstrap_result = _call(runner, bootstrap_argv)
-        except Exception:
-            if created:
-                _rollback_new_target(target, installed_identity)
-            raise
-        bootstrap_evidence = _command_evidence(bootstrap_argv, bootstrap_result)
-        if bootstrap_result.returncode != 0:
-            if created:
-                _rollback_new_target(target, installed_identity)
-            raise SystemPaperInstallError(
-                "SYSTEM_PAPER_INSTALL_BOOTSTRAP_FAILED"
-            )
 
-    verified_result = _call(runner, print_argv)
-    if (
-        verified_result.returncode != 0
-        or not _print_bindings_valid(
-            verified_result.stdout,
-            contract=contract,
-            service=service,
-            target=target,
+    parent_fd, target_fd, parent_before, retained_target = _retain_target(
+        target, uid, plist_bytes
+    )
+    try:
+        if first.returncode == 113:
+            bootstrap_argv = (_LAUNCHCTL, "bootstrap", domain, str(target))
+            try:
+                bootstrap_result = _call(runner, bootstrap_argv)
+            except Exception:
+                if created:
+                    _rollback_new_target(target, installed_identity)
+                raise
+            bootstrap_evidence = _command_evidence(
+                bootstrap_argv, bootstrap_result
+            )
+            if bootstrap_result.returncode != 0:
+                if created:
+                    _rollback_new_target(target, installed_identity)
+                raise SystemPaperInstallError(
+                    "SYSTEM_PAPER_INSTALL_BOOTSTRAP_FAILED"
+                )
+
+        try:
+            verified_result = _call(runner, print_argv)
+            verified_print = _command_evidence(print_argv, verified_result)
+        except SystemPaperInstallError:
+            verified_result = None
+            verified_print = _failed_command_evidence(print_argv)
+        service_snapshot = (
+            _parsed_print(
+                verified_result.stdout,
+                contract=contract,
+                service=service,
+                target=target,
+            )
+            if verified_result is not None and verified_result.returncode == 0
+            else None
         )
-    ):
-        raise SystemPaperInstallError(
-            "SYSTEM_PAPER_INSTALL_PRINT_VERIFY_FAILED"
+        target_stat = _recheck_retained_target(
+            target,
+            uid,
+            plist_bytes,
+            parent_fd,
+            target_fd,
+            parent_before,
+            retained_target,
         )
+    finally:
+        os.close(target_fd)
+        os.close(parent_fd)
     verified_at = _utc(selected_clock())
-    verified_print = _command_evidence(print_argv, verified_result)
-    target_stat = _target_stat(target, uid)
+    installation_status = (
+        "INSTALLED_AND_LOADED"
+        if verified_result is not None
+        and verified_result.returncode == 0
+        and service_snapshot is not None
+        else "LOADED_VERIFICATION_FAILED"
+    )
     source_contract = {
         "contract_id": contract["contract_id"],
         "contract_hash": contract["contract_hash"],
@@ -751,6 +1065,7 @@ def install_system_paper_launchd(
         "install_action": action,
         "installed_at": installed_at,
         "verified_at": verified_at,
+        "installation_status": installation_status,
     }
     command_count = 2 if bootstrap_evidence is None else 3
     receipt = {
@@ -770,7 +1085,8 @@ def install_system_paper_launchd(
         "preflight_print": preflight_print,
         "bootstrap_or_null": bootstrap_evidence,
         "verified_print": verified_print,
-        "installation_status": "INSTALLED_AND_LOADED",
+        "service_snapshot_or_null": service_snapshot,
+        "installation_status": installation_status,
         "run_at_load_status": "FIRST_NATURAL_SLOT_NOT_OBSERVED",
         "security_boundary": {
             "production_activation_enabled": False,
@@ -812,6 +1128,10 @@ def install_system_paper_launchd(
         raise SystemPaperInstallError(
             "SYSTEM_PAPER_INSTALL_RECEIPT_CONFLICT"
         ) from error
+    if installation_status != "INSTALLED_AND_LOADED":
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_PRINT_VERIFY_FAILED"
+        )
     return {
         "outcome": "INSTALLED_AND_LOADED",
         "install_action": action,
@@ -845,6 +1165,22 @@ def load_system_paper_install_receipt(
         clock=lambda: "1970-01-01T00:00:00.000Z",
         allow_expired=True,
     )
+    expected_output = Path(contract["root_paths"]["install_receipts"])
+    try:
+        output_entry = expected_output.lstat()
+    except OSError as error:
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_RECEIPT_READ_INVALID"
+        ) from error
+    if (
+        expected_output.resolve(strict=True) != expected_output
+        or not stat.S_ISDIR(output_entry.st_mode)
+        or output_entry.st_uid != os.getuid()
+        or stat.S_IMODE(output_entry.st_mode) != 0o700
+    ):
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_RECEIPT_READ_INVALID"
+        )
     path = Path(receipt_path)
     try:
         entry = path.lstat()
@@ -874,18 +1210,42 @@ def load_system_paper_install_receipt(
         raise SystemPaperInstallError(
             "SYSTEM_PAPER_INSTALL_RECEIPT_READ_INVALID"
         )
-    expected_output = Path(contract["root_paths"]["install_receipts"])
     if path.parent != expected_output or path.name != f"{receipt.get('receipt_id')}.json":
         raise SystemPaperInstallError(
             "SYSTEM_PAPER_INSTALL_RECEIPT_READ_INVALID"
         )
+    seen_ids = set()
     for item in expected_output.iterdir():
-        if not item.is_file() or not item.name.startswith(
-            "system_paper_install_receipt_"
-        ) or item.suffix != ".json":
+        try:
+            item_entry = item.lstat()
+            item_data = item.read_bytes()
+            candidate = json.loads(item_data.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             raise SystemPaperInstallError(
                 "SYSTEM_PAPER_INSTALL_OUTPUT_INVENTORY_INVALID"
             )
+        candidate_id = (
+            candidate.get("receipt_id")
+            if isinstance(candidate, Mapping)
+            else None
+        )
+        if (
+            item.resolve(strict=True) != item
+            or not stat.S_ISREG(item_entry.st_mode)
+            or item_entry.st_uid != os.getuid()
+            or item_entry.st_nlink != 1
+            or stat.S_IMODE(item_entry.st_mode) != 0o600
+            or not 0 < len(item_data) <= _MAX_RECEIPT_BYTES
+            or canonical_json(candidate).encode("utf-8") != item_data
+            or not isinstance(candidate_id, str)
+            or item.name != f"{candidate_id}.json"
+            or candidate_id in seen_ids
+            or not _inventory_receipt_valid(candidate)
+        ):
+            raise SystemPaperInstallError(
+                "SYSTEM_PAPER_INSTALL_OUTPUT_INVENTORY_INVALID"
+            )
+        seen_ids.add(candidate_id)
     target = Path(receipt["target_path"])
     if _receipt_reasons(
         receipt,
@@ -897,5 +1257,9 @@ def load_system_paper_install_receipt(
     ):
         raise SystemPaperInstallError(
             "SYSTEM_PAPER_INSTALL_RECEIPT_INVALID"
+        )
+    if receipt["installation_status"] != "INSTALLED_AND_LOADED":
+        raise SystemPaperInstallError(
+            "SYSTEM_PAPER_INSTALL_RECEIPT_NOT_AUTHORITY"
         )
     return receipt

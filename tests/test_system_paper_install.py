@@ -1,5 +1,6 @@
 """Preflight-gated atomic System Paper LaunchAgent installation tests."""
 
+import hashlib
 import io
 import json
 import os
@@ -42,6 +43,9 @@ class FakeLaunchctl:
         bootstrap_returncode=0,
         verified_bindings=True,
         after_first_print=None,
+        after_bootstrap=None,
+        post_print_returncode=0,
+        post_print_raises=False,
     ):
         self.contract = contract
         self.target = target
@@ -50,6 +54,9 @@ class FakeLaunchctl:
         self.bootstrap_returncode = bootstrap_returncode
         self.verified_bindings = verified_bindings
         self.after_first_print = after_first_print
+        self.after_bootstrap = after_bootstrap
+        self.post_print_returncode = post_print_returncode
+        self.post_print_raises = post_print_raises
         self.calls = []
         self.bootstrapped = False
 
@@ -62,31 +69,52 @@ class FakeLaunchctl:
         return f"{self.domain}/{LABEL}"
 
     def print_bytes(self):
-        values = [
-            self.service,
-            LABEL,
-            str(self.target),
-            self.contract["python_executable"],
-            "crypto_quant.system_paper_runtime_cli",
-            self.contract["program_arguments"][4],
-            self.contract["program_arguments"][6],
-            self.contract["execution_snapshot"]["repository_root"],
-        ]
+        snapshot = self.contract["execution_snapshot"]["repository_root"]
         if not self.verified_bindings:
-            values[-1] = "/wrong/snapshot"
-        return ("\n".join(values) + "\n").encode("utf-8")
+            snapshot = "/wrong/snapshot"
+        arguments = "\n".join(
+            "\t\t" + value for value in self.contract["program_arguments"]
+        )
+        return (
+            f"{self.service} = {{\n"
+            "\tactive count = 0\n"
+            f"\tpath = {self.target}\n"
+            "\ttype = LaunchAgent\n"
+            "\tstate = not running\n"
+            f"\tprogram = {self.contract['python_executable']}\n"
+            "\targuments = {\n"
+            f"{arguments}\n"
+            "\t}\n"
+            f"\tworking directory = {snapshot}\n"
+            "\tenvironment = {\n"
+            f"\t\tPYTHONPATH => {snapshot}/src\n"
+            f"\t\tXPC_SERVICE_NAME => {LABEL}\n"
+            "\t}\n"
+            "\truns = 0\n"
+            "\tlast exit code = (never exited)\n"
+            "}\n"
+        ).encode("utf-8")
 
     def __call__(self, argv):
         call = tuple(str(item) for item in argv)
         self.calls.append(call)
         if call == ("/bin/launchctl", "print", self.service):
             loaded = self.preloaded or self.bootstrapped
+            print_count = len([item for item in self.calls if item[1] == "print"])
+            if print_count > 1 and self.post_print_raises:
+                raise OSError("post-bootstrap transport failed")
+            if print_count > 1 and self.post_print_returncode:
+                return LaunchctlResult(
+                    self.post_print_returncode,
+                    b"",
+                    b"post-bootstrap print failed\n",
+                )
             result = LaunchctlResult(
                 0 if loaded else 113,
                 self.print_bytes() if loaded else b"",
                 b"" if loaded else b"service not found\n",
             )
-            if len([item for item in self.calls if item[1] == "print"]) == 1:
+            if print_count == 1:
                 if self.after_first_print is not None:
                     self.after_first_print()
             return result
@@ -98,6 +126,8 @@ class FakeLaunchctl:
         ):
             if self.bootstrap_returncode == 0:
                 self.bootstrapped = True
+                if self.after_bootstrap is not None:
+                    self.after_bootstrap()
             return LaunchctlResult(
                 self.bootstrap_returncode,
                 b"",
@@ -353,6 +383,7 @@ class SystemPaperInstallTests(unittest.TestCase):
                 "target_path": changed["target_path"],
                 "target_inode": changed["target_stat"]["inode"],
                 "install_action": changed["install_action"],
+                "installation_status": changed["installation_status"],
                 "installed_at": changed["installed_at"],
                 "verified_at": changed["verified_at"],
             },
@@ -408,6 +439,16 @@ class SystemPaperInstallTests(unittest.TestCase):
         self.assertEqual(receipt["security_boundary"]["credential_count"], 0)
         self.assertEqual(receipt["security_boundary"]["broker_request_count"], 0)
         self.assertEqual(receipt["security_boundary"]["order_submission_count"], 0)
+        self.assertEqual(
+            receipt["service_snapshot_or_null"]["environment"],
+            {
+                "PYTHONPATH": self.contract["execution_snapshot"][
+                    "repository_root"
+                ]
+                + "/src",
+                "XPC_SERVICE_NAME": LABEL,
+            },
+        )
 
     def test_bootstrap_failure_rolls_back_only_new_exact_inode(self):
         preflight_path = self.verified_preflight()
@@ -438,13 +479,197 @@ class SystemPaperInstallTests(unittest.TestCase):
         self.assertEqual(result["install_action"], "ALREADY_INSTALLED_AND_LOADED")
         self.assertEqual([call[1] for call in runner.calls], ["print", "print"])
 
+    def test_preloaded_service_rejects_insecure_launchagents_parent(self):
+        preflight_path = self.verified_preflight()
+        self.target.parent.mkdir(mode=0o700, parents=True)
+        self.target.write_bytes(self.preflight.plist_path.read_bytes())
+        self.target.chmod(0o600)
+        self.target.parent.chmod(0o777)
+
+        with self.assertRaisesRegex(SystemPaperInstallError, "TARGET_PARENT_INVALID"):
+            install_system_paper_launchd(
+                **self.values(preflight_path, self.runner(preloaded=True))
+            )
+
+    def test_loader_rejects_insecure_launchagents_parent(self):
+        preflight_path = self.verified_preflight()
+        result = install_system_paper_launchd(
+            **self.values(preflight_path, self.runner())
+        )
+        receipt_path = Path(result["receipt_path"])
+        self.target.parent.chmod(0o777)
+
+        with self.assertRaisesRegex(SystemPaperInstallError, "RECEIPT_INVALID"):
+            load_system_paper_install_receipt(
+                receipt_path=receipt_path,
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
+    def test_loader_rejects_insecure_receipt_parent(self):
+        preflight_path = self.verified_preflight()
+        result = install_system_paper_launchd(
+            **self.values(preflight_path, self.runner())
+        )
+        receipt_path = Path(result["receipt_path"])
+        receipt_path.parent.chmod(0o777)
+
+        with self.assertRaisesRegex(SystemPaperInstallError, "READ_INVALID"):
+            load_system_paper_install_receipt(
+                receipt_path=receipt_path,
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
     def test_post_bootstrap_print_failure_preserves_loaded_configuration(self):
         preflight_path = self.verified_preflight()
-        runner = self.runner(verified_bindings=False)
+        runner = self.runner(post_print_returncode=5)
         with self.assertRaisesRegex(SystemPaperInstallError, "PRINT_VERIFY_FAILED"):
             install_system_paper_launchd(**self.values(preflight_path, runner))
         self.assertTrue(self.target.is_file())
         self.assertTrue(runner.bootstrapped)
+        receipt_files = list(
+            (self.preflight.runtime_root / "install-receipts").glob("*.json")
+        )
+        self.assertEqual(len(receipt_files), 1)
+        receipt = json.loads(receipt_files[0].read_text())
+        self.assertEqual(
+            receipt["installation_status"], "LOADED_VERIFICATION_FAILED"
+        )
+        self.assertEqual(receipt["preflight_print"]["returncode"], 113)
+        self.assertEqual(receipt["bootstrap_or_null"]["returncode"], 0)
+        self.assertEqual(receipt["verified_print"]["returncode"], 5)
+        self.assertEqual(receipt["security_boundary"]["launchctl_command_count"], 3)
+
+        with self.assertRaisesRegex(SystemPaperInstallError, "NOT_AUTHORITY"):
+            load_system_paper_install_receipt(
+                receipt_path=receipt_files[0],
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
+    def test_post_bootstrap_semantic_mismatch_publishes_forensic_receipt(self):
+        preflight_path = self.verified_preflight()
+        runner = self.runner(verified_bindings=False)
+        with self.assertRaisesRegex(SystemPaperInstallError, "PRINT_VERIFY_FAILED"):
+            install_system_paper_launchd(**self.values(preflight_path, runner))
+        receipt_files = list(
+            (self.preflight.runtime_root / "install-receipts").glob("*.json")
+        )
+        self.assertEqual(len(receipt_files), 1)
+        receipt = json.loads(receipt_files[0].read_text())
+        self.assertEqual(
+            receipt["installation_status"], "LOADED_VERIFICATION_FAILED"
+        )
+        self.assertEqual(receipt["verified_print"]["returncode"], 0)
+        self.assertIsNone(receipt["service_snapshot_or_null"])
+
+    def test_forensic_semantic_failure_cannot_be_rehashed_into_authority(self):
+        preflight_path = self.verified_preflight()
+        runner = self.runner(verified_bindings=False)
+        with self.assertRaisesRegex(SystemPaperInstallError, "PRINT_VERIFY_FAILED"):
+            install_system_paper_launchd(**self.values(preflight_path, runner))
+        receipt_path = next(
+            (self.preflight.runtime_root / "install-receipts").glob("*.json")
+        )
+        changed = json.loads(receipt_path.read_text())
+        snapshot = self.contract["execution_snapshot"]["repository_root"]
+        changed["service_snapshot_or_null"] = {
+            "label": LABEL,
+            "service": runner.service,
+            "path": str(self.target),
+            "program": self.contract["python_executable"],
+            "arguments": list(self.contract["program_arguments"]),
+            "working_directory": snapshot,
+            "environment": {
+                "PYTHONPATH": snapshot + "/src",
+                "XPC_SERVICE_NAME": LABEL,
+            },
+            "runs": 0,
+            "state": "not running",
+            "last_exit_status": None,
+        }
+        changed["installation_status"] = "INSTALLED_AND_LOADED"
+        changed["receipt_id"] = stable_id(
+            "system_paper_install_receipt",
+            {
+                "contract_hash": changed["source_contract"]["contract_hash"],
+                "preflight_receipt_hash": changed["preflight_receipt"][
+                    "receipt_hash"
+                ],
+                "target_path": changed["target_path"],
+                "target_inode": changed["target_stat"]["inode"],
+                "install_action": changed["install_action"],
+                "installed_at": changed["installed_at"],
+                "verified_at": changed["verified_at"],
+                "installation_status": changed["installation_status"],
+            },
+        )
+        changed["receipt_hash"] = artifact_self_hash(changed, "receipt_hash")
+        changed_path = receipt_path.with_name(f"{changed['receipt_id']}.json")
+        receipt_path.rename(changed_path)
+        changed_path.write_bytes(canonical_json(changed).encode("utf-8"))
+
+        with self.assertRaisesRegex(SystemPaperInstallError, "RECEIPT_INVALID"):
+            load_system_paper_install_receipt(
+                receipt_path=changed_path,
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
+    def test_target_replacement_after_bootstrap_never_publishes_success(self):
+        preflight_path = self.verified_preflight()
+
+        def replace_target():
+            data = self.target.read_bytes()
+            self.target.unlink()
+            self.target.write_bytes(data)
+            self.target.chmod(0o600)
+
+        runner = self.runner(after_bootstrap=replace_target)
+        with self.assertRaisesRegex(SystemPaperInstallError, "TARGET_IDENTITY_CHANGED"):
+            install_system_paper_launchd(**self.values(preflight_path, runner))
+        receipt_files = list(
+            (self.preflight.runtime_root / "install-receipts").glob("*.json")
+        )
+        self.assertTrue(
+            all(
+                json.loads(path.read_text())["installation_status"]
+                != "INSTALLED_AND_LOADED"
+                for path in receipt_files
+            )
+        )
+
+    def test_post_bootstrap_transport_failure_publishes_forensic_receipt(self):
+        preflight_path = self.verified_preflight()
+        runner = self.runner(post_print_raises=True)
+        with self.assertRaisesRegex(SystemPaperInstallError, "PRINT_VERIFY_FAILED"):
+            install_system_paper_launchd(**self.values(preflight_path, runner))
+        receipt_files = list(
+            (self.preflight.runtime_root / "install-receipts").glob("*.json")
+        )
+        self.assertEqual(len(receipt_files), 1)
+        receipt = json.loads(receipt_files[0].read_text())
+        self.assertEqual(
+            receipt["installation_status"], "LOADED_VERIFICATION_FAILED"
+        )
+        self.assertEqual(
+            receipt["verified_print"]["transport_status"], "FAILED"
+        )
+        self.assertEqual(receipt["verified_print"]["returncode"], 255)
+        self.assertEqual(receipt["security_boundary"]["launchctl_command_count"], 3)
 
     def test_source_or_preflight_mutation_after_first_print_blocks_before_write(self):
         preflight_path = self.verified_preflight()
@@ -457,6 +682,29 @@ class SystemPaperInstallTests(unittest.TestCase):
         with self.assertRaises(Exception):
             install_system_paper_launchd(**self.values(preflight_path, runner))
         self.assertEqual(len(runner.calls), 1)
+        self.assertFalse(self.target.exists())
+
+    def test_parent_permission_race_is_rechecked_before_target_write(self):
+        preflight_path = self.verified_preflight()
+        import crypto_quant.system_paper_install as install_module
+
+        original = install_module._ensure_target_parent
+
+        def make_parent_insecure(home, uid):
+            parent = original(home, uid)
+            parent.chmod(0o777)
+            return parent
+
+        with patch(
+            "crypto_quant.system_paper_install._ensure_target_parent",
+            side_effect=make_parent_insecure,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperInstallError, "TARGET_PARENT_INVALID"
+            ):
+                install_system_paper_launchd(
+                    **self.values(preflight_path, self.runner())
+                )
         self.assertFalse(self.target.exists())
 
     def test_loader_rejects_coordinated_rehash_and_duplicate_inventory(self):
@@ -486,6 +734,92 @@ class SystemPaperInstallTests(unittest.TestCase):
         duplicate.write_bytes(original)
         duplicate.chmod(0o600)
         with self.assertRaisesRegex(SystemPaperInstallError, "INVENTORY"):
+            load_system_paper_install_receipt(
+                receipt_path=receipt_path,
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
+    def test_loader_rejects_target_rehash_away_from_frozen_source(self):
+        preflight_path = self.verified_preflight()
+        result = install_system_paper_launchd(
+            **self.values(preflight_path, self.runner())
+        )
+        receipt_path = Path(result["receipt_path"])
+        changed = json.loads(receipt_path.read_text())
+        replacement = b"not-the-frozen-plist"
+        self.target.write_bytes(replacement)
+        changed["target_stat"]["size_bytes"] = len(replacement)
+        changed["target_stat"]["sha256"] = hashlib.sha256(replacement).hexdigest()
+        changed["receipt_hash"] = artifact_self_hash(changed, "receipt_hash")
+        receipt_path.write_bytes(canonical_json(changed).encode("utf-8"))
+
+        with self.assertRaisesRegex(SystemPaperInstallError, "RECEIPT_INVALID"):
+            load_system_paper_install_receipt(
+                receipt_path=receipt_path,
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
+    def test_loader_rejects_valid_looking_duplicate_receipt_filename(self):
+        preflight_path = self.verified_preflight()
+        result = install_system_paper_launchd(
+            **self.values(preflight_path, self.runner())
+        )
+        receipt_path = Path(result["receipt_path"])
+        duplicate = receipt_path.with_name(
+            "system_paper_install_receipt_" + "f" * 64 + ".json"
+        )
+        duplicate.write_bytes(receipt_path.read_bytes())
+        duplicate.chmod(0o600)
+
+        with self.assertRaisesRegex(SystemPaperInstallError, "INVENTORY"):
+            load_system_paper_install_receipt(
+                receipt_path=receipt_path,
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
+    def test_loader_rejects_non_object_inventory_as_closed_failure(self):
+        preflight_path = self.verified_preflight()
+        result = install_system_paper_launchd(
+            **self.values(preflight_path, self.runner())
+        )
+        receipt_path = Path(result["receipt_path"])
+        invalid = receipt_path.parent / "invalid.json"
+        invalid.write_bytes(b"[]")
+        invalid.chmod(0o600)
+
+        with self.assertRaisesRegex(SystemPaperInstallError, "INVENTORY"):
+            load_system_paper_install_receipt(
+                receipt_path=receipt_path,
+                contract_path=self.preflight.contract_path,
+                plist_path=self.preflight.plist_path,
+                preflight_receipt_path=preflight_path,
+                _machine_probe=self.preflight.machine,
+                _filesystem_probe=self.preflight.filesystem,
+            )
+
+    def test_loader_rejects_rehashed_target_device_change(self):
+        preflight_path = self.verified_preflight()
+        result = install_system_paper_launchd(
+            **self.values(preflight_path, self.runner())
+        )
+        receipt_path = Path(result["receipt_path"])
+        changed = json.loads(receipt_path.read_text())
+        changed["target_stat"]["device"] += 1
+        changed["receipt_hash"] = artifact_self_hash(changed, "receipt_hash")
+        receipt_path.write_text(canonical_json(changed), encoding="utf-8")
+        with self.assertRaisesRegex(SystemPaperInstallError, "RECEIPT_INVALID"):
             load_system_paper_install_receipt(
                 receipt_path=receipt_path,
                 contract_path=self.preflight.contract_path,
