@@ -669,6 +669,76 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden_name, encoded)
 
+    def test_missing_private_tmp_uses_os_temp_root_for_pre_tail_replay(self):
+        from crypto_quant import system_paper_evaluation as module
+
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        state_sources = tuple(sorted(state_path.parent.glob(state_path.name + "*")))
+        before = {path.name: path.read_bytes() for path in state_sources}
+        controlled_temp_root = (
+            self.start.observer.install.preflight.base / "controlled-os-temp-pre-tail"
+        )
+        controlled_temp_root.mkdir(mode=0o700)
+        missing_private_tmp = (
+            self.start.observer.install.preflight.base
+            / "definitely-missing-private-tmp-pre-tail"
+        )
+        self.assertFalse(missing_private_tmp.exists())
+
+        with patch.object(module, "_PRIVATE_TMP", missing_private_tmp), patch.object(
+            module.tempfile,
+            "gettempdir",
+            return_value=str(controlled_temp_root),
+        ):
+            result = observe_system_paper_evaluation_readiness(**self.values())
+
+        self.assertEqual(
+            result["status"], "SYSTEM_PAPER_EVALUATION_PENDING_BEFORE_TAIL"
+        )
+        self.assertEqual(tuple(controlled_temp_root.iterdir()), ())
+        self.assertEqual(
+            {path.name: path.read_bytes() for path in state_sources}, before
+        )
+        self.assertFalse(self.output_root.exists())
+
+    def test_missing_private_tmp_uses_os_temp_root_for_post_tail_replay(self):
+        from crypto_quant import system_paper_evaluation as module
+
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        state_sources = tuple(sorted(state_path.parent.glob(state_path.name + "*")))
+        before = {path.name: path.read_bytes() for path in state_sources}
+        controlled_temp_root = (
+            self.start.observer.install.preflight.base / "controlled-os-temp-post-tail"
+        )
+        controlled_temp_root.mkdir(mode=0o700)
+        missing_private_tmp = (
+            self.start.observer.install.preflight.base
+            / "definitely-missing-private-tmp-post-tail"
+        )
+        self.assertFalse(missing_private_tmp.exists())
+
+        with patch.object(module, "_PRIVATE_TMP", missing_private_tmp), patch.object(
+            module.tempfile,
+            "gettempdir",
+            return_value=str(controlled_temp_root),
+        ):
+            result = observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+        self.assertEqual(
+            result["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.assertEqual(
+            result["reason_code"],
+            "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE",
+        )
+        self.assertEqual(tuple(controlled_temp_root.iterdir()), ())
+        self.assertEqual(
+            {path.name: path.read_bytes() for path in state_sources}, before
+        )
+        self.assertFalse(self.output_root.exists())
+
     def test_absent_state_sidecar_appearing_during_replay_fails_closed(self):
         from crypto_quant import system_paper_evaluation as module
 

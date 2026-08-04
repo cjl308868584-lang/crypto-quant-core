@@ -20,6 +20,11 @@
   retained SQLite 上严格重放 prepared state，再分类单次 retained inventory。稳定
   prepared 损坏优先选择 raw-bound INCONCLUSIVE，而 retained event schedule 与 start
   receipt 的首槽/540槽/90天不一致仍硬失败，不会被空或缺失 inventory 降级；
+- PR CI 发现 Ubuntu 不存在 `/private/tmp` 时的 SQLite replay portability 缺口；
+  event/full copy 现共享最小 temp-parent selector。target production macOS 保留现存
+  `/private/tmp`，非 macOS verification environment 仅在该路径缺失时使用 OS-selected
+  temp parent。这仅是 owner-private 临时副本的 portability correction，没有迁移
+  production path，也没有削弱 retained source reverify 或 fail-closed 边界；
 - package `0.59.0` 与 evaluator build manifest `1.53.0`。
 
 ## 真实状态与权限边界

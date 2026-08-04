@@ -177,8 +177,14 @@ def _replay_retained_prepared_state(
 ```
 
 It uses `_copy_full_state_rows()` to materialize only the already retained
-main/WAL/SHM descriptors under `/private/tmp`. It must not open any artifact or
-slot-root path. It validates every row that event metadata says exists:
+main/WAL/SHM descriptors under an owner-private temporary directory. Target
+production macOS retains its existing `/private/tmp` parent; a non-macOS
+verification environment falls back to the OS-selected temporary parent only
+when `/private/tmp` is absent. Both event-metadata and full-state copies use the
+same selection rule. This is a portability correction for ephemeral copies,
+not a production-path migration or a new authority source. The helper must not
+open any artifact or slot-root path. It validates every row that event metadata
+says exists:
 
 - exact input/result row sets and source-event/slot bindings;
 - canonical prepared input bytes and their SHA-256;

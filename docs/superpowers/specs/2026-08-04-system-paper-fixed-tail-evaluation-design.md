@@ -71,9 +71,12 @@ evaluator 必须同时保留所有固定来源的 no-follow descriptors，并在
 复核 pathname identity、owner、mode、link count、size、mtime 与 exact bytes。
 
 SQLite main/WAL/SHM 作为一个短暂快照组同时捕获，复制到 owner-only
-`/private/tmp` 临时目录，只对副本使用 scheduler replay。禁止直接对 production SQLite
-运行会改变 journal mode 或 schema 的打开方式。副本重放后必须再复核所有源
-descriptors 未变。
+临时目录：target production macOS 上保留现存的 `/private/tmp` 作为父目录；
+非 macOS verification environment 只在该路径缺失时回退到 OS 选定的
+temporary parent。这只是临时 SQLite 副本的 portability correction，不是
+production path migration，OS temp path 也不提供任何权威。只对副本使用
+scheduler replay；禁止直接对 production SQLite 运行会改变 journal mode 或
+schema 的打开方式。副本重放后必须再复核所有源 descriptors 未变。
 
 槽位 artifact 依 scheduled time 和冻结 plan hash 自动派生 slot id 与 exact path。
 目录 inventory 必须恰好是540个期望文件；symlink、hardlink、unknown file、替换、缺失或
@@ -218,5 +221,6 @@ event-chain-bound `COHORT_INCOMPLETE`。tail 前仍禁止 prepared replay 与 in
 - tail blindness 在读文件边界强制，不只是输出字段删除；
 - 完整性失败与经济门失败分离为 INCONCLUSIVE 与 DID_NOT_PASS；
 - 三个30天块和 Student-t 常数已预注册；
-- 所有 production 来源只读，临时写入仅限 `/private/tmp` 副本和最终 owner-only artifact；
+- 所有 production 来源只读，临时写入仅限现存 `/private/tmp` 或在其缺失时的
+  OS-selected temp parent 下副本，以及最终 owner-only artifact；
 - `production_activation.enabled=false` 保持不变。

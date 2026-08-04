@@ -34,6 +34,11 @@ v0.58 只完成 System Paper deployment trust chain 的代码与冻结合同。�
    retained inventory；稳定 prepared 损坏始终为 raw-bound INCONCLUSIVE。同时由 retained
    event schedule 锚定首槽和固定540槽/90天边界；start receipt 偏移仍是硬
    authority failure，不得因 inventory 缺失而降级。
+8. CI 又暴露 Ubuntu verification environment 不存在 `/private/tmp` 的 portability 缺口。
+   SQLite event/full replay 现使用同一临时父目录选择：target production macOS 保留
+   现存 `/private/tmp`；仅在该路径缺失的非 macOS 验证环境回退到 OS-selected
+   temp parent。该路径只容纳 owner-private 副本，不更改 retained descriptor/source
+   reverify 和 fail-closed 权威，也不是 production path migration。
 
 ## 后果
 

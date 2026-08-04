@@ -985,6 +985,16 @@ def _install_preview(retained: _RetainedAuthorityFile) -> Mapping[str, Any]:
     return value
 
 
+def _sqlite_copy_parent() -> Path:
+    try:
+        entry = os.stat(_PRIVATE_TMP, follow_symlinks=False)
+    except FileNotFoundError:
+        return Path(tempfile.gettempdir())
+    if not stat.S_ISDIR(entry.st_mode):
+        raise NotADirectoryError(str(_PRIVATE_TMP))
+    return _PRIVATE_TMP
+
+
 def _copy_event_metadata(
     state_files: Mapping[str, Optional[_RetainedAuthorityFile]],
     *,
@@ -1505,7 +1515,8 @@ def _copy_full_state_rows(
     policy = SystemPaperSchedulePolicy.create(plan)
     try:
         with tempfile.TemporaryDirectory(
-            prefix="system-paper-evaluation-full-", dir=str(_PRIVATE_TMP)
+            prefix="system-paper-evaluation-full-",
+            dir=str(_sqlite_copy_parent()),
         ) as directory:
             root = Path(directory)
             root.chmod(0o700)
@@ -2417,7 +2428,7 @@ def observe_system_paper_evaluation_readiness(
             replay = _copy_event_metadata(
                 state_files,
                 plan=plan,
-                temporary_parent=_PRIVATE_TMP,
+                temporary_parent=_sqlite_copy_parent(),
             )
         except SystemPaperEvaluationError as error:
             retained.verify()
