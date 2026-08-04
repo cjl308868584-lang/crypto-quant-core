@@ -9,6 +9,7 @@ import stat
 import unittest
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from decimal import (
     Decimal,
@@ -110,7 +111,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
 
     def mutate_state_metadata(self, table, column, value):
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             triggers = connection.execute(
                 "SELECT name, sql FROM sqlite_master "
                 "WHERE type='trigger' ORDER BY name"
@@ -126,7 +127,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
 
     def corrupt_schedule_event_hash(self, value):
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             triggers = connection.execute(
                 "SELECT name, sql FROM sqlite_master "
                 "WHERE type='trigger' ORDER BY name"
@@ -145,7 +146,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
 
     def remove_result_constraints_and_duplicate_row(self):
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             connection.execute("PRAGMA foreign_keys = OFF")
             triggers = connection.execute(
                 "SELECT name, sql FROM sqlite_master "
@@ -216,7 +217,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             "SPOT_KLINE_4H_WARMUP",
         ]
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA foreign_keys = ON")
             last = connection.execute(
@@ -451,7 +452,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
 
     def mutate_prepared_bytes(self, table, column, slot_index, body):
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             triggers = connection.execute(
                 "SELECT name, sql FROM sqlite_master "
                 "WHERE type='trigger' ORDER BY name"
@@ -743,7 +744,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         from crypto_quant import system_paper_evaluation as module
 
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         wal_path = Path(str(state_path) + "-wal")
         shm_path = Path(str(state_path) + "-shm")
@@ -770,7 +771,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         from crypto_quant import system_paper_evaluation as module
 
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         wal_path = Path(str(state_path) + "-wal")
         shm_path = Path(str(state_path) + "-shm")
@@ -1372,7 +1373,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         first_path = Path(start["first_slot"]["result_path"])
         first = json.loads(first_path.read_bytes())
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             event_chain_end_hash = connection.execute(
                 "SELECT event_hash FROM schedule_events "
                 "ORDER BY sequence DESC LIMIT 1"
@@ -1453,7 +1454,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             )
 
         before_database_hashes = sqlite_container_hashes()
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             current_user_version = connection.execute(
                 "PRAGMA user_version"
             ).fetchone()[0]
@@ -2881,7 +2882,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         self.extend_to_complete_cohort()
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
         slot_id = self.cohort_slot(270).slot_id
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             body = connection.execute(
                 "SELECT input_bytes FROM prepared_inputs WHERE slot_id=?",
                 (slot_id,),
@@ -2919,7 +2920,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
     def test_post_tail_event_hash_corruption_publishes_raw_inconclusive(self):
         self.extend_to_complete_cohort()
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
-        with sqlite3.connect(str(state_path)) as connection:
+        with closing(sqlite3.connect(str(state_path))) as connection, connection:
             triggers = connection.execute(
                 "SELECT name, sql FROM sqlite_master "
                 "WHERE type='trigger' ORDER BY name"
