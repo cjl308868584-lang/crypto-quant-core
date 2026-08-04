@@ -85,6 +85,39 @@ class SystemPaperStartReceiptTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
         self.assertEqual(receipt["security_boundary"]["order_submission_count"], 0)
 
+    def test_metadata_loader_validates_receipt_without_replaying_slot_economics(self):
+        self.observer.create_success()
+        result = publish_system_paper_start_receipt(
+            **self.values(
+                observer_helpers.ObserverLaunchctl(self.observer.install, runs=1),
+                "2026-08-04T08:10:00.000Z",
+            )
+        )
+        loader = getattr(
+            start_receipt_module,
+            "load_system_paper_start_receipt_metadata",
+            None,
+        )
+        self.assertIsNotNone(loader)
+        with patch.object(
+            start_receipt_module,
+            "replay_system_paper_first_slot_evidence",
+            side_effect=AssertionError("metadata loader replayed slot economics"),
+        ):
+            receipt = loader(
+                receipt_path=Path(result["receipt_path"]),
+                contract_path=self.observer.install.preflight.contract_path,
+                plist_path=self.observer.install.preflight.plist_path,
+                preflight_receipt_path=self.observer.preflight_path,
+                install_receipt_path=self.observer.install_receipt_path,
+                _machine_probe=self.observer.install.preflight.machine,
+                _filesystem_probe=self.observer.install.preflight.filesystem,
+            )
+        self.assertEqual(receipt["receipt_id"], result["receipt_id"])
+        self.assertEqual(
+            receipt["cohort_tail_end"], "2026-11-02T08:00:00.000Z"
+        )
+
     def test_exact_bytes_are_idempotent_and_same_identity_conflict_is_preserved(self):
         self.observer.create_success()
         runner = observer_helpers.ObserverLaunchctl(self.observer.install, runs=1)
@@ -290,6 +323,39 @@ class SystemPaperStartReceiptTests(unittest.TestCase):
             start_receipt_module._RetainedSourceEvidence,
             "open",
             side_effect=retain_then_replace,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperStartReceiptError, "SOURCE_CHANGED"
+            ):
+                self.load(path)
+
+    def test_loader_reverifies_source_descriptors_after_slot_replay(self):
+        self.observer.create_success()
+        result = publish_system_paper_start_receipt(
+            **self.values(
+                observer_helpers.ObserverLaunchctl(self.observer.install, runs=1),
+                "2026-08-04T08:10:00.000Z",
+            )
+        )
+        path = Path(result["receipt_path"])
+        contract_path = self.observer.install.preflight.contract_path
+        contract_bytes = contract_path.read_bytes()
+        original_replay = (
+            start_receipt_module.replay_system_paper_first_slot_evidence
+        )
+
+        def replay_then_replace(*args, **kwargs):
+            replay = original_replay(*args, **kwargs)
+            retained_name = contract_path.with_suffix(".replay-retained")
+            contract_path.rename(retained_name)
+            contract_path.write_bytes(contract_bytes)
+            contract_path.chmod(0o600)
+            return replay
+
+        with patch.object(
+            start_receipt_module,
+            "replay_system_paper_first_slot_evidence",
+            side_effect=replay_then_replace,
         ):
             with self.assertRaisesRegex(
                 SystemPaperStartReceiptError, "SOURCE_CHANGED"
