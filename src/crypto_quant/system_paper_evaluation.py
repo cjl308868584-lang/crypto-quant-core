@@ -290,16 +290,14 @@ class _RetainedAuthorityFile:
 
 
 class _RetainedOutputRoot:
-    """Owner-only root retained for relative result and lock operations."""
-
-    _LOCK_NAME = ".system-paper-evaluation.lock"
+    """Owner-only root retained for relative result operations."""
 
     def __init__(self, path: Path, descriptor: int, entry: os.stat_result):
         self.path = path
         self.descriptor = descriptor
         self.entry = entry
         self.files = []
-        self.lock_descriptor = None
+        self.locked = False
 
     @classmethod
     def open(cls, path: Path) -> "_RetainedOutputRoot":
@@ -376,42 +374,19 @@ class _RetainedOutputRoot:
             ) from error
 
     def acquire_lock(self) -> None:
-        descriptor = None
-        try:
-            flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-            flags |= getattr(os, "O_CLOEXEC", 0)
-            try:
-                descriptor = os.open(
-                    self._LOCK_NAME,
-                    flags | os.O_CREAT | os.O_EXCL,
-                    0o600,
-                    dir_fd=self.descriptor,
-                )
-            except FileExistsError:
-                descriptor = os.open(
-                    self._LOCK_NAME,
-                    flags,
-                    dir_fd=self.descriptor,
-                )
-            entry = os.fstat(descriptor)
-            current = os.stat(
-                self._LOCK_NAME,
-                dir_fd=self.descriptor,
-                follow_symlinks=False,
+        if self.locked:
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_OUTPUT_INVALID"
             )
-            if (
-                not stat.S_ISREG(entry.st_mode)
-                or entry.st_uid != os.getuid()
-                or entry.st_nlink != 1
-                or stat.S_IMODE(entry.st_mode) != 0o600
-                or _stat_identity(entry) != _stat_identity(current)
-            ):
-                raise OSError("unsafe finalization lock")
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
-            self.lock_descriptor = descriptor
-        except OSError as error:
-            if descriptor is not None:
-                os.close(descriptor)
+        try:
+            fcntl.flock(self.descriptor, fcntl.LOCK_EX)
+            self.verify()
+            self.locked = True
+        except Exception as error:
+            try:
+                fcntl.flock(self.descriptor, fcntl.LOCK_UN)
+            except OSError:
+                pass
             raise SystemPaperEvaluationError(
                 "SYSTEM_PAPER_EVALUATION_OUTPUT_INVALID"
             ) from error
@@ -445,13 +420,12 @@ class _RetainedOutputRoot:
         for _name, source in self.files:
             source.close()
         self.files = []
-        if self.lock_descriptor is not None:
-            try:
-                fcntl.flock(self.lock_descriptor, fcntl.LOCK_UN)
-            finally:
-                os.close(self.lock_descriptor)
-                self.lock_descriptor = None
-        os.close(self.descriptor)
+        try:
+            if self.locked:
+                fcntl.flock(self.descriptor, fcntl.LOCK_UN)
+                self.locked = False
+        finally:
+            os.close(self.descriptor)
 
 
 class _RetainedAuthorityAbsence:
@@ -2503,9 +2477,7 @@ def _strict_existing_finals(
     try:
         with os.scandir(root.descriptor) as entries:
             names = tuple(sorted(candidate.name for candidate in entries))
-        result_names = tuple(
-            name for name in names if name != root._LOCK_NAME
-        )
+        result_names = names
         prefix = "system_paper_evaluation_"
         if (
             len(result_names) > _MAX_INVENTORY_ENTRIES

@@ -19,7 +19,7 @@ from decimal import (
     localcontext,
 )
 from pathlib import Path
-from threading import Barrier, Lock
+from threading import Barrier, Event, Lock
 from unittest.mock import patch
 
 from crypto_quant.canonical import business_hash, canonical_json, stable_id
@@ -1705,6 +1705,132 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             finals[0].read_bytes(),
             canonical_json(winners[0]).encode("utf-8"),
         )
+
+    def test_directory_inode_lock_survives_former_lock_path_replacement(self):
+        """Replacing the former lock path cannot split the lock domain."""
+        from crypto_quant import system_paper_evaluation as module
+
+        self.output_root.mkdir(mode=0o700)
+        first = module._RetainedOutputRoot.open(self.output_root)
+        second = module._RetainedOutputRoot.open(self.output_root)
+        first_closed = False
+        second_attempting = Event()
+        second_acquired = Event()
+
+        def acquire_second():
+            second_attempting.set()
+            second.acquire_lock()
+            second_acquired.set()
+
+        try:
+            first.acquire_lock()
+            former_lock = (
+                self.output_root / ".system-paper-evaluation.lock"
+            )
+            former_lock.unlink(missing_ok=True)
+            former_lock.write_bytes(b"replacement")
+            former_lock.chmod(0o600)
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(acquire_second)
+                self.assertTrue(second_attempting.wait(2))
+                self.assertFalse(second_acquired.wait(0.25))
+                first.close()
+                first_closed = True
+                future.result(timeout=2)
+            self.assertTrue(second_acquired.is_set())
+        finally:
+            if not first_closed:
+                first.close()
+            second.close()
+
+    def test_former_lock_path_race_never_publishes_two_finals(self):
+        """Replacing the former lock path cannot publish two cohort finals."""
+        from crypto_quant import system_paper_evaluation as module
+
+        inconclusive = _recompute_system_paper_evaluation(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.extend_to_complete_cohort()
+        complete = _recompute_system_paper_evaluation(
+            **self.values(_clock=lambda: "2026-11-03T08:05:00.000Z")
+        )
+        self.assertNotEqual(inconclusive["result_id"], complete["result_id"])
+
+        replacement_created = Event()
+        initial_scans_complete = Barrier(2)
+        call_lock = Lock()
+        candidate_calls = 0
+        scan_calls = 0
+        original_scan = module._strict_existing_finals
+
+        def concurrent_candidate(**_kwargs):
+            nonlocal candidate_calls
+            with call_lock:
+                call_number = candidate_calls
+                candidate_calls += 1
+            if call_number == 0:
+                return inconclusive
+            if not replacement_created.wait(2):
+                raise AssertionError("former lock replacement did not occur")
+            return complete
+
+        def replace_lock_before_initial_scans(root):
+            nonlocal scan_calls
+            with call_lock:
+                call_number = scan_calls
+                scan_calls += 1
+            if call_number == 0:
+                former_lock = (
+                    self.output_root / ".system-paper-evaluation.lock"
+                )
+                former_lock.unlink(missing_ok=True)
+                former_lock.write_bytes(b"replacement")
+                former_lock.chmod(0o600)
+                replacement_created.set()
+            finals = original_scan(root)
+            if call_number < 2:
+                initial_scans_complete.wait(timeout=5)
+            return finals
+
+        def evaluate_once(_index):
+            try:
+                return evaluate_system_paper(
+                    **self.values(
+                        _clock=lambda: "2026-11-03T08:05:00.000Z"
+                    )
+                )
+            except SystemPaperEvaluationError as error:
+                return error.reason_code
+
+        with patch.object(
+            module,
+            "_recompute_system_paper_evaluation",
+            side_effect=concurrent_candidate,
+        ), patch.object(
+            module,
+            "_strict_existing_finals",
+            side_effect=replace_lock_before_initial_scans,
+        ):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = tuple(executor.map(evaluate_once, range(2)))
+
+        winners = tuple(item for item in results if isinstance(item, Mapping))
+        conflicts = tuple(item for item in results if isinstance(item, str))
+        self.assertLessEqual(len(winners), 1)
+        self.assertTrue(
+            all(
+                reason
+                in {
+                    "SYSTEM_PAPER_EVALUATION_TERMINAL_CONFLICT",
+                    "SYSTEM_PAPER_EVALUATION_RESULT_CONFLICT",
+                    "SYSTEM_PAPER_EVALUATION_OUTPUT_INVALID",
+                }
+                for reason in conflicts
+            )
+        )
+        finals = list(self.output_root.glob("system_paper_evaluation_*.json"))
+        self.assertLessEqual(len(finals), 1)
 
     def test_output_root_must_equal_contract_derived_sibling(self):
         """An arbitrary owner-only output root is not evaluator authority."""
