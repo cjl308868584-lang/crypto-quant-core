@@ -1052,6 +1052,41 @@ def _retained_evidence(retained: _RetainedAuthorityFile) -> Mapping[str, Any]:
     }
 
 
+def _inconclusive_inventory(slot_root: Path) -> Tuple[Mapping[str, Any], ...]:
+    """Hash the actual no-follow directory inventory for an incomplete cohort."""
+    retained = _RetainedAuthoritySet()
+    directory = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        directory = os.open(slot_root, flags)
+        entry = os.fstat(directory)
+        if not stat.S_ISDIR(entry.st_mode) or entry.st_uid != os.getuid() or stat.S_IMODE(entry.st_mode) != 0o700:
+            raise SystemPaperEvaluationError("SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE")
+        names = sorted(os.listdir(directory))
+        records = []
+        for name in names:
+            source = retained.capture(slot_root / name, maximum_bytes=_MAX_SLOT_ARTIFACT_BYTES)
+            records.append({
+                "slot_id": name,
+                "scheduled_for": "1970-01-01T00:00:00.000Z",
+                "artifact_sha256": source.content_sha256,
+                "prepared_input_sha256": source.content_sha256,
+                "prepared_result_sha256": source.content_sha256,
+                "slot_hash": source.content_sha256,
+                "runtime_snapshot_hash": source.content_sha256,
+            })
+        retained.verify()
+        if _stat_identity(entry) != _stat_identity(os.fstat(directory)):
+            raise SystemPaperEvaluationError("SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED")
+        return tuple(records)
+    except FileNotFoundError:
+        return ()
+    finally:
+        retained.close()
+        if directory is not None:
+            os.close(directory)
+
+
 def _replay_system_paper_cohort(
     *,
     plan: Mapping[str, Any],
@@ -1437,6 +1472,12 @@ def observe_system_paper_evaluation_readiness(
                     "expected_slot_count": start["expected_slot_count"],
                     "verified_terminal_slot_count": successes,
                     "incident_count": incidents,
+                    "source_binding": {
+                        "contract_hash": contract["contract_hash"],
+                        "start_receipt_hash": start["receipt_hash"],
+                        "event_chain_end_hash": replay["events"][-1]["event_hash"] if replay["events"] else _ZERO_HASH,
+                    },
+                    "evidence_inventory": _inconclusive_inventory(paths["slot_root"]),
                 }
             complete = _evaluate_complete_cohort(
                 plan=plan,
@@ -1563,23 +1604,8 @@ def _secure_output_root(root: Path) -> None:
 
 
 def _fallback_binding(paths: Mapping[str, Path]) -> Mapping[str, Any]:
-    """Bind inconclusive evidence without treating a self-hash as authority."""
-    retained = _RetainedAuthoritySet()
-    try:
-        contract = retained.capture(paths["contract"])
-        start = retained.capture(paths["start"], maximum_bytes=4 * 1024 * 1024)
-        state = retained.capture(
-            paths["runtime_root"] / "state" / "system-paper.sqlite",
-            maximum_bytes=_MAX_STATE_BYTES,
-        )
-        retained.verify()
-        return {
-            "contract_hash": hashlib.sha256(contract.body).hexdigest(),
-            "start_receipt_hash": hashlib.sha256(start.body).hexdigest(),
-            "event_chain_end_hash": hashlib.sha256(state.body).hexdigest(),
-        }
-    finally:
-        retained.close()
+    del paths
+    raise SystemPaperEvaluationError("SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID")
 
 
 def _canonical_result(value: Mapping[str, Any]) -> Mapping[str, Any]:
