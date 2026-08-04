@@ -1,0 +1,47 @@
+gui/501/local.crypto-quant.system-paper-v1 = {
+	active count = 0
+	path = /Users/test/Library/LaunchAgents/local.crypto-quant.system-paper-v1.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /usr/bin/python3
+	arguments = {
+		/usr/bin/python3
+		-m
+		crypto_quant.system_paper_runtime_cli
+		--state-path
+		/Users/test/Library/Application Support/CryptoQuant/system-paper-v1/state/system-paper.sqlite
+		--output-root
+		/Users/test/Library/Application Support/CryptoQuant/system-paper-v1/artifacts
+	}
+
+	working directory = /Users/test/Library/Application Support/CryptoQuant/system-paper-v1/deployment/system-paper-snapshots/tree
+
+	stdout path = /Users/test/Library/Application Support/CryptoQuant/system-paper-v1/log/stdout.log
+	stderr path = /Users/test/Library/Application Support/CryptoQuant/system-paper-v1/log/stderr.log
+	inherited environment = {
+		SSH_AUTH_SOCK => /private/tmp/sanitized/Listeners
+	}
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+	environment = {
+		PYTHONPATH => /Users/test/Library/Application Support/CryptoQuant/system-paper-v1/deployment/system-paper-snapshots/tree/src
+		XPC_SERVICE_NAME => local.crypto-quant.system-paper-v1
+	}
+
+	domain = gui/501 [100003]
+	minimum runtime = 60
+	exit timeout = 5
+	runs = 0
+	last exit code = (never exited)
+
+	event triggers = {
+		local.crypto-quant.system-paper-v1.sanitized => {
+			service = local.crypto-quant.system-paper-v1
+			stream = com.apple.launchd.calendarinterval
+		}
+	}
+	spawn type = background (5)
+	jetsam memory limit (active) = (unlimited)
+}

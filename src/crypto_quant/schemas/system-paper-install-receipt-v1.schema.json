@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/system-paper-install-receipt-v1.schema.json",
+  "title": "System Paper Install Receipt V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_version", "receipt_id", "receipt_hash", "installed_at",
+    "verified_at", "source_contract", "preflight_receipt", "domain", "service",
+    "target_path", "target_stat", "install_action", "preflight_print",
+    "bootstrap_or_null", "verified_print", "service_snapshot_or_null",
+    "installation_status",
+    "run_at_load_status", "security_boundary", "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./system-paper-install-receipt-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "receipt_id": {"type": "string", "pattern": "^system_paper_install_receipt_[0-9a-f]{64}$"},
+    "receipt_hash": {"$ref": "#/$defs/hash"},
+    "installed_at": {"$ref": "#/$defs/time"},
+    "verified_at": {"$ref": "#/$defs/time"},
+    "source_contract": {"$ref": "#/$defs/source"},
+    "preflight_receipt": {"$ref": "#/$defs/preflight"},
+    "domain": {"type": "string", "pattern": "^gui/[0-9]+$"},
+    "service": {"type": "string", "pattern": "^gui/[0-9]+/local\\.crypto-quant\\.system-paper-v1$"},
+    "target_path": {"$ref": "#/$defs/path"},
+    "target_stat": {"$ref": "#/$defs/stat"},
+    "install_action": {"enum": ["INSTALLED_AND_BOOTSTRAPPED", "EXISTING_FILE_BOOTSTRAPPED", "ALREADY_INSTALLED_AND_LOADED"]},
+    "preflight_print": {"$ref": "#/$defs/command"},
+    "bootstrap_or_null": {"oneOf": [{"$ref": "#/$defs/command"}, {"type": "null"}]},
+    "verified_print": {"$ref": "#/$defs/command"},
+    "service_snapshot_or_null": {"oneOf": [{"$ref": "#/$defs/service_snapshot"}, {"type": "null"}]},
+    "installation_status": {"enum": ["INSTALLED_AND_LOADED", "LOADED_VERIFICATION_FAILED"]},
+    "run_at_load_status": {"const": "FIRST_NATURAL_SLOT_NOT_OBSERVED"},
+    "security_boundary": {"$ref": "#/$defs/security"},
+    "warnings": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "INSTALL_RECEIPT_DOES_NOT_PROVE_FIRST_NATURAL_SLOT"},
+        {"const": "INSTALLER_DOES_NOT_KICKSTART_OR_INVOKE_RUNTIME"},
+        {"const": "PUBLIC_MARKET_DATA_ONLY"},
+        {"const": "NO_LIVE_TRADING_AUTHORITY"}
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+    "path": {"type": "string", "pattern": "^/"},
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_id", "contract_hash", "contract_trust_hash", "launchd_plist_sha256", "release_commit", "snapshot_tree_hash"],
+      "properties": {
+        "contract_id": {"type": "string"}, "contract_hash": {"$ref": "#/$defs/hash"},
+        "contract_trust_hash": {"$ref": "#/$defs/hash"}, "launchd_plist_sha256": {"$ref": "#/$defs/hash"},
+        "release_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "snapshot_tree_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "preflight": {
+      "type": "object", "additionalProperties": false,
+      "required": ["receipt_id", "receipt_hash", "receipt_path", "verified_at", "expires_at"],
+      "properties": {
+        "receipt_id": {"type": "string"}, "receipt_hash": {"$ref": "#/$defs/hash"},
+        "receipt_path": {"$ref": "#/$defs/path"}, "verified_at": {"$ref": "#/$defs/time"},
+        "expires_at": {"$ref": "#/$defs/time"}
+      }
+    },
+    "stat": {
+      "type": "object", "additionalProperties": false,
+      "required": ["device", "inode", "owner_uid", "mode", "link_count", "size_bytes", "sha256"],
+      "properties": {
+        "device": {"type": "integer", "minimum": 0}, "inode": {"type": "integer", "minimum": 1},
+        "owner_uid": {"type": "integer", "minimum": 0}, "mode": {"const": 384},
+        "link_count": {"const": 1}, "size_bytes": {"type": "integer", "minimum": 1, "maximum": 2097152},
+        "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "command": {
+      "type": "object", "additionalProperties": false,
+      "required": ["argv", "transport_status", "returncode", "stdout_size_bytes", "stderr_size_bytes", "stdout_sha256", "stderr_sha256", "stdout_base64", "stderr_base64"],
+      "properties": {
+        "argv": {"type": "array", "minItems": 3, "maxItems": 4, "items": {"type": "string", "minLength": 1}},
+        "transport_status": {"enum": ["COMPLETED", "FAILED"]},
+        "returncode": {"type": "integer", "minimum": 0, "maximum": 255},
+        "stdout_size_bytes": {"type": "integer", "minimum": 0, "maximum": 65536},
+        "stderr_size_bytes": {"type": "integer", "minimum": 0, "maximum": 65536},
+        "stdout_sha256": {"$ref": "#/$defs/hash"}, "stderr_sha256": {"$ref": "#/$defs/hash"},
+        "stdout_base64": {"type": "string", "maxLength": 87384, "pattern": "^[A-Za-z0-9+/]*={0,2}$"},
+        "stderr_base64": {"type": "string", "maxLength": 87384, "pattern": "^[A-Za-z0-9+/]*={0,2}$"}
+      }
+    },
+    "service_snapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["label", "service", "path", "program", "arguments", "working_directory", "environment", "runs", "state", "last_exit_status"],
+      "properties": {
+        "label": {"const": "local.crypto-quant.system-paper-v1"},
+        "service": {"type": "string", "pattern": "^gui/[0-9]+/local\\.crypto-quant\\.system-paper-v1$"},
+        "path": {"$ref": "#/$defs/path"}, "program": {"$ref": "#/$defs/path"},
+        "arguments": {"type": "array", "minItems": 7, "maxItems": 7, "items": {"type": "string", "minLength": 1}},
+        "working_directory": {"$ref": "#/$defs/path"},
+        "environment": {
+          "type": "object", "additionalProperties": false, "required": ["PYTHONPATH", "XPC_SERVICE_NAME"],
+          "properties": {"PYTHONPATH": {"$ref": "#/$defs/path"}, "XPC_SERVICE_NAME": {"const": "local.crypto-quant.system-paper-v1"}}
+        },
+        "runs": {"const": 0}, "state": {"const": "not running"},
+        "last_exit_status": {"type": "null"}
+      }
+    },
+    "security": {
+      "type": "object", "additionalProperties": false,
+      "required": ["production_activation_enabled", "launchctl_command_count", "runtime_invocation_count", "network_request_count", "credential_count", "broker_request_count", "order_submission_count"],
+      "properties": {
+        "production_activation_enabled": {"const": false}, "launchctl_command_count": {"enum": [2, 3]},
+        "runtime_invocation_count": {"const": 0}, "network_request_count": {"const": 0},
+        "credential_count": {"const": 0}, "broker_request_count": {"const": 0}, "order_submission_count": {"const": 0}
+      }
+    }
+  }
+}

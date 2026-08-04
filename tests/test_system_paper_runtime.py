@@ -14,6 +14,9 @@ from crypto_quant.evidence import artifact_self_hash
 from crypto_quant.instruments import InstrumentMetadata, MarketType
 from crypto_quant.system_paper_broker import FillScenario
 from crypto_quant.system_paper_plan import build_system_paper_plan
+from crypto_quant.system_paper_public_input import (
+    build_system_paper_market_bundle,
+)
 from crypto_quant.system_paper_runtime import (
     SystemPaperRuntimeError,
     SystemPaperSlotInputs,
@@ -22,6 +25,10 @@ from crypto_quant.system_paper_runtime import (
     load_system_paper_slot_result,
     run_system_paper_slot,
     system_paper_slot_hash,
+)
+from tests.system_paper_fixtures import (
+    DEFAULT_SCHEDULED_FOR as SOURCE_SCHEDULED_FOR,
+    valid_public_capture,
 )
 
 
@@ -67,26 +74,28 @@ def make_bundle(
     long_signal: bool = True,
     bid: str = "99.99",
     ask: str = "100.01",
-    observed_at: str = SCHEDULED_FOR,
+    scheduled_for: str = SCHEDULED_FOR,
+    captured_at: Optional[str] = None,
     metadata: Optional[InstrumentMetadata] = None,
 ):
-    closes = ["100"] * 20 + (["110"] if long_signal else ["90"])
-    bundle = {
-        "bundle_hash": "0" * 64,
-        "provider": "BINANCE_MARKET_DATA_ONLY",
-        "observed_at": observed_at,
-        "instrument_metadata_schema_version": "instrument-metadata-v1",
-        "instrument_metadata": (metadata or make_metadata()).business_payload(),
-        "closed_4h_klines": [
-            {
-                "close": close,
-                "source_row_hash": business_hash({"index": index, "close": close}),
-            }
-            for index, close in enumerate(closes)
-        ],
-        "bbo": {"bid_price": bid, "ask_price": ask},
-        "source_receipt_hashes": ["b" * 64, "c" * 64, "d" * 64, "e" * 64],
-    }
+    capture, _transport = valid_public_capture(
+        scheduled_for=scheduled_for,
+        latest="110" if long_signal else "90",
+        prior="100",
+        bid=bid,
+        ask=ask,
+        recorded_at_or_none=captured_at,
+    )
+    bundle = build_system_paper_market_bundle(
+        plan=build_system_paper_plan(),
+        scheduled_for=scheduled_for,
+        capture=capture,
+    )
+    if metadata is not None:
+        bundle["instrument_metadata"] = json.loads(
+            canonical_json(metadata.business_payload())
+        )
+        bundle["instrument_metadata_schema_version"] = metadata.schema_version
     bundle["bundle_hash"] = artifact_self_hash(bundle, "bundle_hash")
     return bundle
 
@@ -163,6 +172,32 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         self.assertIsNone(result["runtime_snapshot"]["active_order_or_null"])
         self.assertEqual(result["reconciliation"]["status"], "RECONCILED")
 
+    def test_runtime_accepts_only_the_source_replayed_market_bundle(self) -> None:
+        """Catches retaining the old hash-only observed_at bundle contract."""
+
+        capture, _transport = valid_public_capture()
+        bundle = build_system_paper_market_bundle(
+            plan=self.plan,
+            scheduled_for=SOURCE_SCHEDULED_FOR,
+            capture=capture,
+        )
+
+        try:
+            result = run_system_paper_slot(
+                self.inputs(
+                    scheduled_for=SOURCE_SCHEDULED_FOR,
+                    public_market_bundle=bundle,
+                )
+            )
+        except SystemPaperRuntimeError as error:
+            self.fail("runtime rejected the replayed source bundle: " + str(error))
+
+        self.assertEqual(result["status"], "SYSTEM_PAPER_SLOT_COMPLETED")
+        self.assertEqual(
+            result["replay_inputs"]["public_market_bundle"]["captured_at"],
+            "2026-08-02T12:05:01.000Z",
+        )
+
     def test_next_slot_refuses_new_decision_while_unknown_order_is_active(self) -> None:
         first = run_system_paper_slot(
             self.inputs(fill_scenario=FillScenario.disconnect_after_submit())
@@ -176,7 +211,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
                 self.inputs(
                     scheduled_for="2026-08-02T04:00:00.000Z",
                     public_market_bundle=make_bundle(
-                        observed_at="2026-08-02T04:00:00.000Z"
+                        scheduled_for="2026-08-02T04:00:00.000Z"
                     ),
                     previous_runtime_snapshot=first["runtime_snapshot"],
                 )
@@ -447,7 +482,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
                 scheduled_for="2026-08-02T04:00:00.000Z",
                 public_market_bundle=make_bundle(
                     long_signal=False,
-                    observed_at="2026-08-02T04:00:00.000Z",
+                    scheduled_for="2026-08-02T04:00:00.000Z",
                 ),
                 previous_runtime_snapshot=first["runtime_snapshot"],
             )
@@ -488,16 +523,16 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         ):
             run_system_paper_slot(self.inputs(public_market_bundle=bundle))
 
-    def test_market_bundle_is_bound_to_the_frozen_spot_instrument(self) -> None:
+    def test_market_bundle_rejects_instrument_not_replayed_from_sources(self) -> None:
         bundle = make_bundle(metadata=make_metadata(market_type=MarketType.USDT_PERP))
 
         with self.assertRaisesRegex(
             SystemPaperRuntimeError,
-            "SYSTEM_PAPER_MARKET_INSTRUMENT_MISMATCH",
+            "SYSTEM_PAPER_MARKET_BUNDLE_INVALID",
         ):
             run_system_paper_slot(self.inputs(public_market_bundle=bundle))
 
-    def test_market_metadata_must_be_effective_at_the_slot(self) -> None:
+    def test_market_metadata_cannot_be_detached_from_source_receipts(self) -> None:
         bundle = make_bundle(
             metadata=make_metadata(
                 effective_from=NOW - timedelta(days=2),
@@ -507,7 +542,7 @@ class SystemPaperRuntimeTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             SystemPaperRuntimeError,
-            "SYSTEM_PAPER_MARKET_METADATA_STALE",
+            "SYSTEM_PAPER_MARKET_BUNDLE_INVALID",
         ):
             run_system_paper_slot(self.inputs(public_market_bundle=bundle))
 
@@ -519,7 +554,10 @@ class SystemPaperRuntimeTests(unittest.TestCase):
         self.assertEqual(result["instrument"]["market_type"], "SPOT")
         self.assertEqual(result["instrument"]["symbol"], "ETHUSDT")
         self.assertEqual(result["instrument"]["contract_multiplier"], "1")
-        self.assertEqual(result["instrument"]["metadata_hash"], make_metadata().metadata_hash)
+        self.assertEqual(
+            result["instrument"]["metadata_hash"],
+            "6a75a74f4ffd8dc2c028716321ecd933a0b90c4d9d5b4d35c6105b5e3aa91084",
+        )
 
     def test_position_snapshot_requires_a_positive_average_entry(self) -> None:
         previous = rehash_parent_snapshot(
@@ -597,7 +635,7 @@ class SystemPaperRuntimeLoaderTests(unittest.TestCase):
             scheduled_for="2026-08-02T04:00:00.000Z",
             public_market_bundle=make_bundle(
                 long_signal=False,
-                observed_at="2026-08-02T04:00:00.000Z",
+                scheduled_for="2026-08-02T04:00:00.000Z",
             ),
             previous_runtime_snapshot=snapshot,
             fill_scenario=FillScenario.immediate_full(),
@@ -655,7 +693,7 @@ class SystemPaperRuntimeLoaderTests(unittest.TestCase):
                 scheduled_for="2026-08-02T08:00:00.000Z",
                 public_market_bundle=make_bundle(
                     long_signal=False,
-                    observed_at="2026-08-02T08:00:00.000Z",
+                    scheduled_for="2026-08-02T08:00:00.000Z",
                 ),
                 previous_runtime_snapshot=second["runtime_snapshot"],
                 fill_scenario=FillScenario.immediate_full(),

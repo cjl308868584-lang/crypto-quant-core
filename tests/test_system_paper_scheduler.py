@@ -7,6 +7,7 @@ import unittest
 import crypto_quant.system_paper_scheduler as scheduler_module
 from copy import deepcopy
 from dataclasses import replace
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,6 +35,15 @@ from crypto_quant.system_paper_scheduler import (
 from tests.test_system_paper_runtime import make_bundle
 
 
+def capture_time_after_public_responses(due_at):
+    value = datetime.fromisoformat(due_at.replace("Z", "+00:00"))
+    return (
+        (value + timedelta(seconds=1))
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
 class RecordingProvider:
     """A deterministic public-only capture boundary for runner behavior tests."""
 
@@ -44,7 +54,10 @@ class RecordingProvider:
     def __call__(self, request):
         self.invocations += 1
         return SystemPaperInputCapture(
-            public_market_bundle=make_bundle(observed_at=request.scheduled_for),
+            public_market_bundle=make_bundle(
+                scheduled_for=request.scheduled_for,
+                captured_at=self.captured_at,
+            ),
             capture_attempt_id="capture-" + request.slot_id[-12:],
             captured_at=self.captured_at,
             request_families=request.request_families,
@@ -513,7 +526,10 @@ class SystemPaperPreparedInputTests(unittest.TestCase):
         )
         self.now = "2026-08-02T12:05:11.000Z"
         self.slot = self.policy.current_slot(self.now)
-        self.market_bundle = make_bundle(observed_at=self.slot.scheduled_for)
+        self.market_bundle = make_bundle(
+            scheduled_for=self.slot.scheduled_for,
+            captured_at=self.now,
+        )
         self.output_root_hash = "f" * 64
 
     def tearDown(self) -> None:
@@ -624,7 +640,7 @@ class SystemPaperPreparedInputTests(unittest.TestCase):
     def test_input_prepare_rejects_stale_or_mismatched_capture(self):
         stale = self.capture(captured_at="2026-08-02T16:00:00.000Z")
         changed_bundle = dict(self.market_bundle)
-        changed_bundle["observed_at"] = "2026-08-02T08:00:00.000Z"
+        changed_bundle["scheduled_for"] = "2026-08-02T08:00:00.000Z"
         changed_bundle["bundle_hash"] = artifact_self_hash(changed_bundle, "bundle_hash")
         mismatched = self.capture(public_market_bundle=changed_bundle)
         claim = self.claim_current()
@@ -643,7 +659,9 @@ class SystemPaperPreparedInputTests(unittest.TestCase):
             wrong_provider, "bundle_hash"
         )
         malformed_receipts = dict(self.market_bundle)
-        malformed_receipts["source_receipt_hashes"] = ["a" * 64]
+        malformed_receipts["source_receipts"] = malformed_receipts[
+            "source_receipts"
+        ][:1]
         malformed_receipts["bundle_hash"] = artifact_self_hash(
             malformed_receipts, "bundle_hash"
         )
@@ -875,14 +893,19 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
     def prepare_slot(self, scheduled_for, previous_snapshot):
         slot = self.policy.slot_from_scheduled(scheduled_for)
         claimed_at = slot.due_at
+        captured_at = capture_time_after_public_responses(claimed_at)
         claim = self.state.claim(slot, worker_id="worker-a", claimed_at=claimed_at)
         input_record = self.state.prepare_input(
             claim,
             plan=self.plan,
             capture=SystemPaperInputCapture(
-                public_market_bundle=make_bundle(observed_at=scheduled_for, long_signal=False),
+                public_market_bundle=make_bundle(
+                    scheduled_for=scheduled_for,
+                    captured_at=captured_at,
+                    long_signal=False,
+                ),
                 capture_attempt_id="capture-" + scheduled_for.replace(":", ""),
-                captured_at=claimed_at,
+                captured_at=captured_at,
                 request_families=(
                     "SPOT_AGG_TRADE",
                     "SPOT_BBO",
@@ -955,7 +978,10 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
             SystemPaperSlotInputs(
                 plan=self.plan,
                 scheduled_for=slot.scheduled_for,
-                public_market_bundle=make_bundle(observed_at=slot.scheduled_for),
+                public_market_bundle=make_bundle(
+                    scheduled_for=slot.scheduled_for,
+                    captured_at=capture_time_after_public_responses(slot.due_at),
+                ),
                 previous_runtime_snapshot=build_initial_system_paper_runtime_snapshot(
                     self.plan
                 ),
@@ -1408,16 +1434,19 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
     def test_result_prepare_rejects_rehashed_unsafe_unknown_candidate(self):
         # Catches accepting UNKNOWN without both risk lock and active order.
         slot = self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z")
+        captured_at = capture_time_after_public_responses(slot.due_at)
         claim = self.state.claim(slot, worker_id="worker-a", claimed_at=slot.due_at)
         input_record = self.state.prepare_input(
             claim,
             plan=self.plan,
             capture=SystemPaperInputCapture(
                 public_market_bundle=make_bundle(
-                    observed_at=slot.scheduled_for, long_signal=True
+                    scheduled_for=slot.scheduled_for,
+                    captured_at=captured_at,
+                    long_signal=True,
                 ),
                 capture_attempt_id="unsafe-unknown-capture",
-                captured_at=slot.due_at,
+                captured_at=captured_at,
                 request_families=(
                     "SPOT_AGG_TRADE", "SPOT_BBO", "SPOT_EXCHANGE_INFO",
                     "SPOT_KLINE_4H_WARMUP",
@@ -1524,16 +1553,19 @@ class SystemPaperPreparedResultTests(unittest.TestCase):
     def test_unknown_result_persists_only_with_locked_risk_and_active_order(self):
         # Catches loss of UNKNOWN safety invariants across durable preparation.
         slot = self.policy.slot_from_scheduled("2026-08-02T12:00:00.000Z")
+        captured_at = capture_time_after_public_responses(slot.due_at)
         claim = self.state.claim(slot, worker_id="worker-a", claimed_at=slot.due_at)
         input_record = self.state.prepare_input(
             claim,
             plan=self.plan,
             capture=SystemPaperInputCapture(
                 public_market_bundle=make_bundle(
-                    observed_at=slot.scheduled_for, long_signal=True
+                    scheduled_for=slot.scheduled_for,
+                    captured_at=captured_at,
+                    long_signal=True,
                 ),
                 capture_attempt_id="unknown-capture",
-                captured_at=slot.due_at,
+                captured_at=captured_at,
                 request_families=(
                     "SPOT_AGG_TRADE", "SPOT_BBO", "SPOT_EXCHANGE_INFO",
                     "SPOT_KLINE_4H_WARMUP",
@@ -2119,13 +2151,17 @@ class SystemPaperScheduleRunnerTests(unittest.TestCase):
                 claim = state.claim(
                     slot, worker_id="contradictory-worker", claimed_at=slot.due_at
                 )
+                captured_at = capture_time_after_public_responses(slot.due_at)
                 state.prepare_input(
                     claim,
                     plan=self.plan,
                     capture=SystemPaperInputCapture(
-                        public_market_bundle=make_bundle(observed_at=scheduled_for),
+                        public_market_bundle=make_bundle(
+                            scheduled_for=scheduled_for,
+                            captured_at=captured_at,
+                        ),
                         capture_attempt_id="contradictory-" + slot.slot_id[-12:],
-                        captured_at=slot.due_at,
+                        captured_at=captured_at,
                         request_families=(
                             "SPOT_AGG_TRADE",
                             "SPOT_BBO",

@@ -432,6 +432,29 @@ class VerifiedOfflinePaperCapture:
         return _capture_from_receipts(self.plan, receipts)
 
 
+def verified_offline_paper_market(
+    capture: VerifiedOfflinePaperCapture,
+) -> Mapping[str, Any]:
+    """Replay an issued capture into the normalized public market facts."""
+
+    if not isinstance(capture, VerifiedOfflinePaperCapture):
+        raise OfflinePaperError("PAPER_CAPTURE_UNVERIFIED")
+    replayed = capture.replay_with_receipts(capture.receipts)
+    decision_dt, decision_text = _utc(replayed.decision_time)
+    return {
+        "decision_time": decision_text,
+        "closed_4h_klines": list(
+            _parse_klines(_raw_body(replayed, 0), decision_dt)
+        ),
+        "instrument_metadata": _parse_exchange_info(
+            _raw_body(replayed, 1), decision_dt
+        ).business_payload(),
+        "bbo": _parse_bbo(_raw_body(replayed, 2)),
+        "agg_trade_window": _parse_agg_trades(_raw_body(replayed, 3)),
+        "source_receipts": [dict(item) for item in replayed.receipts],
+    }
+
+
 def _recorded(clock) -> str:
     return clock() if callable(clock) else clock
 
@@ -530,6 +553,16 @@ def _capture_from_receipts(
         receipts=verified,
         _token=_CAPTURE_TOKEN,
     )
+
+
+def replay_offline_paper_capture(
+    receipts: Sequence[Mapping[str, Any]],
+    *,
+    symbol: str = "ETHUSDT",
+) -> VerifiedOfflinePaperCapture:
+    """Issue a verified capture only after replaying all frozen receipts."""
+
+    return _capture_from_receipts(OfflinePaperPlan.create(symbol), receipts)
 
 
 def _parse_klines(body: bytes, decision_time: datetime) -> Tuple[Dict[str, Any], ...]:

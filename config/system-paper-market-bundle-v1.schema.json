@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/system-paper-market-bundle-v1.schema.json",
+  "title": "System Paper Market Bundle V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bundle_hash",
+    "provider",
+    "scheduled_for",
+    "captured_at",
+    "instrument_metadata_schema_version",
+    "instrument_metadata",
+    "closed_4h_klines",
+    "bbo",
+    "source_receipts"
+  ],
+  "properties": {
+    "bundle_hash": {"$ref": "#/$defs/hash"},
+    "provider": {"const": "BINANCE_MARKET_DATA_ONLY"},
+    "scheduled_for": {"$ref": "#/$defs/time"},
+    "captured_at": {"$ref": "#/$defs/time"},
+    "instrument_metadata_schema_version": {"const": "1.0.0"},
+    "instrument_metadata": {"$ref": "#/$defs/instrument"},
+    "closed_4h_klines": {
+      "type": "array",
+      "minItems": 21,
+      "maxItems": 200,
+      "items": {"$ref": "#/$defs/kline"}
+    },
+    "bbo": {"$ref": "#/$defs/bbo"},
+    "source_receipts": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"$ref": "#/$defs/receipt"}
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "instrument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "instrument_id",
+        "exchange",
+        "market_type",
+        "symbol",
+        "base_asset",
+        "quote_asset",
+        "settlement_asset",
+        "effective_from",
+        "effective_to_or_null",
+        "price_tick",
+        "quantity_step",
+        "min_quantity",
+        "max_quantity",
+        "min_notional",
+        "contract_multiplier",
+        "supported_order_types",
+        "supported_time_in_force",
+        "supports_reduce_only",
+        "supports_stop_market",
+        "maker_fee",
+        "taker_fee",
+        "metadata_source"
+      ],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "instrument_id": {"const": "BINANCE:SPOT:ETHUSDT"},
+        "exchange": {"const": "BINANCE"},
+        "market_type": {"const": "SPOT"},
+        "symbol": {"const": "ETHUSDT"},
+        "base_asset": {"const": "ETH"},
+        "quote_asset": {"const": "USDT"},
+        "settlement_asset": {"const": "USDT"},
+        "effective_from": {"$ref": "#/$defs/time"},
+        "effective_to_or_null": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/time"}
+          ]
+        },
+        "price_tick": {"$ref": "#/$defs/decimal"},
+        "quantity_step": {"$ref": "#/$defs/decimal"},
+        "min_quantity": {"$ref": "#/$defs/decimal"},
+        "max_quantity": {"$ref": "#/$defs/decimal"},
+        "min_notional": {"$ref": "#/$defs/decimal"},
+        "contract_multiplier": {"const": "1"},
+        "supported_order_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "supported_time_in_force": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "supports_reduce_only": {"const": false},
+        "supports_stop_market": {"type": "boolean"},
+        "maker_fee": {"$ref": "#/$defs/decimal"},
+        "taker_fee": {"$ref": "#/$defs/decimal"},
+        "metadata_source": {"const": "BINANCE_PUBLIC_EXCHANGE_INFO_RESPONSE"}
+      }
+    },
+    "kline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["open_time", "close_time", "close", "source_row_hash"],
+      "properties": {
+        "open_time": {"$ref": "#/$defs/time"},
+        "close_time": {"$ref": "#/$defs/time"},
+        "close": {"$ref": "#/$defs/decimal"},
+        "source_row_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "bbo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bid_price", "ask_price"],
+      "properties": {
+        "bid_price": {"$ref": "#/$defs/decimal"},
+        "ask_price": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "stage",
+        "family",
+        "symbol",
+        "method",
+        "url",
+        "request_started_at",
+        "response_received_at",
+        "recorded_at",
+        "status",
+        "final_url",
+        "http_date_or_null",
+        "etag_or_null",
+        "last_modified_or_null",
+        "retry_after_or_null",
+        "body_size_bytes",
+        "body_sha256",
+        "response_body_utf8",
+        "receipt_hash"
+      ],
+      "properties": {
+        "request_id": {"type": "string", "pattern": "^paperreq_[0-9a-f]{64}$"},
+        "stage": {"enum": ["DECISION_INPUT", "EXECUTION_OBSERVATION"]},
+        "family": {
+          "enum": [
+            "SPOT_KLINE_4H_WARMUP",
+            "SPOT_EXCHANGE_INFO",
+            "SPOT_BBO",
+            "SPOT_AGG_TRADE"
+          ]
+        },
+        "symbol": {"const": "ETHUSDT"},
+        "method": {"const": "GET"},
+        "url": {
+          "type": "string",
+          "pattern": "^https://data-api\\.binance\\.vision/api/v3/"
+        },
+        "request_started_at": {"$ref": "#/$defs/time"},
+        "response_received_at": {"$ref": "#/$defs/time"},
+        "recorded_at": {"$ref": "#/$defs/time"},
+        "status": {"const": 200},
+        "final_url": {
+          "type": "string",
+          "pattern": "^https://data-api\\.binance\\.vision/api/v3/"
+        },
+        "http_date_or_null": {"type": ["string", "null"]},
+        "etag_or_null": {"type": ["string", "null"]},
+        "last_modified_or_null": {"type": ["string", "null"]},
+        "retry_after_or_null": {"type": ["string", "null"]},
+        "body_size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2097152
+        },
+        "body_sha256": {"$ref": "#/$defs/hash"},
+        "response_body_utf8": {"type": "string", "minLength": 1},
+        "receipt_hash": {"$ref": "#/$defs/hash"}
+      }
+    }
+  }
+}

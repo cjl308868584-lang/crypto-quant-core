@@ -21,6 +21,10 @@ from .system_paper_broker import (
     fill_scenario_payload,
 )
 from .system_paper_plan import system_paper_plan_reasons
+from .system_paper_public_input import (
+    SystemPaperPublicInputError,
+    load_system_paper_market_bundle_bytes,
+)
 from .system_paper_runtime import (
     SystemPaperRuntimeError,
     SystemPaperSlotInputs,
@@ -1203,22 +1207,38 @@ class SystemPaperScheduleState:
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_CAPTURE_WINDOW_INVALID")
         if not isinstance(capture.public_market_bundle, Mapping):
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID")
-        bundle = dict(capture.public_market_bundle)
         try:
-            bundle_hash = _hash(
-                bundle.get("bundle_hash"), "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID"
+            bundle = load_system_paper_market_bundle_bytes(
+                canonical_json(dict(capture.public_market_bundle)).encode("utf-8")
             )
-            if bundle_hash != artifact_self_hash(bundle, "bundle_hash"):
-                raise SystemPaperScheduleError(
-                    "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_HASH_MISMATCH"
-                )
-            _, observed_at = _utc(bundle.get("observed_at"))
+        except SystemPaperPublicInputError as error:
+            reason = (
+                "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID"
+                if error.reason_code
+                in {
+                    "SYSTEM_PAPER_PUBLIC_BUNDLE_JSON_INVALID",
+                    "SYSTEM_PAPER_PUBLIC_BUNDLE_HASH_MISMATCH",
+                }
+                else "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_SEMANTIC_INVALID"
+            )
+            raise SystemPaperScheduleError(reason) from error
         except (TypeError, ValueError) as error:
             raise SystemPaperScheduleError(
                 "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID"
             ) from error
-        if observed_at != slot.scheduled_for:
+        try:
+            _, bundle_scheduled_for = _utc(bundle.get("scheduled_for"))
+            _, bundle_captured_at = _utc(bundle.get("captured_at"))
+        except (TypeError, ValueError) as error:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_INVALID"
+            ) from error
+        if bundle_scheduled_for != slot.scheduled_for:
             raise SystemPaperScheduleError("SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_TIME_MISMATCH")
+        if bundle_captured_at != captured_text:
+            raise SystemPaperScheduleError(
+                "SYSTEM_PAPER_SCHEDULE_INPUT_BUNDLE_CAPTURE_MISMATCH"
+            )
         try:
             _verify_bundle(
                 bundle,

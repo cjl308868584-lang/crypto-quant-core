@@ -539,10 +539,10 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
 
         self.assertEqual(set(manifest["file_hashes"]), expected)
-        self.assertEqual(crypto_quant.__version__, "0.57.0")
-        self.assertEqual(manifest["package_version"], "0.57.0")
-        self.assertEqual(manifest["manifest_version"], "1.51.0")
-        self.assertEqual(build.manifest_version, "1.51.0")
+        self.assertEqual(crypto_quant.__version__, "0.58.0")
+        self.assertEqual(manifest["package_version"], "0.58.0")
+        self.assertEqual(manifest["manifest_version"], "1.52.0")
+        self.assertEqual(build.manifest_version, "1.52.0")
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
@@ -617,6 +617,45 @@ class EvaluatorBuildTests(unittest.TestCase):
             "config/challenger-cohort-economic-result-index-v1.schema.json",
             expected,
         )
+        for path in (
+            "config/system-paper-market-bundle-v1.schema.json",
+            "config/system-paper-launchd-contract-v1.schema.json",
+            "config/system-paper-preflight-receipt-v1.schema.json",
+            "config/system-paper-install-receipt-v1.schema.json",
+            "config/system-paper-start-receipt-v1.schema.json",
+            "src/crypto_quant/schemas/system-paper-market-bundle-v1.schema.json",
+            "src/crypto_quant/schemas/system-paper-launchd-contract-v1.schema.json",
+            "src/crypto_quant/schemas/system-paper-preflight-receipt-v1.schema.json",
+            "src/crypto_quant/schemas/system-paper-install-receipt-v1.schema.json",
+            "src/crypto_quant/schemas/system-paper-start-receipt-v1.schema.json",
+            "tests/system_paper_fixtures.py",
+            "tests/test_offline_paper.py",
+            "tests/test_system_paper_public_input.py",
+            "tests/test_system_paper_runtime.py",
+            "tests/test_system_paper_runtime_cli.py",
+            "tests/test_system_paper_launchd.py",
+            "tests/test_system_paper_preflight.py",
+            "tests/test_system_paper_install.py",
+            "tests/test_system_paper_observer.py",
+            "tests/test_system_paper_start_receipt.py",
+            "src/crypto_quant/system_paper_evidence.py",
+            "src/crypto_quant/system_paper_launchctl.py",
+            "tests/test_system_paper_evidence.py",
+            "tests/test_system_paper_launchctl.py",
+            "tests/fixtures/launchctl/system-paper-not-running.txt",
+            "tests/fixtures/launchctl/system-paper-first-success.txt",
+            "docs/superpowers/specs/"
+            "2026-08-03-system-paper-deployment-trust-chain-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-03-system-paper-deployment-trust-chain.md",
+            "docs/superpowers/specs/"
+            "2026-08-04-system-paper-deployment-review-hardening-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-04-system-paper-deployment-review-hardening.md",
+            "docs/adr/0058-system-paper-deployment-trust-chain.md",
+            "docs/implementation-status-v0.58.0.md",
+        ):
+            self.assertIn(path, expected)
         self.assertIn(
             "artifacts/challenger-forward/"
             "challenger-episode-cohort-plan-v0.43.0.json",
@@ -702,9 +741,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.51.0")
-        self.assertEqual(manifest["package_version"], "0.57.0")
-        self.assertEqual(crypto_quant.__version__, "0.57.0")
+        self.assertEqual(manifest["manifest_version"], "1.52.0")
+        self.assertEqual(manifest["package_version"], "0.58.0")
+        self.assertEqual(crypto_quant.__version__, "0.58.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
