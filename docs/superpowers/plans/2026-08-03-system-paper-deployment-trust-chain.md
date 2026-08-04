@@ -276,7 +276,7 @@ git commit -m "feat: add fixed system paper runtime cli"
 
 - [ ] **Step 1: Write red separation, schedule and release tests**
 
-Assert exact label, minute 5, six local hours, `RunAtLoad=true`, mode `0600`, child roots `0700`, only `PYTHONPATH`, and argv:
+Assert exact label, minute 5, six local hours, mode `0600`, child roots `0700`, only `PYTHONPATH`, and argv. The original `RunAtLoad=true` assertion is superseded by the reviewed hardening plan and the release requirement is `RunAtLoad=false`:
 
 ```python
 (

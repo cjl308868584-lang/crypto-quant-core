@@ -144,6 +144,10 @@ _FROZEN_RELEASE_PATHS = (
     "tests/test_system_paper_install.py",
     "tests/test_system_paper_observer.py",
     "tests/test_system_paper_start_receipt.py",
+    "tests/test_system_paper_evidence.py",
+    "tests/test_system_paper_launchctl.py",
+    "tests/fixtures/launchctl/system-paper-not-running.txt",
+    "tests/fixtures/launchctl/system-paper-first-success.txt",
     "docs/superpowers/specs/"
     "2026-08-02-system-paper-wal-scheduler-design.md",
     "docs/superpowers/plans/2026-08-02-system-paper-wal-scheduler.md",
@@ -151,6 +155,10 @@ _FROZEN_RELEASE_PATHS = (
     "2026-08-03-system-paper-deployment-trust-chain-design.md",
     "docs/superpowers/plans/"
     "2026-08-03-system-paper-deployment-trust-chain.md",
+    "docs/superpowers/specs/"
+    "2026-08-04-system-paper-deployment-review-hardening-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-04-system-paper-deployment-review-hardening.md",
     "docs/adr/0058-system-paper-deployment-trust-chain.md",
     "docs/implementation-status-v0.58.0.md",
 )

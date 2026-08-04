@@ -308,7 +308,7 @@ v0.57完成独立、无凭据、确定性离线 WAL scheduler library：固定4h
 
 v0.58完成代码级 System Paper deployment trust chain：固定公开行情 source bundle、单槽 runtime CLI、owner-only LaunchAgent 合同与执行快照、常在/时钟/重启/磁盘/网络 preflight、受限 installer、只读首槽 observer 与不可覆盖 start receipt。本版仅发布代码与冻结合同：未渲染生产合同、未执行 preflight/install/bootstrap/runtime，未创建 start receipt，90天计时仍未开始。
 
-仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的 v0.58 deployment trust chain 代码已完成，但未安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。后续仍须先冻结90天 evaluator、tail-blind projection 及只读 Web/alerts/runbooks，再设计受限安装；replacement Challenger 必须使用全新 service/state/log/bundle/evidence roots。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.58.0](docs/implementation-status-v0.58.0.md)，工程裁决见[ADR-0058](docs/adr/0058-system-paper-deployment-trust-chain.md)。
+仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的 v0.58 deployment trust chain 代码已完成并关闭独立审查的4项Critical、6项Important和2项Minor，最终合同仅日历触发且 `RunAtLoad=false`，但未安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。后续仍须先冻结90天 evaluator、tail-blind projection 及只读 Web/alerts/runbooks，再设计受限安装；replacement Challenger 必须使用全新 service/state/log/bundle/evidence roots。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.58.0](docs/implementation-status-v0.58.0.md)，工程裁决见[ADR-0058](docs/adr/0058-system-paper-deployment-trust-chain.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：

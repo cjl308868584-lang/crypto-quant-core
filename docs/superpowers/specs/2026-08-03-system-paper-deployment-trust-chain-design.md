@@ -1,8 +1,8 @@
 # System Paper Deployment Trust Chain Design
 
-日期：2026-08-03  
-目标版本：`v0.58.0`  
-基线：annotated `v0.57.0` / `6b103a5d962ca53c470f08573418be73929b63a7`  
+日期：2026-08-03
+目标版本：`v0.58.0`
+基线：annotated `v0.57.0` / `6b103a5d962ca53c470f08573418be73929b63a7`
 适用分支：`codex/v0.58-system-paper-deployment`
 
 ## 1. 决策摘要
@@ -169,8 +169,10 @@ symbol、任意 method和超限 response。
 固定 label：`local.crypto-quant.system-paper-v1`。
 
 固定 schedule：UTC 4h 槽位结束后 5 分钟；在 `Asia/Shanghai` 本地时间表现为每天
-`00:05, 04:05, 08:05, 12:05, 16:05, 20:05`。`RunAtLoad=true` 只允许 scheduler 对当前
-自然槽做 idempotent due check，不提供手工槽位或回填能力。
+`00:05, 04:05, 08:05, 12:05, 16:05, 20:05`。独立审查后由
+`2026-08-04-system-paper-deployment-review-hardening-design.md` 取代原始
+`RunAtLoad=true` 要求：最终合同固定 `RunAtLoad=false`，只能由日历槽触发，安装和登录
+本身不得调用 scheduler，也不提供手工槽位或回填能力。
 
 plist `ProgramArguments` 只能是 reviewed execution snapshot 内的 Python，加
 `-m crypto_quant.system_paper_runtime_cli --state-path ... --output-root ...`。禁止 shell、循环、
@@ -199,7 +201,7 @@ preflight 是 installer 之外的独立、不可变 receipt。CLI只接受 `--co
 - service label、target plist、所有 roots 与 Challenger 完全分离；
 - runtime、receipt、log、state roots 的owner、mode、symlink/hardlink和 device identity；
 - 至少 5 GiB 可用空间，state和artifact root位于预期本地 filesystem；
-- 用户域可用、登录 session 存在、LaunchAgent 能在重启后由 `RunAtLoad` 恢复；
+- 用户域可用、登录 session 存在、LaunchAgent 日历注册能在重启后继续存在；
 - sleep/always-on evidence 不允许出现会跨过 4h 槽位的配置；
 - clock gate 使用冻结 `/api/v3/time` 三样本 verifier；
 - network gate 只允许一次 `GET https://data-api.binance.vision/api/v3/ping`；

@@ -27,6 +27,10 @@ LaunchAgent 固定调用的 runtime CLI，也没有将 release checkout、执行
    漏槽、失败、第二槽或协调篡改都失败关闭。
 6. start receipt 只在首个自然成功槽仍保持 exact evidence bytes 时发布，从该槽
    自动派生90天半开窗口和540槽；pending 不创建输出根，冲突不覆盖。
+7. 独立审查报告的4项Critical、6项Important和2项Minor全部进入冻结 hardening
+   设计与实施计划：最终合同 `RunAtLoad=false`，loader不执行隐藏命令，安装只在冻结
+   UTC安全窗口内进行，launchctl输出结构化解析，证据发布不可覆盖，start receipt
+   从当前append-only state/log重放首槽语义并跨完整复核过程保留来源描述符。
 
 ## 后果
 

@@ -18,6 +18,10 @@
   bundle、artifact、stdout/stderr 和完整 parent-chain；
 - 仅首个自然成功槽才发布的 owner-only start receipt，自动派生90天窗口与
   540槽，pending 时不创建输出根。
+- 独立审查的4项Critical、6项Important和2项Minor已逐项按TDD关闭：包括
+  `RunAtLoad=false`、安全安装窗口、纯loader、结构化launchctl权威、不可覆盖发布、
+  有界单描述符receipt读取，以及可接受后续正常增长但拒绝首槽前缀/来源身份替换的
+  永久语义重放。
 
 ## 安全与权限边界
 
@@ -30,8 +34,8 @@
 
 ## 验证记录
 
-- TDD 聚焦/相邻验证已通过；Task 7 的 start receipt + observer 16 项通过；
-- System Paper 相关全集在 Task 7 加固前为193项通过，Challenger 非干扰回归为50项通过；
+- TDD 聚焦/相邻验证已通过；start receipt 11项及System Paper相关测试均已通过；
+- receipt读取竞态和跨来源文件替换均先得到确定性红灯，再由保留描述符与最终身份复核关闭；
 - v0.58 完整独立审查、全量 unittest、compileall、`make validate` 与最终 build
   hash 将在发布前填入本节。
 
