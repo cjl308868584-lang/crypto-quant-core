@@ -8,6 +8,7 @@ import stat
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation, localcontext
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
@@ -36,6 +37,8 @@ _MAX_STATE_BYTES = 128 * 1024 * 1024
 _MAX_SLOT_ARTIFACT_BYTES = 1024 * 1024
 _PRIVATE_TMP = Path("/private/tmp")
 _TAIL_SETTLE_DELAY = timedelta(minutes=5)
+_STARTING_EQUITY = Decimal("1000")
+_STUDENT_T_95_ONE_SIDED_DF2 = Decimal("2.91998558035372")
 
 
 class SystemPaperEvaluationError(ValueError):
@@ -562,10 +565,315 @@ def _copy_event_metadata(
     return replay
 
 
-def _evaluate_complete_cohort(*_args, **_kwargs):
-    raise SystemPaperEvaluationError(
-        "SYSTEM_PAPER_EVALUATION_FINAL_NOT_IMPLEMENTED"
+def _evaluate_complete_cohort(*_args, **kwargs):
+    return _evaluate_complete_system_paper_cohort(kwargs["cohort"])
+
+
+def _maximum_drawdown(equities) -> Decimal:
+    values = tuple(equities)
+    if (
+        not values
+        or any(
+            not isinstance(value, Decimal) or value <= 0
+            for value in values
+        )
+    ):
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+        )
+    peak = values[0]
+    maximum = Decimal("0")
+    for value in values:
+        peak = max(peak, value)
+        maximum = max(maximum, (peak - value) / peak)
+    return maximum
+
+
+def _three_block_statistics(equities) -> Mapping[str, Any]:
+    values = tuple(equities)
+    if (
+        len(values) != 540
+        or any(
+            not isinstance(value, Decimal) or value <= 0
+            for value in values
+        )
+    ):
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+        )
+    starts = (_STARTING_EQUITY, values[179], values[359])
+    ends = (values[179], values[359], values[539])
+    with localcontext() as context:
+        context.prec = 50
+        returns = tuple(
+            (end - start) / start for start, end in zip(starts, ends)
+        )
+        mean = sum(returns, Decimal("0")) / Decimal("3")
+        sample_variance = sum(
+            ((value - mean) ** 2 for value in returns), Decimal("0")
+        ) / Decimal("2")
+        sample_sd = sample_variance.sqrt()
+        lcb = mean - (
+            _STUDENT_T_95_ONE_SIDED_DF2
+            * sample_sd
+            / Decimal("3").sqrt()
+        )
+    return {
+        "block_returns": returns,
+        "mean": mean,
+        "sample_sd": sample_sd,
+        "lcb": lcb,
+        "passed": lcb > 0,
+    }
+
+
+def _decimal_value(value: object) -> Decimal:
+    if not isinstance(value, str) or not value or value.strip() != value:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+        )
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation as error:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+        ) from error
+    if not parsed.is_finite():
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+        )
+    return parsed
+
+
+def _evaluate_complete_system_paper_cohort(
+    cohort,
+) -> Mapping[str, Any]:
+    with localcontext() as context:
+        context.prec = 50
+        return _evaluate_complete_system_paper_cohort_decimal(cohort)
+
+
+def _evaluate_complete_system_paper_cohort_decimal(
+    cohort,
+) -> Mapping[str, Any]:
+    slots = tuple(cohort)
+    if len(slots) != 540 or any(
+        not isinstance(slot, _SystemPaperCohortSlot) for slot in slots
+    ):
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE"
+        )
+    duplicate_order_events = 0
+    unrecorded_fills = 0
+    hard_risk_violations = 0
+    reconciliation_exposure_increases = 0
+    forbidden_activity_count = 0
+    traceable_count = 0
+    full_replay_count = 0
+    seen_order_events = set()
+    seen_order_ids = set()
+    gross_filled_notional = Decimal("0")
+    modeled_execution_cost = Decimal("0")
+    maximum_fee_rate = Decimal("0")
+    maximum_slippage_rate = Decimal("0")
+    equities = []
+    final_active_order = False
+    final_risk_locked = False
+    try:
+        for index, slot in enumerate(slots):
+            result = json.loads(slot.result_bytes.decode("utf-8"))
+            envelope = _strict_prepared_input(slot.input_bytes)
+            bundle = envelope["capture"]["public_market_bundle"]
+            ledger = result["ledger"]
+            reconciliation = result["reconciliation"]
+            snapshot = result["runtime_snapshot"]
+            replay_flags = result["replay"]
+            order = result["order"]
+            equities.append(_decimal_value(snapshot["marked_equity_usdt"]))
+            forbidden_activity_count += sum(
+                result["safety_counts"][name]
+                for name in (
+                    "credential_reads",
+                    "account_requests",
+                    "real_broker_calls",
+                    "real_order_writes",
+                )
+            )
+            traceable = (
+                result["slot_id"] == slot.slot_id
+                and result["scheduled_for"] == slot.scheduled_for
+                and result["market_bundle_hash"] == bundle["bundle_hash"]
+                and isinstance(result["signal"]["decision_hash"], str)
+                and bool(result["signal"]["decision_hash"])
+                and ledger["balanced"] is True
+                and ledger["debits_usdt"] == ledger["credits_usdt"]
+                and reconciliation["unexplained_position_difference"] == "0"
+                and reconciliation["ledger_imbalance_usdt"] == "0"
+            )
+            if traceable:
+                traceable_count += 1
+            if (
+                replay_flags["decision_hash_match"] is True
+                and replay_flags["market_bundle_hash_match"] is True
+                and replay_flags["full_slot_hash_match"] is True
+            ):
+                full_replay_count += 1
+            previous_snapshot = result["replay_inputs"][
+                "previous_runtime_snapshot"
+            ]
+            if (
+                previous_snapshot["active_order_or_null"] is not None
+                and _decimal_value(snapshot["position_quantity"])
+                > _decimal_value(previous_snapshot["position_quantity"])
+            ):
+                reconciliation_exposure_increases += 1
+            if order is not None:
+                local_order_id = order["local_order_id"]
+                if local_order_id in seen_order_ids:
+                    duplicate_order_events += 1
+                seen_order_ids.add(local_order_id)
+                for event_id in order["event_ids"]:
+                    if event_id in seen_order_events:
+                        duplicate_order_events += 1
+                    seen_order_events.add(event_id)
+                filled = _decimal_value(order["filled_quantity"])
+                if filled < 0:
+                    raise SystemPaperEvaluationError(
+                        "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+                    )
+                if filled > 0:
+                    if not ledger["entries"]:
+                        unrecorded_fills += 1
+                    if (
+                        order["side"] == "BUY"
+                        and (
+                            result["risk"]["state"] == "LOCKED"
+                            or result["risk"]["drawdown_state"]
+                            in ("HALT", "HARD_BOUNDARY")
+                        )
+                    ):
+                        hard_risk_violations += 1
+                    price = _decimal_value(
+                        order["average_fill_price_or_null"]
+                    )
+                    fee = _decimal_value(order["fee_usdt"])
+                    if price <= 0 or fee < 0:
+                        raise SystemPaperEvaluationError(
+                            "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+                        )
+                    notional = filled * price
+                    gross_filled_notional += notional
+                    if order["side"] == "BUY":
+                        touch = _decimal_value(bundle["bbo"]["ask_price"])
+                        shortfall = max(
+                            Decimal("0"), (price - touch) * filled
+                        )
+                    elif order["side"] == "SELL":
+                        touch = _decimal_value(bundle["bbo"]["bid_price"])
+                        shortfall = max(
+                            Decimal("0"), (touch - price) * filled
+                        )
+                    else:
+                        raise SystemPaperEvaluationError(
+                            "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+                        )
+                    fee_rate = fee / notional
+                    slippage_rate = shortfall / notional
+                    maximum_fee_rate = max(maximum_fee_rate, fee_rate)
+                    maximum_slippage_rate = max(
+                        maximum_slippage_rate, slippage_rate
+                    )
+                    modeled_execution_cost += fee + shortfall
+            if index == len(slots) - 1:
+                final_active_order = snapshot["active_order_or_null"] is not None
+                final_risk_locked = snapshot["risk_state"] == "LOCKED"
+    except SystemPaperEvaluationError:
+        raise
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as error:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+        ) from error
+
+    traceability_ratio = Decimal(traceable_count) / Decimal("540")
+    full_replay_ratio = Decimal(full_replay_count) / Decimal("540")
+    safety_passed = (
+        duplicate_order_events == 0
+        and unrecorded_fills == 0
+        and hard_risk_violations == 0
+        and reconciliation_exposure_increases == 0
+        and forbidden_activity_count == 0
+        and not final_active_order
+        and not final_risk_locked
+        and traceability_ratio == 1
+        and full_replay_ratio == 1
     )
+    aggregate_limit = gross_filled_notional * Decimal("0.0025")
+    cost_passed = (
+        maximum_fee_rate <= Decimal("0.0015")
+        and maximum_slippage_rate <= Decimal("0.001")
+        and modeled_execution_cost <= aggregate_limit
+    )
+    maximum_drawdown = _maximum_drawdown(
+        (_STARTING_EQUITY,) + tuple(equities)
+    )
+    drawdown_passed = maximum_drawdown < Decimal("0.10")
+    blocks = _three_block_statistics(tuple(equities))
+    gates = {
+        "safety": {
+            "passed": safety_passed,
+            "duplicate_order_events": duplicate_order_events,
+            "unrecorded_fills": unrecorded_fills,
+            "hard_risk_violations": hard_risk_violations,
+            "reconciliation_exposure_increases": (
+                reconciliation_exposure_increases
+            ),
+            "forbidden_activity_count": forbidden_activity_count,
+            "final_active_order": final_active_order,
+            "final_risk_locked": final_risk_locked,
+            "traceability_ratio": traceability_ratio,
+            "full_replay_ratio": full_replay_ratio,
+        },
+        "cost": {
+            "passed": cost_passed,
+            "maximum_effective_fee_rate": maximum_fee_rate,
+            "fee_rate_limit": Decimal("0.0015"),
+            "maximum_effective_slippage_rate": maximum_slippage_rate,
+            "slippage_rate_limit": Decimal("0.001"),
+            "gross_filled_notional_usdt": gross_filled_notional,
+            "modeled_execution_cost_usdt": modeled_execution_cost,
+            "aggregate_cost_limit_usdt": aggregate_limit,
+        },
+        "drawdown": {
+            "passed": drawdown_passed,
+            "maximum_drawdown": maximum_drawdown,
+            "threshold_exclusive": Decimal("0.10"),
+        },
+        "block_return": {
+            "passed": blocks["passed"],
+            "block_returns": blocks["block_returns"],
+            "mean": blocks["mean"],
+            "sample_sd": blocks["sample_sd"],
+            "student_t_constant": _STUDENT_T_95_ONE_SIDED_DF2,
+            "lcb": blocks["lcb"],
+            "threshold_exclusive": Decimal("0"),
+        },
+    }
+    passed = all(gate["passed"] for gate in gates.values())
+    return {
+        "status": (
+            "SYSTEM_PAPER_GATE_PASS"
+            if passed
+            else "SYSTEM_PAPER_GATE_DID_NOT_PASS"
+        ),
+        "slot_count": len(slots),
+        "gates": gates,
+    }
 
 
 @dataclass(frozen=True)
@@ -1034,6 +1342,15 @@ def observe_system_paper_evaluation_readiness(
         )
         start_at, start_text = _utc(start["cohort_started_at"])
         tail_at, tail_text = _utc(start["cohort_tail_end"])
+        projection = replay["projection"]
+        incidents = sum(
+            event["event_type"] in ("FAILED", "MISSED", "EXPIRED")
+            for event in replay["events"]
+        )
+        successes = sum(
+            item["terminal_state"] == "SUCCEEDED"
+            for item in projection.values()
+        )
         if observed >= tail_at + _TAIL_SETTLE_DELAY:
             replayed_start = load_system_paper_start_receipt(
                 receipt_path=paths["start"],
@@ -1048,14 +1365,33 @@ def observe_system_paper_evaluation_readiness(
                 raise SystemPaperEvaluationError(
                     "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
                 )
-            cohort = _replay_system_paper_cohort(
-                plan=plan,
-                start=start,
-                replay=replay,
-                slot_root=paths["slot_root"],
-                state_files=state_files,
-                retained_sources=cohort_retained,
-            )
+            try:
+                cohort = _replay_system_paper_cohort(
+                    plan=plan,
+                    start=start,
+                    replay=replay,
+                    slot_root=paths["slot_root"],
+                    state_files=state_files,
+                    retained_sources=cohort_retained,
+                )
+            except SystemPaperEvaluationError as error:
+                if error.reason_code not in (
+                    "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE",
+                    "SYSTEM_PAPER_EVALUATION_COHORT_REPLAY_INVALID",
+                ):
+                    raise
+                retained.verify()
+                state_retained.verify()
+                return {
+                    "status": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                    "observed_at": observed_at,
+                    "cohort_started_at": start_text,
+                    "tail_end": tail_text,
+                    "reason_code": error.reason_code,
+                    "expected_slot_count": start["expected_slot_count"],
+                    "verified_terminal_slot_count": successes,
+                    "incident_count": incidents,
+                }
             complete = _evaluate_complete_cohort(
                 plan=plan,
                 contract=contract,
@@ -1070,15 +1406,6 @@ def observe_system_paper_evaluation_readiness(
             retained.verify()
             state_retained.verify()
             return complete
-        projection = replay["projection"]
-        incidents = sum(
-            event["event_type"] in ("FAILED", "MISSED", "EXPIRED")
-            for event in replay["events"]
-        )
-        successes = sum(
-            item["terminal_state"] == "SUCCEEDED"
-            for item in projection.values()
-        )
         policy = SystemPaperSchedulePolicy.create(plan)
         scheduled = start_at
         next_required = None

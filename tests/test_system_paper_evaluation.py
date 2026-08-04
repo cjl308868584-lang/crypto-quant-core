@@ -6,6 +6,7 @@ import os
 import sqlite3
 import unittest
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, localcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +18,10 @@ from crypto_quant.system_paper_broker import (
 )
 from crypto_quant.system_paper_evaluation import (
     SystemPaperEvaluationError,
+    _SystemPaperCohortSlot,
+    _evaluate_complete_system_paper_cohort,
+    _maximum_drawdown,
+    _three_block_statistics,
     observe_system_paper_evaluation_readiness,
 )
 from crypto_quant.system_paper_plan import build_system_paper_plan
@@ -391,12 +396,18 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         )
 
     def assert_post_tail_incomplete(self):
-        with self.assertRaisesRegex(
-            SystemPaperEvaluationError, "COHORT_INCOMPLETE"
-        ):
-            observe_system_paper_evaluation_readiness(
-                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
-            )
+        result = observe_system_paper_evaluation_readiness(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.assertEqual(
+            result["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.assertEqual(
+            result["reason_code"],
+            "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE",
+        )
+        self.assertEqual(result["expected_slot_count"], 540)
+        return result
 
     def mutate_prepared_bytes(self, table, column, slot_index, body):
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
@@ -422,12 +433,18 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         path.chmod(0o600)
 
     def assert_post_tail_replay_invalid(self):
-        with self.assertRaisesRegex(
-            SystemPaperEvaluationError, "COHORT_REPLAY_INVALID"
-        ):
-            observe_system_paper_evaluation_readiness(
-                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
-            )
+        result = observe_system_paper_evaluation_readiness(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.assertEqual(
+            result["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.assertEqual(
+            result["reason_code"],
+            "SYSTEM_PAPER_EVALUATION_COHORT_REPLAY_INVALID",
+        )
+        self.assertEqual(result["expected_slot_count"], 540)
+        return result
 
     def assert_post_tail_authority_invalid(self):
         with self.assertRaisesRegex(
@@ -436,6 +453,125 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             observe_system_paper_evaluation_readiness(
                 **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
             )
+
+    def economic_cohort(self, *, block_return="0.01", mutate=None):
+        rate = Decimal(block_return)
+        first = Decimal("1000") * (Decimal("1") + rate)
+        second = first * (Decimal("1") + rate)
+        third = second * (Decimal("1") + rate)
+        equities = [first] * 180 + [second] * 180 + [third] * 180
+        cohort = []
+        previous_position = "0"
+        previous_active = None
+        for index, equity in enumerate(equities):
+            slot_id = "slot-" + str(index)
+            scheduled_for = self.utc_text(
+                datetime(2026, 8, 4, 8, tzinfo=timezone.utc)
+                + timedelta(hours=4 * index)
+            )
+            result = {
+                "slot_id": slot_id,
+                "scheduled_for": scheduled_for,
+                "market_bundle_hash": "bundle-" + str(index),
+                "signal": {"decision_hash": "decision-" + str(index)},
+                "risk": {
+                    "state": "NORMAL",
+                    "drawdown_state": "NORMAL",
+                },
+                "order": None,
+                "ledger": {
+                    "entries": [],
+                    "balanced": True,
+                    "debits_usdt": "0",
+                    "credits_usdt": "0",
+                },
+                "reconciliation": {
+                    "unexplained_position_difference": "0",
+                    "ledger_imbalance_usdt": "0",
+                    "status": "RECONCILED",
+                },
+                "runtime_snapshot": {
+                    "marked_equity_usdt": str(equity),
+                    "position_quantity": previous_position,
+                    "active_order_or_null": previous_active,
+                    "risk_state": "NORMAL",
+                },
+                "replay_inputs": {
+                    "previous_runtime_snapshot": {
+                        "position_quantity": previous_position,
+                        "active_order_or_null": previous_active,
+                    },
+                    "public_market_bundle": {
+                        "bundle_hash": "bundle-" + str(index),
+                        "bbo": {
+                            "bid_price": "100.1",
+                            "ask_price": "99.9",
+                        },
+                    },
+                },
+                "replay": {
+                    "decision_hash_match": True,
+                    "market_bundle_hash_match": True,
+                    "full_slot_hash_match": True,
+                },
+                "safety_counts": {
+                    "credential_reads": 0,
+                    "account_requests": 0,
+                    "real_broker_calls": 0,
+                    "real_order_writes": 0,
+                },
+            }
+            if mutate is not None:
+                mutate(index, result)
+            previous_position = result["runtime_snapshot"]["position_quantity"]
+            previous_active = result["runtime_snapshot"][
+                "active_order_or_null"
+            ]
+            envelope = {
+                "capture": {
+                    "public_market_bundle": result["replay_inputs"][
+                        "public_market_bundle"
+                    ]
+                }
+            }
+            cohort.append(
+                _SystemPaperCohortSlot(
+                    slot_id=slot_id,
+                    scheduled_for=scheduled_for,
+                    artifact_path="/tmp/" + slot_id + ".json",
+                    artifact_sha256="0" * 64,
+                    input_bytes=canonical_json(envelope).encode("utf-8"),
+                    result_bytes=canonical_json(result).encode("utf-8"),
+                    slot_hash="1" * 64,
+                    runtime_snapshot_hash="2" * 64,
+                )
+            )
+        return tuple(cohort)
+
+    @staticmethod
+    def add_synthetic_fill(
+        result,
+        *,
+        event_id,
+        side="BUY",
+        fill_price="100",
+        fee="0",
+        recorded=True,
+    ):
+        result["order"] = {
+            "local_order_id": "order-" + event_id,
+            "side": side,
+            "filled_quantity": "1",
+            "average_fill_price_or_null": fill_price,
+            "fee_usdt": fee,
+            "event_ids": [event_id],
+        }
+        result["ledger"]["entries"] = (
+            [{"entry_id": "ledger-" + event_id}] if recorded else []
+        )
+        result["runtime_snapshot"]["position_quantity"] = (
+            "1" if side == "BUY" else "0"
+        )
 
     def test_pre_tail_observation_is_allowlisted_and_reads_no_slot_economics(self):
         forbidden = AssertionError("pre-tail economic or publication path called")
@@ -806,14 +942,18 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             "crypto_quant.system_paper_evaluation._evaluate_complete_cohort",
             side_effect=AssertionError("economic evaluation reached"),
         ):
-            with self.assertRaisesRegex(
-                SystemPaperEvaluationError, "COHORT_INCOMPLETE"
-            ):
-                observe_system_paper_evaluation_readiness(
-                    **self.values(
-                        _clock=lambda: "2026-11-02T08:05:00.000Z"
-                    )
+            result = observe_system_paper_evaluation_readiness(
+                **self.values(
+                    _clock=lambda: "2026-11-02T08:05:00.000Z"
                 )
+            )
+        self.assertEqual(
+            result["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.assertEqual(
+            result["reason_code"],
+            "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE",
+        )
 
     def test_post_tail_failed_attempt_is_incomplete(self):
         state_path = self.runtime_root / "state" / "system-paper.sqlite"
@@ -899,6 +1039,21 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             ],
         )
 
+    def test_post_tail_real_cohort_reaches_one_truthful_gate_result(self):
+        self.extend_to_complete_cohort()
+        result = observe_system_paper_evaluation_readiness(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.assertIn(
+            result["status"],
+            ("SYSTEM_PAPER_GATE_PASS", "SYSTEM_PAPER_GATE_DID_NOT_PASS"),
+        )
+        self.assertEqual(result["slot_count"], 540)
+        self.assertEqual(
+            set(result["gates"]),
+            {"safety", "cost", "drawdown", "block_return"},
+        )
+
     def test_post_tail_tampered_artifact_stops_before_economic_evaluation(self):
         self.extend_to_complete_cohort()
         middle = sorted(self.slot_root.iterdir())[270]
@@ -908,14 +1063,21 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             "crypto_quant.system_paper_evaluation._evaluate_complete_cohort",
             side_effect=AssertionError("economic evaluation reached"),
         ):
-            with self.assertRaisesRegex(
-                SystemPaperEvaluationError, "COHORT_(INCOMPLETE|REPLAY_INVALID)"
-            ):
-                observe_system_paper_evaluation_readiness(
-                    **self.values(
-                        _clock=lambda: "2026-11-02T08:05:00.000Z"
-                    )
+            result = observe_system_paper_evaluation_readiness(
+                **self.values(
+                    _clock=lambda: "2026-11-02T08:05:00.000Z"
                 )
+            )
+        self.assertEqual(
+            result["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.assertIn(
+            result["reason_code"],
+            (
+                "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE",
+                "SYSTEM_PAPER_EVALUATION_COHORT_REPLAY_INVALID",
+            ),
+        )
 
     def test_post_tail_prepared_input_byte_mutation_fails_authority(self):
         self.extend_to_complete_cohort()
@@ -1147,6 +1309,290 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             ({"slot_id": "slot-a"}, {"slot_id": "slot-b"}),
         )
 
+    def test_maximum_drawdown_strict_boundary(self):
+        cases = (
+            ((Decimal("1000"), Decimal("900.001")), Decimal("0.099999")),
+            ((Decimal("1000"), Decimal("900")), Decimal("0.10")),
+            ((Decimal("1000"), Decimal("899.999")), Decimal("0.100001")),
+        )
+        for equities, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(_maximum_drawdown(equities), expected)
+
+    def test_three_block_lcb_below_equal_above_zero_and_repeatable(self):
+        cases = (
+            (Decimal("-0.001"), False),
+            (Decimal("0"), False),
+            (Decimal("0.001"), True),
+        )
+        for block_return, expected_passed in cases:
+            with self.subTest(block_return=block_return):
+                first = Decimal("1000") * (Decimal("1") + block_return)
+                second = first * (Decimal("1") + block_return)
+                third = second * (Decimal("1") + block_return)
+                equities = []
+                for end in (first, second, third):
+                    equities.extend([end] * 180)
+                result = _three_block_statistics(tuple(equities))
+                self.assertEqual(result["block_returns"], (block_return,) * 3)
+                self.assertEqual(result["lcb"], block_return)
+                self.assertEqual(result["passed"], expected_passed)
+                self.assertTrue(
+                    all(
+                        _three_block_statistics(tuple(equities)) == result
+                        for _ in range(100)
+                    )
+                )
+
+    def test_complete_economic_cohort_can_pass_all_frozen_gates(self):
+        result = _evaluate_complete_system_paper_cohort(
+            self.economic_cohort()
+        )
+        self.assertEqual(result["status"], "SYSTEM_PAPER_GATE_PASS")
+        self.assertTrue(all(gate["passed"] for gate in result["gates"].values()))
+
+    def test_each_safety_violation_fails_the_research_gate(self):
+        def duplicate(index, result):
+            if index in (0, 1):
+                self.add_synthetic_fill(result, event_id="duplicate")
+
+        def unrecorded(index, result):
+            if index == 0:
+                self.add_synthetic_fill(
+                    result, event_id="unrecorded", recorded=False
+                )
+
+        def hard_risk(index, result):
+            if index == 0:
+                self.add_synthetic_fill(result, event_id="hard-risk")
+                result["risk"]["state"] = "LOCKED"
+
+        def reconciliation_increase(index, result):
+            if index == 0:
+                result["replay_inputs"]["previous_runtime_snapshot"] = {
+                    "position_quantity": "1",
+                    "active_order_or_null": {"state": "UNKNOWN"},
+                }
+                result["runtime_snapshot"]["position_quantity"] = "2"
+
+        def final_active(index, result):
+            if index == 539:
+                result["runtime_snapshot"]["active_order_or_null"] = {
+                    "state": "UNKNOWN"
+                }
+
+        def final_risk_locked(index, result):
+            if index == 539:
+                result["runtime_snapshot"]["risk_state"] = "LOCKED"
+
+        def traceability(index, result):
+            if index == 270:
+                result["market_bundle_hash"] = "different-bundle"
+
+        def full_replay(index, result):
+            if index == 270:
+                result["replay"]["full_slot_hash_match"] = False
+
+        def forbidden_activity(index, result):
+            if index == 270:
+                result["safety_counts"]["real_order_writes"] = 1
+
+        cases = {
+            "duplicate_order_events": duplicate,
+            "unrecorded_fills": unrecorded,
+            "hard_risk_violations": hard_risk,
+            "reconciliation_exposure_increases": reconciliation_increase,
+            "final_active_order": final_active,
+            "final_risk_locked": final_risk_locked,
+            "traceability_ratio": traceability,
+            "full_replay_ratio": full_replay,
+            "forbidden_activity_count": forbidden_activity,
+        }
+        for metric, mutate in cases.items():
+            with self.subTest(metric=metric):
+                result = _evaluate_complete_system_paper_cohort(
+                    self.economic_cohort(mutate=mutate)
+                )
+                self.assertEqual(
+                    result["status"], "SYSTEM_PAPER_GATE_DID_NOT_PASS"
+                )
+                safety = result["gates"]["safety"]
+                self.assertFalse(safety["passed"])
+                if metric in ("final_active_order", "final_risk_locked"):
+                    self.assertTrue(safety[metric])
+                else:
+                    self.assertGreater(safety[metric], 0)
+
+    def test_fee_rate_boundaries_are_decimal_and_inclusive(self):
+        for fee, expected in (
+            ("0.1499", True),
+            ("0.15", True),
+            ("0.1501", False),
+        ):
+            def fill(index, result, fee=fee):
+                if index == 0:
+                    self.add_synthetic_fill(
+                        result,
+                        event_id="fee-" + fee,
+                        fill_price="100",
+                        fee=fee,
+                    )
+                    result["replay_inputs"]["public_market_bundle"]["bbo"][
+                        "ask_price"
+                    ] = "100"
+
+            with self.subTest(fee=fee):
+                gate = _evaluate_complete_system_paper_cohort(
+                    self.economic_cohort(mutate=fill)
+                )["gates"]["cost"]
+                self.assertEqual(gate["passed"], expected)
+                self.assertEqual(
+                    gate["maximum_effective_fee_rate"], Decimal(fee) / 100
+                )
+
+    def test_slippage_and_aggregate_cost_boundaries_are_inclusive(self):
+        for ask, fee, expected, expected_slippage in (
+            ("99.9001", "0", True, Decimal("0.000999")),
+            ("99.9", "0.15", True, Decimal("0.001")),
+            ("99.8999", "0", False, Decimal("0.001001")),
+            ("99.9", "0.1501", False, Decimal("0.001")),
+        ):
+            def fill(index, result, ask=ask, fee=fee):
+                if index == 0:
+                    self.add_synthetic_fill(
+                        result,
+                        event_id="cost-" + ask + "-" + fee,
+                        fill_price="100",
+                        fee=fee,
+                    )
+                    result["replay_inputs"]["public_market_bundle"]["bbo"][
+                        "ask_price"
+                    ] = ask
+
+            with self.subTest(ask=ask, fee=fee):
+                gate = _evaluate_complete_system_paper_cohort(
+                    self.economic_cohort(mutate=fill)
+                )["gates"]["cost"]
+                self.assertEqual(gate["passed"], expected)
+                self.assertEqual(
+                    gate["maximum_effective_slippage_rate"],
+                    expected_slippage,
+                )
+                if ask == "99.9" and fee == "0.15":
+                    self.assertEqual(
+                        gate["modeled_execution_cost_usdt"], Decimal("0.25")
+                    )
+                    self.assertEqual(
+                        gate["aggregate_cost_limit_usdt"], Decimal("0.25")
+                    )
+
+    def test_sell_slippage_uses_frozen_bid_touch(self):
+        def sell(index, result):
+            if index == 0:
+                self.add_synthetic_fill(
+                    result,
+                    event_id="sell-cost",
+                    side="SELL",
+                    fill_price="100",
+                    fee="0",
+                )
+                result["replay_inputs"]["public_market_bundle"]["bbo"][
+                    "bid_price"
+                ] = "100.1"
+
+        gate = _evaluate_complete_system_paper_cohort(
+            self.economic_cohort(mutate=sell)
+        )["gates"]["cost"]
+        self.assertEqual(
+            gate["maximum_effective_slippage_rate"], Decimal("0.001")
+        )
+        self.assertTrue(gate["passed"])
+
+    def test_complete_cohort_drawdown_strict_boundary(self):
+        cases = (
+            ("909.00101", Decimal("0.099999"), True),
+            ("909", Decimal("0.10"), False),
+            ("908.99899", Decimal("0.100001"), False),
+        )
+        for low, expected_drawdown, expected_passed in cases:
+            def dip(index, result, low=low):
+                if index == 50:
+                    result["runtime_snapshot"]["marked_equity_usdt"] = low
+
+            with self.subTest(low=low):
+                gate = _evaluate_complete_system_paper_cohort(
+                    self.economic_cohort(mutate=dip)
+                )["gates"]["drawdown"]
+                self.assertEqual(gate["maximum_drawdown"], expected_drawdown)
+                self.assertEqual(gate["passed"], expected_passed)
+
+    def test_complete_cohort_lcb_strict_boundary(self):
+        for block_return, expected in (
+            ("-0.001", False),
+            ("0", False),
+            ("0.001", True),
+        ):
+            with self.subTest(block_return=block_return):
+                gate = _evaluate_complete_system_paper_cohort(
+                    self.economic_cohort(block_return=block_return)
+                )["gates"]["block_return"]
+                self.assertEqual(gate["lcb"], Decimal(block_return))
+                self.assertEqual(gate["passed"], expected)
+
+    def test_nonzero_sample_deviation_uses_frozen_student_t_constant(self):
+        returns = (Decimal("0.01"), Decimal("0.02"), Decimal("0.03"))
+        first = Decimal("1000") * (Decimal("1") + returns[0])
+        second = first * (Decimal("1") + returns[1])
+        third = second * (Decimal("1") + returns[2])
+        equities = tuple(
+            [first] * 180 + [second] * 180 + [third] * 180
+        )
+        result = _three_block_statistics(equities)
+        self.assertEqual(result["mean"], Decimal("0.02"))
+        self.assertEqual(result["sample_sd"], Decimal("0.01"))
+        self.assertEqual(
+            result["lcb"],
+            Decimal(
+                "0.003141455391529541448190553574375229610963609334968"
+            ),
+        )
+
+    def test_incomplete_evidence_is_not_a_complete_gate_failure(self):
+        complete_failure = _evaluate_complete_system_paper_cohort(
+            self.economic_cohort(block_return="0")
+        )
+        self.assertEqual(
+            complete_failure["status"], "SYSTEM_PAPER_GATE_DID_NOT_PASS"
+        )
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "COHORT_INCOMPLETE"
+        ):
+            _evaluate_complete_system_paper_cohort(
+                self.economic_cohort()[:-1]
+            )
+
+    def test_economic_result_is_independent_of_global_decimal_context(self):
+        def fill(index, result):
+            if index == 0:
+                self.add_synthetic_fill(
+                    result,
+                    event_id="decimal-context",
+                    fill_price="3",
+                    fee="0.01",
+                )
+                result["replay_inputs"]["public_market_bundle"]["bbo"][
+                    "ask_price"
+                ] = "2.99"
+
+        cohort = self.economic_cohort(mutate=fill)
+        with localcontext() as context:
+            context.prec = 12
+            low_precision = _evaluate_complete_system_paper_cohort(cohort)
+        with localcontext() as context:
+            context.prec = 50
+            high_precision = _evaluate_complete_system_paper_cohort(cohort)
+        self.assertEqual(low_precision, high_precision)
+
     def test_post_tail_artifact_replacement_during_evaluation_fails_closed(self):
         self.extend_to_complete_cohort()
         path = self.slot_root / (self.cohort_slot(270).slot_id + ".json")
@@ -1174,24 +1620,14 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
     def test_post_tail_missing_artifact_is_incomplete(self):
         self.extend_to_complete_cohort()
         sorted(self.slot_root.iterdir())[-1].unlink()
-        with self.assertRaisesRegex(
-            SystemPaperEvaluationError, "COHORT_INCOMPLETE"
-        ):
-            observe_system_paper_evaluation_readiness(
-                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
-            )
+        self.assert_post_tail_incomplete()
 
     def test_post_tail_extra_artifact_is_incomplete(self):
         self.extend_to_complete_cohort()
         extra = self.slot_root / "unexpected.json"
         extra.write_bytes(b"{}")
         extra.chmod(0o600)
-        with self.assertRaisesRegex(
-            SystemPaperEvaluationError, "COHORT_INCOMPLETE"
-        ):
-            observe_system_paper_evaluation_readiness(
-                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
-            )
+        self.assert_post_tail_incomplete()
 
     def test_post_tail_hardlinked_artifact_fails_closed(self):
         self.extend_to_complete_cohort()
