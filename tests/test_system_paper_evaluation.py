@@ -1,14 +1,20 @@
 """Fixed-tail System Paper evaluation authority tests."""
 
+import hashlib
 import json
 import os
 import sqlite3
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from crypto_quant.canonical import canonical_json, stable_id
+from crypto_quant.canonical import business_hash, canonical_json, stable_id
 from crypto_quant.evidence import artifact_self_hash
+from crypto_quant.system_paper_broker import (
+    FillScenario,
+    fill_scenario_payload,
+)
 from crypto_quant.system_paper_evaluation import (
     SystemPaperEvaluationError,
     observe_system_paper_evaluation_readiness,
@@ -18,11 +24,19 @@ from crypto_quant.system_paper_scheduler import (
     SystemPaperSchedulePolicy,
     SystemPaperScheduleState,
 )
+from crypto_quant.system_paper_runtime import (
+    SystemPaperSlotInputs,
+    load_system_paper_slot_result_bytes,
+    run_system_paper_slot,
+)
 from crypto_quant.system_paper_start_receipt import (
+    SystemPaperStartReceiptError,
+    load_system_paper_start_receipt,
     publish_system_paper_start_receipt,
 )
 import tests.test_system_paper_observer as observer_helpers
 import tests.test_system_paper_start_receipt as start_helpers
+from tests.test_system_paper_runtime import make_bundle
 
 
 class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
@@ -123,6 +137,305 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             connection.execute("DROP TABLE old_prepared_results")
             for _name, sql in triggers:
                 connection.execute(sql)
+
+    @staticmethod
+    def utc_text(value):
+        return (
+            value.astimezone(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+
+    def extend_to_complete_cohort(self):
+        plan = build_system_paper_plan()
+        policy = SystemPaperSchedulePolicy.create(plan)
+        start_receipt = json.loads(self.start_receipt_path.read_bytes())
+        started = datetime.fromisoformat(
+            start_receipt["cohort_started_at"].replace("Z", "+00:00")
+        )
+        first_path = Path(start_receipt["first_slot"]["result_path"])
+        first_body = first_path.read_bytes()
+        previous_result = load_system_paper_slot_result_bytes(first_body)
+        previous_snapshot = previous_result["runtime_snapshot"]
+        output_root = self.slot_root.parent
+        output_root_hash = business_hash(
+            {
+                "purpose": "SYSTEM_PAPER_IMMUTABLE_OUTPUT_ROOT",
+                "resolved_path": str(output_root.resolve()),
+            }
+        )
+        scenario = FillScenario.immediate_full()
+        scenario_payload = fill_scenario_payload(scenario)
+        request_families = [
+            "SPOT_AGG_TRADE",
+            "SPOT_BBO",
+            "SPOT_EXCHANGE_INFO",
+            "SPOT_KLINE_4H_WARMUP",
+        ]
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        with sqlite3.connect(str(state_path)) as connection:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            last = connection.execute(
+                "SELECT sequence, event_hash FROM schedule_events "
+                "ORDER BY sequence DESC LIMIT 1"
+            ).fetchone()
+            sequence = int(last["sequence"])
+            previous_event_hash = last["event_hash"]
+
+            def append_event(event_type, slot, event_time, payload):
+                nonlocal sequence, previous_event_hash
+                sequence += 1
+                normalized = json.loads(canonical_json(payload))
+                payload_hash = business_hash(normalized)
+                identity = {
+                    "sequence": sequence,
+                    "event_type": event_type,
+                    "slot_id": slot.slot_id,
+                    "event_time": event_time,
+                    "payload_hash": payload_hash,
+                    "previous_event_hash": previous_event_hash,
+                }
+                event_id = stable_id("system_paper_schedule_event", identity)
+                body = {
+                    "sequence": sequence,
+                    "event_id": event_id,
+                    "event_type": event_type,
+                    "slot_id": slot.slot_id,
+                    "event_time": event_time,
+                    "payload": normalized,
+                    "payload_hash": payload_hash,
+                    "previous_event_hash": previous_event_hash,
+                }
+                event_hash = business_hash(body)
+                connection.execute(
+                    "INSERT INTO schedule_events (event_id, event_type, slot_id, "
+                    "event_time, payload_json, payload_hash, previous_event_hash, "
+                    "event_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        event_id,
+                        event_type,
+                        slot.slot_id,
+                        event_time,
+                        canonical_json(normalized),
+                        payload_hash,
+                        previous_event_hash,
+                        event_hash,
+                    ),
+                )
+                previous_event_hash = event_hash
+                return event_id
+
+            for index in range(1, 540):
+                scheduled = started + timedelta(hours=4 * index)
+                scheduled_for = self.utc_text(scheduled)
+                slot = policy.slot_from_scheduled(scheduled_for)
+                sampled = scheduled + timedelta(minutes=5, seconds=11)
+                sampled_at = self.utc_text(sampled)
+                captured_at = self.utc_text(sampled + timedelta(seconds=1))
+                lease_expires_at = self.utc_text(sampled + timedelta(minutes=15))
+                bundle = make_bundle(
+                    scheduled_for=scheduled_for,
+                    captured_at=captured_at,
+                )
+                slot_core = {
+                    "plan_hash": policy.plan_hash,
+                    "schedule_policy_hash": policy.schedule_policy_hash,
+                    "scheduled_for": slot.scheduled_for,
+                    "due_at": slot.due_at,
+                    "expires_at": slot.expires_at,
+                }
+                worker_id = "observer-fixture-worker"
+                append_event(
+                    "CLAIMED",
+                    slot,
+                    sampled_at,
+                    {
+                        **slot_core,
+                        "worker_id": worker_id,
+                        "attempt": 1,
+                        "lease_expires_at": lease_expires_at,
+                    },
+                )
+                capture_payload = {
+                    "public_market_bundle": bundle,
+                    "capture_attempt_id": "capture-" + slot.slot_id[-12:],
+                    "captured_at": captured_at,
+                    "request_families": request_families,
+                    "network_request_count": 4,
+                }
+                envelope = {
+                    "schema_version": "1.0.0",
+                    "slot_id": slot.slot_id,
+                    "schedule_policy_hash": policy.schedule_policy_hash,
+                    "plan": plan,
+                    "scheduled_for": scheduled_for,
+                    "capture": capture_payload,
+                    "previous_runtime_snapshot": previous_snapshot,
+                    "fill_scenario": scenario_payload,
+                    "output_root_hash": output_root_hash,
+                }
+                input_bytes = canonical_json(envelope).encode("utf-8")
+                input_sha256 = hashlib.sha256(input_bytes).hexdigest()
+                input_hashes = {
+                    "plan_hash": plan["plan_hash"],
+                    "market_bundle_hash": bundle["bundle_hash"],
+                    "previous_snapshot_hash": previous_snapshot["snapshot_hash"],
+                    "fill_scenario_hash": business_hash(scenario_payload),
+                    "output_root_hash": output_root_hash,
+                }
+                input_event_id = append_event(
+                    "INPUT_PREPARED",
+                    slot,
+                    sampled_at,
+                    {
+                        **slot_core,
+                        "worker_id": worker_id,
+                        "attempt": 1,
+                        "input_sha256": input_sha256,
+                        **input_hashes,
+                    },
+                )
+                connection.execute(
+                    "INSERT INTO prepared_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        input_event_id,
+                        slot.slot_id,
+                        input_bytes,
+                        input_sha256,
+                        input_hashes["plan_hash"],
+                        input_hashes["market_bundle_hash"],
+                        input_hashes["previous_snapshot_hash"],
+                        input_hashes["fill_scenario_hash"],
+                        output_root_hash,
+                    ),
+                )
+                result = run_system_paper_slot(
+                    SystemPaperSlotInputs(
+                        plan=plan,
+                        scheduled_for=scheduled_for,
+                        public_market_bundle=bundle,
+                        previous_runtime_snapshot=previous_snapshot,
+                        fill_scenario=scenario,
+                    )
+                )
+                result_bytes = canonical_json(result).encode("utf-8")
+                result_sha256 = hashlib.sha256(result_bytes).hexdigest()
+                parent_hash = result["parent_slot_hash_or_null"] or "0" * 64
+                result_hashes = {
+                    "result_sha256": result_sha256,
+                    "slot_hash": result["slot_hash"],
+                    "runtime_snapshot_hash": result["runtime_snapshot"][
+                        "snapshot_hash"
+                    ],
+                    "parent_slot_hash": parent_hash,
+                    "output_root_hash": output_root_hash,
+                }
+                result_event_id = append_event(
+                    "RESULT_PREPARED",
+                    slot,
+                    sampled_at,
+                    {
+                        **slot_core,
+                        "worker_id": worker_id,
+                        "attempt": 1,
+                        **result_hashes,
+                    },
+                )
+                connection.execute(
+                    "INSERT INTO prepared_results VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        result_event_id,
+                        slot.slot_id,
+                        result_bytes,
+                        result_sha256,
+                        result_hashes["slot_hash"],
+                        result_hashes["runtime_snapshot_hash"],
+                        parent_hash,
+                        output_root_hash,
+                    ),
+                )
+                artifact_path = self.slot_root / (slot.slot_id + ".json")
+                artifact_path.write_bytes(result_bytes)
+                artifact_path.chmod(0o600)
+                append_event(
+                    "SUCCEEDED",
+                    slot,
+                    sampled_at,
+                    {
+                        **slot_core,
+                        "worker_id": worker_id,
+                        "attempt": 1,
+                        "result_sha256": result_sha256,
+                        "runtime_snapshot_hash": result_hashes[
+                            "runtime_snapshot_hash"
+                        ],
+                        "output_root_hash": output_root_hash,
+                    },
+                )
+                previous_result = result
+                previous_snapshot = result["runtime_snapshot"]
+        for path in state_path.parent.glob(state_path.name + "*"):
+            path.chmod(0o600)
+        self.assertEqual(len(tuple(self.slot_root.iterdir())), 540)
+        return previous_result
+
+    def cohort_slot(self, index):
+        start_receipt = json.loads(self.start_receipt_path.read_bytes())
+        started = datetime.fromisoformat(
+            start_receipt["cohort_started_at"].replace("Z", "+00:00")
+        )
+        policy = SystemPaperSchedulePolicy.create(build_system_paper_plan())
+        return policy.slot_from_scheduled(
+            self.utc_text(started + timedelta(hours=4 * index))
+        )
+
+    def assert_post_tail_incomplete(self):
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "COHORT_INCOMPLETE"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+    def mutate_prepared_bytes(self, table, column, slot_index, body):
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        with sqlite3.connect(str(state_path)) as connection:
+            triggers = connection.execute(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type='trigger' ORDER BY name"
+            ).fetchall()
+            for name, _sql in triggers:
+                connection.execute("DROP TRIGGER " + name)
+            connection.execute(
+                "UPDATE " + table + " SET " + column + "=? WHERE slot_id=?",
+                (body, self.cohort_slot(slot_index).slot_id),
+            )
+            for _name, sql in triggers:
+                connection.execute(sql)
+
+    def mutate_slot_artifact(self, slot_index, transform):
+        path = self.slot_root / (self.cohort_slot(slot_index).slot_id + ".json")
+        value = json.loads(path.read_bytes())
+        transform(value)
+        path.write_bytes(canonical_json(value).encode("utf-8"))
+        path.chmod(0o600)
+
+    def assert_post_tail_replay_invalid(self):
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "COHORT_REPLAY_INVALID"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+    def assert_post_tail_authority_invalid(self):
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "AUTHORITY_INVALID"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
 
     def test_pre_tail_observation_is_allowlisted_and_reads_no_slot_economics(self):
         forbidden = AssertionError("pre-tail economic or publication path called")
@@ -465,6 +778,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                 observe_system_paper_evaluation_readiness(**self.values())
 
     def test_post_tail_result_reverifies_all_retained_sources_before_return(self):
+        self.extend_to_complete_cohort()
         plan_bytes = self.plan_path.read_bytes()
 
         def mutate_then_return(**_kwargs):
@@ -476,7 +790,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
 
         with patch(
             "crypto_quant.system_paper_evaluation._evaluate_complete_cohort",
-            side_effect=mutate_then_return,
+            new=mutate_then_return,
         ):
             with self.assertRaisesRegex(
                 SystemPaperEvaluationError, "SOURCE_CHANGED"
@@ -486,6 +800,409 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                         _clock=lambda: "2026-11-02T08:05:00.000Z"
                     )
                 )
+
+    def test_post_tail_incomplete_cohort_stops_before_economic_evaluation(self):
+        with patch(
+            "crypto_quant.system_paper_evaluation._evaluate_complete_cohort",
+            side_effect=AssertionError("economic evaluation reached"),
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "COHORT_INCOMPLETE"
+            ):
+                observe_system_paper_evaluation_readiness(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+
+    def test_post_tail_failed_attempt_is_incomplete(self):
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        policy = SystemPaperSchedulePolicy.create(build_system_paper_plan())
+        with SystemPaperScheduleState(state_path, policy) as state:
+            slot = self.cohort_slot(1)
+            claim = state.claim(
+                slot,
+                worker_id="failed-cohort-test",
+                claimed_at="2026-08-04T12:05:01.000Z",
+            )
+            state.fail(
+                claim,
+                reason_code="SYSTEM_PAPER_RUNTIME_INTERRUPTED",
+                failed_at="2026-08-04T12:05:02.000Z",
+            )
+        self.assert_post_tail_incomplete()
+
+    def test_post_tail_missed_slot_is_incomplete(self):
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        policy = SystemPaperSchedulePolicy.create(build_system_paper_plan())
+        with SystemPaperScheduleState(state_path, policy) as state:
+            state.record_gaps(
+                self.cohort_slot(2),
+                recorded_at="2026-08-04T16:05:01.000Z",
+            )
+        self.assert_post_tail_incomplete()
+
+    def test_post_tail_expired_slot_is_incomplete(self):
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        policy = SystemPaperSchedulePolicy.create(build_system_paper_plan())
+        with SystemPaperScheduleState(state_path, policy) as state:
+            state.claim(
+                self.cohort_slot(1),
+                worker_id="expired-cohort-test",
+                claimed_at="2026-08-04T12:05:01.000Z",
+            )
+            state.record_gaps(
+                self.cohort_slot(2),
+                recorded_at="2026-08-04T16:05:01.000Z",
+            )
+        self.assert_post_tail_incomplete()
+
+    def test_post_tail_nonterminal_slot_is_incomplete(self):
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        policy = SystemPaperSchedulePolicy.create(build_system_paper_plan())
+        with SystemPaperScheduleState(state_path, policy) as state:
+            state.claim(
+                self.cohort_slot(1),
+                worker_id="nonterminal-cohort-test",
+                claimed_at="2026-08-04T12:05:01.000Z",
+            )
+        self.assert_post_tail_incomplete()
+
+    def test_post_tail_complete_cohort_replays_before_economic_evaluation(self):
+        self.extend_to_complete_cohort()
+
+        def summarize_cohort(**kwargs):
+            cohort = kwargs["cohort"]
+            self.assertEqual(len(cohort), 540)
+            self.assertTrue(all(hasattr(item, "result_bytes") for item in cohort))
+            return {
+                "status": "TASK_2_COHORT_REPLAYED",
+                "slot_count": len(cohort),
+                "first_slot_id": cohort[0].slot_id,
+                "last_slot_id": cohort[-1].slot_id,
+            }
+
+        with patch(
+            "crypto_quant.system_paper_evaluation._evaluate_complete_cohort",
+            new=summarize_cohort,
+        ):
+            result = observe_system_paper_evaluation_readiness(
+                **self.values(
+                    _clock=lambda: "2026-11-02T08:05:00.000Z"
+                )
+            )
+        self.assertEqual(result["slot_count"], 540)
+        self.assertEqual(
+            result["first_slot_id"],
+            json.loads(self.start_receipt_path.read_bytes())["first_slot"][
+                "slot_id"
+            ],
+        )
+
+    def test_post_tail_tampered_artifact_stops_before_economic_evaluation(self):
+        self.extend_to_complete_cohort()
+        middle = sorted(self.slot_root.iterdir())[270]
+        middle.write_bytes(b"{}")
+        middle.chmod(0o600)
+        with patch(
+            "crypto_quant.system_paper_evaluation._evaluate_complete_cohort",
+            side_effect=AssertionError("economic evaluation reached"),
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "COHORT_(INCOMPLETE|REPLAY_INVALID)"
+            ):
+                observe_system_paper_evaluation_readiness(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+
+    def test_post_tail_prepared_input_byte_mutation_fails_authority(self):
+        self.extend_to_complete_cohort()
+        self.mutate_prepared_bytes(
+            "prepared_inputs", "input_bytes", 270, b"{}"
+        )
+        self.assert_post_tail_authority_invalid()
+
+    def test_start_loader_rejects_later_prepared_blob_mutation(self):
+        self.extend_to_complete_cohort()
+        self.mutate_prepared_bytes(
+            "prepared_inputs", "input_bytes", 270, b"{}"
+        )
+        preflight = self.start.observer.install.preflight
+        with self.assertRaises(SystemPaperStartReceiptError):
+            load_system_paper_start_receipt(
+                receipt_path=self.start_receipt_path,
+                contract_path=self.contract_path,
+                plist_path=preflight.plist_path,
+                preflight_receipt_path=self.start.observer.preflight_path,
+                install_receipt_path=self.install_receipt_path,
+                _machine_probe=preflight.machine,
+                _filesystem_probe=preflight.filesystem,
+            )
+
+    def test_post_tail_prepared_result_byte_mutation_fails_authority(self):
+        self.extend_to_complete_cohort()
+        self.mutate_prepared_bytes(
+            "prepared_results", "result_bytes", 270, b"{}"
+        )
+        self.assert_post_tail_authority_invalid()
+
+    def test_post_tail_output_root_identity_mutation_fails_authority(self):
+        self.extend_to_complete_cohort()
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        slot_id = self.cohort_slot(270).slot_id
+        with sqlite3.connect(str(state_path)) as connection:
+            body = connection.execute(
+                "SELECT input_bytes FROM prepared_inputs WHERE slot_id=?",
+                (slot_id,),
+            ).fetchone()[0]
+        envelope = json.loads(body)
+        envelope["output_root_hash"] = "0" * 64
+        self.mutate_prepared_bytes(
+            "prepared_inputs",
+            "input_bytes",
+            270,
+            canonical_json(envelope).encode("utf-8"),
+        )
+        self.assert_post_tail_authority_invalid()
+
+    def test_post_tail_snapshot_prefix_mutation_fails_replay(self):
+        self.extend_to_complete_cohort()
+
+        def remove_prefix_item(value):
+            value["runtime_snapshot"]["processed_slot_ids"].pop()
+
+        self.mutate_slot_artifact(270, remove_prefix_item)
+        self.assert_post_tail_replay_invalid()
+
+    def test_post_tail_parent_mismatch_fails_replay(self):
+        self.extend_to_complete_cohort()
+
+        def break_parent(value):
+            value["parent_slot_hash_or_null"] = "0" * 64
+
+        self.mutate_slot_artifact(270, break_parent)
+        self.assert_post_tail_replay_invalid()
+
+    def test_post_tail_event_hash_mutation_fails_state_replay(self):
+        self.extend_to_complete_cohort()
+        state_path = self.runtime_root / "state" / "system-paper.sqlite"
+        with sqlite3.connect(str(state_path)) as connection:
+            triggers = connection.execute(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type='trigger' ORDER BY name"
+            ).fetchall()
+            for name, _sql in triggers:
+                connection.execute("DROP TRIGGER " + name)
+            sequence = connection.execute(
+                "SELECT sequence FROM schedule_events ORDER BY sequence "
+                "LIMIT 1 OFFSET 1000"
+            ).fetchone()[0]
+            connection.execute(
+                "UPDATE schedule_events SET event_hash=? WHERE sequence=?",
+                ("0" * 64, sequence),
+            )
+            for _name, sql in triggers:
+                connection.execute(sql)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "STATE_REPLAY_INVALID"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+    def test_post_tail_wrong_first_receipt_fails_before_cohort(self):
+        receipt = json.loads(self.start_receipt_path.read_bytes())
+        receipt["first_slot"]["result_sha256"] = "0" * 64
+        receipt["observation"]["first_slot"]["result_sha256"] = "0" * 64
+        receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
+        self.start_receipt_path.write_bytes(
+            canonical_json(receipt).encode("utf-8")
+        )
+        self.start_receipt_path.chmod(0o600)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "AUTHORITY_INVALID"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+    def test_post_tail_misaligned_cohort_start_fails_authority(self):
+        receipt = json.loads(self.start_receipt_path.read_bytes())
+        receipt["cohort_started_at"] = "2026-08-04T09:00:00.000Z"
+        receipt["cohort_tail_end"] = "2026-11-02T09:00:00.000Z"
+        receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
+        self.start_receipt_path.write_bytes(
+            canonical_json(receipt).encode("utf-8")
+        )
+        self.start_receipt_path.chmod(0o600)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "AUTHORITY_INVALID"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T09:05:00.000Z")
+            )
+
+    def test_post_tail_non_owner_only_artifact_fails_closed(self):
+        self.extend_to_complete_cohort()
+        path = self.slot_root / (self.cohort_slot(270).slot_id + ".json")
+        path.chmod(0o640)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "SOURCE_CHANGED"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+    def test_post_tail_symlinked_artifact_fails_closed(self):
+        self.extend_to_complete_cohort()
+        path = self.slot_root / (self.cohort_slot(270).slot_id + ".json")
+        retained = self.runtime_root / "symlink-target.json"
+        path.rename(retained)
+        path.symlink_to(retained)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "SOURCE_CHANGED"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+    def test_post_tail_oversized_artifact_is_rejected_before_read(self):
+        from crypto_quant import system_paper_evaluation as module
+
+        self.extend_to_complete_cohort()
+        path = self.slot_root / (self.cohort_slot(270).slot_id + ".json")
+        with path.open("wb") as handle:
+            handle.truncate(1024 * 1024 + 1)
+        path.chmod(0o600)
+        original_read = module._RetainedAuthorityFile._read
+        oversized_reads = {"count": 0}
+
+        def reject_oversized_read(descriptor, maximum_bytes):
+            if os.fstat(descriptor).st_size > 1024 * 1024:
+                oversized_reads["count"] += 1
+                raise AssertionError("oversized artifact body was read")
+            return original_read(descriptor, maximum_bytes)
+
+        with patch.object(
+            module._RetainedAuthorityFile,
+            "_read",
+            side_effect=reject_oversized_read,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "SOURCE_CHANGED"
+            ):
+                observe_system_paper_evaluation_readiness(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+        self.assertEqual(oversized_reads["count"], 0)
+
+    def test_first_artifact_uses_runtime_limit_before_observer_read(self):
+        from crypto_quant import system_paper_observer as observer_module
+
+        receipt = json.loads(self.start_receipt_path.read_bytes())
+        path = Path(receipt["first_slot"]["result_path"])
+        with path.open("wb") as handle:
+            handle.truncate(1024 * 1024 + 1)
+        path.chmod(0o600)
+        original_read = observer_module.os.read
+        oversized_reads = {"count": 0}
+
+        def reject_oversized_read(descriptor, count):
+            if os.fstat(descriptor).st_size > 1024 * 1024:
+                oversized_reads["count"] += 1
+                raise AssertionError("oversized first artifact was read")
+            return original_read(descriptor, count)
+
+        with patch.object(
+            observer_module.os,
+            "read",
+            side_effect=reject_oversized_read,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "AUTHORITY_INVALID"
+            ):
+                observe_system_paper_evaluation_readiness(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+        self.assertEqual(oversized_reads["count"], 0)
+
+    def test_full_state_rows_do_not_call_fetchall(self):
+        from crypto_quant import system_paper_evaluation as module
+
+        class StreamingCursor:
+            def __iter__(self):
+                return iter(({"slot_id": "slot-a"}, {"slot_id": "slot-b"}))
+
+            def fetchall(self):
+                raise AssertionError("prepared rows were materialized twice")
+
+        self.assertEqual(
+            module._stream_row_dicts(StreamingCursor()),
+            ({"slot_id": "slot-a"}, {"slot_id": "slot-b"}),
+        )
+
+    def test_post_tail_artifact_replacement_during_evaluation_fails_closed(self):
+        self.extend_to_complete_cohort()
+        path = self.slot_root / (self.cohort_slot(270).slot_id + ".json")
+        body = path.read_bytes()
+
+        def replace_artifact(**_kwargs):
+            path.rename(path.with_suffix(".retained-original"))
+            path.write_bytes(body)
+            path.chmod(0o600)
+            return {"status": "UNREACHABLE_TEST_RESULT"}
+
+        with patch(
+            "crypto_quant.system_paper_evaluation._evaluate_complete_cohort",
+            new=replace_artifact,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperEvaluationError, "SOURCE_CHANGED"
+            ):
+                observe_system_paper_evaluation_readiness(
+                    **self.values(
+                        _clock=lambda: "2026-11-02T08:05:00.000Z"
+                    )
+                )
+
+    def test_post_tail_missing_artifact_is_incomplete(self):
+        self.extend_to_complete_cohort()
+        sorted(self.slot_root.iterdir())[-1].unlink()
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "COHORT_INCOMPLETE"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+    def test_post_tail_extra_artifact_is_incomplete(self):
+        self.extend_to_complete_cohort()
+        extra = self.slot_root / "unexpected.json"
+        extra.write_bytes(b"{}")
+        extra.chmod(0o600)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "COHORT_INCOMPLETE"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
+
+    def test_post_tail_hardlinked_artifact_fails_closed(self):
+        self.extend_to_complete_cohort()
+        artifact = sorted(self.slot_root.iterdir())[100]
+        os.link(artifact, self.runtime_root / "artifact-hardlink")
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError, "SOURCE_CHANGED"
+        ):
+            observe_system_paper_evaluation_readiness(
+                **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+            )
 
 
 if __name__ == "__main__":
