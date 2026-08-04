@@ -145,17 +145,31 @@ PASS 也只允许表述为“System Paper 研究门通过，可继续完成 repl
 ## 8. 发布与重放
 
 尾部前 pending 不写文件。尾部后首个有效最终状态（包括 PASS、DID_NOT_PASS 或
-INCONCLUSIVE）必须通过 owner-only `0700/0600`、no-overwrite exact publisher 发布。
-文件名只能由 contract hash、start receipt hash、event-chain end hash 和 exact slot inventory hash
-派生。
+INCONCLUSIVE）必须发布到 contract 的 `root_paths.artifacts` 下唯一的
+`system-paper-evaluations` 专用目录。调用方传入的 output root 必须与该派生路径完全
+一致，且不得与 contract、start receipt、slot 或 state 来源重叠。目录与文件权限
+固定为 owner-only `0700/0600`。
 
-production loader 必须从 exact 原始输入重算全部结果，不只验证 self-hash。
-同一 identity 下 exact bytes 可幂等加载，任何差异都是不可覆盖冲突。
+终态序列 key 只由 `(contract_hash, start_receipt_hash)` 派生。publisher 必须在专用
+root 的 owner-`0600` no-follow lock 下串行严格扫描、发布和发布后扫描；首个终态
+包括 INCONCLUSIVE 永久封存该序列。同一 key 只有完全相同的 canonical bytes
+才能幂等返回，其他候选均为不可覆盖的 terminal conflict。文件名由 contract hash、
+start receipt hash、`state_binding_hash` 和 exact slot inventory hash 派生。
+
+production loader 必须要求传入路径等于 artifact 声明的 output root 下的 exact
+`result_id.json`，保留该 owner-`0700` root descriptor，通过 dirfd no-follow 相对打开
+文件，并在原始输入全量重算后再次验证 root/file attachment。loader 不得创建
+root、lock 或结果文件。
 
 ## 9. Schema 与测试要求
 
 Schema 两份镜像必须 byte-identical，`additionalProperties=false`，禁止 float/NaN/Infinity。
 结果必须包含完整来源 hash、证据 inventory、每个门的 value/threshold/passed 和零权限计数。
+尾部后只允许一次 authority/state/inventory 快照，错误路径不得重新捕获。state 绑定
+为严格 union：可重放状态使用 `EVENT_CHAIN_END`；字节稳定但语义/event/prepared
+不可重放的 SQLite main/WAL/SHM 组使用 `RAW_SQLITE_GROUP`并发布可加载的
+INCONCLUSIVE。捕获后发生 identity 或字节变化始终硬失败；PASS 和 DID_NOT_PASS
+只允许 `EVENT_CHAIN_END`。
 
 必须覆盖：
 
@@ -165,6 +179,8 @@ Schema 两份镜像必须 byte-identical，`additionalProperties=false`，禁止
 - 来源在捕获期间被同字节不同 inode 替换；
 - safety/cost/drawdown/30-day LCB 每个门的通过和失败；
 - PASS/DID_NOT_PASS/INCONCLUSIVE 全部如实保留；
+- 首个终态串行、并发候选、专用 root 及来源重叠零写；
+- 单次快照 race、raw SQLite state 绑定和捕获后变化硬失败；
 - CLI 只有七个路径，无人工选择器；
 - exact 发布、冲突、loader 全量重放、Schema mirror 和 build manifest。
 

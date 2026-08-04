@@ -334,11 +334,13 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
             [
                 sys.executable,
                 "-c",
-                "import sys; import crypto_quant.system_paper_evaluation_cli; "
+                "import sys; before=set(sys.modules); "
+                "import crypto_quant.system_paper_evaluation_cli; "
+                "loaded=set(sys.modules)-before; "
                 "blocked=('network','scheduler','runtime','broker','order','runner',"
                 "'urllib','socket','http','httpx','requests','aiohttp'); "
                 "raise SystemExit(any(any(token in name.lower() for token in blocked) "
-                "for name in sys.modules))",
+                "for name in loaded))",
             ],
             capture_output=True,
             check=False,

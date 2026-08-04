@@ -124,6 +124,7 @@ PYTHONPATH=src /usr/bin/python3 -m unittest \
 - Modify: `src/crypto_quant/build.py`
 - Modify: `tests/test_estimators.py`
 - Modify: `config/evaluator-build-manifest-v1.json`
+- Modify: `scripts/refresh_evaluator_build_manifest.py`
 - Modify: `pyproject.toml`, `setup.py`, `src/crypto_quant/__init__.py`, `src/crypto_quant_core.egg-info/PKG-INFO`
 - Create: `docs/adr/0059-system-paper-fixed-tail-evaluation.md`
 - Create: `docs/implementation-status-v0.59.0.md`

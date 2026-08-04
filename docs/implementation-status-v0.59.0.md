@@ -12,6 +12,9 @@
 - 只接受七个绝对路径的 CLI，不接受时间、槽位、价格、费用、PnL、标签、阈值或结果名；
 - `system-paper-evaluation-v1` 双 Schema、镜像一致性检查、CLI/evaluator 测试和 build
   identity；
+- 发布前最终审查发现并修复了首次 final 竞态、错误路径重新捕获、可重叠
+  output root 及脱离 loader 缺口；现在首个 contract/start 终态永久封存，只使用一次
+  post-tail 快照，并为稳定但不可重放 state 保留 raw SQLite 组绑定的 INCONCLUSIVE；
 - package `0.59.0` 与 evaluator build manifest `1.53.0`。
 
 ## 真实状态与权限边界

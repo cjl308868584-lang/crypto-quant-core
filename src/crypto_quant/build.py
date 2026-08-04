@@ -133,6 +133,7 @@ _FROZEN_ARTIFACT_PATHS = (
     "artifacts/system-paper/system-paper-plan-v0.55.0.json",
 )
 _FROZEN_RELEASE_PATHS = (
+    "tests/test_estimators.py",
     "tests/system_paper_fixtures.py",
     "tests/test_offline_paper.py",
     "tests/test_system_paper_scheduler.py",
@@ -169,8 +170,13 @@ _FROZEN_RELEASE_PATHS = (
     "2026-08-04-system-paper-fixed-tail-evaluation-design.md",
     "docs/superpowers/plans/"
     "2026-08-04-system-paper-fixed-tail-evaluation.md",
+    "docs/superpowers/specs/"
+    "2026-08-04-system-paper-finalization-hardening-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-04-system-paper-finalization-hardening.md",
     "docs/adr/0059-system-paper-fixed-tail-evaluation.md",
     "docs/implementation-status-v0.59.0.md",
+    "scripts/refresh_evaluator_build_manifest.py",
 )
 
 
