@@ -143,7 +143,22 @@ def fake_release_repository(root):
     return repository
 
 
+def isolated_temporary_directory():
+    """Create auto-cleaned test roots outside forbidden ephemeral paths."""
+
+    return tempfile.TemporaryDirectory(dir=Path.home())
+
+
 class SystemPaperLaunchdTests(unittest.TestCase):
+    def test_fixture_ignores_ephemeral_system_default_temp_root(self):
+        with patch.object(tempfile, "tempdir", "/tmp"):
+            with isolated_temporary_directory() as directory:
+                root = Path(directory)
+                self.assertFalse(root.is_relative_to(Path("/tmp")))
+                self.assertFalse(root.is_relative_to(Path("/private/tmp")))
+                result, *_unused = self.publish(root)
+                self.assertEqual(result["outcome"], "GENERATED_NOT_INSTALLED")
+
     def publish(self, base, *, runner=None):
         root = Path(base).resolve()
         repository = fake_release_repository(root)
@@ -169,7 +184,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
         return result, repository, runtime_root, output_root, command_runner
 
     def test_publish_replays_release_snapshot_and_fixed_launchagent(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with isolated_temporary_directory() as directory:
             result, repository, runtime_root, _output, runner = self.publish(
                 directory
             )
@@ -297,7 +312,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
             def __call__(self, *args, **kwargs):
                 raise AssertionError("production loader executed a command")
 
-        with tempfile.TemporaryDirectory() as directory:
+        with isolated_temporary_directory() as directory:
             result, _repository, _runtime, _output, _runner = self.publish(directory)
             contract_path = Path(result["contract_path"])
             plist_path = Path(result["plist_path"])
@@ -372,7 +387,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
             ),
         )
         for name, overrides in cases:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+            with self.subTest(name=name), isolated_temporary_directory() as directory:
                 root = Path(directory).resolve()
                 repository = fake_release_repository(root)
                 runtime_root = root / "system-paper-runtime"
@@ -396,7 +411,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
 
     def test_manifest_version_and_package_metadata_mismatch_fail_closed(self):
         for name in ("manifest_version", "package_metadata"):
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+            with self.subTest(name=name), isolated_temporary_directory() as directory:
                 root = Path(directory).resolve()
                 repository = fake_release_repository(root)
                 manifest_path = (
@@ -439,7 +454,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
                     )
 
     def test_exact_publication_is_idempotent_and_conflicts_on_changed_bytes(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with isolated_temporary_directory() as directory:
             result, repository, runtime_root, output_root, runner = self.publish(
                 directory
             )
@@ -474,7 +489,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
             self.assertFalse(retry["snapshot_created"])
 
     def test_loader_rejects_snapshot_and_rehashed_contract_mutation(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with isolated_temporary_directory() as directory:
             result, _repository, _runtime, _output, _runner = self.publish(directory)
             contract_path = Path(result["contract_path"])
             plist_path = Path(result["plist_path"])
@@ -492,7 +507,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
     def test_loader_rejects_coordinated_snapshot_inventory_and_contract_rehash(self):
         """Catches treating the contract inventory as its own source of truth."""
 
-        with tempfile.TemporaryDirectory() as directory:
+        with isolated_temporary_directory() as directory:
             result, _repository, _runtime, _output, _runner = self.publish(directory)
             contract_path = Path(result["contract_path"])
             plist_path = Path(result["plist_path"])
@@ -537,7 +552,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
                     plist_path=plist_path,
                 )
 
-        with tempfile.TemporaryDirectory() as directory:
+        with isolated_temporary_directory() as directory:
             result, _repository, _runtime, _output, _runner = self.publish(directory)
             contract_path = Path(result["contract_path"])
             plist_path = Path(result["plist_path"])
@@ -555,7 +570,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
     def test_source_change_during_snapshot_is_removed_and_fails_closed(self):
         import crypto_quant.system_paper_launchd as module
 
-        with tempfile.TemporaryDirectory() as directory:
+        with isolated_temporary_directory() as directory:
             root = Path(directory).resolve()
             repository = fake_release_repository(root)
             runtime_root = root / "system-paper-runtime"
@@ -624,7 +639,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, help_text)
 
-        with tempfile.TemporaryDirectory() as directory:
+        with isolated_temporary_directory() as directory:
             root = Path(directory).resolve()
             repository = fake_release_repository(root)
             target = root / "runtime-target"
@@ -665,7 +680,7 @@ class SystemPaperLaunchdTests(unittest.TestCase):
                 )
 
     def test_render_cli_publishes_but_never_installs(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with isolated_temporary_directory() as directory:
             root = Path(directory).resolve()
             repository = fake_release_repository(root)
             timezone = SimpleNamespace(tm_gmtoff=28800, tm_isdst=0)

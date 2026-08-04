@@ -314,16 +314,16 @@
     "tests/test_system_paper_fault_injection.py": "c3f5a43e70557f709a1fa242b0da2fbb434caff5d949bc0e8d76e868bc787e7f",
     "tests/test_system_paper_install.py": "e1c3e73bf9234593bec4a75dad425b625fbaa562eaf9a7a33ba6cfc4d628ee28",
     "tests/test_system_paper_launchctl.py": "a71b97a67491e2bd5c53b2e92ee33aeaf6e927812d3a420a76d008f78158812c",
-    "tests/test_system_paper_launchd.py": "2d126d07ef586048114af34323652fe6027200b788c45ccaf4934013dbbd9f15",
+    "tests/test_system_paper_launchd.py": "3ad18a0d39fa1a3fbd29556b3b6c7ef2164bd86614c20cda24f0f7e5f8ce17fd",
     "tests/test_system_paper_observer.py": "cd66756f84133a06d4f5ed0e1a71194471d94f94b1f80be4d6f94469407ea162",
-    "tests/test_system_paper_preflight.py": "c7e4b3cb907aa659dd27ec5e6fbfcdefce57e501206c132ede1a54246cac0b74",
+    "tests/test_system_paper_preflight.py": "c5911872f933ce9be51f68f83776ca2cbcb2ab254b74007ca6f7939683d62191",
     "tests/test_system_paper_public_input.py": "c068f973f9eee4bb80295cb47f57690b0e37051734e411cd5462e3f2b948eb1a",
     "tests/test_system_paper_runtime.py": "7fed3ae70fdd74baa30e58b4a9dbed84df1269568d6653ba4b232ef9319a6cc8",
     "tests/test_system_paper_runtime_cli.py": "c02fe3cfbeff71a97081605eff792e715176147be92227ae3ea63714564e8c00",
     "tests/test_system_paper_scheduler.py": "bd602843f290cc40bcf84693955e4fd4296e21ffc1656496379fe1b7a634c13a",
     "tests/test_system_paper_start_receipt.py": "28ebd13a6108c64e92b55733b369e83950bbbc3513abdcd125d089fe88ecc5b0"
   },
-  "build_input_tree_hash": "a6f397343576eac666efa615e1f3e9ec093c72c8c03c722b431736ec16043f41",
+  "build_input_tree_hash": "03267704851bef8621c6156fbb9973641b4fb21972c70612ea32b5e7bae59ea1",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -331,5 +331,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "4470caa5d652b12793caf1255f848d7f396c278596efc3ae20906b4ed0d9360c"
+  "manifest_hash": "62503017c3a72cf118a82cdbca4e0df6c3243fd9e8ec91715504e9d93b87df5c"
 }

@@ -119,7 +119,7 @@ class FakePingTransport:
 
 class SystemPaperPreflightTests(unittest.TestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
+        self.directory = launchd_helpers.isolated_temporary_directory()
         self.base = Path(self.directory.name).resolve()
         launchd = launchd_helpers.SystemPaperLaunchdTests()
         (
