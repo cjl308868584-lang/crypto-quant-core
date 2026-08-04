@@ -2,11 +2,15 @@
 
 import io
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
+import ast
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from crypto_quant.canonical import canonical_json
 from crypto_quant.system_paper_evaluation import SystemPaperEvaluationError
@@ -14,6 +18,12 @@ from crypto_quant.system_paper_evaluation_cli import main
 
 
 class SystemPaperEvaluationCliTests(unittest.TestCase):
+    def evaluator_patch(self, evaluator):
+        return patch(
+            "crypto_quant.system_paper_evaluation_cli._evaluate",
+            new=evaluator,
+        )
+
     def arguments(self, base: Path):
         return [
             "--plan-path", str(base / "plan.json"),
@@ -32,23 +42,21 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
             status = main(argv)
         return status, stdout.getvalue(), stderr.getvalue()
 
-    def test_parser_exposes_exactly_seven_path_options(self):
-        status, stdout, stderr = self.invoke(["--help"])
+    def assert_argument_failure(self, argv):
+        status, stdout, stderr = self.invoke(argv)
+        self.assertEqual((status, stdout), (1, ""))
+        self.assertEqual(len(stderr.splitlines()), 1)
+        self.assertLessEqual(len(stderr.encode("utf-8")), 512)
+        self.assertEqual(canonical_json(json.loads(stderr)), stderr.rstrip("\n"))
+        self.assertEqual(
+            json.loads(stderr)["reason_code"],
+            "SYSTEM_PAPER_EVALUATION_CLI_ARGUMENT_INVALID",
+        )
 
-        self.assertEqual((status, stderr), (0, ""))
-        for allowed in (
-            "--plan-path", "--start-receipt-path", "--install-receipt-path",
-            "--contract-path", "--slot-root", "--runtime-root", "--output-root",
-        ):
-            with self.subTest(allowed=allowed):
-                self.assertIn(allowed, stdout)
-        for forbidden in (
-            "--clock", "--date", "--pnl", "--fee", "--price",
-            "--return", "--label", "--threshold", "--result-id", "--filename",
-            "--probe",
-        ):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, stdout)
+    def test_parser_rejects_help_and_unknown_help_without_success_output(self):
+        for argv in (["--help"], ["-h"], ["--unknown", "x", "--help"]):
+            with self.subTest(argv=argv):
+                self.assert_argument_failure(argv)
 
     def test_parser_rejects_each_forbidden_selector_and_relative_path(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -59,15 +67,8 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
                 "--probe",
             ):
                 with self.subTest(forbidden=forbidden):
-                    status, stdout, stderr = self.invoke(
+                    self.assert_argument_failure(
                         arguments + [forbidden, "operator-value"]
-                    )
-                    self.assertEqual((status, stdout), (1, ""))
-                    self.assertEqual(len(stderr.splitlines()), 1)
-                    self.assertEqual(canonical_json(json.loads(stderr)), stderr.rstrip("\n"))
-                    self.assertEqual(
-                        json.loads(stderr)["reason_code"],
-                        "SYSTEM_PAPER_EVALUATION_CLI_ARGUMENT_INVALID",
                     )
 
             relative = list(arguments)
@@ -78,6 +79,26 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
                 json.loads(stderr)["reason_code"],
                 "SYSTEM_PAPER_EVALUATION_CLI_PATH_INVALID",
             )
+
+    def test_parser_requires_each_path_once_and_allows_equals_syntax(self):
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = self.arguments(Path(directory))
+            self.assert_argument_failure(arguments[:-2])
+            self.assert_argument_failure(arguments + ["--plan-path", "/tmp/other"])
+
+            equals_arguments = [
+                f"{arguments[index]}={arguments[index + 1]}"
+                for index in range(0, len(arguments), 2)
+            ]
+            evaluator = Mock(return_value={"status": "SYSTEM_PAPER_GATE_PASS"})
+            with self.evaluator_patch(evaluator):
+                status, stdout, stderr = self.invoke(equals_arguments)
+
+        self.assertEqual((status, stderr), (0, ""))
+        self.assertEqual(
+            json.loads(stdout)["status"], "SYSTEM_PAPER_GATE_PASS"
+        )
+        self.assertEqual(evaluator.call_count, 1)
 
     def test_pending_result_is_one_canonical_stdout_line(self):
         result = {
@@ -96,10 +117,8 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
         self.assert_stdout_result({"status": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE", "result_id": "fixed"})
 
     def assert_stdout_result(self, result):
-        with tempfile.TemporaryDirectory() as directory, patch(
-            "crypto_quant.system_paper_evaluation_cli.evaluate_system_paper",
-            return_value=result,
-        ) as evaluator:
+        evaluator = Mock(return_value=result)
+        with tempfile.TemporaryDirectory() as directory, self.evaluator_patch(evaluator):
             status, stdout, stderr = self.invoke(self.arguments(Path(directory)))
 
         self.assertEqual((status, stderr), (0, ""))
@@ -120,12 +139,12 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
         )
 
     def test_structured_evaluation_failure_is_bounded_canonical_stderr(self):
-        with tempfile.TemporaryDirectory() as directory, patch(
-            "crypto_quant.system_paper_evaluation_cli.evaluate_system_paper",
+        evaluator = Mock(
             side_effect=SystemPaperEvaluationError(
                 "SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE"
-            ),
-        ):
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory, self.evaluator_patch(evaluator):
             status, stdout, stderr = self.invoke(self.arguments(Path(directory)))
 
         self.assertEqual((status, stdout), (1, ""))
@@ -141,10 +160,8 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
         )
 
     def test_unserializable_evaluator_result_uses_the_failure_envelope(self):
-        with tempfile.TemporaryDirectory() as directory, patch(
-            "crypto_quant.system_paper_evaluation_cli.evaluate_system_paper",
-            return_value={"invalid": object()},
-        ):
+        evaluator = Mock(return_value={"invalid": object()})
+        with tempfile.TemporaryDirectory() as directory, self.evaluator_patch(evaluator):
             status, stdout, stderr = self.invoke(self.arguments(Path(directory)))
 
         self.assertEqual((status, stdout), (1, ""))
@@ -153,6 +170,155 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
         self.assertEqual(canonical_json(json.loads(stderr)), stderr.rstrip("\n"))
         self.assertEqual(
             json.loads(stderr)["reason_code"], "SYSTEM_PAPER_EVALUATION_CLI_FAILED"
+        )
+
+    def test_recursive_evaluator_result_uses_the_failure_envelope(self):
+        loop = []
+        loop.append(loop)
+        evaluator = Mock(return_value={"loop": loop})
+        with tempfile.TemporaryDirectory() as directory, self.evaluator_patch(evaluator):
+            status, stdout, stderr = self.invoke(self.arguments(Path(directory)))
+
+        self.assertEqual((status, stdout), (1, ""))
+        self.assertEqual(len(stderr.splitlines()), 1)
+        self.assertLessEqual(len(stderr.encode("utf-8")), 512)
+        self.assertEqual(canonical_json(json.loads(stderr)), stderr.rstrip("\n"))
+
+    def test_stdout_write_broken_pipe_uses_the_failure_envelope(self):
+        class BrokenWriter:
+            def write(self, _value):
+                raise BrokenPipeError()
+
+            def flush(self):
+                return None
+
+        evaluator = Mock(return_value={"status": "SYSTEM_PAPER_GATE_PASS"})
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, self.evaluator_patch(evaluator), patch(
+            "crypto_quant.system_paper_evaluation_cli.sys.stdout", BrokenWriter()
+        ), patch("crypto_quant.system_paper_evaluation_cli.sys.stderr", stderr):
+            status = main(self.arguments(Path(directory)))
+
+        self.assertEqual(status, 1)
+        self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+        self.assertEqual(canonical_json(json.loads(stderr.getvalue())), stderr.getvalue().rstrip("\n"))
+
+    def test_stdout_flush_broken_pipe_uses_the_failure_envelope(self):
+        class BrokenFlusher:
+            def write(self, value):
+                return len(value)
+
+            def flush(self):
+                raise BrokenPipeError()
+
+        evaluator = Mock(return_value={"status": "SYSTEM_PAPER_GATE_PASS"})
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, self.evaluator_patch(evaluator), patch(
+            "crypto_quant.system_paper_evaluation_cli.sys.stdout", BrokenFlusher()
+        ), patch("crypto_quant.system_paper_evaluation_cli.sys.stderr", stderr):
+            status = main(self.arguments(Path(directory)))
+
+        self.assertEqual(status, 1)
+        self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+        self.assertEqual(canonical_json(json.loads(stderr.getvalue())), stderr.getvalue().rstrip("\n"))
+
+    def test_stdout_short_write_uses_the_failure_envelope(self):
+        class ShortWriter:
+            def write(self, _value):
+                return 1
+
+            def flush(self):
+                return None
+
+        evaluator = Mock(return_value={"status": "SYSTEM_PAPER_GATE_PASS"})
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, self.evaluator_patch(evaluator), patch(
+            "crypto_quant.system_paper_evaluation_cli.sys.stdout", ShortWriter()
+        ), patch("crypto_quant.system_paper_evaluation_cli.sys.stderr", stderr):
+            status = main(self.arguments(Path(directory)))
+
+        self.assertEqual(status, 1)
+        self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+        self.assertEqual(canonical_json(json.loads(stderr.getvalue())), stderr.getvalue().rstrip("\n"))
+
+    def test_stderr_short_write_remains_nonthrowing_and_nonzero(self):
+        class ShortWriter:
+            def write(self, _value):
+                return 1
+
+            def flush(self):
+                return None
+
+        stderr = ShortWriter()
+        with patch("crypto_quant.system_paper_evaluation_cli.sys.stderr", stderr):
+            status = main(["--plan-path", "relative"])
+
+        self.assertEqual(status, 1)
+
+    def test_closed_stderr_never_escapes_the_failure_boundary(self):
+        stderr = io.StringIO()
+        stderr.close()
+
+        with patch("crypto_quant.system_paper_evaluation_cli.sys.stderr", stderr):
+            status = main(["--plan-path", "relative"])
+
+        self.assertEqual(status, 1)
+
+    def test_cli_import_does_not_load_operational_authority_modules(self):
+        source_root = str(Path(__file__).parents[1] / "src")
+        environment = dict(os.environ, PYTHONPATH=source_root)
+        process = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; import crypto_quant.system_paper_evaluation_cli; "
+                "blocked=('network','scheduler','runtime','broker','order'); "
+                "raise SystemExit(any(any(token in name.lower() for token in blocked) "
+                "for name in sys.modules))",
+            ],
+            capture_output=True,
+            check=False,
+            env=environment,
+            text=True,
+        )
+
+        self.assertEqual((process.returncode, process.stdout, process.stderr), (0, "", ""))
+
+    def test_cli_source_has_no_forbidden_direct_import_or_operational_call(self):
+        source = Path(__file__).parents[1] / "src" / "crypto_quant" / "system_paper_evaluation_cli.py"
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        top_level_modules = {
+            node.module or ""
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom)
+        }
+        top_level_modules.update(
+            alias.name
+            for node in tree.body
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        forbidden = ("network", "runner", "scheduler", "runtime", "broker", "order")
+        self.assertFalse(
+            [
+                module
+                for module in top_level_modules
+                if any(token in module.lower() for token in forbidden)
+            ]
+        )
+        call_names = {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        self.assertFalse(
+            {
+                "run_due_system_paper_slot",
+                "run_system_paper_slot",
+                "SystemPaperBroker",
+                "Order",
+            }
+            & call_names
         )
 
 

@@ -6,10 +6,6 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from .canonical import canonical_json
-from .system_paper_evaluation import (
-    SystemPaperEvaluationError,
-    evaluate_system_paper,
-)
 
 
 _MAX_ERROR_BYTES = 512
@@ -31,15 +27,27 @@ class _ArgumentParser(argparse.ArgumentParser):
         raise SystemPaperEvaluationCliError(_ARGUMENT_INVALID)
 
 
+class _OncePathAction(argparse.Action):
+    def __call__(self, parser, namespace, value, option_string=None) -> None:
+        if getattr(namespace, self.dest, None) is not None:
+            raise SystemPaperEvaluationCliError(_ARGUMENT_INVALID)
+        setattr(namespace, self.dest, value)
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = _ArgumentParser(prog="system-paper-evaluation", allow_abbrev=False)
-    parser.add_argument("--plan-path", required=True)
-    parser.add_argument("--start-receipt-path", required=True)
-    parser.add_argument("--install-receipt-path", required=True)
-    parser.add_argument("--contract-path", required=True)
-    parser.add_argument("--slot-root", required=True)
-    parser.add_argument("--runtime-root", required=True)
-    parser.add_argument("--output-root", required=True)
+    parser = _ArgumentParser(
+        prog="system-paper-evaluation", add_help=False, allow_abbrev=False
+    )
+    for option in (
+        "--plan-path",
+        "--start-receipt-path",
+        "--install-receipt-path",
+        "--contract-path",
+        "--slot-root",
+        "--runtime-root",
+        "--output-root",
+    ):
+        parser.add_argument(option, required=True, action=_OncePathAction)
     return parser
 
 
@@ -53,7 +61,10 @@ def _absolute_path(value: object) -> Path:
 
 
 def _error_reason(error: BaseException) -> str:
-    reason = getattr(error, "reason_code", None)
+    try:
+        reason = getattr(error, "reason_code", None)
+    except Exception:
+        return "SYSTEM_PAPER_EVALUATION_CLI_FAILED"
     if (
         isinstance(reason, str)
         and reason.isascii()
@@ -67,12 +78,39 @@ def _error_reason(error: BaseException) -> str:
 
 
 def _write_error(error: BaseException) -> None:
-    payload = canonical_json({"error": _ERROR, "reason_code": _error_reason(error)})
-    if len(payload.encode("utf-8")) + 1 > _MAX_ERROR_BYTES:
+    fallback = canonical_json(
+        {"error": _ERROR, "reason_code": "SYSTEM_PAPER_EVALUATION_CLI_FAILED"}
+    )
+    try:
         payload = canonical_json(
-            {"error": _ERROR, "reason_code": "SYSTEM_PAPER_EVALUATION_CLI_FAILED"}
+            {"error": _ERROR, "reason_code": _error_reason(error)}
         )
-    print(payload, file=sys.stderr)
+    except Exception:
+        payload = fallback
+    if len(payload.encode("utf-8")) + 1 > _MAX_ERROR_BYTES:
+        payload = fallback
+    try:
+        _write_exact(sys.stderr, payload + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def _evaluate(**paths):
+    from .system_paper_evaluation import evaluate_system_paper
+
+    return evaluate_system_paper(**paths)
+
+
+def _write_result(result) -> None:
+    payload = canonical_json(result)
+    _write_exact(sys.stdout, payload + "\n")
+    sys.stdout.flush()
+
+
+def _write_exact(stream, payload: str) -> None:
+    if stream.write(payload) != len(payload):
+        raise OSError("short stream write")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -80,7 +118,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = _parser()
     try:
         arguments = parser.parse_args(argv)
-        result = evaluate_system_paper(
+        result = _evaluate(
             plan_path=_absolute_path(arguments.plan_path),
             start_receipt_path=_absolute_path(arguments.start_receipt_path),
             install_receipt_path=_absolute_path(arguments.install_receipt_path),
@@ -89,11 +127,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             runtime_root=_absolute_path(arguments.runtime_root),
             output_root=_absolute_path(arguments.output_root),
         )
-        print(canonical_json(result))
+        _write_result(result)
         return 0
-    except SystemExit as error:
-        return int(error.code)
-    except (OSError, TypeError, ValueError, SystemPaperEvaluationError) as error:
+    except Exception as error:
         _write_error(error)
         return 1
 
