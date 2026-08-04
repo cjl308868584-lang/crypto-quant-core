@@ -176,19 +176,17 @@ def _receipt_reasons(receipt, *, contract, source, install):
     return tuple(sorted(set(reasons)))
 
 
-def _file_matches(evidence):
-    path = Path(evidence["path"])
-    descriptor = None
-    try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        flags |= getattr(os, "O_CLOEXEC", 0)
-        descriptor = os.open(path, flags)
-        entry = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(entry.st_mode)
-            or not 0 <= entry.st_size <= _MAX_SOURCE_EVIDENCE_BYTES
-        ):
-            return False
+class _RetainedSourceEvidence:
+    def __init__(self, evidence, path, descriptor, entry, body):
+        self.evidence = evidence
+        self.path = path
+        self.descriptor = descriptor
+        self.entry = entry
+        self.body = body
+
+    @staticmethod
+    def _read(descriptor):
+        os.lseek(descriptor, 0, os.SEEK_SET)
         chunks = []
         total = 0
         while total <= _MAX_SOURCE_EVIDENCE_BYTES:
@@ -200,33 +198,112 @@ def _file_matches(evidence):
                 break
             chunks.append(chunk)
             total += len(chunk)
-        body = b"".join(chunks)
-        retained = os.fstat(descriptor)
-        current = os.stat(path, follow_symlinks=False)
-    except OSError:
-        return False
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
-    if (
-        len(body) != entry.st_size
-        or len(body) > _MAX_SOURCE_EVIDENCE_BYTES
-        or _stat_identity(entry) != _stat_identity(retained)
-        or _stat_identity(retained) != _stat_identity(current)
-    ):
-        return False
-    actual = {
-        "path": str(path),
-        "device": entry.st_dev,
-        "inode": entry.st_ino,
-        "mode": stat.S_IMODE(entry.st_mode),
-        "owner_uid": entry.st_uid,
-        "link_count": entry.st_nlink,
-        "size_bytes": entry.st_size,
-        "mtime_ns": str(entry.st_mtime_ns),
-        "sha256": hashlib.sha256(body).hexdigest(),
-    }
-    return actual == evidence
+        return b"".join(chunks)
+
+    @staticmethod
+    def _payload(path, entry, body):
+        return {
+            "path": str(path),
+            "device": entry.st_dev,
+            "inode": entry.st_ino,
+            "mode": stat.S_IMODE(entry.st_mode),
+            "owner_uid": entry.st_uid,
+            "link_count": entry.st_nlink,
+            "size_bytes": entry.st_size,
+            "mtime_ns": str(entry.st_mtime_ns),
+            "sha256": hashlib.sha256(body).hexdigest(),
+        }
+
+    @classmethod
+    def open(cls, evidence):
+        path = Path(evidence["path"])
+        descriptor = None
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            flags |= getattr(os, "O_CLOEXEC", 0)
+            descriptor = os.open(path, flags)
+            entry = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(entry.st_mode)
+                or entry.st_uid != os.getuid()
+                or entry.st_nlink != 1
+                or stat.S_IMODE(entry.st_mode) != 0o600
+                or not 0 <= entry.st_size <= _MAX_SOURCE_EVIDENCE_BYTES
+            ):
+                raise SystemPaperStartReceiptError(
+                    "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
+                )
+            body = cls._read(descriptor)
+            retained = os.fstat(descriptor)
+            current = os.stat(path, follow_symlinks=False)
+            if (
+                len(body) != entry.st_size
+                or len(body) > _MAX_SOURCE_EVIDENCE_BYTES
+                or _stat_identity(entry) != _stat_identity(retained)
+                or _stat_identity(retained) != _stat_identity(current)
+                or cls._payload(path, entry, body) != evidence
+            ):
+                raise SystemPaperStartReceiptError(
+                    "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
+                )
+            return cls(evidence, path, descriptor, entry, body)
+        except SystemPaperStartReceiptError:
+            if descriptor is not None:
+                os.close(descriptor)
+            raise
+        except (KeyError, OSError, TypeError, ValueError) as error:
+            if descriptor is not None:
+                os.close(descriptor)
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
+            ) from error
+
+    def verify(self):
+        try:
+            retained = os.fstat(self.descriptor)
+            current = os.stat(self.path, follow_symlinks=False)
+            body = self._read(self.descriptor)
+        except OSError as error:
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
+            ) from error
+        if (
+            body != self.body
+            or _stat_identity(self.entry) != _stat_identity(retained)
+            or _stat_identity(retained) != _stat_identity(current)
+            or self._payload(self.path, retained, body) != self.evidence
+        ):
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
+            )
+
+    def close(self):
+        os.close(self.descriptor)
+
+
+class _RetainedSourceSet:
+    def __init__(self, sources):
+        self.sources = sources
+
+    @classmethod
+    def capture(cls, evidences):
+        sources = []
+        try:
+            for evidence in evidences:
+                sources.append(_RetainedSourceEvidence.open(evidence))
+            return cls(sources)
+        except Exception:
+            for source in sources:
+                source.close()
+            raise
+
+    def verify(self):
+        for source in self.sources:
+            source.verify()
+
+    def close(self):
+        for source in self.sources:
+            source.close()
 
 
 def _observation_evidences(observation):
@@ -407,42 +484,46 @@ def publish_system_paper_start_receipt(
         raise SystemPaperStartReceiptError(
             "SYSTEM_PAPER_START_RECEIPT_INVALID"
         )
-    if not all(_file_matches(item) for item in _observation_evidences(observation)):
-        raise SystemPaperStartReceiptError(
-            "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
-        )
-    root = Path(contract["root_paths"]["start_receipts"])
-    root.mkdir(mode=0o700, parents=False, exist_ok=True)
-    entry = root.lstat()
-    if (
-        root.resolve(strict=True) != root
-        or not stat.S_ISDIR(entry.st_mode)
-        or entry.st_uid != os.getuid()
-        or stat.S_IMODE(entry.st_mode) != 0o700
-    ):
-        raise SystemPaperStartReceiptError(
-            "SYSTEM_PAPER_START_RECEIPT_OUTPUT_INVALID"
-        )
-    path = root / f"{receipt['receipt_id']}.json"
-    if any(item.name != path.name for item in root.iterdir()):
-        raise SystemPaperStartReceiptError(
-            "SYSTEM_PAPER_START_RECEIPT_OUTPUT_INVENTORY_INVALID"
-        )
+    retained = _RetainedSourceSet.capture(
+        _observation_evidences(observation)
+    )
     try:
-        publish_owner_exact(path, canonical_json(receipt).encode("utf-8"))
-    except SystemPaperEvidenceError as error:
-        raise SystemPaperStartReceiptError(
-            "SYSTEM_PAPER_START_RECEIPT_CONFLICT"
-        ) from error
-    return {
-        "outcome": "START_RECEIPT_PUBLISHED",
-        "receipt_path": str(path),
-        "receipt_id": receipt["receipt_id"],
-        "receipt_hash": receipt["receipt_hash"],
-        "cohort_started_at": receipt["cohort_started_at"],
-        "cohort_tail_end": receipt["cohort_tail_end"],
-        "expected_slot_count": receipt["expected_slot_count"],
-    }
+        retained.verify()
+        root = Path(contract["root_paths"]["start_receipts"])
+        root.mkdir(mode=0o700, parents=False, exist_ok=True)
+        entry = root.lstat()
+        if (
+            root.resolve(strict=True) != root
+            or not stat.S_ISDIR(entry.st_mode)
+            or entry.st_uid != os.getuid()
+            or stat.S_IMODE(entry.st_mode) != 0o700
+        ):
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_OUTPUT_INVALID"
+            )
+        path = root / f"{receipt['receipt_id']}.json"
+        if any(item.name != path.name for item in root.iterdir()):
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_OUTPUT_INVENTORY_INVALID"
+            )
+        try:
+            publish_owner_exact(path, canonical_json(receipt).encode("utf-8"))
+        except SystemPaperEvidenceError as error:
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_CONFLICT"
+            ) from error
+        retained.verify()
+        return {
+            "outcome": "START_RECEIPT_PUBLISHED",
+            "receipt_path": str(path),
+            "receipt_id": receipt["receipt_id"],
+            "receipt_hash": receipt["receipt_hash"],
+            "cohort_started_at": receipt["cohort_started_at"],
+            "cohort_tail_end": receipt["cohort_tail_end"],
+            "expected_slot_count": receipt["expected_slot_count"],
+        }
+    finally:
+        retained.close()
 
 
 def load_system_paper_start_receipt(
@@ -498,34 +579,35 @@ def load_system_paper_start_receipt(
         )
     observation = receipt["observation"]
     first = observation["first_slot"]
-    if not all(_file_matches(item) for item in _source_evidences(observation)):
-        raise SystemPaperStartReceiptError(
-            "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
-        )
+    retained = _RetainedSourceSet.capture(_source_evidences(observation))
     try:
-        replayed = replay_system_paper_first_slot_evidence(
-            observation=observation, contract=contract, install=install
-        )
-    except SystemPaperObserverError as error:
-        if error.reason_code == "SYSTEM_PAPER_OBSERVER_STORED_LAUNCHCTL_INVALID":
+        try:
+            replayed = replay_system_paper_first_slot_evidence(
+                observation=observation, contract=contract, install=install
+            )
+        except SystemPaperObserverError as error:
+            if error.reason_code == "SYSTEM_PAPER_OBSERVER_STORED_LAUNCHCTL_INVALID":
+                raise SystemPaperStartReceiptError(
+                    "SYSTEM_PAPER_START_RECEIPT_INVALID"
+                ) from error
+            raise SystemPaperStartReceiptError(
+                "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
+            ) from error
+        if any(
+            observation[key] != replayed[key]
+            for key in (
+                "status",
+                "first_eligible_slot",
+                "successful_slot_count",
+                "terminal_slot_count",
+                "first_slot",
+                "launchd",
+            )
+        ) or receipt["first_slot"] != replayed["first_slot"]:
             raise SystemPaperStartReceiptError(
                 "SYSTEM_PAPER_START_RECEIPT_INVALID"
-            ) from error
-        raise SystemPaperStartReceiptError(
-            "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
-        ) from error
-    if any(
-        observation[key] != replayed[key]
-        for key in (
-            "status",
-            "first_eligible_slot",
-            "successful_slot_count",
-            "terminal_slot_count",
-            "first_slot",
-            "launchd",
-        )
-    ) or receipt["first_slot"] != replayed["first_slot"]:
-        raise SystemPaperStartReceiptError(
-            "SYSTEM_PAPER_START_RECEIPT_INVALID"
-        )
-    return receipt
+            )
+        retained.verify()
+        return receipt
+    finally:
+        retained.close()

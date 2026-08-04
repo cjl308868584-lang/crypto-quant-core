@@ -18,6 +18,7 @@ from crypto_quant.system_paper_start_receipt import (
     publish_system_paper_start_receipt,
 )
 from crypto_quant.system_paper_start_receipt_cli import main as start_main
+import crypto_quant.system_paper_start_receipt as start_receipt_module
 import tests.test_system_paper_observer as observer_helpers
 
 
@@ -258,6 +259,79 @@ class SystemPaperStartReceiptTests(unittest.TestCase):
             receipt = self.load(path)
         self.assertEqual(receipt["receipt_id"], result["receipt_id"])
         self.assertEqual(calls["receipt"], 0)
+
+    def test_loader_retains_all_source_descriptors_until_final_replay(self):
+        self.observer.create_success()
+        result = publish_system_paper_start_receipt(
+            **self.values(
+                observer_helpers.ObserverLaunchctl(self.observer.install, runs=1),
+                "2026-08-04T08:10:00.000Z",
+            )
+        )
+        path = Path(result["receipt_path"])
+        contract_path = self.observer.install.preflight.contract_path
+        contract_bytes = contract_path.read_bytes()
+        original_inode = contract_path.stat().st_ino
+        original_open = start_receipt_module._RetainedSourceEvidence.open
+        captured = {"count": 0}
+
+        def retain_then_replace(evidence):
+            retained = original_open(evidence)
+            captured["count"] += 1
+            if captured["count"] == 1:
+                moved = contract_path.with_suffix(".retained-original")
+                contract_path.rename(moved)
+                contract_path.write_bytes(contract_bytes)
+                contract_path.chmod(0o600)
+                self.assertNotEqual(contract_path.stat().st_ino, original_inode)
+            return retained
+
+        with patch.object(
+            start_receipt_module._RetainedSourceEvidence,
+            "open",
+            side_effect=retain_then_replace,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperStartReceiptError, "SOURCE_CHANGED"
+            ):
+                self.load(path)
+
+    def test_publisher_retains_all_source_descriptors_before_publication(self):
+        self.observer.create_success()
+        contract_path = self.observer.install.preflight.contract_path
+        contract_bytes = contract_path.read_bytes()
+        original_inode = contract_path.stat().st_ino
+        original_open = start_receipt_module._RetainedSourceEvidence.open
+        captured = {"count": 0}
+
+        def retain_then_replace(evidence):
+            retained = original_open(evidence)
+            captured["count"] += 1
+            if captured["count"] == 1:
+                moved = contract_path.with_suffix(".retained-original")
+                contract_path.rename(moved)
+                contract_path.write_bytes(contract_bytes)
+                contract_path.chmod(0o600)
+                self.assertNotEqual(contract_path.stat().st_ino, original_inode)
+            return retained
+
+        with patch.object(
+            start_receipt_module._RetainedSourceEvidence,
+            "open",
+            side_effect=retain_then_replace,
+        ):
+            with self.assertRaisesRegex(
+                SystemPaperStartReceiptError, "SOURCE_CHANGED"
+            ):
+                publish_system_paper_start_receipt(
+                    **self.values(
+                        observer_helpers.ObserverLaunchctl(
+                            self.observer.install, runs=1
+                        ),
+                        "2026-08-04T08:10:00.000Z",
+                    )
+                )
+        self.assertFalse(self.root.exists())
 
     def test_cli_accepts_only_four_source_paths(self):
         expected = {"outcome": "START_RECEIPT_PENDING"}
