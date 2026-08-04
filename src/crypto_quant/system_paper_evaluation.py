@@ -9,10 +9,15 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, localcontext
+from functools import lru_cache
+from importlib import resources
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-from .canonical import business_hash, canonical_json, utc_datetime
+from jsonschema import Draft202012Validator
+
+from .canonical import business_hash, canonical_json, stable_id, utc_datetime
+from .evidence import artifact_self_hash
 from .system_paper_evidence import publish_owner_exact
 from .system_paper_install import load_system_paper_install_receipt
 from .system_paper_launchd import load_system_paper_launchd_contract
@@ -39,6 +44,9 @@ _PRIVATE_TMP = Path("/private/tmp")
 _TAIL_SETTLE_DELAY = timedelta(minutes=5)
 _STARTING_EQUITY = Decimal("1000")
 _STUDENT_T_95_ONE_SIDED_DF2 = Decimal("2.91998558035372")
+_EVALUATION_SCHEMA = "system-paper-evaluation-v1.schema.json"
+_MAX_EVALUATION_BYTES = 8 * 1024 * 1024
+_ZERO_HASH = "0" * 64
 
 
 class SystemPaperEvaluationError(ValueError):
@@ -566,7 +574,45 @@ def _copy_event_metadata(
 
 
 def _evaluate_complete_cohort(*_args, **kwargs):
-    return _evaluate_complete_system_paper_cohort(kwargs["cohort"])
+    economic = _evaluate_complete_system_paper_cohort(kwargs["cohort"])
+    cohort = tuple(kwargs["cohort"])
+    replay = kwargs["replay"]
+    events = tuple(replay["events"])
+    if not events:
+        raise SystemPaperEvaluationError("SYSTEM_PAPER_EVALUATION_COHORT_INCOMPLETE")
+    inventory = tuple(
+        {
+            "slot_id": slot.slot_id,
+            "scheduled_for": slot.scheduled_for,
+            "artifact_sha256": slot.artifact_sha256,
+            "prepared_input_sha256": hashlib.sha256(slot.input_bytes).hexdigest(),
+            "prepared_result_sha256": hashlib.sha256(slot.result_bytes).hexdigest(),
+            "slot_hash": slot.slot_hash,
+            "runtime_snapshot_hash": slot.runtime_snapshot_hash,
+        }
+        for slot in cohort
+    )
+    activity = {
+        "credential_reads": 0,
+        "account_requests": 0,
+        "real_broker_calls": 0,
+        "real_order_writes": 0,
+    }
+    for slot in cohort:
+        result = json.loads(slot.result_bytes.decode("utf-8"))
+        for name in activity:
+            activity[name] += result["safety_counts"][name]
+    return {
+        **economic,
+        "tail_end": kwargs["start"]["cohort_tail_end"],
+        "source_binding": {
+            "contract_hash": kwargs["contract"]["contract_hash"],
+            "start_receipt_hash": kwargs["start"]["receipt_hash"],
+            "event_chain_end_hash": events[-1]["event_hash"],
+        },
+        "evidence_inventory": inventory,
+        "security_counts": activity,
+    }
 
 
 def _maximum_drawdown(equities) -> Decimal:
@@ -1449,4 +1495,249 @@ def observe_system_paper_evaluation_readiness(
     finally:
         cohort_retained.close()
         state_retained.close()
+        retained.close()
+
+
+@lru_cache(maxsize=1)
+def _evaluation_validator() -> Draft202012Validator:
+    try:
+        schema = json.loads(
+            resources.files("crypto_quant")
+            .joinpath("schemas", _EVALUATION_SCHEMA)
+            .read_text(encoding="utf-8")
+        )
+        Draft202012Validator.check_schema(schema)
+        return Draft202012Validator(schema)
+    except Exception as error:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_SCHEMA_INVALID"
+        ) from error
+
+
+def _result_identity(result: Mapping[str, Any]) -> Mapping[str, Any]:
+    return {
+        "contract_hash": result["sources"]["contract_hash"],
+        "start_receipt_hash": result["sources"]["start_receipt_hash"],
+        "event_chain_end_hash": result["sources"]["event_chain_end_hash"],
+        "slot_inventory_hash": result["evidence_inventory"]["inventory_hash"],
+    }
+
+
+def _evaluation_hash(result: Mapping[str, Any]) -> str:
+    return artifact_self_hash(result, "result_hash")
+
+
+def _result_path(output_root: Path, result_id: str) -> Path:
+    root = _absolute_paths({"output_root": output_root})["output_root"]
+    if root.is_symlink():
+        raise SystemPaperEvaluationError("SYSTEM_PAPER_EVALUATION_OUTPUT_INVALID")
+    return root / (result_id + ".json")
+
+
+def _secure_output_root(root: Path) -> None:
+    parent = root.parent
+    try:
+        parent_entry = os.stat(parent, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(parent_entry.st_mode)
+            or parent_entry.st_uid != os.getuid()
+            or stat.S_IMODE(parent_entry.st_mode) != 0o700
+        ):
+            raise OSError("unsafe parent")
+        try:
+            os.mkdir(root, 0o700)
+        except FileExistsError:
+            pass
+        entry = os.stat(root, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(entry.st_mode)
+            or entry.st_uid != os.getuid()
+            or stat.S_IMODE(entry.st_mode) != 0o700
+            or root.is_symlink()
+        ):
+            raise OSError("unsafe output root")
+    except OSError as error:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_OUTPUT_INVALID"
+        ) from error
+
+
+def _fallback_binding(paths: Mapping[str, Path]) -> Mapping[str, Any]:
+    """Bind inconclusive evidence without treating a self-hash as authority."""
+    retained = _RetainedAuthoritySet()
+    try:
+        contract = retained.capture(paths["contract"])
+        start = retained.capture(paths["start"], maximum_bytes=4 * 1024 * 1024)
+        state = retained.capture(
+            paths["runtime_root"] / "state" / "system-paper.sqlite",
+            maximum_bytes=_MAX_STATE_BYTES,
+        )
+        retained.verify()
+        return {
+            "contract_hash": hashlib.sha256(contract.body).hexdigest(),
+            "start_receipt_hash": hashlib.sha256(start.body).hexdigest(),
+            "event_chain_end_hash": hashlib.sha256(state.body).hexdigest(),
+        }
+    finally:
+        retained.close()
+
+
+def _canonical_result(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    try:
+        return _strict_prepared_input(canonical_json(value).encode("utf-8"))
+    except SystemPaperEvaluationError as error:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_RESULT_INVALID"
+        ) from error
+
+
+def _final_artifact(
+    *, observation: Mapping[str, Any], paths: Mapping[str, Path]
+) -> Mapping[str, Any]:
+    binding = observation.get("source_binding")
+    records = observation.get("evidence_inventory")
+    if not isinstance(binding, Mapping):
+        binding = _fallback_binding(paths)
+    if not isinstance(records, tuple):
+        records = ()
+    inventory = list(records)
+    result = {
+        "$schema": "./system-paper-evaluation-v1.schema.json",
+        "schema_version": "1.0.0",
+        "result_id": "system_paper_evaluation_" + _ZERO_HASH,
+        "result_hash": _ZERO_HASH,
+        # Call time is deliberately excluded: this is the earliest final gate.
+        "evaluated_at": utc_datetime(
+            _utc(observation["tail_end"])[0] + _TAIL_SETTLE_DELAY
+        ),
+        "status": observation["status"],
+        "sources": {
+            "plan_path": str(paths["plan"]),
+            "start_receipt_path": str(paths["start"]),
+            "install_receipt_path": str(paths["install"]),
+            "contract_path": str(paths["contract"]),
+            "slot_root": str(paths["slot_root"]),
+            "runtime_root": str(paths["runtime_root"]),
+            "output_root": str(paths["output_root"]),
+            "contract_hash": binding["contract_hash"],
+            "start_receipt_hash": binding["start_receipt_hash"],
+            "event_chain_end_hash": binding["event_chain_end_hash"],
+        },
+        "evidence_inventory": {
+            "expected_slot_count": observation.get("expected_slot_count", 540),
+            "verified_terminal_slot_count": observation[
+                "verified_terminal_slot_count"
+            ] if "verified_terminal_slot_count" in observation else observation["slot_count"],
+            "inventory_hash": business_hash(inventory),
+            "slots": inventory,
+        },
+        "gates": observation.get("gates", {}),
+        "security_counts": observation.get(
+            "security_counts",
+            {
+                "credential_reads": 0,
+                "account_requests": 0,
+                "real_broker_calls": 0,
+                "real_order_writes": 0,
+            },
+        ),
+        "reason_code_or_null": observation.get("reason_code"),
+    }
+    result["result_id"] = stable_id("system_paper_evaluation", _result_identity(result))
+    result["result_hash"] = _evaluation_hash(result)
+    result = _canonical_result(result)
+    if tuple(_evaluation_validator().iter_errors(result)):
+        raise SystemPaperEvaluationError("SYSTEM_PAPER_EVALUATION_SCHEMA_INVALID")
+    return result
+
+
+def evaluate_system_paper(
+    *,
+    plan_path: Path,
+    start_receipt_path: Path,
+    install_receipt_path: Path,
+    contract_path: Path,
+    slot_root: Path,
+    runtime_root: Path,
+    output_root: Path,
+    _clock=None,
+    _machine_probe=None,
+    _filesystem_probe=None,
+) -> Mapping[str, Any]:
+    """Publish one stable, immutable final artifact; pending observation writes zero."""
+    paths = _absolute_paths(
+        {
+            "plan": plan_path,
+            "start": start_receipt_path,
+            "install": install_receipt_path,
+            "contract": contract_path,
+            "slot_root": slot_root,
+            "runtime_root": runtime_root,
+            "output_root": output_root,
+        }
+    )
+    observation = observe_system_paper_evaluation_readiness(
+        plan_path=paths["plan"], start_receipt_path=paths["start"],
+        install_receipt_path=paths["install"], contract_path=paths["contract"],
+        slot_root=paths["slot_root"], runtime_root=paths["runtime_root"],
+        output_root=paths["output_root"], _clock=_clock,
+        _machine_probe=_machine_probe, _filesystem_probe=_filesystem_probe,
+    )
+    if observation["status"] == "SYSTEM_PAPER_EVALUATION_PENDING_BEFORE_TAIL":
+        return observation
+    artifact = _final_artifact(observation=observation, paths=paths)
+    try:
+        _secure_output_root(paths["output_root"])
+        publish_owner_exact(
+            _result_path(paths["output_root"], artifact["result_id"]),
+            canonical_json(artifact).encode("utf-8"),
+        )
+    except SystemPaperEvaluationError:
+        raise
+    except Exception as error:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_RESULT_CONFLICT"
+        ) from error
+    return artifact
+
+
+def load_system_paper_evaluation(
+    *, evaluation_path: Path, _machine_probe=None, _filesystem_probe=None
+) -> Mapping[str, Any]:
+    """Load an immutable artifact and replay every original authority input."""
+    retained = _RetainedAuthoritySet()
+    try:
+        path = _absolute_paths({"evaluation": evaluation_path})["evaluation"]
+        source = retained.capture(path, maximum_bytes=_MAX_EVALUATION_BYTES)
+        artifact = _strict_prepared_input(source.body)
+        if (
+            tuple(_evaluation_validator().iter_errors(artifact))
+            or path.name != artifact.get("result_id", "") + ".json"
+            or artifact.get("result_hash") != _evaluation_hash(artifact)
+        ):
+            raise ValueError("invalid artifact")
+        sources = artifact["sources"]
+        replayed = evaluate_system_paper(
+            plan_path=Path(sources["plan_path"]),
+            start_receipt_path=Path(sources["start_receipt_path"]),
+            install_receipt_path=Path(sources["install_receipt_path"]),
+            contract_path=Path(sources["contract_path"]),
+            slot_root=Path(sources["slot_root"]),
+            runtime_root=Path(sources["runtime_root"]),
+            output_root=Path(sources["output_root"]),
+            _clock=lambda: artifact["evaluated_at"],
+            _machine_probe=_machine_probe,
+            _filesystem_probe=_filesystem_probe,
+        )
+        retained.verify()
+        if replayed != artifact:
+            raise ValueError("replay differs")
+        return artifact
+    except Exception as error:
+        if isinstance(error, SystemPaperEvaluationError) and error.reason_code == "SYSTEM_PAPER_EVALUATION_RESULT_INVALID":
+            raise
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_RESULT_INVALID"
+        ) from error
+    finally:
         retained.close()

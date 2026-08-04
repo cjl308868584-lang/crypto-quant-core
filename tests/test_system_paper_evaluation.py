@@ -22,6 +22,8 @@ from crypto_quant.system_paper_evaluation import (
     _evaluate_complete_system_paper_cohort,
     _maximum_drawdown,
     _three_block_statistics,
+    evaluate_system_paper,
+    load_system_paper_evaluation,
     observe_system_paper_evaluation_readiness,
 )
 from crypto_quant.system_paper_plan import build_system_paper_plan
@@ -1053,6 +1055,67 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             set(result["gates"]),
             {"safety", "cost", "drawdown", "block_return"},
         )
+
+    def test_final_evaluation_is_immutable_and_loader_replays_original_inputs(self):
+        """Removing the full replay, or binding the id to the call clock, breaks this."""
+        self.extend_to_complete_cohort()
+        first = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        second = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-03T08:05:00.000Z")
+        )
+        self.assertEqual(first, second)
+        self.assertIn(
+            first["status"],
+            ("SYSTEM_PAPER_GATE_PASS", "SYSTEM_PAPER_GATE_DID_NOT_PASS"),
+        )
+        result_path = self.output_root / (first["result_id"] + ".json")
+        self.assertEqual(
+            load_system_paper_evaluation(
+                evaluation_path=result_path,
+                _machine_probe=self.start.observer.install.preflight.machine,
+                _filesystem_probe=self.start.observer.install.preflight.filesystem,
+            ),
+            first,
+        )
+        forged = json.loads(result_path.read_text())
+        forged["gates"]["cost"]["passed"] = not forged["gates"]["cost"]["passed"]
+        forged["result_hash"] = artifact_self_hash(forged, "result_hash")
+        result_path.unlink()
+        result_path.write_bytes(canonical_json(forged).encode("utf-8"))
+        result_path.chmod(0o600)
+        with self.assertRaisesRegex(SystemPaperEvaluationError, "RESULT_INVALID"):
+            load_system_paper_evaluation(
+                evaluation_path=result_path,
+                _machine_probe=self.start.observer.install.preflight.machine,
+                _filesystem_probe=self.start.observer.install.preflight.filesystem,
+            )
+
+    def test_final_schema_rejects_float_unknown_field_bad_gate_and_claim_inflation(self):
+        """A permissive Schema would admit altered final research claims."""
+        from crypto_quant.system_paper_evaluation import _evaluation_validator
+
+        self.extend_to_complete_cohort()
+        artifact = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        cases = []
+        unknown = json.loads(canonical_json(artifact))
+        unknown["unreviewed_claim"] = True
+        cases.append(unknown)
+        floating = json.loads(canonical_json(artifact))
+        floating["gates"]["cost"]["maximum_effective_fee_rate"] = 0.0001
+        cases.append(floating)
+        malformed_gate = json.loads(canonical_json(artifact))
+        del malformed_gate["gates"]["drawdown"]["passed"]
+        cases.append(malformed_gate)
+        inflated = json.loads(canonical_json(artifact))
+        inflated["security_counts"]["real_order_writes"] = 1
+        cases.append(inflated)
+        for forged in cases:
+            with self.subTest(forged=forged):
+                self.assertTrue(tuple(_evaluation_validator().iter_errors(forged)))
 
     def test_post_tail_tampered_artifact_stops_before_economic_evaluation(self):
         self.extend_to_complete_cohort()
