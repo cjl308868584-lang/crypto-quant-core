@@ -1663,6 +1663,7 @@ def evaluate_system_paper(
     _clock=None,
     _machine_probe=None,
     _filesystem_probe=None,
+    _publish=True,
 ) -> Mapping[str, Any]:
     """Publish one stable, immutable final artifact; pending observation writes zero."""
     paths = _absolute_paths(
@@ -1686,18 +1687,19 @@ def evaluate_system_paper(
     if observation["status"] == "SYSTEM_PAPER_EVALUATION_PENDING_BEFORE_TAIL":
         return observation
     artifact = _final_artifact(observation=observation, paths=paths)
-    try:
-        _secure_output_root(paths["output_root"])
-        publish_owner_exact(
-            _result_path(paths["output_root"], artifact["result_id"]),
-            canonical_json(artifact).encode("utf-8"),
-        )
-    except SystemPaperEvaluationError:
-        raise
-    except Exception as error:
-        raise SystemPaperEvaluationError(
-            "SYSTEM_PAPER_EVALUATION_RESULT_CONFLICT"
-        ) from error
+    if _publish:
+        try:
+            _secure_output_root(paths["output_root"])
+            publish_owner_exact(
+                _result_path(paths["output_root"], artifact["result_id"]),
+                canonical_json(artifact).encode("utf-8"),
+            )
+        except SystemPaperEvaluationError:
+            raise
+        except Exception as error:
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_RESULT_CONFLICT"
+            ) from error
     return artifact
 
 
@@ -1728,6 +1730,7 @@ def load_system_paper_evaluation(
             _clock=lambda: artifact["evaluated_at"],
             _machine_probe=_machine_probe,
             _filesystem_probe=_filesystem_probe,
+            _publish=False,
         )
         retained.verify()
         if replayed != artifact:

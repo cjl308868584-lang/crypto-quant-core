@@ -1117,6 +1117,29 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             with self.subTest(forged=forged):
                 self.assertTrue(tuple(_evaluation_validator().iter_errors(forged)))
 
+    def test_loader_replay_has_no_publication_side_effect(self):
+        """A loader must be able to verify an artifact while publication is forbidden."""
+        self.extend_to_complete_cohort()
+        artifact = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        path = self.output_root / (artifact["result_id"] + ".json")
+        with patch(
+            "crypto_quant.system_paper_evaluation.publish_owner_exact",
+            side_effect=AssertionError("loader published"),
+        ), patch(
+            "crypto_quant.system_paper_evaluation._secure_output_root",
+            side_effect=AssertionError("loader created output root"),
+        ):
+            self.assertEqual(
+                load_system_paper_evaluation(
+                    evaluation_path=path,
+                    _machine_probe=self.start.observer.install.preflight.machine,
+                    _filesystem_probe=self.start.observer.install.preflight.filesystem,
+                ),
+                artifact,
+            )
+
     def test_post_tail_tampered_artifact_stops_before_economic_evaluation(self):
         self.extend_to_complete_cohort()
         middle = sorted(self.slot_root.iterdir())[270]
