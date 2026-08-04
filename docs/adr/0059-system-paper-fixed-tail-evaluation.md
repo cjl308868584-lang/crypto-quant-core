@@ -25,9 +25,15 @@ v0.58 只完成 System Paper deployment trust chain 的代码与冻结合同。�
 5. 本 ADR 不授权渲染生产合同、preflight、安装、bootstrap、启动 Runner/scheduler、市场
    请求、Broker、订单、凭据或 state 写入。`production_activation.enabled=false` 保持不变。
 6. 发布前最终审查发现了首次 final 竞态、证据重新捕获、output root 与 loader
-   attachment 缺口。v0.59 在发布前已修复：使用 contract/start 终态 key 和 owner-only
-   lock 封存首个结果，只保留一次 post-tail 快照，对稳定但不可重放 state 使用 raw
+   attachment 缺口。v0.59 在发布前已修复：使用 contract/start 终态 key 和
+   retained output-directory inode lock 封存首个结果，不依赖可替换的 child lock
+   pathname；只保留一次 post-tail 快照，对稳定但不可重放 state 使用 raw
    SQLite 组绑定的 INCONCLUSIVE，并将发布/加载限定在 contract 派生的专用 root。
+7. 定向残余复审又发现 prepared corruption 会被不完整 inventory 先行降级的问题。
+   tail 后现在先在 retained SQLite 上完成 state-only prepared replay，再分类唯一的
+   retained inventory；稳定 prepared 损坏始终为 raw-bound INCONCLUSIVE。同时由 retained
+   event schedule 锚定首槽和固定540槽/90天边界；start receipt 偏移仍是硬
+   authority failure，不得因 inventory 缺失而降级。
 
 ## 后果
 

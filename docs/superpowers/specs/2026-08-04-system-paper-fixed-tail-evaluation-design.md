@@ -10,6 +10,10 @@
 v0.59 只冻结 System Paper 的90天固定尾部 evaluator、严格 loader、CLI、Schema、
 测试和发布记录。本版不渲染生产 contract，不安装或启动 LaunchAgent，
 不调用 Runner/scheduler，不请求市场、账户、Broker 或订单，不创建 start receipt。
+发布前的残余复审又发现并关闭两个组合状态缺口：用 retained output
+directory inode 作唯一 finalization lock domain，以及在 tail 后先判定
+prepared state binding、再分类单次 retained inventory，同时保留事件调度与
+start receipt 不一致时的硬权威失败。这些关闭不扩大本版的非生产边界。
 
 evaluator 是研究门，不是盈利承诺或实盘授权。最终状态只能是：
 
@@ -92,6 +96,12 @@ descriptors 未变。
 任一缺槽、永久失败槽、不连续或无法重放导致
 `INCONCLUSIVE_INSUFFICIENT_EVIDENCE`，不允许回填或用经济表现覆盖。
 
+tail 后的 state-only prepared replay 以 retained event projection 的首槽调度为锚，
+并要求 start receipt 的首槽、90天 tail 与固定540槽声明精确一致。这些
+schedule authority 失配是硬 `SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID`，
+不得因 slot inventory 为 `EMPTY`、`MISSING` 或 `UNSAFE` 而降级为
+INCONCLUSIVE。
+
 ## 6. 冻结安全与经济门
 
 只有第5节完整证据全部成立时才读取经济字段并计算本节。
@@ -151,10 +161,13 @@ INCONCLUSIVE）必须发布到 contract 的 `root_paths.artifacts` 下唯一的
 固定为 owner-only `0700/0600`。
 
 终态序列 key 只由 `(contract_hash, start_receipt_hash)` 派生。publisher 必须在专用
-root 的 owner-`0600` no-follow lock 下串行严格扫描、发布和发布后扫描；首个终态
-包括 INCONCLUSIVE 永久封存该序列。同一 key 只有完全相同的 canonical bytes
-才能幂等返回，其他候选均为不可覆盖的 terminal conflict。文件名由 contract hash、
-start receipt hash、`state_binding_hash` 和 exact slot inventory hash 派生。
+root 已保留的 owner-`0700` directory descriptor 上取得 `flock(LOCK_EX)`，并在同一
+directory-inode critical section 中串行严格扫描、决策、发布和发布后扫描。
+不创建、打开或忽略任何 child lock pathname；替换旧 lock 文件名不能分裂锁域，
+且专用 root 中任何非 result 条目都失败关闭。首个终态包括 INCONCLUSIVE
+永久封存该序列。同一 key 只有完全相同的 canonical bytes 才能幂等返回，
+其他候选均为不可覆盖的 terminal conflict。文件名由 contract hash、start
+receipt hash、`state_binding_hash` 和 exact slot inventory hash 派生。
 
 production loader 必须要求传入路径等于 artifact 声明的 output root 下的 exact
 `result_id.json`，保留该 owner-`0700` root descriptor，通过 dirfd no-follow 相对打开
@@ -183,6 +196,13 @@ INCONCLUSIVE。捕获后发生 identity 或字节变化始终硬失败；PASS �
 - 单次快照 race、raw SQLite state 绑定和捕获后变化硬失败；
 - CLI 只有七个路径，无人工选择器；
 - exact 发布、冲突、loader 全量重放、Schema mirror 和 build manifest。
+
+tail 后事件重放成功后，evaluator 必须先从 retained SQLite descriptors 严格
+重放 prepared input/result，再仅捕获一次 slot inventory。稳定 prepared 损坏选择
+`RAW_SQLITE_GROUP` 绑定的 `PREPARED_REPLAY_INVALID`，并如实记录同一次
+inventory 状态；只有 prepared state 可重放时，不完整 inventory 才选择
+event-chain-bound `COHORT_INCOMPLETE`。tail 前仍禁止 prepared replay 与 inventory
+捕获。
 
 ## 10. 明确非目标
 

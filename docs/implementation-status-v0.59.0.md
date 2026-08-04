@@ -15,6 +15,11 @@
 - 发布前最终审查发现并修复了首次 final 竞态、错误路径重新捕获、可重叠
   output root 及脱离 loader 缺口；现在首个 contract/start 终态永久封存，只使用一次
   post-tail 快照，并为稳定但不可重放 state 保留 raw SQLite 组绑定的 INCONCLUSIVE；
+- 定向残余复审在发布前又关闭了两个组合状态缺口：finalization 直接锁定已保留的
+  owner-`0700` output-directory inode，不再创建可替换的 child lock pathname；tail 后先在
+  retained SQLite 上严格重放 prepared state，再分类单次 retained inventory。稳定
+  prepared 损坏优先选择 raw-bound INCONCLUSIVE，而 retained event schedule 与 start
+  receipt 的首槽/540槽/90天不一致仍硬失败，不会被空或缺失 inventory 降级；
 - package `0.59.0` 与 evaluator build manifest `1.53.0`。
 
 ## 真实状态与权限边界

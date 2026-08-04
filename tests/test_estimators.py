@@ -700,6 +700,10 @@ class EvaluatorBuildTests(unittest.TestCase):
             "2026-08-04-system-paper-finalization-hardening-design.md",
             "docs/superpowers/plans/"
             "2026-08-04-system-paper-finalization-hardening.md",
+            "docs/superpowers/specs/"
+            "2026-08-05-system-paper-finalization-residual-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-05-system-paper-finalization-residual.md",
             "docs/adr/0059-system-paper-fixed-tail-evaluation.md",
             "docs/implementation-status-v0.59.0.md",
             "scripts/refresh_evaluator_build_manifest.py",

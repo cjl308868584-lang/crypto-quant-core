@@ -1,8 +1,8 @@
 # System Paper Finalization Residual Hardening Design
 
-Date: 2026-08-05  
-Status: FROZEN FOR IMPLEMENTATION  
-Release target: v0.59.0 (still unreleased)  
+Date: 2026-08-05
+Status: FROZEN FOR IMPLEMENTATION
+Release target: v0.59.0 (still unreleased)
 Implementation base: `84a72f0cc71fad86d66bb61dfe4e40f68af42c83`
 
 Revision note: the Task 2 RED fixture proved that the full start-receipt loader
