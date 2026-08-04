@@ -123,8 +123,10 @@
 - Modify: `tests/test_system_paper_evaluation.py`
 
 **Interfaces:**
-- Produce: `_post_tail_prepared_replay(...) -> Tuple[Optional[Mapping[str, Any]], Optional[str]]`.
-- Consume: retained raw SQLite group, strict full start-receipt loader and the existing single retained inventory helpers.
+- Produce: `_replay_retained_prepared_state(...) -> Mapping[str, Any]`.
+- Consume: retained raw SQLite group, `_copy_full_state_rows()`,
+  `load_system_paper_slot_result_bytes()` and the existing single retained
+  inventory helpers.
 - Preserve: pre-tail path never invokes full prepared replay or slot inventory capture.
 
 - [ ] **Step 1: Add the five binding-precedence RED tests**
@@ -153,7 +155,9 @@
   ```
 
   The authority and capture-after tests assert the exact hard reason and zero
-  `system_paper_evaluation_*.json` files.
+  `system_paper_evaluation_*.json` files. The capture-after test wraps the real
+  `_replay_retained_prepared_state()` and mutates the retained SQLite group only
+  after that real replay returns; it must not mock the replay result.
 
 - [ ] **Step 2: Run the five named tests and preserve RED output**
 
@@ -161,55 +165,74 @@
   incomplete inventory publishes `EVENT_CHAIN_END` plus
   `COHORT_INCOMPLETE`, or capture-after mutation is misclassified.
 
-- [ ] **Step 3: Implement the exact prepared-replay classifier**
+- [ ] **Step 3: Implement state-only prepared replay**
 
-  Import `SystemPaperObserverError` and add a helper that calls
-  `load_system_paper_start_receipt(...)`. Its exception contract is exact:
+  Add `_replay_retained_prepared_state()` without importing or calling the
+  observer/start loader. It must copy rows only through retained SQLite
+  descriptors and validate, for every prepared row:
 
   ```python
-  except SystemPaperStartReceiptError as error:
-      cause = error.__cause__
-      if (
-          error.reason_code == "SYSTEM_PAPER_START_RECEIPT_SOURCE_CHANGED"
-          and isinstance(cause, SystemPaperObserverError)
-          and cause.reason_code
-          == "SYSTEM_PAPER_OBSERVER_FIRST_SLOT_REPLAY_INVALID"
-      ):
-          retained.verify()
-          state_retained.verify()
-          return None, (
-              "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID"
-          )
-      raise SystemPaperEvaluationError(
-          "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
-      ) from error
+  input_sha256 == sha256(input_bytes)
+  result_sha256 == sha256(result_bytes)
+  input_envelope["slot_id"] == row["slot_id"]
+  input_envelope["plan"] == plan
+  input_envelope["schedule_policy_hash"] == policy.schedule_policy_hash
+  input_envelope["output_root_hash"] == expected_output_root_hash
+  result["replay_inputs"] == {
+      "plan": input_envelope["plan"],
+      "scheduled_for": input_envelope["scheduled_for"],
+      "public_market_bundle": input_envelope["capture"][
+          "public_market_bundle"
+      ],
+      "previous_runtime_snapshot": input_envelope[
+          "previous_runtime_snapshot"
+      ],
+      "fill_scenario": input_envelope["fill_scenario"],
+  }
   ```
 
-  On success, require `replayed_start == start`; otherwise raise authority
-  invalid. Do not use `except Exception` for the raw fallback.
+  Recompute every row metadata hash used by `_replay_system_paper_cohort()`.
+  Order rows by the scheduled slots derived from the start receipt, then call
+  `load_system_paper_slot_result_bytes(last, parent_result_bodies=prefix)` to
+  verify the complete result chain without opening artifact paths. Validate the
+  first prepared input/result and first success event against the start
+  receipt's first-slot slot/schedule/hash/slot/snapshot/event/path claims.
+
+  A valid prepared set returns its ordered inputs/results. A semantic prepared
+  mismatch raises `SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID`. A start
+  receipt claim that differs from otherwise valid state raises
+  `SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID`. Do not map missing artifact
+  evidence to prepared-invalid, and do not use a broad loader exception.
 
 - [ ] **Step 4: Reorder only the post-tail decision flow**
 
   After event replay and after the tail gate:
 
-  1. call `_post_tail_prepared_replay()`;
-  2. capture `surface_state`/inventory once;
-  3. if prepared replay returned its reason, build raw-bound INCONCLUSIVE from
-     that retained inventory;
+  1. call `_replay_retained_prepared_state()` and retain a stable
+     prepared-invalid classification if it raises that exact reason;
+  2. reverify retained state, then capture `surface_state`/inventory once;
+  3. if prepared replay was invalid, build raw-bound INCONCLUSIVE from that
+     same retained inventory;
   4. otherwise, if surface is not `PRESENT`, build event-chain-bound
      `COHORT_INCOMPLETE`; and
-  5. otherwise continue exact cohort replay.
+  5. otherwise call the existing artifact-aware full start-receipt loader and
+     continue exact cohort replay.
 
   Preserve all `retained.verify()`, `state_retained.verify()` and
   `cohort_retained.verify()` checks. A source changing after raw capture remains
   `SOURCE_CHANGED` and never publishes.
 
+  The five tests must create `EMPTY`, `MISSING` or `UNSAFE` before the public
+  evaluator call. Do not patch inventory to become incomplete only after the
+  prepared classifier runs.
+
 - [ ] **Step 5: Run GREEN plus the precedence matrix**
 
   Run the five new tests and existing tests covering: pre-tail blindness,
   stable event corruption, prepared corruption with present inventory, wrong
-  first receipt, replayable empty/missing/unsafe inventory, source mutation,
-  exact 540 and 541st slot. Require every new raw artifact to reload exactly.
+  first receipt, valid prepared rows with a missing first artifact, replayable
+  empty/missing/unsafe inventory, source mutation, exact 540 and 541st slot.
+  Require every new raw artifact to reload exactly.
 
 - [ ] **Step 6: Commit Task 2**
 

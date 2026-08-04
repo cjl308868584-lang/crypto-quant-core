@@ -5,6 +5,11 @@ Status: FROZEN FOR IMPLEMENTATION
 Release target: v0.59.0 (still unreleased)  
 Implementation base: `84a72f0cc71fad86d66bb61dfe4e40f68af42c83`
 
+Revision note: the Task 2 RED fixture proved that the full start-receipt loader
+opens the first slot artifact before it can classify prepared bytes. Sections
+6-8 therefore freeze a state-only prepared replay boundary; broadening loader
+exceptions or delaying the incomplete inventory in tests is forbidden.
+
 ## 1. Purpose
 
 The first v0.59 final-fix wave closed its original three Critical and three
@@ -120,10 +125,13 @@ The post-tail flow uses this immutable ordering:
 
 1. retain authority inputs and the raw SQLite main/WAL/SHM group;
 2. replay event metadata;
-3. strictly replay the full start receipt and prepared state;
+3. strictly replay all prepared input/result rows from a retained SQLite copy,
+   without opening the slot root;
 4. capture the slot inventory exactly once and retain that capture;
 5. choose the terminal outcome using the table below; and
-6. reverify every retained authority before returning or publishing.
+6. only for a `PRESENT` inventory, run the artifact-aware full start loader and
+   cohort replay; then reverify every retained authority before returning or
+   publishing.
 
 | Condition | Outcome |
 |---|---|
@@ -139,10 +147,11 @@ determines which state bytes can be truthfully authenticated. The retained
 inventory is still recorded in the raw-bound result, including `EMPTY`,
 `MISSING`, `UNSAFE` or extra/missing-name evidence.
 
-Only the exact known prepared-state replay failure is mapped to raw-bound
-INCONCLUSIVE. A malformed/tampered start receipt or an unrecognized loader
-failure remains a hard authority error. The implementation must preserve the
-existing causal allowlist instead of using a broad `except Exception` fallback.
+Only a stable failure from the state-only prepared validator is mapped to
+raw-bound INCONCLUSIVE. A mismatch between the immutable start receipt and the
+first prepared state remains a hard authority error. The artifact-aware full
+loader retains its existing exact causal allowlist for `PRESENT` inventory; it
+must not be broadened with a general `except Exception` fallback.
 
 ## 7. Interfaces and code boundaries
 
@@ -156,28 +165,55 @@ existing causal allowlist instead of using a broad `except Exception` fallback.
 - `_strict_existing_finals()` treats every child as a candidate result JSON;
   no child filename is excluded for locking.
 
-### 7.2 Post-tail prepared replay helper
+### 7.2 State-only prepared replay helper
 
 Introduce one focused helper whose contract is:
 
 ```python
-def _post_tail_prepared_replay(
-    *, paths, preflight_path, install, start, retained,
-    state_retained, machine_probe, filesystem_probe
-) -> Tuple[Optional[Mapping[str, Any]], Optional[str]]:
+def _replay_retained_prepared_state(
+    *, state_files, plan, start, contract, replay
+) -> Mapping[str, Any]:
     ...
 ```
 
-It returns `(replayed_start, None)` on success or
-`(None, "SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID")` only for the exact
-stable prepared-state failure. It raises `AUTHORITY_INVALID` for receipt
-tampering or any non-allowlisted failure. It does not capture slot inventory,
-publish, or write state.
+It uses `_copy_full_state_rows()` to materialize only the already retained
+main/WAL/SHM descriptors under `/private/tmp`. It must not open any artifact or
+slot-root path. It validates every row that event metadata says exists:
 
-The main readiness function calls this helper before inventory outcome
-selection, then performs the single retained inventory capture. If the helper
-returned the prepared-invalid reason, readiness publishes a raw-bound
-INCONCLUSIVE using that same inventory capture.
+- exact input/result row sets and source-event/slot bindings;
+- canonical prepared input bytes and their SHA-256;
+- plan, schedule policy, scheduled slot and immutable output-root binding;
+- market bundle, previous snapshot and fill-scenario hashes;
+- canonical result bytes, their SHA-256 and stored slot/snapshot/parent/root
+  hashes;
+- ordered result parent-chain replay using
+  `load_system_paper_slot_result_bytes()` over the retained result blobs;
+- each result's replay inputs against its paired prepared input; and
+- the first slot's non-filesystem receipt claims against the first prepared
+  input/result and first success event.
+
+The first-slot receipt comparison includes slot/schedule, result/prepared
+hashes, slot hash, runtime snapshot hash, event-chain success hash and the
+declared artifact pathname. It does not claim to revalidate a missing
+artifact's inode/stat evidence. That evidence is verified later by the existing
+artifact-aware loader when inventory is `PRESENT`.
+
+The helper returns the ordered validated prepared rows on success. A semantic
+blob/hash/parent/replay mismatch raises
+`SYSTEM_PAPER_EVALUATION_PREPARED_REPLAY_INVALID`. A receipt claim that differs
+from otherwise valid prepared state raises
+`SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID`. Retained bytes changing after
+capture are still detected by `state_retained.verify()` as
+`SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED`.
+
+The main readiness function attempts this helper before inventory outcome
+selection and records a stable prepared-invalid classification without
+discarding the retained SQLite group. It then performs the single retained
+inventory capture. A prepared-invalid classification publishes raw-bound
+INCONCLUSIVE using that same inventory capture. If prepared state is valid and
+inventory is incomplete, it publishes event-chain-bound `COHORT_INCOMPLETE`.
+If inventory is `PRESENT`, the existing full start-receipt loader remains the
+artifact authority before full cohort replay.
 
 ## 8. Required RED-to-GREEN evidence
 
@@ -207,11 +243,17 @@ Each raw-bound test must load the exact published artifact and assert
 reason code and the real retained inventory state. The hard-failure tests must
 assert zero result JSON files.
 
+The tests must establish `EMPTY`, `MISSING` and `UNSAFE` before calling the
+public evaluator. Patching or mutating inventory only after prepared replay is
+not acceptable evidence for the combined-state requirement.
+
 ### 8.3 Regression boundaries
 
 - Tail blindness remains unchanged: no slot/prepared replay before the tail.
 - Replayable state plus incomplete inventory remains event-chain-bound
   `COHORT_INCOMPLETE`.
+- Valid prepared rows with a missing first artifact remain inventory
+  incomplete rather than prepared-invalid.
 - Stable event corruption remains raw-bound.
 - Wrong first receipt remains hard authority failure.
 - Exact 540 and 541st-slot behavior remains unchanged.
