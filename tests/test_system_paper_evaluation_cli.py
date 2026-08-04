@@ -222,38 +222,101 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
         self.assertEqual(len(stderr.getvalue().splitlines()), 1)
         self.assertEqual(canonical_json(json.loads(stderr.getvalue())), stderr.getvalue().rstrip("\n"))
 
-    def test_stdout_short_write_uses_the_failure_envelope(self):
-        class ShortWriter:
-            def write(self, _value):
-                return 1
+    def test_stdout_small_writes_emit_the_complete_canonical_result(self):
+        class ChunkingWriter:
+            def __init__(self):
+                self.body = ""
+                self._sizes = iter((1, 2, 7))
+
+            def write(self, value):
+                try:
+                    size = next(self._sizes)
+                except StopIteration:
+                    size = 1
+                accepted = min(size, len(value))
+                self.body += value[:accepted]
+                return accepted
 
             def flush(self):
                 return None
 
         evaluator = Mock(return_value={"status": "SYSTEM_PAPER_GATE_PASS"})
+        stdout = ChunkingWriter()
         stderr = io.StringIO()
         with tempfile.TemporaryDirectory() as directory, self.evaluator_patch(evaluator), patch(
-            "crypto_quant.system_paper_evaluation_cli.sys.stdout", ShortWriter()
+            "crypto_quant.system_paper_evaluation_cli.sys.stdout", stdout
         ), patch("crypto_quant.system_paper_evaluation_cli.sys.stderr", stderr):
             status = main(self.arguments(Path(directory)))
 
-        self.assertEqual(status, 1)
-        self.assertEqual(len(stderr.getvalue().splitlines()), 1)
-        self.assertEqual(canonical_json(json.loads(stderr.getvalue())), stderr.getvalue().rstrip("\n"))
+        self.assertEqual((status, stderr.getvalue()), (0, ""))
+        self.assertEqual(
+            stdout.body,
+            canonical_json({"status": "SYSTEM_PAPER_GATE_PASS"}) + "\n",
+        )
 
-    def test_stderr_short_write_remains_nonthrowing_and_nonzero(self):
-        class ShortWriter:
-            def write(self, _value):
-                return 1
+    def test_stderr_small_writes_emit_the_complete_canonical_error(self):
+        class ChunkingWriter:
+            def __init__(self):
+                self.body = ""
+                self._sizes = iter((1, 3, 2))
+
+            def write(self, value):
+                try:
+                    size = next(self._sizes)
+                except StopIteration:
+                    size = 1
+                accepted = min(size, len(value))
+                self.body += value[:accepted]
+                return accepted
 
             def flush(self):
                 return None
 
-        stderr = ShortWriter()
+        stderr = ChunkingWriter()
         with patch("crypto_quant.system_paper_evaluation_cli.sys.stderr", stderr):
             status = main(["--plan-path", "relative"])
 
         self.assertEqual(status, 1)
+        self.assertEqual(
+            stderr.body,
+            canonical_json(
+                {
+                    "error": "SYSTEM_PAPER_EVALUATION_CLI_INVOCATION_FAILED",
+                    "reason_code": "SYSTEM_PAPER_EVALUATION_CLI_ARGUMENT_INVALID",
+                }
+            )
+            + "\n",
+        )
+
+    def test_invalid_write_counts_fail_without_looping(self):
+        class InvalidWriter:
+            def __init__(self, result):
+                self.result = result
+
+            def write(self, value):
+                return len(value) + 1 if self.result == "too_many" else self.result
+
+            def flush(self):
+                return None
+
+        evaluator = Mock(return_value={"status": "SYSTEM_PAPER_GATE_PASS"})
+        for result in (0, None, -1, "too_many"):
+            with self.subTest(result=result):
+                stderr = io.StringIO()
+                with tempfile.TemporaryDirectory() as directory, self.evaluator_patch(
+                    evaluator
+                ), patch(
+                    "crypto_quant.system_paper_evaluation_cli.sys.stdout",
+                    InvalidWriter(result),
+                ), patch("crypto_quant.system_paper_evaluation_cli.sys.stderr", stderr):
+                    status = main(self.arguments(Path(directory)))
+
+                self.assertEqual(status, 1)
+                self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+                self.assertEqual(
+                    canonical_json(json.loads(stderr.getvalue())),
+                    stderr.getvalue().rstrip("\n"),
+                )
 
     def test_closed_stderr_never_escapes_the_failure_boundary(self):
         stderr = io.StringIO()
@@ -272,7 +335,8 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
                 sys.executable,
                 "-c",
                 "import sys; import crypto_quant.system_paper_evaluation_cli; "
-                "blocked=('network','scheduler','runtime','broker','order'); "
+                "blocked=('network','scheduler','runtime','broker','order','runner',"
+                "'urllib','socket','http','httpx','requests','aiohttp'); "
                 "raise SystemExit(any(any(token in name.lower() for token in blocked) "
                 "for name in sys.modules))",
             ],
@@ -298,7 +362,10 @@ class SystemPaperEvaluationCliTests(unittest.TestCase):
             if isinstance(node, ast.Import)
             for alias in node.names
         )
-        forbidden = ("network", "runner", "scheduler", "runtime", "broker", "order")
+        forbidden = (
+            "network", "runner", "scheduler", "runtime", "broker", "order",
+            "urllib", "socket", "http", "httpx", "requests", "aiohttp",
+        )
         self.assertFalse(
             [
                 module

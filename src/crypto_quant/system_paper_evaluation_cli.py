@@ -2,7 +2,6 @@
 
 import argparse
 import sys
-from pathlib import Path
 from typing import Optional, Sequence
 
 from .canonical import canonical_json
@@ -51,7 +50,9 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _absolute_path(value: object) -> Path:
+def _absolute_path(value: object):
+    from pathlib import Path
+
     if not isinstance(value, str) or not value or "\x00" in value:
         raise SystemPaperEvaluationCliError(_PATH_INVALID)
     path = Path(value)
@@ -109,8 +110,17 @@ def _write_result(result) -> None:
 
 
 def _write_exact(stream, payload: str) -> None:
-    if stream.write(payload) != len(payload):
-        raise OSError("short stream write")
+    remaining = payload
+    while remaining:
+        written = stream.write(remaining)
+        if (
+            isinstance(written, bool)
+            or not isinstance(written, int)
+            or written <= 0
+            or written > len(remaining)
+        ):
+            raise OSError("invalid stream write count")
+        remaining = remaining[written:]
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
