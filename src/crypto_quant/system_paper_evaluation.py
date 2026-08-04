@@ -1,5 +1,6 @@
 """Tail-blind authority and fixed-tail evaluation for System Paper."""
 
+import fcntl
 import hashlib
 import json
 import os
@@ -104,6 +105,15 @@ def _stat_identity(entry: os.stat_result) -> Tuple[int, ...]:
         entry.st_size,
         entry.st_mtime_ns,
         entry.st_ctime_ns,
+    )
+
+
+def _directory_attachment_identity(entry: os.stat_result) -> Tuple[int, ...]:
+    return (
+        entry.st_dev,
+        entry.st_ino,
+        entry.st_mode,
+        entry.st_uid,
     )
 
 
@@ -258,6 +268,171 @@ class _RetainedAuthorityFile:
             )
 
     def close(self) -> None:
+        os.close(self.descriptor)
+
+
+class _RetainedOutputRoot:
+    """Owner-only root retained for relative result and lock operations."""
+
+    _LOCK_NAME = ".system-paper-evaluation.lock"
+
+    def __init__(self, path: Path, descriptor: int, entry: os.stat_result):
+        self.path = path
+        self.descriptor = descriptor
+        self.entry = entry
+        self.files = []
+        self.lock_descriptor = None
+
+    @classmethod
+    def open(cls, path: Path) -> "_RetainedOutputRoot":
+        descriptor = None
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            flags |= getattr(os, "O_CLOEXEC", 0)
+            descriptor = os.open(path, flags)
+            entry = os.fstat(descriptor)
+            current = os.stat(path, follow_symlinks=False)
+            if (
+                not stat.S_ISDIR(entry.st_mode)
+                or entry.st_uid != os.getuid()
+                or stat.S_IMODE(entry.st_mode) != 0o700
+                or _directory_attachment_identity(entry)
+                != _directory_attachment_identity(current)
+            ):
+                raise OSError("unsafe output root")
+            return cls(path, descriptor, entry)
+        except OSError as error:
+            if descriptor is not None:
+                os.close(descriptor)
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_OUTPUT_INVALID"
+            ) from error
+
+    def _relative_file(
+        self, name: str, *, maximum_bytes: int
+    ) -> _RetainedAuthorityFile:
+        descriptor = None
+        try:
+            if not name or name in (".", "..") or "/" in name or "\x00" in name:
+                raise OSError("unsafe result name")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            flags |= getattr(os, "O_CLOEXEC", 0)
+            descriptor = os.open(name, flags, dir_fd=self.descriptor)
+            entry = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(entry.st_mode)
+                or entry.st_uid != os.getuid()
+                or entry.st_nlink != 1
+                or stat.S_IMODE(entry.st_mode) != 0o600
+                or entry.st_size <= 0
+                or entry.st_size > maximum_bytes
+            ):
+                raise OSError("unsafe result")
+            body = _RetainedAuthorityFile._read(descriptor, maximum_bytes)
+            retained = os.fstat(descriptor)
+            current = os.stat(
+                name, dir_fd=self.descriptor, follow_symlinks=False
+            )
+            if (
+                len(body) != entry.st_size
+                or _stat_identity(entry) != _stat_identity(retained)
+                or _stat_identity(retained) != _stat_identity(current)
+            ):
+                raise OSError("changed result")
+            source = _RetainedAuthorityFile(
+                self.path / name,
+                descriptor,
+                entry,
+                body,
+                maximum_bytes,
+                hashlib.sha256(body).hexdigest(),
+            )
+            self.files.append((name, source))
+            return source
+        except OSError as error:
+            if descriptor is not None:
+                os.close(descriptor)
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_RESULT_INVALID"
+            ) from error
+
+    def acquire_lock(self) -> None:
+        descriptor = None
+        try:
+            flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+            flags |= getattr(os, "O_CLOEXEC", 0)
+            try:
+                descriptor = os.open(
+                    self._LOCK_NAME,
+                    flags | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                    dir_fd=self.descriptor,
+                )
+            except FileExistsError:
+                descriptor = os.open(
+                    self._LOCK_NAME,
+                    flags,
+                    dir_fd=self.descriptor,
+                )
+            entry = os.fstat(descriptor)
+            current = os.stat(
+                self._LOCK_NAME,
+                dir_fd=self.descriptor,
+                follow_symlinks=False,
+            )
+            if (
+                not stat.S_ISREG(entry.st_mode)
+                or entry.st_uid != os.getuid()
+                or entry.st_nlink != 1
+                or stat.S_IMODE(entry.st_mode) != 0o600
+                or _stat_identity(entry) != _stat_identity(current)
+            ):
+                raise OSError("unsafe finalization lock")
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            self.lock_descriptor = descriptor
+        except OSError as error:
+            if descriptor is not None:
+                os.close(descriptor)
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_OUTPUT_INVALID"
+            ) from error
+
+    def verify(self) -> None:
+        try:
+            retained = os.fstat(self.descriptor)
+            current = os.stat(self.path, follow_symlinks=False)
+            if (
+                _directory_attachment_identity(self.entry)
+                != _directory_attachment_identity(retained)
+                or _directory_attachment_identity(retained)
+                != _directory_attachment_identity(current)
+            ):
+                raise OSError("changed output root")
+            for name, source in self.files:
+                source.verify()
+                attached = os.stat(
+                    name,
+                    dir_fd=self.descriptor,
+                    follow_symlinks=False,
+                )
+                if _stat_identity(source.entry) != _stat_identity(attached):
+                    raise OSError("detached result")
+        except (OSError, SystemPaperEvaluationError) as error:
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_RESULT_INVALID"
+            ) from error
+
+    def close(self) -> None:
+        for _name, source in self.files:
+            source.close()
+        self.files = []
+        if self.lock_descriptor is not None:
+            try:
+                fcntl.flock(self.lock_descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(self.lock_descriptor)
+                self.lock_descriptor = None
         os.close(self.descriptor)
 
 
@@ -751,6 +926,22 @@ def _absolute_paths(values: Mapping[str, Path]) -> Dict[str, Path]:
             )
         result[name] = path
     return result
+
+
+def _expected_evaluation_output_root(contract: Mapping[str, Any]) -> Path:
+    """Derive the sole evaluator publication root from contract authority."""
+
+    try:
+        artifacts = Path(contract["root_paths"]["artifacts"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
+        ) from error
+    if not artifacts.is_absolute() or ".." in artifacts.parts:
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_AUTHORITY_INVALID"
+        )
+    return artifacts / "system-paper-evaluations"
 
 
 def _derive_plist_path(contract_path: Path) -> Path:
@@ -1836,6 +2027,8 @@ def observe_system_paper_evaluation_readiness(
             or paths["slot_root"]
             != Path(contract["root_paths"]["artifacts"])
             / "system-paper-slots"
+            or paths["output_root"]
+            != _expected_evaluation_output_root(contract)
         ):
             raise SystemPaperEvaluationError(
                 "SYSTEM_PAPER_EVALUATION_ROOT_MISMATCH"
@@ -2070,6 +2263,17 @@ def _evaluation_hash(result: Mapping[str, Any]) -> str:
     return artifact_self_hash(result, "result_hash")
 
 
+def _terminal_key(result: Mapping[str, Any]) -> str:
+    sources = result["sources"]
+    return business_hash(
+        {
+            "purpose": "SYSTEM_PAPER_EVALUATION_TERMINAL_V1",
+            "contract_hash": sources["contract_hash"],
+            "start_receipt_hash": sources["start_receipt_hash"],
+        }
+    )
+
+
 def _result_path(output_root: Path, result_id: str) -> Path:
     root = _absolute_paths({"output_root": output_root})["output_root"]
     if root.is_symlink():
@@ -2103,6 +2307,120 @@ def _secure_output_root(root: Path) -> None:
         raise SystemPaperEvaluationError(
             "SYSTEM_PAPER_EVALUATION_OUTPUT_INVALID"
         ) from error
+
+
+def _strict_existing_finals(
+    root: _RetainedOutputRoot,
+) -> Tuple[Tuple[Mapping[str, Any], bytes], ...]:
+    """Parse every final under the locked root; corruption blocks progress."""
+
+    try:
+        with os.scandir(root.descriptor) as entries:
+            names = tuple(sorted(candidate.name for candidate in entries))
+        result_names = tuple(
+            name for name in names if name != root._LOCK_NAME
+        )
+        prefix = "system_paper_evaluation_"
+        if (
+            len(result_names) > _MAX_INVENTORY_ENTRIES
+            or any(
+                not name.startswith(prefix)
+                or not name.endswith(".json")
+                or len(name) != len(prefix) + 64 + len(".json")
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in name[len(prefix) : -len(".json")]
+                )
+                for name in result_names
+            )
+        ):
+            raise ValueError("invalid final inventory")
+        finals = []
+        for name in result_names:
+            source = root._relative_file(
+                name, maximum_bytes=_MAX_EVALUATION_BYTES
+            )
+            artifact = _strict_prepared_input(source.body)
+            if (
+                canonical_json(artifact).encode("utf-8") != source.body
+                or tuple(_evaluation_validator().iter_errors(artifact))
+                or name != artifact.get("result_id", "") + ".json"
+                or artifact.get("result_hash") != _evaluation_hash(artifact)
+            ):
+                raise ValueError("invalid final")
+            finals.append((artifact, source.body))
+        root.verify()
+        return tuple(finals)
+    except Exception as error:
+        if (
+            isinstance(error, SystemPaperEvaluationError)
+            and error.reason_code
+            == "SYSTEM_PAPER_EVALUATION_SOURCE_CHANGED"
+        ):
+            raise
+        raise SystemPaperEvaluationError(
+            "SYSTEM_PAPER_EVALUATION_RESULT_CONFLICT"
+        ) from error
+
+
+def _publish_terminal_final(
+    *,
+    output_root: Path,
+    artifact: Mapping[str, Any],
+    authority: _RetainedEvaluationAuthority,
+) -> Mapping[str, Any]:
+    """Serialize first-final publication for one contract/start series."""
+
+    _secure_output_root(output_root)
+    root = _RetainedOutputRoot.open(output_root)
+    try:
+        root.acquire_lock()
+        candidate_body = canonical_json(artifact).encode("utf-8")
+        key = _terminal_key(artifact)
+        existing = tuple(
+            (value, body)
+            for value, body in _strict_existing_finals(root)
+            if _terminal_key(value) == key
+        )
+        if len(existing) > 1:
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_TERMINAL_CONFLICT"
+            )
+        if existing:
+            if existing[0][1] != candidate_body:
+                raise SystemPaperEvaluationError(
+                    "SYSTEM_PAPER_EVALUATION_TERMINAL_CONFLICT"
+                )
+            authority.verify()
+            root.verify()
+            return artifact
+
+        def verify_before_link() -> None:
+            authority.verify()
+            root.verify()
+
+        authority.verify()
+        root.verify()
+        publish_owner_exact(
+            _result_path(output_root, artifact["result_id"]),
+            candidate_body,
+            _before_link=verify_before_link,
+        )
+        authority.verify()
+        published = tuple(
+            (value, body)
+            for value, body in _strict_existing_finals(root)
+            if _terminal_key(value) == key
+        )
+        if len(published) != 1 or published[0][1] != candidate_body:
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_TERMINAL_CONFLICT"
+            )
+        authority.verify()
+        root.verify()
+        return artifact
+    finally:
+        root.close()
 
 
 def _fallback_binding(paths: Mapping[str, Path]) -> Mapping[str, Any]:
@@ -2288,21 +2606,17 @@ def evaluate_system_paper(
         if artifact["status"] == "SYSTEM_PAPER_EVALUATION_PENDING_BEFORE_TAIL":
             return artifact
         try:
-            _secure_output_root(paths["output_root"])
-            authority.verify()
-            publish_owner_exact(
-                _result_path(paths["output_root"], artifact["result_id"]),
-                canonical_json(artifact).encode("utf-8"),
-                _before_link=authority.verify,
+            return _publish_terminal_final(
+                output_root=paths["output_root"],
+                artifact=artifact,
+                authority=authority,
             )
-            authority.verify()
         except SystemPaperEvaluationError:
             raise
         except Exception as error:
             raise SystemPaperEvaluationError(
                 "SYSTEM_PAPER_EVALUATION_RESULT_CONFLICT"
             ) from error
-        return artifact
     finally:
         authority.close()
 
@@ -2311,10 +2625,13 @@ def load_system_paper_evaluation(
     *, evaluation_path: Path, _machine_probe=None, _filesystem_probe=None
 ) -> Mapping[str, Any]:
     """Load an immutable artifact and replay every original authority input."""
-    retained = _RetainedAuthoritySet()
+    retained_root = None
     try:
         path = _absolute_paths({"evaluation": evaluation_path})["evaluation"]
-        source = retained.capture(path, maximum_bytes=_MAX_EVALUATION_BYTES)
+        retained_root = _RetainedOutputRoot.open(path.parent)
+        source = retained_root._relative_file(
+            path.name, maximum_bytes=_MAX_EVALUATION_BYTES
+        )
         artifact = _strict_prepared_input(source.body)
         if (
             tuple(_evaluation_validator().iter_errors(artifact))
@@ -2323,6 +2640,10 @@ def load_system_paper_evaluation(
         ):
             raise ValueError("invalid artifact")
         sources = artifact["sources"]
+        declared_root = Path(sources["output_root"])
+        if path != declared_root / (artifact["result_id"] + ".json"):
+            raise ValueError("detached artifact")
+        retained_root.verify()
         replayed = _recompute_system_paper_evaluation(
             plan_path=Path(sources["plan_path"]),
             start_receipt_path=Path(sources["start_receipt_path"]),
@@ -2335,7 +2656,7 @@ def load_system_paper_evaluation(
             _machine_probe=_machine_probe,
             _filesystem_probe=_filesystem_probe,
         )
-        retained.verify()
+        retained_root.verify()
         if replayed != artifact:
             raise ValueError("replay differs")
         return artifact
@@ -2346,4 +2667,5 @@ def load_system_paper_evaluation(
             "SYSTEM_PAPER_EVALUATION_RESULT_INVALID"
         ) from error
     finally:
-        retained.close()
+        if retained_root is not None:
+            retained_root.close()

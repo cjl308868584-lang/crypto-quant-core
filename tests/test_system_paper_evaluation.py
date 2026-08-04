@@ -7,9 +7,12 @@ import os
 import sqlite3
 import stat
 import unittest
+from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, localcontext
 from pathlib import Path
+from threading import Barrier, Lock
 from unittest.mock import patch
 
 from crypto_quant.canonical import business_hash, canonical_json, stable_id
@@ -69,7 +72,11 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         self.install_receipt_path = self.start.observer.install_receipt_path
         self.runtime_root = preflight.runtime_root
         self.slot_root = self.runtime_root / "artifacts" / "system-paper-slots"
-        self.output_root = self.runtime_root / "evaluations"
+        self.output_root = (
+            self.runtime_root
+            / "artifacts"
+            / "system-paper-evaluations"
+        )
         self.plan_path = self.runtime_root / "system-paper-plan.json"
         self.plan_path.write_bytes(
             canonical_json(build_system_paper_plan()).encode("utf-8")
@@ -1425,7 +1432,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         self.assertEqual(list(self.output_root.glob("*.json")), [])
 
     def test_idempotent_existing_target_rechecks_authority_after_publisher_returns(self):
-        """The exact-existing branch cannot skip the final authority check."""
+        """The locked exact-existing branch cannot skip final authority."""
         from crypto_quant import system_paper_evaluation as module
 
         artifact = evaluate_system_paper(
@@ -1433,21 +1440,22 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         )
         result_path = self.output_root / (artifact["result_id"] + ".json")
         result_entry = os.stat(result_path, follow_symlinks=False)
-        original_publish = module.publish_owner_exact
+        original_scan = module._strict_existing_finals
         original_path = self.contract_path.with_suffix(".idempotent-retained")
         body = self.contract_path.read_bytes()
 
-        def replace_then_load_existing(path, data, **kwargs):
+        def replace_after_existing_scan(root):
+            result = original_scan(root)
             self.contract_path.rename(original_path)
             self.contract_path.write_bytes(body)
             self.contract_path.chmod(0o600)
-            return original_publish(path, data, **kwargs)
+            return result
 
         try:
             with patch.object(
                 module,
-                "publish_owner_exact",
-                side_effect=replace_then_load_existing,
+                "_strict_existing_finals",
+                side_effect=replace_after_existing_scan,
             ):
                 with self.assertRaisesRegex(
                     SystemPaperEvaluationError, "SOURCE_CHANGED"
@@ -1561,6 +1569,163 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         self._assert_production_outcome_publication(
             "INCONCLUSIVE_INSUFFICIENT_EVIDENCE", None
         )
+
+    def test_first_inconclusive_terminal_blocks_recovered_second_result(self):
+        """A cohort's first final remains permanent after evidence recovery."""
+        first = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.assertEqual(
+            first["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.extend_to_complete_cohort()
+
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError,
+            "SYSTEM_PAPER_EVALUATION_TERMINAL_CONFLICT",
+        ):
+            evaluate_system_paper(
+                **self.values(_clock=lambda: "2026-11-03T08:05:00.000Z")
+            )
+
+        finals = list(self.output_root.glob("system_paper_evaluation_*.json"))
+        self.assertEqual(len(finals), 1)
+        self.assertEqual(
+            finals[0].read_bytes(), canonical_json(first).encode("utf-8")
+        )
+
+    def test_concurrent_finalization_publishes_one_exact_result(self):
+        """Concurrent finalizers serialize one exact cohort final."""
+        from crypto_quant import system_paper_evaluation as module
+
+        inconclusive = _recompute_system_paper_evaluation(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.extend_to_complete_cohort()
+        complete = _recompute_system_paper_evaluation(
+            **self.values(_clock=lambda: "2026-11-03T08:05:00.000Z")
+        )
+        self.assertNotEqual(inconclusive["result_id"], complete["result_id"])
+        candidates = [inconclusive, complete]
+        candidate_lock = Lock()
+        publication_barrier = Barrier(2)
+
+        def concurrent_candidate(**_kwargs):
+            with candidate_lock:
+                candidate = candidates.pop()
+            publication_barrier.wait()
+            return candidate
+
+        def evaluate_once(_index):
+            try:
+                return evaluate_system_paper(
+                    **self.values(
+                        _clock=lambda: "2026-11-03T08:05:00.000Z"
+                    )
+                )
+            except SystemPaperEvaluationError as error:
+                return error.reason_code
+
+        with patch.object(
+            module,
+            "_recompute_system_paper_evaluation",
+            side_effect=concurrent_candidate,
+        ):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = tuple(executor.map(evaluate_once, range(2)))
+
+        winners = tuple(item for item in results if isinstance(item, Mapping))
+        conflicts = tuple(item for item in results if isinstance(item, str))
+        self.assertEqual(len(winners), 1)
+        self.assertEqual(
+            conflicts, ("SYSTEM_PAPER_EVALUATION_TERMINAL_CONFLICT",)
+        )
+        finals = list(self.output_root.glob("system_paper_evaluation_*.json"))
+        self.assertEqual(len(finals), 1)
+        self.assertEqual(
+            finals[0].read_bytes(),
+            canonical_json(winners[0]).encode("utf-8"),
+        )
+
+    def test_output_root_must_equal_contract_derived_sibling(self):
+        """An arbitrary owner-only output root is not evaluator authority."""
+        arbitrary = self.runtime_root / "evaluations"
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError,
+            "SYSTEM_PAPER_EVALUATION_ROOT_MISMATCH",
+        ):
+            evaluate_system_paper(
+                **self.values(
+                    output_root=arbitrary,
+                    _clock=lambda: "2026-11-02T08:05:00.000Z",
+                )
+            )
+        self.assertFalse(arbitrary.exists())
+
+    def test_output_root_overlap_with_start_contract_slot_and_state_is_zero_write(self):
+        """Every retained source overlap is rejected before adding an entry."""
+        state_dir = self.runtime_root / "state"
+        cases = {
+            "start": self.start_receipt_path.parent,
+            "contract": self.contract_path.parent,
+            "slot": self.slot_root,
+            "state": state_dir,
+        }
+        for label, overlap in cases.items():
+            with self.subTest(label=label):
+                before = tuple(sorted(child.name for child in overlap.iterdir()))
+                with self.assertRaisesRegex(
+                    SystemPaperEvaluationError,
+                    "SYSTEM_PAPER_EVALUATION_ROOT_MISMATCH",
+                ):
+                    evaluate_system_paper(
+                        **self.values(
+                            output_root=overlap,
+                            _clock=lambda: "2026-11-02T08:05:00.000Z",
+                        )
+                    )
+                after = tuple(sorted(child.name for child in overlap.iterdir()))
+                self.assertEqual(after, before)
+
+    def test_loader_rejects_detached_moved_and_unsafe_root_copy(self):
+        """Only the declared owner-only result attachment can be loaded."""
+        artifact = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        official = self.output_root / (artifact["result_id"] + ".json")
+        body = official.read_bytes()
+
+        for label, mode in (("detached", 0o700), ("unsafe", 0o755)):
+            with self.subTest(label=label):
+                copied_root = self.runtime_root / ("evaluation-copy-" + label)
+                copied_root.mkdir(mode=mode)
+                copied_root.chmod(mode)
+                copied = copied_root / official.name
+                copied.write_bytes(body)
+                copied.chmod(0o600)
+                with self.assertRaisesRegex(
+                    SystemPaperEvaluationError,
+                    "SYSTEM_PAPER_EVALUATION_RESULT_INVALID",
+                ):
+                    load_system_paper_evaluation(
+                        evaluation_path=copied,
+                        _machine_probe=self.start.observer.install.preflight.machine,
+                        _filesystem_probe=self.start.observer.install.preflight.filesystem,
+                    )
+
+        moved_root = self.runtime_root / "evaluation-copy-moved"
+        moved_root.mkdir(mode=0o700)
+        moved = moved_root / official.name
+        official.rename(moved)
+        with self.assertRaisesRegex(
+            SystemPaperEvaluationError,
+            "SYSTEM_PAPER_EVALUATION_RESULT_INVALID",
+        ):
+            load_system_paper_evaluation(
+                evaluation_path=moved,
+                _machine_probe=self.start.observer.install.preflight.machine,
+                _filesystem_probe=self.start.observer.install.preflight.filesystem,
+            )
 
     def test_loader_replay_has_no_publication_side_effect(self):
         """A loader must be able to verify an artifact while publication is forbidden."""
