@@ -10,7 +10,14 @@ import unittest
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, localcontext
+from decimal import (
+    Decimal,
+    Inexact,
+    ROUND_DOWN,
+    ROUND_HALF_EVEN,
+    Rounded,
+    localcontext,
+)
 from pathlib import Path
 from threading import Barrier, Lock
 from unittest.mock import patch
@@ -182,7 +189,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             .replace("+00:00", "Z")
         )
 
-    def extend_to_complete_cohort(self):
+    def extend_to_complete_cohort(self, *, extra_slots=0):
         plan = build_system_paper_plan()
         policy = SystemPaperSchedulePolicy.create(plan)
         start_receipt = json.loads(self.start_receipt_path.read_bytes())
@@ -262,7 +269,7 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                 previous_event_hash = event_hash
                 return event_id
 
-            for index in range(1, 540):
+            for index in range(1, 540 + extra_slots):
                 scheduled = started + timedelta(hours=4 * index)
                 scheduled_for = self.utc_text(scheduled)
                 slot = policy.slot_from_scheduled(scheduled_for)
@@ -413,7 +420,9 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
                 previous_snapshot = result["runtime_snapshot"]
         for path in state_path.parent.glob(state_path.name + "*"):
             path.chmod(0o600)
-        self.assertEqual(len(tuple(self.slot_root.iterdir())), 540)
+        self.assertEqual(
+            len(tuple(self.slot_root.iterdir())), 540 + extra_slots
+        )
         return previous_result
 
     def cohort_slot(self, index):
@@ -1928,6 +1937,49 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
         self.assertTrue(changed["done"])
         self.assertFalse(self.output_root.exists())
 
+    def test_541st_success_publishes_loadable_inconclusive(self):
+        """A real success beyond the frozen window remains loadable evidence."""
+        self.extend_to_complete_cohort(extra_slots=1)
+        artifact = evaluate_system_paper(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        self.assertEqual(
+            artifact["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+        self.assertEqual(
+            artifact["evidence_inventory"]["verified_terminal_slot_count"],
+            540,
+        )
+        path = self.output_root / (artifact["result_id"] + ".json")
+        self.assertEqual(
+            load_system_paper_evaluation(
+                evaluation_path=path,
+                _machine_probe=self.start.observer.install.preflight.machine,
+                _filesystem_probe=self.start.observer.install.preflight.filesystem,
+            ),
+            artifact,
+        )
+
+    def test_541st_artifact_is_recorded_without_count_inflation(self):
+        """The extra artifact is sealed while verified count stays frozen."""
+        self.extend_to_complete_cohort(extra_slots=1)
+        artifact = _recompute_system_paper_evaluation(
+            **self.values(_clock=lambda: "2026-11-02T08:05:00.000Z")
+        )
+        extra_slot_id = self.cohort_slot(540).slot_id
+        self.assertEqual(
+            artifact["evidence_inventory"]["verified_terminal_slot_count"],
+            540,
+        )
+        self.assertEqual(len(artifact["evidence_inventory"]["slots"]), 541)
+        self.assertIn(
+            extra_slot_id,
+            {
+                item["slot_id"]
+                for item in artifact["evidence_inventory"]["slots"]
+            },
+        )
+
     def test_loader_replay_has_no_publication_side_effect(self):
         """A loader must be able to verify an artifact while publication is forbidden."""
         self.extend_to_complete_cohort()
@@ -2903,6 +2955,43 @@ class SystemPaperEvaluationAuthorityTests(unittest.TestCase):
             context.prec = 50
             high_precision = _evaluate_complete_system_paper_cohort(cohort)
         self.assertEqual(low_precision, high_precision)
+
+    def test_complete_economic_result_ignores_ambient_decimal_context(self):
+        """Rounding, exponent limits and traps cannot alter exact gate bytes."""
+        def fill(index, result):
+            if index == 0:
+                self.add_synthetic_fill(
+                    result,
+                    event_id="frozen-decimal-context",
+                    fill_price="3",
+                    fee="0.01",
+                )
+                result["replay_inputs"]["public_market_bundle"]["bbo"][
+                    "ask_price"
+                ] = "2.99"
+
+        cohort = self.economic_cohort(mutate=fill)
+        with localcontext() as context:
+            context.prec = 9
+            context.rounding = ROUND_DOWN
+            context.Emin = -12
+            context.Emax = 12
+            context.traps[Inexact] = True
+            context.traps[Rounded] = True
+            round_down = canonical_json(
+                _evaluate_complete_system_paper_cohort(cohort)
+            )
+        with localcontext() as context:
+            context.prec = 37
+            context.rounding = ROUND_HALF_EVEN
+            context.Emin = -999
+            context.Emax = 999
+            context.traps[Inexact] = False
+            context.traps[Rounded] = False
+            half_even = canonical_json(
+                _evaluate_complete_system_paper_cohort(cohort)
+            )
+        self.assertEqual(round_down, half_even)
 
     def test_post_tail_artifact_replacement_during_evaluation_fails_closed(self):
         self.extend_to_complete_cohort()

@@ -9,7 +9,15 @@ import stat
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import (
+    Context,
+    Decimal,
+    DivisionByZero,
+    InvalidOperation,
+    Overflow,
+    ROUND_HALF_EVEN,
+    localcontext,
+)
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
@@ -50,6 +58,15 @@ _STUDENT_T_95_ONE_SIDED_DF2 = Decimal("2.91998558035372")
 _EVALUATION_SCHEMA = "system-paper-evaluation-v1.schema.json"
 _MAX_EVALUATION_BYTES = 8 * 1024 * 1024
 _ZERO_HASH = "0" * 64
+FROZEN_CONTEXT = Context(
+    prec=50,
+    rounding=ROUND_HALF_EVEN,
+    Emin=-999999,
+    Emax=999999,
+    capitals=1,
+    clamp=0,
+    traps=[InvalidOperation, DivisionByZero, Overflow],
+)
 
 
 class SystemPaperEvaluationError(ValueError):
@@ -1131,23 +1148,24 @@ def _evaluate_complete_cohort(*_args, **kwargs):
 
 
 def _maximum_drawdown(equities) -> Decimal:
-    values = tuple(equities)
-    if (
-        not values
-        or any(
-            not isinstance(value, Decimal) or value <= 0
-            for value in values
-        )
-    ):
-        raise SystemPaperEvaluationError(
-            "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
-        )
-    peak = values[0]
-    maximum = Decimal("0")
-    for value in values:
-        peak = max(peak, value)
-        maximum = max(maximum, (peak - value) / peak)
-    return maximum
+    with localcontext(FROZEN_CONTEXT):
+        values = tuple(equities)
+        if (
+            not values
+            or any(
+                not isinstance(value, Decimal) or value <= 0
+                for value in values
+            )
+        ):
+            raise SystemPaperEvaluationError(
+                "SYSTEM_PAPER_EVALUATION_ECONOMIC_INPUT_INVALID"
+            )
+        peak = values[0]
+        maximum = Decimal("0")
+        for value in values:
+            peak = max(peak, value)
+            maximum = max(maximum, (peak - value) / peak)
+        return maximum
 
 
 def _three_block_statistics(equities) -> Mapping[str, Any]:
@@ -1164,8 +1182,7 @@ def _three_block_statistics(equities) -> Mapping[str, Any]:
         )
     starts = (_STARTING_EQUITY, values[179], values[359])
     ends = (values[179], values[359], values[539])
-    with localcontext() as context:
-        context.prec = 50
+    with localcontext(FROZEN_CONTEXT):
         returns = tuple(
             (end - start) / start for start, end in zip(starts, ends)
         )
@@ -1209,8 +1226,7 @@ def _decimal_value(value: object) -> Decimal:
 def _evaluate_complete_system_paper_cohort(
     cohort,
 ) -> Mapping[str, Any]:
-    with localcontext() as context:
-        context.prec = 50
+    with localcontext(FROZEN_CONTEXT):
         return _evaluate_complete_system_paper_cohort_decimal(cohort)
 
 
@@ -2209,9 +2225,16 @@ def observe_system_paper_evaluation_readiness(
             event["event_type"] in ("FAILED", "MISSED", "EXPIRED")
             for event in replay["events"]
         )
+        policy = SystemPaperSchedulePolicy.create(plan)
+        expected_slot_ids = {
+            policy.slot_from_scheduled(
+                start_at + timedelta(hours=4 * index)
+            ).slot_id
+            for index in range(start["expected_slot_count"])
+        }
         successes = sum(
-            item["terminal_state"] == "SUCCEEDED"
-            for item in projection.values()
+            projection.get(slot_id, {}).get("terminal_state") == "SUCCEEDED"
+            for slot_id in expected_slot_ids
         )
         if observed >= tail_at + _TAIL_SETTLE_DELAY:
             surface_state = _inventory_surface_state(
@@ -2344,7 +2367,6 @@ def observe_system_paper_evaluation_readiness(
             retained.verify()
             state_retained.verify()
             return complete
-        policy = SystemPaperSchedulePolicy.create(plan)
         scheduled = start_at
         next_required = None
         while scheduled < tail_at:
