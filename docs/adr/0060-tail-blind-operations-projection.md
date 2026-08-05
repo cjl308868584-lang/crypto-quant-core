@@ -21,7 +21,8 @@ Challenger 的中期经济信息，也会让展示层获得文件、进程或网
    freshness 与总体健康全部在边界内重新派生。
 3. Challenger 在 final 前只暴露 `WITHHELD_PRE_TAIL`，任何阶段都不暴露 PnL、收益率、
    胜率、回撤、价格、费用、置信区间、排名或功效。System Paper 只暴露模拟订单生命周期、
-   对账、风险和终态 gate，不暴露 gate 背后的经济测量。
+   对账、风险和终态 gate，不暴露 gate 背后的经济测量。未启动时生命周期计数必须为零；
+   五个互斥结果桶的总数不得超过 submitted 订单数。
 4. `load_operations_projection_bytes` 只接受有界 canonical JSON、无重复键/float/未知字段、
    正确镜像 Schema、完整语义重建与 `projection_hash`。它只读取随包发布的 Schema resource，
    不读取任何运行证据、SQLite、路径、凭据或环境状态。

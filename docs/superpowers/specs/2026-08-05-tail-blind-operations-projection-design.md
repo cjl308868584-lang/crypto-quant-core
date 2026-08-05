@@ -202,6 +202,9 @@ Required fields:
 `NOT_EVALUATED` gate status, and `next_required_slot=None`. `COLLECTING`
 requires `NOT_EVALUATED`; only `FINAL` may expose a terminal gate status.
 Lifecycle counts are explicitly simulated and do not imply exchange orders.
+The five outcome counts are mutually exclusive snapshot buckets; their sum
+must not exceed `submitted_order_count`. `INSTALLED_NOT_STARTED` requires all
+six lifecycle counts to remain zero.
 
 ### 6.5 `OperationsProjectionSources`
 

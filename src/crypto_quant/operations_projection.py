@@ -343,15 +343,18 @@ def _validate_challenger(
 def _validate_system_paper(
     value: SystemPaperOperationsSource, now: datetime
 ) -> str:
-    counts = (
-        value.elapsed_days,
-        value.verified_slot_count,
-        value.submitted_order_count,
+    lifecycle_outcomes = (
         value.filled_order_count,
         value.partially_filled_order_count,
         value.cancelled_order_count,
         value.rejected_order_count,
         value.timeout_unknown_order_count,
+    )
+    counts = (
+        value.elapsed_days,
+        value.verified_slot_count,
+        value.submitted_order_count,
+        *lifecycle_outcomes,
         value.incident_count,
     )
     if (
@@ -362,6 +365,7 @@ def _validate_system_paper(
         or not _enum(value.risk_state, _RISK_STATES)
         or not _enum(value.gate_status, _SYSTEM_PAPER_GATES)
         or any(not _nonnegative_integer(item) for item in counts)
+        or sum(lifecycle_outcomes) > value.submitted_order_count
     ):
         raise OperationsProjectionError("OPERATIONS_PROJECTION_SOURCE_INVALID")
     _validate_next_slot(value.next_required_slot)
@@ -380,6 +384,8 @@ def _validate_system_paper(
         if (
             value.elapsed_days != 0
             or value.verified_slot_count != 0
+            or value.submitted_order_count != 0
+            or any(item != 0 for item in lifecycle_outcomes)
             or value.next_required_slot is not None
             or value.gate_status != "NOT_EVALUATED"
         ):

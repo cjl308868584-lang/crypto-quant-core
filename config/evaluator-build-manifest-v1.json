@@ -136,10 +136,10 @@
     "config/trade-replay-snapshot-v1.schema.json": "d45dfaaf86f2dbdcd83109fd3b329aca6f455812df0022652129079555b8546f",
     "docs/adr/0058-system-paper-deployment-trust-chain.md": "c63e25ea69f56e61e9df83e1cfd5244337e597651a34ab3a8e3f2eb609eb0466",
     "docs/adr/0059-system-paper-fixed-tail-evaluation.md": "700b95b1d4d899ac74d03b25ba7cd8dca0611970264cef01c630af0f7447cfe7",
-    "docs/adr/0060-tail-blind-operations-projection.md": "707e3d28160d91a18501f69786f7f4325dbac437ce42ed43aea6f6e3ebb99f2c",
+    "docs/adr/0060-tail-blind-operations-projection.md": "2271bd77f7a3abb2e54bd5df0bb7d0be3eb26f7bfee364f4c1da8b3f67243dd4",
     "docs/implementation-status-v0.58.0.md": "6499059d63114910f9e977bdf71bbafa46c34fe58e43db34a3c7dc0f5cc6f838",
     "docs/implementation-status-v0.59.0.md": "e78f548566699338fdfe4596764fe2fad52aeaf311b4ef65b28aa140f2e3c6e0",
-    "docs/implementation-status-v0.60.0.md": "c42d3548bfd0c0b3c0fb33dcfee21bd3714626d4a1abe7d3801eb091e46c0535",
+    "docs/implementation-status-v0.60.0.md": "73b94074d97251bac2620301e1970fd793aea5339490b79115914d47b1ae9bef",
     "docs/superpowers/plans/2026-08-02-system-paper-wal-scheduler.md": "9ff21c585d907268728801ff472c0032ca4865b60f477120e95e16fe4b3fd3e4",
     "docs/superpowers/plans/2026-08-03-system-paper-deployment-trust-chain.md": "85e8f2cede600cb1fc856b26e8b74626814db98d599d74a878a8ec9cb96de623",
     "docs/superpowers/plans/2026-08-04-system-paper-deployment-review-hardening.md": "b2737d4f35e2f7073d3f9b7b0e82f38c0b2e185a69cb4d3e742d94905307f267",
@@ -153,7 +153,7 @@
     "docs/superpowers/specs/2026-08-04-system-paper-finalization-hardening-design.md": "92a5c105a0dcd138c184c09f85edd7225b9bad89f7a7d365459ddd18e42eeadf",
     "docs/superpowers/specs/2026-08-04-system-paper-fixed-tail-evaluation-design.md": "48d03f357e8306d9037b83f6d6bd8d3eaef0e1d26632883664c201295a03f859",
     "docs/superpowers/specs/2026-08-05-system-paper-finalization-residual-design.md": "52e1e27f65213462334959a4c5b2e8bef088f89d7ba651bf218e202ab26e0525",
-    "docs/superpowers/specs/2026-08-05-tail-blind-operations-projection-design.md": "62cc62b1eb983459525bb9962bef55954a4f0385582b4b48456479ecfedb7e5e",
+    "docs/superpowers/specs/2026-08-05-tail-blind-operations-projection-design.md": "a468825d987589292045dccd38a0897e84099344a64d40d5666cb1d64cb63623",
     "pyproject.toml": "25c02d8fa694a95614d52550bcafbf6615af9b0c7c0ff0846ec1d91d77aad0f6",
     "requirements.lock": "71aa777f1717f056886f3de1fb2e1013a5dec5210d681ed30943056edf7ccbed",
     "scripts/refresh_evaluator_build_manifest.py": "40a022812b2ba024f3c5836896a638c255223853dd4f805cd0ea35a02b53f250",
@@ -230,7 +230,7 @@
     "src/crypto_quant/market_data_cli.py": "9e28048a6552e28172a579a54cbdfb2740d952b0cc8ea009d6881609022fe553",
     "src/crypto_quant/offline_paper.py": "ed5814e74107856157731cd8b8e76b3a242063b6c382dea0da8381f33fb17bc7",
     "src/crypto_quant/offline_paper_cli.py": "a1f307876f5fd8c859588149c7b5cb90917a77df1cb2c67513f6d0a3c828a941",
-    "src/crypto_quant/operations_projection.py": "86cec0510ad6a13d1e3266c7f8193765aded87d51d216970c5969b3dafd84363",
+    "src/crypto_quant/operations_projection.py": "77037312beb9c3edeb5b421ad08ceb7aa4507218d391d05fe68106287e31644e",
     "src/crypto_quant/orders.py": "654f33d9bb09a6ad9eca475a43db5589489556c70959162ee60dae3af2998816",
     "src/crypto_quant/paired_risk.py": "c1cd9355511460e47871ca915840ba320815498def182976cf1c470487bd4ae7",
     "src/crypto_quant/paper_context_scheduler.py": "32afb84730d84e0a09c4d4c4d47f277fd9f12a71d7c3cfdefeb28527a74236c9",
@@ -332,7 +332,7 @@
     "tests/system_paper_fixtures.py": "2c3ca742d23044392e7da1c2142f4d183a593216af6f59f17501b3c2ac5233db",
     "tests/test_estimators.py": "6e84500c936f751b9db66ff28b5c541807ac38151d3567509c3b0a3f4795221d",
     "tests/test_offline_paper.py": "7618c94adea6a543db911d23b12b8518f21934970bb99b73fbd5965e7acb664e",
-    "tests/test_operations_projection.py": "5f371f8f7fbc03c6b8c610caea736bb1b3dfb877a556c54f88886cce53042418",
+    "tests/test_operations_projection.py": "d5cea462cb150b7282a132dbe22aa793abc145a559011b8205f6a07ba4deb604",
     "tests/test_system_paper_evaluation.py": "f2e9b6072eea99e954f7843adad69a6aaea8e8272f39bfbe84c9ac76368ec4f8",
     "tests/test_system_paper_evaluation_cli.py": "af7ff8eb980e95c88d7528fae40dd6b18489f307e8997309204bb326c7dc4270",
     "tests/test_system_paper_evidence.py": "bab0f79ff7fb1a390f497df798e954edd2be39d4b73e4c673168eae1a5105c15",
@@ -348,7 +348,7 @@
     "tests/test_system_paper_scheduler.py": "bd602843f290cc40bcf84693955e4fd4296e21ffc1656496379fe1b7a634c13a",
     "tests/test_system_paper_start_receipt.py": "1c8b06335e2e426e59ba4c67873517e5492f2fb31bb79937670172181e6ede20"
   },
-  "build_input_tree_hash": "d4dfa944ec3f2382d5f390f39c7d356acb601895db1ec31de6f41e530bb46c53",
+  "build_input_tree_hash": "41b1b4c6e630f91a8e2922f443770ec9f6f283e2b39920e15e306c8653fb15fa",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -356,5 +356,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "747b3c9e74ad6dcdb13c02c2648eb6f191e40bfb8aa7c4b7f06b9d45066a2ee7"
+  "manifest_hash": "3c532ec2f71429ae7c045945e7aa68a732e3ca34b4f0dbd59bf4aafe0282f8f6"
 }

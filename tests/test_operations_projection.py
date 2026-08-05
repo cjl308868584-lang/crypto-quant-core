@@ -445,6 +445,58 @@ class OperationsProjectionStateMachineTests(
                     lambda source=source: self.build(paper=source),
                 )
 
+    def test_rejects_outcome_counts_exceeding_submitted_orders(self):
+        base = {
+            "phase": "COLLECTING",
+            "service_health": "HEALTHY",
+            "evidence_health": "VERIFIED",
+            "elapsed_days": 1,
+            "verified_slot_count": 6,
+            "next_required_slot": "2026-08-05T04:00:00.000Z",
+            "reconciliation_status": "RECONCILED",
+            "risk_state": "NORMAL",
+        }
+        cases = (
+            {"submitted_order_count": 0, "filled_order_count": 1},
+            {
+                "submitted_order_count": 1,
+                "filled_order_count": 1,
+                "cancelled_order_count": 1,
+            },
+            {
+                "submitted_order_count": 1,
+                "partially_filled_order_count": 2,
+            },
+        )
+        for override in cases:
+            with self.subTest(override=override):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
+                    lambda override=override: self.build(
+                        paper=paper_source(**base, **override)
+                    ),
+                )
+
+    def test_installed_not_started_requires_zero_lifecycle_counts(self):
+        lifecycle_fields = (
+            "submitted_order_count",
+            "filled_order_count",
+            "partially_filled_order_count",
+            "cancelled_order_count",
+            "rejected_order_count",
+            "timeout_unknown_order_count",
+        )
+        for field in lifecycle_fields:
+            with self.subTest(field=field):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
+                    lambda field=field: self.build(
+                        paper=paper_source(
+                            phase="INSTALLED_NOT_STARTED", **{field: 1}
+                        )
+                    ),
+                )
+
 
 class OperationsProjectionAssemblyTests(
     OperationsProjectionValidationTests

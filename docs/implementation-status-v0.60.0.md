@@ -12,7 +12,7 @@
 - Challenger pre-tail gate 隐藏和逐字段 allowlist，结构上排除经济指标、任意 mapping、路径、
   凭据和 adapter 异常文本；
 - System Paper 模拟订单生命周期、对账、风险和终态 gate 的只读投影，不包含 gate 背后的
-  经济测量；
+  经济测量；未启动阶段强制零订单计数，互斥结果桶总数不得超过 submitted 订单数；
 - canonical `projection_hash`、有界严格 bytes loader、双镜像 closed Schema 与 adversarial
   离线测试；
 - package `0.60.0` 与 evaluator build manifest `1.54.0`。
