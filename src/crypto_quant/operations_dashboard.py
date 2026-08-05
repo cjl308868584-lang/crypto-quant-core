@@ -173,7 +173,7 @@ class _OperationsRequestHandler(BaseHTTPRequestHandler):
             self._send(
                 400,
                 "text/plain; charset=utf-8",
-                b"BAD_REQUEST" if write_body else b"",
+                b"BAD_REQUEST",
                 write_body=write_body,
             )
             return

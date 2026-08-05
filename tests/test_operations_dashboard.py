@@ -273,7 +273,7 @@ class OperationsDashboardHTTPBoundaryTests(unittest.TestCase):
                 host="",
             )
             self.assertEqual(status, 400)
-            self.assertEqual(headers["Content-Length"], "0")
+            self.assertEqual(headers["Content-Length"], "11")
             self.assertEqual(body, b"")
             self.assert_security_headers(headers)
 
