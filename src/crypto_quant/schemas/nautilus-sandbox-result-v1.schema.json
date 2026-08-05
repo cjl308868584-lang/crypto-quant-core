@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/nautilus-sandbox-result-v1.schema.json",
+  "title": "Non-authoritative Nautilus sandbox result V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "result_id", "result_hash", "request_hash", "dependency_lock_hash", "fixture_hash", "current_reference_hash", "authority", "engine", "scenarios", "safety_counters", "status"],
+  "properties": {
+    "$schema": {"const": "./nautilus-sandbox-result-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "result_id": {"type": "string", "pattern": "^nautilus_sandbox_result_[0-9a-f]{64}$"},
+    "result_hash": {"$ref": "#/$defs/hash"},
+    "request_hash": {"$ref": "#/$defs/hash"},
+    "dependency_lock_hash": {"$ref": "#/$defs/hash"},
+    "fixture_hash": {"$ref": "#/$defs/hash"},
+    "current_reference_hash": {"$ref": "#/$defs/hash"},
+    "authority": {"const": "NON_AUTHORITATIVE_SANDBOX_OBSERVATION"},
+    "engine": {"type": "object", "additionalProperties": false, "required": ["name", "count", "version"], "properties": {"name": {"const": "BacktestEngine"}, "count": {"const": 1}, "version": {"const": "1.227.0"}}},
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["scenario_id", "order_events", "fill_events", "fee_events", "final_position", "pnl", "terminal_state", "rejection_reason_or_null", "semantic_hash"],
+        "properties": {
+          "scenario_id": {"enum": ["IMMEDIATE_FULL_FILL", "PARTIAL_THEN_FULL_FILL", "BELOW_MINIMUM_REJECTION", "FRESH_PROCESS_REPLAY"]},
+          "order_events": {"type": "array", "items": {"type": "object"}},
+          "fill_events": {"type": "array", "items": {"type": "object"}},
+          "fee_events": {"type": "array", "items": {"type": "object"}},
+          "final_position": {"type": "object"},
+          "pnl": {"type": "object"},
+          "terminal_state": {"type": "string", "minLength": 1},
+          "rejection_reason_or_null": {"type": ["string", "null"]},
+          "semantic_hash": {"$ref": "#/$defs/hash"}
+        }
+      }
+    },
+    "safety_counters": {"type": "object", "additionalProperties": false, "required": ["network_request_count", "credential_access_count", "live_broker_call_count", "runtime_state_write_count"], "properties": {"network_request_count": {"const": 0}, "credential_access_count": {"const": 0}, "live_broker_call_count": {"const": 0}, "runtime_state_write_count": {"const": 0}}},
+    "status": {"const": "SANDBOX_OBSERVATION_COMPLETE"}
+  },
+  "$defs": {"hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}
