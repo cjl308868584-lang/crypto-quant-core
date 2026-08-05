@@ -223,7 +223,9 @@ class SystemPaperRuntimeCliTests(unittest.TestCase):
             self.assertFalse(
                 any("pnl" in key.lower() for key in output_keys)
             )
-            self.assertNotIn("response_body", output_keys)
+            self.assertFalse(
+                any("response_body" in key.lower() for key in output_keys)
+            )
             self.assertEqual(state_path.stat().st_mode & 0o777, 0o600)
             result_path = Path(first["result_path_or_null"])
             loaded = load_system_paper_slot_result_bytes(result_path.read_bytes())

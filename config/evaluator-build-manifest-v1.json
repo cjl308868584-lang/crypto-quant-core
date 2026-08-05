@@ -358,11 +358,11 @@
     "tests/test_system_paper_preflight.py": "c5911872f933ce9be51f68f83776ca2cbcb2ab254b74007ca6f7939683d62191",
     "tests/test_system_paper_public_input.py": "c068f973f9eee4bb80295cb47f57690b0e37051734e411cd5462e3f2b948eb1a",
     "tests/test_system_paper_runtime.py": "7fed3ae70fdd74baa30e58b4a9dbed84df1269568d6653ba4b232ef9319a6cc8",
-    "tests/test_system_paper_runtime_cli.py": "92d0237a09932deec88722fa496c21422ac645f5c35eb46d9f2a8da18e4cd505",
+    "tests/test_system_paper_runtime_cli.py": "f40bb618da36088b527d6fa326f46b99f93a44184a0699e02bc11123d8bd6ee4",
     "tests/test_system_paper_scheduler.py": "bd602843f290cc40bcf84693955e4fd4296e21ffc1656496379fe1b7a634c13a",
     "tests/test_system_paper_start_receipt.py": "1c8b06335e2e426e59ba4c67873517e5492f2fb31bb79937670172181e6ede20"
   },
-  "build_input_tree_hash": "0aad3865e753009b8c54903e4de25ad457ea3486c53a1221daf1db440049fd7a",
+  "build_input_tree_hash": "b786255726e606fd8409ad668675ae35cefbb88a4d29f80d2cb8b92323812d76",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -370,5 +370,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "39d4920980b4f33474656420a456b96db4c62e8f95bae14f385d7e5b96aed895"
+  "manifest_hash": "e084ac0aa126824204f6f40fb89db52cd274e96abb96fd512ad6fdccd29eadb6"
 }
