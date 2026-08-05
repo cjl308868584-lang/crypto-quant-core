@@ -23,6 +23,12 @@ from crypto_quant.challenger_replacement_plan import (
 
 ROOT = Path(__file__).resolve().parents[1]
 HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+ARTIFACT = (
+    ROOT
+    / "artifacts"
+    / "challenger-replacement"
+    / "challenger-replacement-plan-v0.62.0.json"
+)
 
 
 class ChallengerReplacementPlanBuilderTests(unittest.TestCase):
@@ -484,6 +490,18 @@ class ChallengerReplacementPlanLoaderTests(unittest.TestCase):
             "submit_order",
         ):
             self.assertNotIn(forbidden, called_names)
+
+
+class ChallengerReplacementPlanArtifactTests(unittest.TestCase):
+    def test_committed_artifact_is_exact_builder_bytes_and_loader_verified(self):
+        body = ARTIFACT.read_bytes()
+        plan = build_challenger_replacement_plan()
+        self.assertEqual(body, canonical_json(plan).encode("utf-8") + b"\n")
+        self.assertEqual(load_challenger_replacement_plan(ARTIFACT), plan)
+        self.assertEqual(
+            hashlib.sha256(body).hexdigest(),
+            "78e703bfeb5b2b08af963ba14f08a66829613c680ccd6793df2a9a86e563ab3d",
+        )
 
 
 if __name__ == "__main__":
