@@ -59,6 +59,8 @@ _FROZEN_CONFIG_PATHS = (
     "config/historical-research-corpus-repair-v1.schema.json",
     "config/historical-research-corpus-snapshot-v1.schema.json",
     "config/model-bundle-v1.1.schema.json",
+    "config/nautilus-sandbox-comparison-v1.schema.json",
+    "config/nautilus-sandbox-dependency-lock-v1.schema.json",
     "config/offline-paper-run-v1.schema.json",
     "config/operations-projection-v1.schema.json",
     "config/paper-runtime-snapshot-v1.schema.json",
@@ -116,6 +118,8 @@ _FROZEN_ARTIFACT_PATHS = (
     "artifacts/challenger-forward/challenger-first-slot-receipt-v0.35.0.json",
     "artifacts/challenger-forward/challenger-launchd-not-installed-v0.32.0.json",
     "artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json",
+    "artifacts/nautilus-sandbox/nautilus-sandbox-comparison-v0.63.0.json",
+    "artifacts/nautilus-sandbox/nautilus-sandbox-dependency-lock-v0.63.0.json",
     "artifacts/challenger-forward/challenger-launchd-installed-v0.33.0.json",
     "artifacts/paper-cost/binance-paper-account-cost-binding-not-run-v0.23.0.json",
     "artifacts/paper-context/binance-context-complete-cycle-not-run-v0.24.0.json",
@@ -211,6 +215,19 @@ _FROZEN_RELEASE_PATHS = (
     "2026-08-05-replacement-challenger-preregistration-isolation.md",
     "docs/adr/0062-replacement-challenger-preregistration-isolation.md",
     "docs/implementation-status-v0.62.0.md",
+    "sandboxes/nautilus/pyproject.toml",
+    "sandboxes/nautilus/uv.lock",
+    "sandboxes/nautilus/src/crypto_quant_nautilus_sandbox/__init__.py",
+    "sandboxes/nautilus/tests/test_dependency_boundary.py",
+    "tests/test_nautilus_sandbox_dependency.py",
+    "tests/test_nautilus_evidence_adapter.py",
+    "tests/test_nautilus_sandbox_artifacts.py",
+    "docs/superpowers/specs/"
+    "2026-08-05-nautilus-sandbox-isolation-spike-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-05-nautilus-sandbox-isolation-spike.md",
+    "docs/adr/0063-nautilus-sandbox-isolation-spike.md",
+    "docs/implementation-status-v0.63.0.md",
     "scripts/refresh_evaluator_build_manifest.py",
 )
 

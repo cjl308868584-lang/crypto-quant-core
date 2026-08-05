@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/nautilus-sandbox-comparison-v1.schema.json",
+  "title": "Nautilus sandbox supply-chain preflight comparison V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "comparison_id", "comparison_hash", "authority", "dependency_lock_id", "dependency_lock_hash", "classification", "reason_codes", "gates", "supply_chain_fetch_attestation", "conclusion", "current_core_effect", "status"],
+  "properties": {
+    "$schema": {"const": "./nautilus-sandbox-comparison-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "comparison_id": {"type": "string", "pattern": "^nautilus_sandbox_comparison_[0-9a-f]{64}$"},
+    "comparison_hash": {"$ref": "#/$defs/hash"},
+    "authority": {"const": "READ_ONLY_EVIDENCE_ADAPTER"},
+    "dependency_lock_id": {"type": "string", "pattern": "^nautilus_sandbox_dependency_lock_[0-9a-f]{64}$"},
+    "dependency_lock_hash": {"$ref": "#/$defs/hash"},
+    "classification": {"const": "SUPPLY_CHAIN_EVIDENCE_INCOMPLETE"},
+    "reason_codes": {"const": ["SUPPLY_CHAIN_FETCH_NOT_MACHINE_REPLAYABLE"]},
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exact_dependency_metadata", "wheel_locally_verified", "license_bytes_locally_verified", "compatibility_request_frozen", "sandbox_result_available", "golden_scenarios_executed", "runtime_failure_suite_executed", "static_blocked_path_tests_executed", "fresh_process_replay_verified", "future_shadow_eligible"],
+      "properties": {
+        "exact_dependency_metadata": {"const": true},
+        "wheel_locally_verified": {"const": false},
+        "license_bytes_locally_verified": {"const": false},
+        "compatibility_request_frozen": {"const": false},
+        "sandbox_result_available": {"const": false},
+        "golden_scenarios_executed": {"const": false},
+        "runtime_failure_suite_executed": {"const": false},
+        "static_blocked_path_tests_executed": {"const": true},
+        "fresh_process_replay_verified": {"const": false},
+        "future_shadow_eligible": {"const": false}
+      }
+    },
+    "supply_chain_fetch_attestation": {"$ref": "#/$defs/attestation"},
+    "conclusion": {"const": "INCONCLUSIVE_BLOCKED"},
+    "current_core_effect": {"const": "NONE_KEEP_CURRENT_CORE"},
+    "status": {"const": "ADOPTION_REPORT_INCONCLUSIVE_NO_RETRY_V0_63"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "policy", "observed_outcome", "observed_exit_code"],
+      "properties": {
+        "attempt": {"type": "integer", "minimum": 1, "maximum": 2},
+        "policy": {"enum": ["UV_FROZEN_DEFAULT_RETRY_POLICY", "UV_FROZEN_SAME_SOURCE_EXTENDED_READ_TIMEOUT"]},
+        "observed_outcome": {"enum": ["UV_RETRIES_EXHAUSTED_TIMEOUT", "BOUNDED_RECOVERY_ABORTED_NO_PROGRESS"]},
+        "observed_exit_code": {"enum": [1, 130]}
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attestation_id", "attestation_hash", "reason_code", "official_source", "locked_package", "observed_tool", "observed_python", "attempt_count", "attempts", "exact_transcript_bytes_available", "external_attestation_available", "machine_replayable", "source_change_count", "version_change_count", "hash_relaxation_count", "sandbox_runner_invocation_count", "sandbox_engine_creation_count", "market_request_count", "credential_access_count", "broker_request_count", "real_order_count", "production_state_write_count", "result_published", "retry_allowed_within_v0_63", "status"],
+      "properties": {
+        "attestation_id": {"type": "string", "pattern": "^nautilus_supply_chain_fetch_attestation_[0-9a-f]{64}$"},
+        "attestation_hash": {"$ref": "#/$defs/hash"},
+        "reason_code": {"const": "SUPPLY_CHAIN_FETCH_NOT_MACHINE_REPLAYABLE"},
+        "official_source": {"const": "https://files.pythonhosted.org"},
+        "locked_package": {"const": "nautilus_trader==1.227.0"},
+        "observed_tool": {"const": "uv 0.11.7"},
+        "observed_python": {"const": "CPython 3.12.13"},
+        "attempt_count": {"const": 2},
+        "attempts": {"type": "array", "prefixItems": [{"$ref": "#/$defs/attempt"}, {"$ref": "#/$defs/attempt"}], "items": false},
+        "exact_transcript_bytes_available": {"const": false},
+        "external_attestation_available": {"const": false},
+        "machine_replayable": {"const": false},
+        "source_change_count": {"const": 0},
+        "version_change_count": {"const": 0},
+        "hash_relaxation_count": {"const": 0},
+        "sandbox_runner_invocation_count": {"const": 0},
+        "sandbox_engine_creation_count": {"const": 0},
+        "market_request_count": {"const": 0},
+        "credential_access_count": {"const": 0},
+        "broker_request_count": {"const": 0},
+        "real_order_count": {"const": 0},
+        "production_state_write_count": {"const": 0},
+        "result_published": {"const": false},
+        "retry_allowed_within_v0_63": {"const": false},
+        "status": {"const": "SESSION_ATTESTATION_NOT_MACHINE_REPLAYABLE"}
+      }
+    }
+  }
+}

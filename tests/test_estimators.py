@@ -569,10 +569,10 @@ class EvaluatorBuildTests(unittest.TestCase):
         }
 
         self.assertEqual(set(manifest["file_hashes"]), expected)
-        self.assertEqual(semantic_versions, {(0, 62, 0)})
-        self.assertEqual(crypto_quant.__version__, "0.62.0")
-        self.assertEqual(manifest["package_version"], "0.62.0")
-        self.assertEqual(manifest["manifest_version"], "1.56.0")
+        self.assertEqual(semantic_versions, {(0, 63, 0)})
+        self.assertEqual(crypto_quant.__version__, "0.63.0")
+        self.assertEqual(manifest["package_version"], "0.63.0")
+        self.assertEqual(manifest["manifest_version"], "1.57.0")
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
@@ -747,6 +747,26 @@ class EvaluatorBuildTests(unittest.TestCase):
             "docs/adr/0062-replacement-challenger-preregistration-"
             "isolation.md",
             "docs/implementation-status-v0.62.0.md",
+            "config/nautilus-sandbox-dependency-lock-v1.schema.json",
+            "config/nautilus-sandbox-comparison-v1.schema.json",
+            "artifacts/nautilus-sandbox/"
+            "nautilus-sandbox-dependency-lock-v0.63.0.json",
+            "artifacts/nautilus-sandbox/"
+            "nautilus-sandbox-comparison-v0.63.0.json",
+            "sandboxes/nautilus/pyproject.toml",
+            "sandboxes/nautilus/uv.lock",
+            "sandboxes/nautilus/src/"
+            "crypto_quant_nautilus_sandbox/__init__.py",
+            "sandboxes/nautilus/tests/test_dependency_boundary.py",
+            "tests/test_nautilus_sandbox_dependency.py",
+            "tests/test_nautilus_evidence_adapter.py",
+            "tests/test_nautilus_sandbox_artifacts.py",
+            "docs/superpowers/specs/"
+            "2026-08-05-nautilus-sandbox-isolation-spike-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-05-nautilus-sandbox-isolation-spike.md",
+            "docs/adr/0063-nautilus-sandbox-isolation-spike.md",
+            "docs/implementation-status-v0.63.0.md",
             "scripts/refresh_evaluator_build_manifest.py",
         ):
             self.assertIn(path, expected)
@@ -835,9 +855,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.56.0")
-        self.assertEqual(manifest["package_version"], "0.62.0")
-        self.assertEqual(crypto_quant.__version__, "0.62.0")
+        self.assertEqual(manifest["manifest_version"], "1.57.0")
+        self.assertEqual(manifest["package_version"], "0.63.0")
+        self.assertEqual(crypto_quant.__version__, "0.63.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
@@ -845,7 +865,7 @@ class EvaluatorBuildTests(unittest.TestCase):
         self.assertEqual(manifest["metric_catalog_version"], "1.1.6")
         self.assertEqual(manifest["golden_vector_count"], 41)
         build = EvaluatorBuild.load(ROOT, self.registry)
-        self.assertEqual(build.manifest_version, "1.56.0")
+        self.assertEqual(build.manifest_version, "1.57.0")
         self.assertEqual(build.executable_estimator_count, 26)
         self.assertEqual(build.unavailable_estimator_count, 32)
         self.assertEqual(build.build_hash, manifest["manifest_hash"])

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/nautilus-sandbox-dependency-lock-v1.schema.json",
+  "title": "NautilusTrader sandbox dependency lock V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "dependency_lock_id", "dependency_lock_hash", "package", "wheel", "license", "platform", "transitive_lock", "authority", "status"],
+  "properties": {
+    "$schema": {"const": "./nautilus-sandbox-dependency-lock-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "dependency_lock_id": {"type": "string", "pattern": "^nautilus_sandbox_dependency_lock_[0-9a-f]{64}$"},
+    "dependency_lock_hash": {"$ref": "#/$defs/hash"},
+    "package": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "version", "development_status", "requires_python", "official_tag", "tag_object", "peeled_commit"],
+      "properties": {
+        "name": {"const": "nautilus_trader"}, "version": {"const": "1.227.0"},
+        "development_status": {"const": "BETA"}, "requires_python": {"const": ">=3.12,<3.15"},
+        "official_tag": {"const": "v1.227.0"}, "tag_object": {"$ref": "#/$defs/hash40"},
+        "peeled_commit": {"$ref": "#/$defs/hash40"}
+      }
+    },
+    "wheel": {
+      "type": "object", "additionalProperties": false,
+      "required": ["filename", "size", "sha256", "python_tag", "abi_tag", "platform_tag"],
+      "properties": {
+        "filename": {"const": "nautilus_trader-1.227.0-cp312-cp312-macosx_15_0_arm64.whl"},
+        "size": {"const": 145812901}, "sha256": {"$ref": "#/$defs/hash"},
+        "python_tag": {"const": "cp312"}, "abi_tag": {"const": "cp312"},
+        "platform_tag": {"const": "macosx_15_0_arm64"}
+      }
+    },
+    "license": {
+      "type": "object", "additionalProperties": false,
+      "required": ["expression", "path", "git_blob", "size", "sha256"],
+      "properties": {
+        "expression": {"const": "LGPL-3.0-or-later"}, "path": {"const": "LICENSE"},
+        "git_blob": {"$ref": "#/$defs/hash40"}, "size": {"const": 7651}, "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "platform": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operating_system", "minimum_version", "machine", "python", "observed_compatible_machine"],
+      "properties": {
+        "operating_system": {"const": "macOS"}, "minimum_version": {"const": "15.0"},
+        "machine": {"const": "arm64"}, "python": {"const": "3.12"},
+        "observed_compatible_machine": {"const": "macOS 15.7.5 arm64 CPython 3.12.13"}
+      }
+    },
+    "transitive_lock": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "format", "version", "file_sha256", "distributions"],
+      "properties": {
+        "path": {"const": "sandboxes/nautilus/uv.lock"}, "format": {"const": "uv.lock"},
+        "version": {"const": 1}, "file_sha256": {"$ref": "#/$defs/hash"},
+        "distributions": {
+          "type": "array", "minItems": 2,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name", "version", "filename", "size", "sha256", "source_origin"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1}, "version": {"type": "string", "minLength": 1},
+              "filename": {"type": "string", "minLength": 1}, "size": {"type": "integer", "minimum": 1},
+              "sha256": {"$ref": "#/$defs/hash"}, "source_origin": {"const": "https://files.pythonhosted.org"}
+            }
+          }
+        }
+      }
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["production_activation", "runtime_install_authorized", "live_adapter_allowed", "credentials_allowed", "network_allowed_during_sandbox_runtime", "broker_requests_allowed", "real_orders_allowed", "production_state_writes_allowed"],
+      "properties": {
+        "production_activation": {"const": false}, "runtime_install_authorized": {"const": false},
+        "live_adapter_allowed": {"const": false}, "credentials_allowed": {"const": false},
+        "network_allowed_during_sandbox_runtime": {"const": false}, "broker_requests_allowed": {"const": false},
+        "real_orders_allowed": {"const": false}, "production_state_writes_allowed": {"const": false}
+      }
+    },
+    "status": {"const": "DEPENDENCY_LOCK_VERIFIED_SANDBOX_ONLY"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "hash40": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  }
+}
