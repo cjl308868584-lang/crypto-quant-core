@@ -220,6 +220,12 @@
 212. [Replacement Challenger 冻结计划 v0.62.0](artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json)
 213. [Replacement Challenger 预注册与证据隔离 ADR-0062](docs/adr/0062-replacement-challenger-preregistration-isolation.md)
 214. [实施追踪 v0.62.0](docs/implementation-status-v0.62.0.md)
+215. [Nautilus Sandbox Dependency Lock Schema](config/nautilus-sandbox-dependency-lock-v1.schema.json)
+216. [Nautilus Sandbox Request Schema](config/nautilus-sandbox-request-v1.schema.json)
+217. [Nautilus Sandbox Result Schema](config/nautilus-sandbox-result-v1.schema.json)
+218. [Nautilus Sandbox Comparison Schema](config/nautilus-sandbox-comparison-v1.schema.json)
+219. [Nautilus Sandbox 隔离 Spike ADR-0063](docs/adr/0063-nautilus-sandbox-isolation-spike.md)
+220. [实施追踪 v0.63.0](docs/implementation-status-v0.63.0.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -330,7 +336,9 @@ v0.61在 strict v0.60 projection 上实现本机只读运维控制台与确定�
 
 v0.62冻结 replacement Challenger 的预注册和证据隔离计划：唯一 parameterless builder、严格 Schema mirrors和 owner-controlled loader 永久绑定原 cohort 的漏槽失败/停用 exact bytes，同时固定全新 service、runtime root、plist和证据子路径。旧 decisions、Episodes、receipts、archives、results、PnL、槽位和运行天数全部禁止迁移或回填；90天/540槽只能从未来首个自然成功槽的 verified start receipt 派生。本版不实现 runtime/deployment，不安装、不启动、不请求市场或 Broker，状态固定为 `PLAN_FROZEN_REPLACEMENT_NOT_STARTED`。
 
-仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的启动前代码批次现已覆盖 v0.59 evaluator、v0.60 Tail-Blind 运维投影和 v0.61 只读 Web/alerts/runbooks，但仍未 production 安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。replacement Challenger 现仅完成 v0.62 预注册/隔离，尚缺 WAL runtime、deployment/start trust chain、评估器与运维层。两条流都必须在启动前工程和真实机器门完成后，才能从各自首个自然成功槽的 start receipt 独立计时。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.62.0](docs/implementation-status-v0.62.0.md)，工程裁决见[ADR-0062](docs/adr/0062-replacement-challenger-preregistration-isolation.md)。
+v0.63冻结独立 Python 3.12 NautilusTrader Sandbox 边界、exact `1.227.0` wheel/tag/commit/license/传递依赖身份、固定 ETHUSDT 4H fixture、单向 Decision/Target/Risk request 和只读 Evidence Adapter。官方 frozen environment 两次同源有界获取均未形成可用环境，因此没有 runner、BacktestEngine、Golden/replay 或 synthetic result；exact comparison 如实为 `INCONCLUSIVE_BLOCKED / NONE_KEEP_CURRENT_CORE`。本结果不影响任何现有90天流，也不允许 Shadow 或采用。项目同时停止扩建通用交易引擎、Broker、交易所适配和通用UI，把后续投入集中到证据可信、失败关闭、对账和长期Paper观察。
+
+仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的启动前代码批次现已覆盖 v0.59 evaluator、v0.60 Tail-Blind 运维投影和 v0.61 只读 Web/alerts/runbooks，但仍未 production 安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。replacement Challenger 现仅完成 v0.62 预注册/隔离，尚缺 WAL runtime、deployment/start trust chain、评估器与运维层；Nautilus v0.63 Spike 因 frozen environment 获取阻断而保持 `INCONCLUSIVE_BLOCKED`，没有接管任何事实源。两条流都必须在启动前工程和真实机器门完成后，才能从各自首个自然成功槽的 start receipt 独立计时。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.63.0](docs/implementation-status-v0.63.0.md)，工程裁决见[ADR-0063](docs/adr/0063-nautilus-sandbox-isolation-spike.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
