@@ -238,12 +238,14 @@ git commit -m "data: publish replacement challenger plan"
 **Files:**
 
 - Modify: `pyproject.toml`
+- Modify: `setup.py`
 - Modify: `src/crypto_quant/__init__.py`
-- Modify: `src/crypto_quant/evaluator_build.py`
-- Modify: `artifacts/evaluator-build-manifest.json`
+- Modify: `src/crypto_quant/build.py`
+- Modify: `scripts/refresh_evaluator_build_manifest.py`
+- Modify: `config/evaluator-build-manifest-v1.json`
 - Modify: `tests/test_estimators.py`
-- Create: `docs/adr/ADR-0062-replacement-challenger-preregistration-isolation.md`
-- Modify: `docs/implementation-status.md`
+- Create: `docs/adr/0062-replacement-challenger-preregistration-isolation.md`
+- Create: `docs/implementation-status-v0.62.0.md`
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-08-05-replacement-challenger-preregistration-isolation.md`
 
@@ -293,10 +295,11 @@ git diff --check
 - [ ] **Step 7: Commit the release binding**
 
 ```bash
-git add pyproject.toml src/crypto_quant/__init__.py \
-  src/crypto_quant/evaluator_build.py artifacts/evaluator-build-manifest.json \
-  tests/test_estimators.py docs/adr/ADR-0062-replacement-challenger-preregistration-isolation.md \
-  docs/implementation-status.md README.md \
+git add pyproject.toml setup.py src/crypto_quant/__init__.py \
+  src/crypto_quant/build.py scripts/refresh_evaluator_build_manifest.py \
+  config/evaluator-build-manifest-v1.json \
+  tests/test_estimators.py docs/adr/0062-replacement-challenger-preregistration-isolation.md \
+  docs/implementation-status-v0.62.0.md README.md \
   docs/superpowers/plans/2026-08-05-replacement-challenger-preregistration-isolation.md
 git commit -m "release: bind replacement challenger v0.62.0"
 ```
@@ -363,4 +366,3 @@ tag target == verified main commit
 - [ ] **Step 8: Confirm production remains untouched**
 
 Read-only verify the replacement root/plist/service are still absent, System Paper remains absent/not loaded, the old Challenger remains decommissioned/not loaded, and no Runner/market/Broker/order/state-write action occurred. v0.62 ends at `PLAN_FROZEN_REPLACEMENT_NOT_STARTED`.
-

@@ -34,6 +34,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/challenger-episode-cohort-plan-v1.schema.json",
     "config/challenger-episode-economic-result-v1.schema.json",
     "config/challenger-prequential-snapshot-v1.schema.json",
+    "config/challenger-replacement-plan-v1.schema.json",
     "config/challenger-episode-economic-plan-v1.schema.json",
     "config/challenger-forward-source-bundle-v1.schema.json",
     "config/challenger-first-episode-receipt-v1.schema.json",
@@ -114,6 +115,7 @@ _FROZEN_ARTIFACT_PATHS = (
     "artifacts/challenger-forward/challenger-first-slot-waiting-v0.34.0.json",
     "artifacts/challenger-forward/challenger-first-slot-receipt-v0.35.0.json",
     "artifacts/challenger-forward/challenger-launchd-not-installed-v0.32.0.json",
+    "artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json",
     "artifacts/challenger-forward/challenger-launchd-installed-v0.33.0.json",
     "artifacts/paper-cost/binance-paper-account-cost-binding-not-run-v0.23.0.json",
     "artifacts/paper-context/binance-context-complete-cycle-not-run-v0.24.0.json",
@@ -202,6 +204,13 @@ _FROZEN_RELEASE_PATHS = (
     "docs/runbooks/operations-dashboard.md",
     "docs/adr/0061-loopback-read-only-operations-console.md",
     "docs/implementation-status-v0.61.0.md",
+    "tests/test_challenger_replacement_plan.py",
+    "docs/superpowers/specs/"
+    "2026-08-05-replacement-challenger-preregistration-isolation-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-05-replacement-challenger-preregistration-isolation.md",
+    "docs/adr/0062-replacement-challenger-preregistration-isolation.md",
+    "docs/implementation-status-v0.62.0.md",
     "scripts/refresh_evaluator_build_manifest.py",
 )
 
