@@ -267,6 +267,16 @@ class OperationsDashboardHTTPBoundaryTests(unittest.TestCase):
             self.assertNotIn("Allow", headers)
             self.assert_security_headers(headers)
 
+            status, headers, body = running.request(
+                "HEAD",
+                "/api/v1/status",
+                host="",
+            )
+            self.assertEqual(status, 400)
+            self.assertEqual(headers["Content-Length"], "0")
+            self.assertEqual(body, b"")
+            self.assert_security_headers(headers)
+
             status, headers, _ = running.request(
                 "PROPFIND",
                 "/api/v1/status",

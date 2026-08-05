@@ -170,7 +170,12 @@ class _OperationsRequestHandler(BaseHTTPRequestHandler):
 
     def _method_not_allowed(self, *, write_body: bool = True) -> None:
         if not self._host_valid() or self._path_suspicious():
-            self._send(400, "text/plain; charset=utf-8", b"BAD_REQUEST")
+            self._send(
+                400,
+                "text/plain; charset=utf-8",
+                b"BAD_REQUEST" if write_body else b"",
+                write_body=write_body,
+            )
             return
         self._send(
             405,
