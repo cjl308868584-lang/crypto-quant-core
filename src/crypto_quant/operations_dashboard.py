@@ -122,6 +122,11 @@ class _OperationsHTTPServer(ThreadingHTTPServer):
 class _OperationsRequestHandler(BaseHTTPRequestHandler):
     server: _OperationsHTTPServer
 
+    def __getattr__(self, name):
+        if name.startswith("do_"):
+            return self._method_not_allowed
+        raise AttributeError(name)
+
     def log_message(self, format, *args):
         return None
 
@@ -164,6 +169,9 @@ class _OperationsRequestHandler(BaseHTTPRequestHandler):
         return any(segment in {".", ".."} for segment in self.path.split("/"))
 
     def _method_not_allowed(self, *, write_body: bool = True) -> None:
+        if not self._host_valid() or self._path_suspicious():
+            self._send(400, "text/plain; charset=utf-8", b"BAD_REQUEST")
+            return
         self._send(
             405,
             "text/plain; charset=utf-8",

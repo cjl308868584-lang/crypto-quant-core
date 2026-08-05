@@ -233,6 +233,50 @@ class OperationsDashboardHTTPBoundaryTests(unittest.TestCase):
                     self.assert_security_headers(headers)
         self.assertEqual(calls, [])
 
+    def test_non_get_methods_validate_host_and_unknown_verbs_fail_405(self):
+        calls = []
+
+        def provider():
+            calls.append("called")
+            return _projection_body()
+
+        with RunningServer(provider) as running:
+            for host in (
+                "",
+                "localhost:{}".format(running.port),
+                "example.com:{}".format(running.port),
+            ):
+                with self.subTest(host=host):
+                    status, headers, _ = running.request(
+                        "POST",
+                        "/api/v1/status",
+                        host=host,
+                        body=b"{}",
+                    )
+                    self.assertEqual(status, 400)
+                    self.assertNotIn("Allow", headers)
+                    self.assert_security_headers(headers)
+
+            status, headers, _ = running.request(
+                "POST",
+                "/api/v1/status?write=1",
+                host=f"127.0.0.1:{running.port}",
+                body=b"{}",
+            )
+            self.assertEqual(status, 400)
+            self.assertNotIn("Allow", headers)
+            self.assert_security_headers(headers)
+
+            status, headers, _ = running.request(
+                "PROPFIND",
+                "/api/v1/status",
+                host=f"127.0.0.1:{running.port}",
+            )
+            self.assertEqual(status, 405)
+            self.assertEqual(headers["Allow"], "GET")
+            self.assert_security_headers(headers)
+        self.assertEqual(calls, [])
+
     def test_provider_and_loader_failures_return_one_generic_secret_free_503(self):
         secret = "/Users/example/private/API_SECRET"
         providers = (
