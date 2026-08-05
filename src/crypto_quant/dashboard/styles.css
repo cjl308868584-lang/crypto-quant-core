@@ -1,0 +1,76 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #0a0d12;
+  color: #e9edf5;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: 32px 20px 48px;
+  background: radial-gradient(circle at top, #172238 0, #0a0d12 48%);
+}
+
+.page-header { margin-bottom: 24px; }
+.eyebrow { color: #83a8ff; font-size: 0.78rem; letter-spacing: 0.16em; }
+h1, h2, p { margin-top: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3.5rem); margin-bottom: 10px; }
+h2 { font-size: 1.1rem; }
+
+.overall-state {
+  display: inline-block;
+  padding: 7px 11px;
+  border: 1px solid #536177;
+  border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.overall-state[data-health="HEALTHY"] { border-color: #4ecb8d; color: #8de5b7; }
+.overall-state[data-health="DEGRADED"] { border-color: #e9b949; color: #ffd47a; }
+.overall-state[data-health="FAILED_CLOSED"] { border-color: #f16673; color: #ff9ca5; }
+
+main {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.panel {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #263248;
+  border-radius: 14px;
+  background: rgba(15, 21, 32, 0.92);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.2);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(0, 1.5fr);
+  gap: 9px 14px;
+  margin: 0;
+}
+
+dt { color: #9facbf; }
+dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.alerts { padding: 0; list-style: none; }
+.alert { margin: 8px 0; padding: 10px 12px; border-left: 3px solid #65758e; }
+.alert.WARNING { border-color: #e9b949; background: #302713; }
+.alert.CRITICAL { border-color: #f16673; background: #35171c; }
+.alert.INFO { border-color: #4ecb8d; background: #122a20; }
+
+footer { margin-top: 24px; color: #8390a3; font-size: 0.88rem; }
+
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; }
+  .facts { grid-template-columns: 1fr; }
+  dd { margin-bottom: 8px; }
+}
