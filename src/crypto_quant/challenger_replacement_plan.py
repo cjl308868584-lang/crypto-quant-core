@@ -16,12 +16,14 @@ from typing import Any, Dict, Mapping, Tuple
 from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_json, stable_id
+from .errors import CanonicalizationError
 from .evidence import artifact_self_hash
 
 
 _SCHEMA = "challenger-replacement-plan-v1.schema.json"
 _ZERO_HASH = "0" * 64
 _MAX_PLAN_BYTES = 256 * 1024
+_MAX_SAFE_INTEGER = (1 << 53) - 1
 
 
 class ChallengerReplacementPlanError(ValueError):
@@ -99,8 +101,10 @@ def build_challenger_replacement_plan() -> Dict[str, Any]:
             "file_sha256": "540b831797228c950d954ee75b183fbeac08d63679463e14121fefc44fdf851f",
             "receipt_id": "challenger_cohort_decommission_receipt_30f87c50715e9f4c09b9b21072cb8c3f6fecf932d2703300adcf153fbab9323e",
             "receipt_hash": "56cfaa3f44b23e6dbc282f5947676ea93b4b92a89dcf90539a19eeb865b0bae7",
+            "service_identity": "gui/501/local.crypto-quant.challenger-forward",
             "service_label": "local.crypto-quant.challenger-forward",
-            "service_state": "DECOMMISSIONED",
+            "service_state_after": "NOT_LOADED",
+            "service_eligibility": "DECOMMISSIONED",
         },
         "cohort_plan": {
             "path": "artifacts/challenger-forward/challenger-episode-cohort-plan-v0.43.0.json",
@@ -132,13 +136,21 @@ def build_challenger_replacement_plan() -> Dict[str, Any]:
     decision_policy = _with_policy_hash(
         {
             "version": "CHALLENGER_REPLACEMENT_SMA20_MOMENTUM_V1",
+            "interval": "4h",
             "warmup_bar_count": 21,
             "sma_window": 20,
-            "momentum_bar_count": 5,
-            "entry_distance_ratio": "0.005",
-            "minimum_log_return": "0",
+            "momentum_lag_bars": 5,
+            "sma20_distance_operator": "GTE",
+            "sma20_distance_minimum": "0.005",
+            "eth_log_return_5_operator": "GT",
+            "eth_log_return_5_threshold": "0",
+            "entry_rule": "ALL_CONDITIONS_REQUIRED",
             "minimum_hold_hours": 8,
+            "before_minimum_action": "HOLD_LONG_MINIMUM",
+            "post_minimum_sma_exit_rule": "LATEST_CLOSE_LTE_PRIOR_SMA20",
             "vertical_exit_hours": 24,
+            "same_slot_sma_exit_precedes_vertical": True,
+            "rejected_entry_episode_created": False,
             "same_threshold_semantics_as_predecessor": True,
             "old_fixed_forward_start_reused": False,
         }
@@ -314,6 +326,10 @@ def _strict_json_bytes(body: bytes) -> Mapping[str, Any]:
     def pairs(items):
         result = {}
         for key, value in items:
+            if not isinstance(key, str) or not key.isascii():
+                raise ChallengerReplacementPlanError(
+                    "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"
+                )
             if key in result:
                 raise ChallengerReplacementPlanError(
                     "CHALLENGER_REPLACEMENT_PLAN_JSON_DUPLICATE_KEY"
@@ -326,16 +342,25 @@ def _strict_json_bytes(body: bytes) -> Mapping[str, Any]:
             "CHALLENGER_REPLACEMENT_PLAN_JSON_FLOAT_FORBIDDEN"
         )
 
+    def parse_integer(value):
+        parsed = int(value)
+        if abs(parsed) > _MAX_SAFE_INTEGER:
+            raise ChallengerReplacementPlanError(
+                "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"
+            )
+        return parsed
+
     try:
         value = json.loads(
             body.decode("utf-8"),
             object_pairs_hook=pairs,
+            parse_int=parse_integer,
             parse_float=reject_number,
             parse_constant=reject_number,
         )
     except ChallengerReplacementPlanError:
         raise
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
         raise ChallengerReplacementPlanError(
             "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"
         ) from error
@@ -408,6 +433,11 @@ def _read_owner_controlled_regular_file(path: Path) -> bytes:
                 opened.st_size,
                 opened.st_mtime_ns,
             )
+            or after.st_ctime_ns != opened.st_ctime_ns
+            or not stat.S_ISREG(after.st_mode)
+            or after.st_uid != os.getuid()
+            or after.st_nlink != 1
+            or stat.S_IMODE(after.st_mode) & 0o022
         ):
             raise ChallengerReplacementPlanError(
                 "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID"
@@ -427,7 +457,12 @@ def load_challenger_replacement_plan(path: Path) -> Dict[str, Any]:
         )
     body = _read_owner_controlled_regular_file(plan_path)
     plan = dict(_strict_json_bytes(body))
-    canonical = canonical_json(plan).encode("utf-8")
+    try:
+        canonical = canonical_json(plan).encode("utf-8")
+    except (CanonicalizationError, RecursionError) as error:
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"
+        ) from error
     if body not in (canonical, canonical + b"\n"):
         raise ChallengerReplacementPlanError(
             "CHALLENGER_REPLACEMENT_PLAN_CANONICAL_BYTES_REQUIRED"

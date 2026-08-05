@@ -21,8 +21,10 @@ Challenger 需要先获得自己的研究身份和隔离合同，之后才能分
    artifact。状态固定为 `PLAN_FROZEN_REPLACEMENT_NOT_STARTED`。
 2. plan 永久绑定 v0.54 failure/decommission receipts、v0.43 cohort plan、v0.44 evaluation plan
    的 committed file SHA、business ID 与 business hash。旧失败事实不可删除或重写。
-3. replacement 继承相同的 SMA20/5-bar momentum/0.005 distance/8h minimum hold/24h vertical
-   exit 规则语义，但不继承旧固定 `forward_start`。未来起点只能来自首次自然成功槽的 verified
+3. replacement 继承相同的 SMA20/5-bar momentum 入场比较符（`>= 0.005` 与
+   `> 0`）、8h minimum hold、此后 close `<= prior_sma20` 退出、24h vertical exit、
+   同槽 SMA 退出优先以及拒绝入场不创建 Episode 的语义，但不继承旧固定
+   `forward_start`。未来起点只能来自首次自然成功槽的 verified
    start receipt；90 天、14,400 秒 cadence 和 540 个连续槽从该 receipt 派生。
 4. 新身份固定为 `local.crypto-quant.challenger-replacement-v1`、
    `gui/501/local.crypto-quant.challenger-replacement-v1` 与全新的

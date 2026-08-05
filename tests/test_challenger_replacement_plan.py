@@ -8,6 +8,8 @@ import re
 import tempfile
 import unittest
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
+from unittest import mock
 
 from jsonschema import Draft202012Validator
 
@@ -77,8 +79,10 @@ class ChallengerReplacementPlanBuilderTests(unittest.TestCase):
                 "file_sha256": "540b831797228c950d954ee75b183fbeac08d63679463e14121fefc44fdf851f",
                 "receipt_id": "challenger_cohort_decommission_receipt_30f87c50715e9f4c09b9b21072cb8c3f6fecf932d2703300adcf153fbab9323e",
                 "receipt_hash": "56cfaa3f44b23e6dbc282f5947676ea93b4b92a89dcf90539a19eeb865b0bae7",
+                "service_identity": "gui/501/local.crypto-quant.challenger-forward",
                 "service_label": "local.crypto-quant.challenger-forward",
-                "service_state": "DECOMMISSIONED",
+                "service_state_after": "NOT_LOADED",
+                "service_eligibility": "DECOMMISSIONED",
             },
         )
         self.assertEqual(
@@ -109,13 +113,30 @@ class ChallengerReplacementPlanBuilderTests(unittest.TestCase):
             },
         )
         decision = plan["decision_policy"]
-        self.assertEqual(decision["warmup_bar_count"], 21)
-        self.assertEqual(decision["sma_window"], 20)
-        self.assertEqual(decision["momentum_bar_count"], 5)
-        self.assertEqual(decision["entry_distance_ratio"], "0.005")
-        self.assertEqual(decision["minimum_log_return"], "0")
-        self.assertEqual(decision["minimum_hold_hours"], 8)
-        self.assertEqual(decision["vertical_exit_hours"], 24)
+        self.assertEqual(
+            decision,
+            {
+                "version": "CHALLENGER_REPLACEMENT_SMA20_MOMENTUM_V1",
+                "interval": "4h",
+                "warmup_bar_count": 21,
+                "sma_window": 20,
+                "momentum_lag_bars": 5,
+                "sma20_distance_operator": "GTE",
+                "sma20_distance_minimum": "0.005",
+                "eth_log_return_5_operator": "GT",
+                "eth_log_return_5_threshold": "0",
+                "entry_rule": "ALL_CONDITIONS_REQUIRED",
+                "minimum_hold_hours": 8,
+                "before_minimum_action": "HOLD_LONG_MINIMUM",
+                "post_minimum_sma_exit_rule": "LATEST_CLOSE_LTE_PRIOR_SMA20",
+                "vertical_exit_hours": 24,
+                "same_slot_sma_exit_precedes_vertical": True,
+                "rejected_entry_episode_created": False,
+                "same_threshold_semantics_as_predecessor": True,
+                "old_fixed_forward_start_reused": False,
+                "policy_hash": decision["policy_hash"],
+            },
+        )
         self.assertNotIn("forward_start", decision)
         cohort = plan["cohort_policy"]
         self.assertEqual(cohort["duration_days"], 90)
@@ -346,8 +367,24 @@ class ChallengerReplacementPlanLoaderTests(unittest.TestCase):
             ),
             (b'{"unsafe":1.5}', "CHALLENGER_REPLACEMENT_PLAN_JSON_FLOAT_FORBIDDEN"),
             (b'{"unsafe":NaN}', "CHALLENGER_REPLACEMENT_PLAN_JSON_FLOAT_FORBIDDEN"),
+            (
+                b'{"unsafe":9007199254740992}',
+                "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID",
+            ),
+            (
+                '{"\u4e0d\u5b89\u5168":1}'.encode("utf-8"),
+                "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID",
+            ),
             (b"[]", "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"),
             (b"\xff", "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"),
+            (
+                b'{"unsafe":' + b"[" * 900 + b"0" + b"]" * 900 + b"}",
+                "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID",
+            ),
+            (
+                b'{"unsafe":' + b"[" * 1_100 + b"0" + b"]" * 1_100 + b"}",
+                "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID",
+            ),
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -434,6 +471,44 @@ class ChallengerReplacementPlanLoaderTests(unittest.TestCase):
             second = load_challenger_replacement_plan(path)
             self.assertFalse(second["authority"]["credentials_allowed"])
 
+    def test_loader_rechecks_owner_control_after_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write(directory)
+            real_fstat = os.fstat
+            call_count = 0
+
+            def fstat_with_new_hardlink(descriptor):
+                nonlocal call_count
+                result = real_fstat(descriptor)
+                call_count += 1
+                if call_count != 2:
+                    return result
+                fields = {
+                    name: getattr(result, name)
+                    for name in (
+                        "st_dev",
+                        "st_ino",
+                        "st_mode",
+                        "st_uid",
+                        "st_nlink",
+                        "st_size",
+                        "st_mtime_ns",
+                        "st_ctime_ns",
+                    )
+                }
+                fields["st_nlink"] = 2
+                return SimpleNamespace(**fields)
+
+            with mock.patch(
+                "crypto_quant.challenger_replacement_plan.os.fstat",
+                side_effect=fstat_with_new_hardlink,
+            ):
+                with self.assertRaisesRegex(
+                    ChallengerReplacementPlanError,
+                    "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID",
+                ):
+                    load_challenger_replacement_plan(path)
+
     def test_predecessor_committed_bytes_match_all_frozen_business_identities(self):
         plan = self.plan()["predecessor"]
         for key in (
@@ -450,6 +525,32 @@ class ChallengerReplacementPlanLoaderTests(unittest.TestCase):
             if "receipt_id" in binding:
                 self.assertEqual(document["receipt_id"], binding["receipt_id"])
                 self.assertEqual(document["receipt_hash"], binding["receipt_hash"])
+                if key == "decommission_receipt":
+                    self.assertEqual(
+                        document["service"]["identity"],
+                        binding["service_identity"],
+                    )
+                    self.assertEqual(
+                        document["service"]["label"],
+                        binding["service_label"],
+                    )
+                    self.assertEqual(
+                        document["service"]["state_after"],
+                        binding["service_state_after"],
+                    )
+                    self.assertEqual(
+                        document["eligibility"]["service"],
+                        binding["service_eligibility"],
+                    )
+                elif key == "failure_receipt":
+                    self.assertEqual(
+                        document["failure"]["reason_code"],
+                        binding["failure_reason"],
+                    )
+                    self.assertEqual(
+                        document["eligibility"]["old_cohort"],
+                        binding["eligibility"],
+                    )
             else:
                 self.assertEqual(document["plan_id"], binding["plan_id"])
                 self.assertEqual(document["plan_hash"], binding["plan_hash"])
@@ -500,7 +601,7 @@ class ChallengerReplacementPlanArtifactTests(unittest.TestCase):
         self.assertEqual(load_challenger_replacement_plan(ARTIFACT), plan)
         self.assertEqual(
             hashlib.sha256(body).hexdigest(),
-            "78e703bfeb5b2b08af963ba14f08a66829613c680ccd6793df2a9a86e563ab3d",
+            "d450d1e9f8dc422eb5a93beb8a5ffbb1746a4a6d1facb3c5a20a76f4bd527734",
         )
 
 

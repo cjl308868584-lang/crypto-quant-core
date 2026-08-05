@@ -15,8 +15,8 @@
   hardlink、open/fstat identity、256 KiB 上限、duplicate key/float/canonical/Schema/hash/semantic
   失败关闭；
 - exact plan artifact：
-  `artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json`，6,919 bytes，
-  SHA-256 `78e703bfeb5b2b08af963ba14f08a66829613c680ccd6793df2a9a86e563ab3d`；
+  `artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json`，7,343 bytes，
+  SHA-256 `d450d1e9f8dc422eb5a93beb8a5ffbb1746a4a6d1facb3c5a20a76f4bd527734`；
 - 旧 v0.54 failure/decommission、v0.43 cohort、v0.44 evaluation committed bytes 的逐项重放；
 - package `0.62.0` 与 evaluator build manifest `1.56.0`。
 

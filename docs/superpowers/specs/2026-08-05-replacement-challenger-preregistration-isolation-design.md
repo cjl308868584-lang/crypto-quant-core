@@ -60,7 +60,8 @@ start receipt 才能确定 cohort 起点；v0.62 不含固定日历起点。
 
 旧失败原因固定为 `CHALLENGER_RUNNER_MISSED_SLOT`，旧 cohort 资格固定为
 `PERMANENTLY_INELIGIBLE_CONTINUITY_GAP`，旧服务固定为
-`local.crypto-quant.challenger-forward` 且已 `DECOMMISSIONED`。任何 loader 或未来部署链
+`gui/501/local.crypto-quant.challenger-forward` / `local.crypto-quant.challenger-forward`，
+真实后置状态为 `NOT_LOADED`且 service eligibility 为 `DECOMMISSIONED`。任何 loader 或未来部署链
 看到 predecessor bytes、ID、hash、失败原因或停用状态不一致都必须失败关闭。
 
 ## 3. 方案比较
@@ -92,8 +93,9 @@ replacement 继续研究旧 Challenger 的同一决策规则语义，但移除�
 - mode：`REPLACEMENT_CHALLENGER_CONFIRMATORY`；
 - route：`BASELINE_ONLY`；
 - symbol/venue/direction：`ETHUSDT` / `BINANCE_SPOT` / `LONG_ONLY`；
-- decision rule：SMA20、5-bar momentum、`0.005` distance、8h minimum hold、24h
-  vertical exit；
+- decision rule：FLAT 时 `latest/prior_sma20-1 >= 0.005` 且 5-bar log return
+  `> 0` 才进入 LONG；LONG 最短持有 8h，此后 `latest <= prior_sma20` 退出，
+  24h 强制退出，同槽 SMA 退出优先；拒绝入场不创建 Episode；
 - predecessor policy id：`SPOT_LONG_SMA20_COST_MARGIN_MOMENTUM_V2`；
 - predecessor policy hash：
   `2ef83c7c73fff8b163d9bad8527921bd0d87e60595680236e936254536c800e4`；

@@ -61,14 +61,16 @@
         "decommission_receipt": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["path", "file_sha256", "receipt_id", "receipt_hash", "service_label", "service_state"],
+          "required": ["path", "file_sha256", "receipt_id", "receipt_hash", "service_identity", "service_label", "service_state_after", "service_eligibility"],
           "properties": {
             "path": {"const": "artifacts/challenger-forward/challenger-cohort-decommission-receipt-v0.54.0.json"},
             "file_sha256": {"const": "540b831797228c950d954ee75b183fbeac08d63679463e14121fefc44fdf851f"},
             "receipt_id": {"const": "challenger_cohort_decommission_receipt_30f87c50715e9f4c09b9b21072cb8c3f6fecf932d2703300adcf153fbab9323e"},
             "receipt_hash": {"const": "56cfaa3f44b23e6dbc282f5947676ea93b4b92a89dcf90539a19eeb865b0bae7"},
+            "service_identity": {"const": "gui/501/local.crypto-quant.challenger-forward"},
             "service_label": {"const": "local.crypto-quant.challenger-forward"},
-            "service_state": {"const": "DECOMMISSIONED"}
+            "service_state_after": {"const": "NOT_LOADED"},
+            "service_eligibility": {"const": "DECOMMISSIONED"}
           }
         },
         "cohort_plan": {"$ref": "#/$defs/predecessorPlan"},
@@ -96,16 +98,24 @@
     "decision_policy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "warmup_bar_count", "sma_window", "momentum_bar_count", "entry_distance_ratio", "minimum_log_return", "minimum_hold_hours", "vertical_exit_hours", "same_threshold_semantics_as_predecessor", "old_fixed_forward_start_reused", "policy_hash"],
+      "required": ["version", "interval", "warmup_bar_count", "sma_window", "momentum_lag_bars", "sma20_distance_operator", "sma20_distance_minimum", "eth_log_return_5_operator", "eth_log_return_5_threshold", "entry_rule", "minimum_hold_hours", "before_minimum_action", "post_minimum_sma_exit_rule", "vertical_exit_hours", "same_slot_sma_exit_precedes_vertical", "rejected_entry_episode_created", "same_threshold_semantics_as_predecessor", "old_fixed_forward_start_reused", "policy_hash"],
       "properties": {
         "version": {"const": "CHALLENGER_REPLACEMENT_SMA20_MOMENTUM_V1"},
+        "interval": {"const": "4h"},
         "warmup_bar_count": {"const": 21},
         "sma_window": {"const": 20},
-        "momentum_bar_count": {"const": 5},
-        "entry_distance_ratio": {"const": "0.005"},
-        "minimum_log_return": {"const": "0"},
+        "momentum_lag_bars": {"const": 5},
+        "sma20_distance_operator": {"const": "GTE"},
+        "sma20_distance_minimum": {"const": "0.005"},
+        "eth_log_return_5_operator": {"const": "GT"},
+        "eth_log_return_5_threshold": {"const": "0"},
+        "entry_rule": {"const": "ALL_CONDITIONS_REQUIRED"},
         "minimum_hold_hours": {"const": 8},
+        "before_minimum_action": {"const": "HOLD_LONG_MINIMUM"},
+        "post_minimum_sma_exit_rule": {"const": "LATEST_CLOSE_LTE_PRIOR_SMA20"},
         "vertical_exit_hours": {"const": 24},
+        "same_slot_sma_exit_precedes_vertical": {"const": true},
+        "rejected_entry_episode_created": {"const": false},
         "same_threshold_semantics_as_predecessor": {"const": true},
         "old_fixed_forward_start_reused": {"const": false},
         "policy_hash": {"$ref": "#/$defs/hash"}
