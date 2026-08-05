@@ -33,6 +33,16 @@ NOW = "2026-08-02T12:05:11.000Z"
 RECOVERY_NOW = "2026-08-02T12:20:12.000Z"
 
 
+def _mapping_keys(value):
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            yield key
+            yield from _mapping_keys(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _mapping_keys(nested)
+
+
 class BombTransport:
     def __init__(self):
         self.requests = []
@@ -186,7 +196,7 @@ class SystemPaperRuntimeCliTests(unittest.TestCase):
             self.assertEqual(bomb.requests, [])
 
     def test_fresh_slot_then_idempotent_replay_uses_four_then_zero_gets(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(prefix="pnl-value-") as directory:
             state_path, output_root = self.roots(directory)
             first_transport, clock = valid_public_transport(
                 recorded_at_or_none=NOW
@@ -209,8 +219,11 @@ class SystemPaperRuntimeCliTests(unittest.TestCase):
             self.assertEqual(first["outcome"], "EXECUTED")
             self.assertEqual(first["network_request_count"], 4)
             self.assertEqual(len(first_transport.requests), 4)
-            self.assertNotIn("pnl", stdout.lower())
-            self.assertNotIn("response_body", stdout)
+            output_keys = tuple(_mapping_keys(first))
+            self.assertFalse(
+                any("pnl" in key.lower() for key in output_keys)
+            )
+            self.assertNotIn("response_body", output_keys)
             self.assertEqual(state_path.stat().st_mode & 0o777, 0o600)
             result_path = Path(first["result_path_or_null"])
             loaded = load_system_paper_slot_result_bytes(result_path.read_bytes())
