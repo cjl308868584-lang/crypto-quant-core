@@ -279,6 +279,13 @@ git diff --check
 
 Expected: PASS. Commit message: `feat: compare Nautilus sandbox evidence`.
 
+**Fail-closed branch:** If the exact official frozen environment cannot be fetched after the initial
+uv retry policy and one bounded same-source recovery attempt, Task 3 stops without a runner/result.
+Task 4 then accepts only an exact `SUPPLY_CHAIN_FETCH_BLOCKED` evidence object and must emit
+`INCONCLUSIVE_BLOCKED`; Golden/replay/adoption gates remain false. Tasks 5–7 may publish that
+immutable rejection evidence and release identity, but must not create a synthetic sandbox result,
+claim compatibility, change source/version/hash, or retry again within v0.63.
+
 ---
 
 ### Task 5: Run the exact Spike and freeze honest artifacts
