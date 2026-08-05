@@ -2,10 +2,15 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from importlib import resources
+import json
 import re
 from typing import Any, Callable, Dict, Mapping, Optional
 
-from .canonical import business_hash
+from jsonschema import Draft202012Validator
+
+from .canonical import business_hash, canonical_json
 
 
 _VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
@@ -69,6 +74,9 @@ _SYSTEM_PAPER_GATES = _SYSTEM_PAPER_TERMINAL_GATES | frozenset(
 )
 _FRESH_WINDOW = timedelta(minutes=20)
 _MAX_FUTURE_SKEW = timedelta(minutes=5)
+_SCHEMA = "operations-projection-v1.schema.json"
+_MAX_PROJECTION_BYTES = 1024 * 1024
+_MAX_SAFE_INTEGER = (1 << 53) - 1
 
 
 class OperationsProjectionError(ValueError):
@@ -226,7 +234,11 @@ def _utc(value: object) -> datetime:
 
 
 def _nonnegative_integer(value: object) -> bool:
-    return type(value) is int and value >= 0
+    return type(value) is int and 0 <= value <= _MAX_SAFE_INTEGER
+
+
+def _enum(value: object, allowed) -> bool:
+    return isinstance(value, str) and value in allowed
 
 
 def _validate_provenance(
@@ -289,10 +301,10 @@ def _validate_challenger(
         value.incident_count,
     )
     if (
-        value.phase not in _CHALLENGER_PHASES
-        or value.service_health not in _SERVICE_HEALTH
-        or value.evidence_health not in _EVIDENCE_HEALTH
-        or value.gate_status not in _CHALLENGER_GATES
+        not _enum(value.phase, _CHALLENGER_PHASES)
+        or not _enum(value.service_health, _SERVICE_HEALTH)
+        or not _enum(value.evidence_health, _EVIDENCE_HEALTH)
+        or not _enum(value.gate_status, _CHALLENGER_GATES)
         or any(not _nonnegative_integer(item) for item in counts)
         or type(value.active_episode_present) is not bool
     ):
@@ -343,12 +355,12 @@ def _validate_system_paper(
         value.incident_count,
     )
     if (
-        value.phase not in _SYSTEM_PAPER_PHASES
-        or value.service_health not in _SERVICE_HEALTH
-        or value.evidence_health not in _EVIDENCE_HEALTH
-        or value.reconciliation_status not in _RECONCILIATION
-        or value.risk_state not in _RISK_STATES
-        or value.gate_status not in _SYSTEM_PAPER_GATES
+        not _enum(value.phase, _SYSTEM_PAPER_PHASES)
+        or not _enum(value.service_health, _SERVICE_HEALTH)
+        or not _enum(value.evidence_health, _EVIDENCE_HEALTH)
+        or not _enum(value.reconciliation_status, _RECONCILIATION)
+        or not _enum(value.risk_state, _RISK_STATES)
+        or not _enum(value.gate_status, _SYSTEM_PAPER_GATES)
         or any(not _nonnegative_integer(item) for item in counts)
     ):
         raise OperationsProjectionError("OPERATIONS_PROJECTION_SOURCE_INVALID")
@@ -427,6 +439,20 @@ def _projection_status(
     ):
         return "DEGRADED"
     return "HEALTHY"
+
+
+def _projection_hash(value: Mapping[str, Any]) -> str:
+    return business_hash(
+        {"purpose": "TAIL_BLIND_OPERATIONS_PROJECTION_V1", **value}
+    )
+
+
+@lru_cache(maxsize=1)
+def _validator() -> Draft202012Validator:
+    resource = resources.files("crypto_quant").joinpath("schemas", _SCHEMA)
+    schema = json.loads(resource.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
 
 
 def build_operations_projection(
@@ -509,7 +535,148 @@ def build_operations_projection(
             ),
         },
     }
-    projection["projection_hash"] = business_hash(
-        {"purpose": "TAIL_BLIND_OPERATIONS_PROJECTION_V1", **projection}
-    )
+    projection["projection_hash"] = _projection_hash(projection)
     return projection
+
+
+def _strict_json_bytes(body: bytes) -> Mapping[str, Any]:
+    if (
+        not isinstance(body, bytes)
+        or not body
+        or len(body) > _MAX_PROJECTION_BYTES
+    ):
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_BYTES_INVALID")
+
+    def pairs(items):
+        value = {}
+        for key, item in items:
+            if key in value:
+                raise OperationsProjectionError(
+                    "OPERATIONS_PROJECTION_BYTES_INVALID"
+                )
+            value[key] = item
+        return value
+
+    def reject_number(_value):
+        raise OperationsProjectionError(
+            "OPERATIONS_PROJECTION_BYTES_INVALID"
+        )
+
+    try:
+        value = json.loads(
+            body.decode("utf-8"),
+            object_pairs_hook=pairs,
+            parse_float=reject_number,
+            parse_constant=reject_number,
+        )
+        if (
+            not isinstance(value, Mapping)
+            or canonical_json(value).encode("utf-8") != body
+        ):
+            raise OperationsProjectionError(
+                "OPERATIONS_PROJECTION_BYTES_INVALID"
+            )
+    except OperationsProjectionError:
+        raise
+    except (UnicodeDecodeError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise OperationsProjectionError(
+            "OPERATIONS_PROJECTION_BYTES_INVALID"
+        ) from error
+    return value
+
+
+def _source_from_projection(value: Mapping[str, Any]):
+    release = value["release"]
+    challenger = value["challenger"]
+    system_paper = value["system_paper"]
+
+    def source_provenance(section):
+        source = section["provenance"]
+        return SourceProvenance(
+            source_kind=source["source_kind"],
+            source_sha256=source["source_sha256"],
+            observed_at=source["observed_at"],
+        )
+
+    return (
+        ReleaseOperationsSource(
+            package_version=release["package_version"],
+            main_commit=release["main_commit"],
+            release_tag=release["release_tag"],
+            tag_commit=release["tag_commit"],
+            identity_status=release["identity_status"],
+            provenance=source_provenance(release),
+        ),
+        ChallengerOperationsSource(
+            phase=challenger["phase"],
+            service_health=challenger["service_health"],
+            evidence_health=challenger["evidence_health"],
+            verified_slot_count=challenger["verified_slot_count"],
+            completed_episode_count=challenger["completed_episode_count"],
+            active_episode_present=challenger["active_episode_present"],
+            next_required_slot=challenger["next_required_slot"],
+            gate_status=challenger["gate_status"],
+            incident_count=challenger["incident_count"],
+            provenance=source_provenance(challenger),
+        ),
+        SystemPaperOperationsSource(
+            phase=system_paper["phase"],
+            service_health=system_paper["service_health"],
+            evidence_health=system_paper["evidence_health"],
+            elapsed_days=system_paper["elapsed_days"],
+            verified_slot_count=system_paper["verified_slot_count"],
+            next_required_slot=system_paper["next_required_slot"],
+            submitted_order_count=system_paper["submitted_order_count"],
+            filled_order_count=system_paper["filled_order_count"],
+            partially_filled_order_count=system_paper[
+                "partially_filled_order_count"
+            ],
+            cancelled_order_count=system_paper["cancelled_order_count"],
+            rejected_order_count=system_paper["rejected_order_count"],
+            timeout_unknown_order_count=system_paper[
+                "timeout_unknown_order_count"
+            ],
+            reconciliation_status=system_paper["reconciliation_status"],
+            risk_state=system_paper["risk_state"],
+            gate_status=system_paper["gate_status"],
+            incident_count=system_paper["incident_count"],
+            provenance=source_provenance(system_paper),
+        ),
+    )
+
+
+def load_operations_projection_bytes(body: bytes) -> Mapping[str, Any]:
+    """Replay one exact canonical projection without operational I/O."""
+
+    value = _strict_json_bytes(body)
+    try:
+        errors = tuple(_validator().iter_errors(value))
+    except Exception as error:
+        raise OperationsProjectionError(
+            "OPERATIONS_PROJECTION_SCHEMA_INVALID"
+        ) from error
+    if errors:
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_SCHEMA_INVALID")
+
+    without_hash = dict(value)
+    claimed_hash = without_hash.pop("projection_hash")
+    if _projection_hash(without_hash) != claimed_hash:
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_HASH_MISMATCH")
+
+    try:
+        release, challenger, system_paper = _source_from_projection(value)
+        expected = build_operations_projection(
+            value["projected_at"],
+            OperationsProjectionSources(
+                release_loader=lambda: release,
+                challenger_loader=lambda: challenger,
+                system_paper_loader=lambda: system_paper,
+            ),
+        )
+    except OperationsProjectionError as error:
+        raise OperationsProjectionError(
+            "OPERATIONS_PROJECTION_SCHEMA_INVALID"
+        ) from error
+    if expected != value:
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_SCHEMA_INVALID")
+    return dict(value)

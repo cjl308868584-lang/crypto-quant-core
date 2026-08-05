@@ -1,8 +1,16 @@
 """Tail-blind operations projection contract tests."""
 
+import ast
 import dataclasses
+import json
+import sqlite3
+import socket
+import subprocess
 import unittest
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
 
 from crypto_quant.canonical import business_hash, canonical_json
 
@@ -14,6 +22,7 @@ from crypto_quant.operations_projection import (
     SourceProvenance,
     SystemPaperOperationsSource,
     build_operations_projection,
+    load_operations_projection_bytes,
 )
 
 
@@ -422,6 +431,20 @@ class OperationsProjectionStateMachineTests(
                     lambda source=source: self.build(paper=source),
                 )
 
+    def test_rejects_system_paper_gate_phase_contradictions(self):
+        cases = (
+            paper_source(
+                phase="COLLECTING", gate_status="SYSTEM_PAPER_GATE_PASS"
+            ),
+            paper_source(phase="FINAL", gate_status="NOT_EVALUATED"),
+        )
+        for source in cases:
+            with self.subTest(phase=source.phase, gate=source.gate_status):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
+                    lambda source=source: self.build(paper=source),
+                )
+
 
 class OperationsProjectionAssemblyTests(
     OperationsProjectionValidationTests
@@ -632,20 +655,218 @@ class OperationsProjectionTailBlindTests(
         )
         self.assertNotIn("/private/key", str(caught.exception))
 
-    def test_rejects_system_paper_gate_phase_contradictions(self):
-        cases = (
-            paper_source(
-                phase="COLLECTING", gate_status="SYSTEM_PAPER_GATE_PASS"
-            ),
-            paper_source(phase="FINAL", gate_status="NOT_EVALUATED"),
+
+class OperationsProjectionLoaderTests(OperationsProjectionAssemblyTests):
+    def projection(self):
+        return self.build(challenger=self.healthy_challenger())
+
+    def test_schema_mirrors_are_exact_and_closed_at_every_object(self):
+        root = Path(__file__).resolve().parents[1]
+        config = root / "config" / "operations-projection-v1.schema.json"
+        packaged = (
+            root
+            / "src"
+            / "crypto_quant"
+            / "schemas"
+            / "operations-projection-v1.schema.json"
         )
-        for source in cases:
-            with self.subTest(phase=source.phase, gate=source.gate_status):
+        self.assertEqual(config.read_bytes(), packaged.read_bytes())
+        schema = json.loads(config.read_bytes())
+
+        def assert_closed(value):
+            if isinstance(value, dict):
+                if value.get("type") == "object":
+                    self.assertIs(value.get("additionalProperties"), False)
+                for child in value.values():
+                    assert_closed(child)
+            elif isinstance(value, list):
+                for child in value:
+                    assert_closed(child)
+
+        assert_closed(schema)
+
+    def test_loads_exact_canonical_projection_bytes(self):
+        projection = self.projection()
+        body = canonical_json(projection).encode("utf-8")
+
+        loaded = load_operations_projection_bytes(body)
+
+        self.assertEqual(loaded, projection)
+        self.assertIsNot(loaded, projection)
+
+    def test_rejects_invalid_json_domain_and_noncanonical_bytes(self):
+        projection = self.projection()
+        invalid = (
+            b"\xff",
+            b"",
+            b"[]",
+            b'{"duplicate":1,"duplicate":1}',
+            b'{"binary_float":1.0}',
+            b'{"non_finite":NaN}',
+            json.dumps(projection).encode("utf-8"),
+            canonical_json(projection).encode("utf-8") + b"\n",
+        )
+        for body in invalid:
+            with self.subTest(body=body[:40]):
                 self.assert_reason(
-                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
-                    lambda source=source: self.build(paper=source),
+                    "OPERATIONS_PROJECTION_BYTES_INVALID",
+                    lambda body=body: load_operations_projection_bytes(body),
                 )
 
+    def test_rejects_oversized_bytes_before_decode(self):
+        body = b"{" + (b" " * (2 * 1024 * 1024))
+        self.assert_reason(
+            "OPERATIONS_PROJECTION_BYTES_INVALID",
+            lambda: load_operations_projection_bytes(body),
+        )
+
+    def test_rejects_unknown_fields_at_every_boundary(self):
+        top = self.projection()
+        top["unexpected"] = "value"
+        nested = self.projection()
+        nested["challenger"]["unexpected"] = "value"
+        provenance_value = self.projection()
+        provenance_value["system_paper"]["provenance"]["unexpected"] = "value"
+
+        for value in (top, nested, provenance_value):
+            with self.subTest(keys=sorted(value)):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SCHEMA_INVALID",
+                    lambda value=value: load_operations_projection_bytes(
+                        canonical_json(value).encode("utf-8")
+                    ),
+                )
+
+    def test_rejects_schema_enum_and_count_violations(self):
+        bad_status = self.projection()
+        bad_status["status"] = "MAYBE"
+        bad_count = self.projection()
+        bad_count["system_paper"]["verified_slot_count"] = -1
+        bad_hash_shape = self.projection()
+        bad_hash_shape["release"]["main_commit"] = "A" * 40
+
+        for value in (bad_status, bad_count, bad_hash_shape):
+            self.assert_reason(
+                "OPERATIONS_PROJECTION_SCHEMA_INVALID",
+                lambda value=value: load_operations_projection_bytes(
+                    canonical_json(value).encode("utf-8")
+                ),
+            )
+
+    def test_rejects_content_or_hash_tampering(self):
+        content = self.projection()
+        content["projected_at"] = "2026-08-05T00:26:00.000Z"
+        changed_hash = self.projection()
+        changed_hash["projection_hash"] = "b" * 64
+
+        for value in (content, changed_hash):
+            self.assert_reason(
+                "OPERATIONS_PROJECTION_HASH_MISMATCH",
+                lambda value=value: load_operations_projection_bytes(
+                    canonical_json(value).encode("utf-8")
+                ),
+            )
+
+
+class OperationsProjectionAdversarialTests(
+    OperationsProjectionValidationTests
+):
+    def test_rejects_counts_beyond_exact_json_integer_range(self):
+        source = challenger_source(
+            phase="COLLECTING",
+            service_health="HEALTHY",
+            evidence_health="VERIFIED",
+            verified_slot_count=1 << 53,
+            active_episode_present=True,
+            next_required_slot="2026-08-05T04:00:00.000Z",
+            gate_status="WITHHELD_PRE_TAIL",
+            incident_count=0,
+        )
+        self.assert_reason(
+            "OPERATIONS_PROJECTION_SOURCE_INVALID",
+            lambda: self.build(challenger=source),
+        )
+
+    def test_unhashable_enum_inputs_fail_with_bounded_reason(self):
+        invalid_sources = (
+            challenger_source(phase=[]),
+            challenger_source(service_health={}),
+            paper_source(risk_state=[]),
+            paper_source(reconciliation_status={}),
+        )
+        for source in invalid_sources:
+            with self.subTest(type=type(source).__name__):
+                keyword = (
+                    {"challenger": source}
+                    if isinstance(source, ChallengerOperationsSource)
+                    else {"paper": source}
+                )
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
+                    lambda keyword=keyword: self.build(**keyword),
+                )
+
+    def test_builder_performs_no_operational_io(self):
+        source = challenger_source(
+            phase="REPLACEMENT_NOT_STARTED", incident_count=0
+        )
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("builtins.open", side_effect=AssertionError("file I/O"))
+            )
+            stack.enter_context(
+                patch.object(
+                    subprocess,
+                    "run",
+                    side_effect=AssertionError("subprocess"),
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    socket, "socket", side_effect=AssertionError("network")
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    sqlite3,
+                    "connect",
+                    side_effect=AssertionError("state write"),
+                )
+            )
+            projection = self.build(challenger=source)
+        self.assertEqual(projection["status"], "HEALTHY")
+
+    def test_module_imports_no_operational_capability(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (
+            root / "src" / "crypto_quant" / "operations_projection.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        imported = {
+            alias.name.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        }
+        self.assertTrue(
+            imported.isdisjoint(
+                {
+                    "sqlite3",
+                    "socket",
+                    "subprocess",
+                    "urllib",
+                    "requests",
+                    "httpx",
+                }
+            )
+        )
+
+    def test_identical_inputs_repeat_exactly(self):
+        source = challenger_source(
+            phase="REPLACEMENT_NOT_STARTED", incident_count=0
+        )
+        projections = [self.build(challenger=source) for _ in range(100)]
+        self.assertTrue(all(value == projections[0] for value in projections))
 
 if __name__ == "__main__":
     unittest.main()
