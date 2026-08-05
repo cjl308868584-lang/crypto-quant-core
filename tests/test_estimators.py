@@ -569,10 +569,10 @@ class EvaluatorBuildTests(unittest.TestCase):
         }
 
         self.assertEqual(set(manifest["file_hashes"]), expected)
-        self.assertEqual(semantic_versions, {(0, 61, 0)})
-        self.assertEqual(crypto_quant.__version__, "0.61.0")
-        self.assertEqual(manifest["package_version"], "0.61.0")
-        self.assertEqual(manifest["manifest_version"], "1.55.0")
+        self.assertEqual(semantic_versions, {(0, 62, 0)})
+        self.assertEqual(crypto_quant.__version__, "0.62.0")
+        self.assertEqual(manifest["package_version"], "0.62.0")
+        self.assertEqual(manifest["manifest_version"], "1.56.0")
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
@@ -732,6 +732,21 @@ class EvaluatorBuildTests(unittest.TestCase):
             "docs/runbooks/operations-dashboard.md",
             "docs/adr/0061-loopback-read-only-operations-console.md",
             "docs/implementation-status-v0.61.0.md",
+            "config/challenger-replacement-plan-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-plan-v1.schema.json",
+            "src/crypto_quant/challenger_replacement_plan.py",
+            "tests/test_challenger_replacement_plan.py",
+            "artifacts/challenger-replacement/"
+            "challenger-replacement-plan-v0.62.0.json",
+            "docs/superpowers/specs/"
+            "2026-08-05-replacement-challenger-preregistration-"
+            "isolation-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-05-replacement-challenger-preregistration-"
+            "isolation.md",
+            "docs/adr/0062-replacement-challenger-preregistration-"
+            "isolation.md",
+            "docs/implementation-status-v0.62.0.md",
             "scripts/refresh_evaluator_build_manifest.py",
         ):
             self.assertIn(path, expected)
@@ -820,9 +835,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.55.0")
-        self.assertEqual(manifest["package_version"], "0.61.0")
-        self.assertEqual(crypto_quant.__version__, "0.61.0")
+        self.assertEqual(manifest["manifest_version"], "1.56.0")
+        self.assertEqual(manifest["package_version"], "0.62.0")
+        self.assertEqual(crypto_quant.__version__, "0.62.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
@@ -830,7 +845,7 @@ class EvaluatorBuildTests(unittest.TestCase):
         self.assertEqual(manifest["metric_catalog_version"], "1.1.6")
         self.assertEqual(manifest["golden_vector_count"], 41)
         build = EvaluatorBuild.load(ROOT, self.registry)
-        self.assertEqual(build.manifest_version, "1.55.0")
+        self.assertEqual(build.manifest_version, "1.56.0")
         self.assertEqual(build.executable_estimator_count, 26)
         self.assertEqual(build.unavailable_estimator_count, 32)
         self.assertEqual(build.build_hash, manifest["manifest_hash"])

@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-plan-v1.schema.json",
+  "title": "Replacement Challenger preregistration and isolation plan V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "plan_id",
+    "plan_hash",
+    "foundation",
+    "predecessor",
+    "scope",
+    "decision_policy",
+    "cohort_policy",
+    "isolation_policy",
+    "evidence_policy",
+    "authority",
+    "status",
+    "eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-plan-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "plan_id": {"type": "string", "pattern": "^challenger_replacement_plan_[0-9a-f]{64}$"},
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "foundation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_tag", "peeled_commit", "package_version", "manifest_version", "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"],
+      "properties": {
+        "release_tag": {"const": "v0.61.0"},
+        "peeled_commit": {"const": "0811402ae4f9baebf905f548336ca2c29885ce9c"},
+        "package_version": {"const": "0.61.0"},
+        "manifest_version": {"const": "1.55.0"},
+        "build_input_tree_hash": {"const": "b786255726e606fd8409ad668675ae35cefbb88a4d29f80d2cb8b92323812d76"},
+        "manifest_hash": {"const": "e084ac0aa126824204f6f40fb89db52cd274e96abb96fd512ad6fdccd29eadb6"},
+        "manifest_file_sha256": {"const": "8e3b0f455238de170d55836ab0b76b1e2b41a894e540bf07c0e422a59e6e5296"}
+      }
+    },
+    "predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["failure_receipt", "decommission_receipt", "cohort_plan", "evaluation_plan"],
+      "properties": {
+        "failure_receipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "file_sha256", "receipt_id", "receipt_hash", "failure_reason", "eligibility"],
+          "properties": {
+            "path": {"const": "artifacts/challenger-forward/challenger-cohort-missed-slot-failure-receipt-v0.54.0.json"},
+            "file_sha256": {"const": "7907b97d4447039c686f53dc62694c37836417b4ae555d3322b16478319b85ae"},
+            "receipt_id": {"const": "challenger_cohort_failure_receipt_955e47c773683f1ae4ba7997a84badc373d3daf5afb24763bdc88d1b95d30545"},
+            "receipt_hash": {"const": "3b2bcc2651bb80f58fb44d08ac4dfb2bdd9ab6c3ada4cfd83de00627ec8480b3"},
+            "failure_reason": {"const": "CHALLENGER_RUNNER_MISSED_SLOT"},
+            "eligibility": {"const": "PERMANENTLY_INELIGIBLE_CONTINUITY_GAP"}
+          }
+        },
+        "decommission_receipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "file_sha256", "receipt_id", "receipt_hash", "service_identity", "service_label", "service_state_after", "service_eligibility"],
+          "properties": {
+            "path": {"const": "artifacts/challenger-forward/challenger-cohort-decommission-receipt-v0.54.0.json"},
+            "file_sha256": {"const": "540b831797228c950d954ee75b183fbeac08d63679463e14121fefc44fdf851f"},
+            "receipt_id": {"const": "challenger_cohort_decommission_receipt_30f87c50715e9f4c09b9b21072cb8c3f6fecf932d2703300adcf153fbab9323e"},
+            "receipt_hash": {"const": "56cfaa3f44b23e6dbc282f5947676ea93b4b92a89dcf90539a19eeb865b0bae7"},
+            "service_identity": {"const": "gui/501/local.crypto-quant.challenger-forward"},
+            "service_label": {"const": "local.crypto-quant.challenger-forward"},
+            "service_state_after": {"const": "NOT_LOADED"},
+            "service_eligibility": {"const": "DECOMMISSIONED"}
+          }
+        },
+        "cohort_plan": {"$ref": "#/$defs/predecessorPlan"},
+        "evaluation_plan": {"$ref": "#/$defs/predecessorPlan"}
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "cohort_generation", "route", "symbol", "venue", "market", "direction", "predecessor_policy_id", "predecessor_policy_hash", "hypothesis_registration_hash", "policy_hash"],
+      "properties": {
+        "mode": {"const": "REPLACEMENT_CHALLENGER_CONFIRMATORY"},
+        "cohort_generation": {"const": "replacement-v1"},
+        "route": {"const": "BASELINE_ONLY"},
+        "symbol": {"const": "ETHUSDT"},
+        "venue": {"const": "BINANCE_SPOT"},
+        "market": {"const": "SPOT"},
+        "direction": {"const": "LONG_ONLY"},
+        "predecessor_policy_id": {"const": "SPOT_LONG_SMA20_COST_MARGIN_MOMENTUM_V2"},
+        "predecessor_policy_hash": {"const": "2ef83c7c73fff8b163d9bad8527921bd0d87e60595680236e936254536c800e4"},
+        "hypothesis_registration_hash": {"const": "885b33d3a91eae1d5822fe12c16773a446c23e702f9a4110ef32f474157fa27f"},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "decision_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "interval", "warmup_bar_count", "sma_window", "momentum_lag_bars", "sma20_distance_operator", "sma20_distance_minimum", "eth_log_return_5_operator", "eth_log_return_5_threshold", "entry_rule", "minimum_hold_hours", "before_minimum_action", "post_minimum_sma_exit_rule", "vertical_exit_hours", "same_slot_sma_exit_precedes_vertical", "rejected_entry_episode_created", "same_threshold_semantics_as_predecessor", "old_fixed_forward_start_reused", "policy_hash"],
+      "properties": {
+        "version": {"const": "CHALLENGER_REPLACEMENT_SMA20_MOMENTUM_V1"},
+        "interval": {"const": "4h"},
+        "warmup_bar_count": {"const": 21},
+        "sma_window": {"const": 20},
+        "momentum_lag_bars": {"const": 5},
+        "sma20_distance_operator": {"const": "GTE"},
+        "sma20_distance_minimum": {"const": "0.005"},
+        "eth_log_return_5_operator": {"const": "GT"},
+        "eth_log_return_5_threshold": {"const": "0"},
+        "entry_rule": {"const": "ALL_CONDITIONS_REQUIRED"},
+        "minimum_hold_hours": {"const": 8},
+        "before_minimum_action": {"const": "HOLD_LONG_MINIMUM"},
+        "post_minimum_sma_exit_rule": {"const": "LATEST_CLOSE_LTE_PRIOR_SMA20"},
+        "vertical_exit_hours": {"const": 24},
+        "same_slot_sma_exit_precedes_vertical": {"const": true},
+        "rejected_entry_episode_created": {"const": false},
+        "same_threshold_semantics_as_predecessor": {"const": true},
+        "old_fixed_forward_start_reused": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "cohort_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration_days", "slot_cadence_seconds", "required_slot_count", "maximum_episode_hours", "active_episode_after_window", "start_source", "start_inclusive", "end_exclusive", "observation_tail_end", "all_slots_required", "historical_backfill_allowed", "manual_slot_allowed", "window_reset_allowed", "window_extension_allowed", "optional_stopping_allowed", "policy_hash"],
+      "properties": {
+        "duration_days": {"const": 90},
+        "slot_cadence_seconds": {"const": 14400},
+        "required_slot_count": {"const": 540},
+        "maximum_episode_hours": {"const": 24},
+        "active_episode_after_window": {"const": "FOLLOW_TO_NATURAL_EXIT"},
+        "start_source": {"const": "FIRST_VERIFIED_NATURAL_SLOT_FROM_START_RECEIPT"},
+        "start_inclusive": {"type": "null"},
+        "end_exclusive": {"type": "null"},
+        "observation_tail_end": {"type": "null"},
+        "all_slots_required": {"const": true},
+        "historical_backfill_allowed": {"const": false},
+        "manual_slot_allowed": {"const": false},
+        "window_reset_allowed": {"const": false},
+        "window_extension_allowed": {"const": false},
+        "optional_stopping_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "isolation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service_label", "service_identity", "runtime_root", "target_plist", "relative_paths", "forbidden_runtime_roots", "directory_mode_octal", "file_mode_octal", "single_hardlink_required", "no_overwrite_required", "symlink_ancestors_forbidden", "repository_or_worktree_root_allowed", "cross_root_inode_reuse_allowed", "policy_hash"],
+      "properties": {
+        "service_label": {"const": "local.crypto-quant.challenger-replacement-v1"},
+        "service_identity": {"const": "gui/501/local.crypto-quant.challenger-replacement-v1"},
+        "runtime_root": {"const": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1"},
+        "target_plist": {"const": "/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-replacement-v1.plist"},
+        "relative_paths": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "stdout", "stderr", "source_bundles", "decisions", "deployment_contract", "deployment_plist", "preflight_receipts", "install_receipts", "start_receipts", "episode_receipts", "archives", "results", "indexes", "evaluations"],
+          "properties": {
+            "state": {"const": "state/challenger-replacement.sqlite"},
+            "stdout": {"const": "log/challenger-replacement.stdout.log"},
+            "stderr": {"const": "log/challenger-replacement.stderr.log"},
+            "source_bundles": {"const": "artifacts/source-bundles"},
+            "decisions": {"const": "artifacts/decisions"},
+            "deployment_contract": {"const": "deployment/contract.json"},
+            "deployment_plist": {"const": "deployment/local.crypto-quant.challenger-replacement-v1.plist"},
+            "preflight_receipts": {"const": "preflight-receipts"},
+            "install_receipts": {"const": "install-receipts"},
+            "start_receipts": {"const": "start-receipts"},
+            "episode_receipts": {"const": "episode-receipts"},
+            "archives": {"const": "archives"},
+            "results": {"const": "results"},
+            "indexes": {"const": "indexes"},
+            "evaluations": {"const": "evaluations"}
+          }
+        },
+        "forbidden_runtime_roots": {
+          "const": [
+            "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-forward-v1",
+            "/Users/chenm4/Library/Application Support/CryptoQuant/system-paper-v1",
+            "/tmp",
+            "/private/tmp"
+          ]
+        },
+        "directory_mode_octal": {"const": "0700"},
+        "file_mode_octal": {"const": "0600"},
+        "single_hardlink_required": {"const": true},
+        "no_overwrite_required": {"const": true},
+        "symlink_ancestors_forbidden": {"const": true},
+        "repository_or_worktree_root_allowed": {"const": false},
+        "cross_root_inode_reuse_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "evidence_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["predecessor_failure_preserved", "predecessor_decommission_preserved", "old_decisions_migrated", "old_episodes_migrated", "old_receipts_migrated", "old_archives_migrated", "old_results_migrated", "old_pnl_migrated", "old_elapsed_days_migrated", "old_slot_backfill_allowed", "all_stream_inclusion_required", "interim_economics_withheld", "evaluation_method_source", "first_natural_slot_required", "policy_hash"],
+      "properties": {
+        "predecessor_failure_preserved": {"const": true},
+        "predecessor_decommission_preserved": {"const": true},
+        "old_decisions_migrated": {"const": false},
+        "old_episodes_migrated": {"const": false},
+        "old_receipts_migrated": {"const": false},
+        "old_archives_migrated": {"const": false},
+        "old_results_migrated": {"const": false},
+        "old_pnl_migrated": {"const": false},
+        "old_elapsed_days_migrated": {"const": false},
+        "old_slot_backfill_allowed": {"const": false},
+        "all_stream_inclusion_required": {"const": true},
+        "interim_economics_withheld": {"const": true},
+        "evaluation_method_source": {"const": "PREDECESSOR_V0_44_PLAN_REQUIRES_REPLACEMENT_EVALUATOR"},
+        "first_natural_slot_required": {"const": true},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credentials_allowed", "account_requests_allowed", "broker_requests_allowed", "real_orders_allowed", "production_activation", "runtime_install_authorized", "replacement_start_authorized", "runner_invocation_count", "market_request_count", "state_write_count"],
+      "properties": {
+        "credentials_allowed": {"const": false},
+        "account_requests_allowed": {"const": false},
+        "broker_requests_allowed": {"const": false},
+        "real_orders_allowed": {"const": false},
+        "production_activation": {"const": false},
+        "runtime_install_authorized": {"const": false},
+        "replacement_start_authorized": {"const": false},
+        "runner_invocation_count": {"const": 0},
+        "market_request_count": {"const": 0},
+        "state_write_count": {"const": 0}
+      }
+    },
+    "status": {"const": "PLAN_FROZEN_REPLACEMENT_NOT_STARTED"},
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "deployment", "replacement_start", "cohort_evaluation", "canary", "profitability", "ai_advantage"],
+      "properties": {
+        "runtime": {"const": "INELIGIBLE_NOT_IMPLEMENTED"},
+        "deployment": {"const": "INELIGIBLE_NOT_IMPLEMENTED"},
+        "replacement_start": {"const": "INELIGIBLE_NOT_AUTHORIZED"},
+        "cohort_evaluation": {"const": "INELIGIBLE_90_DAY_EVIDENCE_NOT_STARTED"},
+        "canary": {"const": "INELIGIBLE"},
+        "profitability": {"const": "INELIGIBLE"},
+        "ai_advantage": {"const": "INELIGIBLE"}
+      }
+    },
+    "warnings": {
+      "const": [
+        "OLD_COHORT_PERMANENTLY_FAILED_NO_BACKFILL",
+        "REPLACEMENT_RUNTIME_NOT_IMPLEMENTED",
+        "REPLACEMENT_NOT_INSTALLED_OR_STARTED",
+        "NO_INTERIM_ECONOMIC_REPORTING",
+        "NO_PROFITABILITY_OR_AI_ADVANTAGE_CLAIM",
+        "CANARY_NOT_AUTHORIZED"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "predecessorPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "file_sha256", "plan_id", "plan_hash"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^artifacts/challenger-forward/[A-Za-z0-9._-]+\\.json$"},
+        "file_sha256": {"$ref": "#/$defs/hash"},
+        "plan_id": {"type": "string", "pattern": "^challenger_[a-z_]+_[0-9a-f]{64}$"},
+        "plan_hash": {"$ref": "#/$defs/hash"}
+      }
+    }
+  }
+}
