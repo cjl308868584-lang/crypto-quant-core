@@ -569,10 +569,10 @@ class EvaluatorBuildTests(unittest.TestCase):
         }
 
         self.assertEqual(set(manifest["file_hashes"]), expected)
-        self.assertEqual(semantic_versions, {(0, 59, 0)})
-        self.assertEqual(crypto_quant.__version__, "0.59.0")
-        self.assertEqual(manifest["package_version"], "0.59.0")
-        self.assertEqual(manifest["manifest_version"], "1.53.0")
+        self.assertEqual(semantic_versions, {(0, 60, 0)})
+        self.assertEqual(crypto_quant.__version__, "0.60.0")
+        self.assertEqual(manifest["package_version"], "0.60.0")
+        self.assertEqual(manifest["manifest_version"], "1.54.0")
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
@@ -706,6 +706,16 @@ class EvaluatorBuildTests(unittest.TestCase):
             "2026-08-05-system-paper-finalization-residual.md",
             "docs/adr/0059-system-paper-fixed-tail-evaluation.md",
             "docs/implementation-status-v0.59.0.md",
+            "config/operations-projection-v1.schema.json",
+            "src/crypto_quant/operations_projection.py",
+            "src/crypto_quant/schemas/operations-projection-v1.schema.json",
+            "tests/test_operations_projection.py",
+            "docs/superpowers/specs/"
+            "2026-08-05-tail-blind-operations-projection-design.md",
+            "docs/superpowers/plans/"
+            "2026-08-05-tail-blind-operations-projection.md",
+            "docs/adr/0060-tail-blind-operations-projection.md",
+            "docs/implementation-status-v0.60.0.md",
             "scripts/refresh_evaluator_build_manifest.py",
         ):
             self.assertIn(path, expected)
@@ -794,9 +804,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.53.0")
-        self.assertEqual(manifest["package_version"], "0.59.0")
-        self.assertEqual(crypto_quant.__version__, "0.59.0")
+        self.assertEqual(manifest["manifest_version"], "1.54.0")
+        self.assertEqual(manifest["package_version"], "0.60.0")
+        self.assertEqual(crypto_quant.__version__, "0.60.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
@@ -804,7 +814,7 @@ class EvaluatorBuildTests(unittest.TestCase):
         self.assertEqual(manifest["metric_catalog_version"], "1.1.6")
         self.assertEqual(manifest["golden_vector_count"], 41)
         build = EvaluatorBuild.load(ROOT, self.registry)
-        self.assertEqual(build.manifest_version, "1.53.0")
+        self.assertEqual(build.manifest_version, "1.54.0")
         self.assertEqual(build.executable_estimator_count, 26)
         self.assertEqual(build.unavailable_estimator_count, 32)
         self.assertEqual(build.build_hash, manifest["manifest_hash"])

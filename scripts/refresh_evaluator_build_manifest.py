@@ -12,8 +12,8 @@ from crypto_quant.evidence import artifact_self_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "config" / "evaluator-build-manifest-v1.json"
-EXPECTED_MANIFEST_VERSION = "1.53.0"
-EXPECTED_PACKAGE_VERSION = "0.59.0"
+EXPECTED_MANIFEST_VERSION = "1.54.0"
+EXPECTED_PACKAGE_VERSION = "0.60.0"
 
 
 def main() -> int:

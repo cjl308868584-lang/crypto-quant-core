@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "operations-projection-v1.schema.json",
+  "title": "Tail-Blind Operations Projection V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "projected_at",
+    "status",
+    "release",
+    "challenger",
+    "system_paper",
+    "projection_hash"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./operations-projection-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "projected_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "status": {
+      "enum": ["HEALTHY", "DEGRADED", "FAILED_CLOSED"]
+    },
+    "release": {
+      "$ref": "#/$defs/release"
+    },
+    "challenger": {
+      "$ref": "#/$defs/challenger"
+    },
+    "system_paper": {
+      "$ref": "#/$defs/system_paper"
+    },
+    "projection_hash": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_kind",
+        "source_sha256",
+        "observed_at",
+        "freshness"
+      ],
+      "properties": {
+        "source_kind": {
+          "enum": [
+            "RELEASE_IDENTITY",
+            "CHALLENGER_OPERATIONS",
+            "SYSTEM_PAPER_OPERATIONS"
+          ]
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "freshness": {
+          "enum": ["IDENTITY_VERIFIED", "FRESH", "STALE"]
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_version",
+        "main_commit",
+        "release_tag",
+        "tag_commit",
+        "identity_status",
+        "provenance"
+      ],
+      "properties": {
+        "package_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "main_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "release_tag": {
+          "type": "string",
+          "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "tag_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "identity_status": {
+          "const": "VERIFIED"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "challenger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "service_health",
+        "evidence_health",
+        "verified_slot_count",
+        "completed_episode_count",
+        "active_episode_present",
+        "next_required_slot",
+        "gate_status",
+        "incident_count",
+        "provenance"
+      ],
+      "properties": {
+        "phase": {
+          "enum": [
+            "LEGACY_FAILED_REPLACEMENT_NOT_STARTED",
+            "REPLACEMENT_NOT_STARTED",
+            "COLLECTING",
+            "FINAL"
+          ]
+        },
+        "service_health": {
+          "$ref": "#/$defs/service_health"
+        },
+        "evidence_health": {
+          "$ref": "#/$defs/evidence_health"
+        },
+        "verified_slot_count": {
+          "$ref": "#/$defs/count"
+        },
+        "completed_episode_count": {
+          "$ref": "#/$defs/count"
+        },
+        "active_episode_present": {
+          "type": "boolean"
+        },
+        "next_required_slot": {
+          "oneOf": [
+            {"$ref": "#/$defs/timestamp"},
+            {"type": "null"}
+          ]
+        },
+        "gate_status": {
+          "enum": [
+            "NOT_AVAILABLE",
+            "WITHHELD_PRE_TAIL",
+            "RESEARCH_CONTINUATION_GATE_PASS",
+            "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+            "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+          ]
+        },
+        "incident_count": {
+          "$ref": "#/$defs/count"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "system_paper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "service_health",
+        "evidence_health",
+        "elapsed_days",
+        "verified_slot_count",
+        "next_required_slot",
+        "submitted_order_count",
+        "filled_order_count",
+        "partially_filled_order_count",
+        "cancelled_order_count",
+        "rejected_order_count",
+        "timeout_unknown_order_count",
+        "reconciliation_status",
+        "risk_state",
+        "gate_status",
+        "incident_count",
+        "provenance"
+      ],
+      "properties": {
+        "phase": {
+          "enum": [
+            "NOT_INSTALLED",
+            "INSTALLED_NOT_STARTED",
+            "COLLECTING",
+            "FINAL"
+          ]
+        },
+        "service_health": {
+          "$ref": "#/$defs/service_health"
+        },
+        "evidence_health": {
+          "$ref": "#/$defs/evidence_health"
+        },
+        "elapsed_days": {
+          "$ref": "#/$defs/count"
+        },
+        "verified_slot_count": {
+          "$ref": "#/$defs/count"
+        },
+        "next_required_slot": {
+          "oneOf": [
+            {"$ref": "#/$defs/timestamp"},
+            {"type": "null"}
+          ]
+        },
+        "submitted_order_count": {
+          "$ref": "#/$defs/count"
+        },
+        "filled_order_count": {
+          "$ref": "#/$defs/count"
+        },
+        "partially_filled_order_count": {
+          "$ref": "#/$defs/count"
+        },
+        "cancelled_order_count": {
+          "$ref": "#/$defs/count"
+        },
+        "rejected_order_count": {
+          "$ref": "#/$defs/count"
+        },
+        "timeout_unknown_order_count": {
+          "$ref": "#/$defs/count"
+        },
+        "reconciliation_status": {
+          "enum": ["NOT_AVAILABLE", "RECONCILED", "FAILED_CLOSED"]
+        },
+        "risk_state": {
+          "enum": [
+            "NOT_AVAILABLE",
+            "NORMAL",
+            "WARNING",
+            "REDUCE",
+            "HALT",
+            "HARD_BOUNDARY"
+          ]
+        },
+        "gate_status": {
+          "enum": [
+            "NOT_EVALUATED",
+            "SYSTEM_PAPER_GATE_PASS",
+            "SYSTEM_PAPER_GATE_DID_NOT_PASS",
+            "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+          ]
+        },
+        "incident_count": {
+          "$ref": "#/$defs/count"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "service_health": {
+      "enum": ["NOT_LOADED", "HEALTHY", "DEGRADED", "FAILED_CLOSED"]
+    },
+    "evidence_health": {
+      "enum": [
+        "VERIFIED",
+        "STALE",
+        "INCIDENT_DETECTED",
+        "FAILED_CLOSED",
+        "NOT_AVAILABLE"
+      ]
+    }
+  }
+}
