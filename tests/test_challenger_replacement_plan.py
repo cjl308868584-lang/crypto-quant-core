@@ -394,6 +394,26 @@ class ChallengerReplacementPlanLoaderTests(unittest.TestCase):
                     with self.assertRaisesRegex(ChallengerReplacementPlanError, reason):
                         load_challenger_replacement_plan(path)
 
+    def test_loader_enforces_explicit_json_container_depth_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            at_limit = b'{"unsafe":' + b"[" * 63 + b"0" + b"]" * 63 + b"}"
+            over_limit = b'{"unsafe":' + b"[" * 64 + b"0" + b"]" * 64 + b"}"
+            with self.assertRaisesRegex(
+                ChallengerReplacementPlanError,
+                "CHALLENGER_REPLACEMENT_PLAN_HASH_MISMATCH",
+            ):
+                load_challenger_replacement_plan(
+                    self.write(root, at_limit, name="at-depth-limit.json")
+                )
+            with self.assertRaisesRegex(
+                ChallengerReplacementPlanError,
+                "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID",
+            ):
+                load_challenger_replacement_plan(
+                    self.write(root, over_limit, name="over-depth-limit.json")
+                )
+
     def test_loader_requires_exact_canonical_bytes_with_at_most_one_newline(self):
         plan = self.plan()
         canonical = self.canonical_body(plan)

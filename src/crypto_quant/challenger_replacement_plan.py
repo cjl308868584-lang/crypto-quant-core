@@ -24,6 +24,7 @@ _SCHEMA = "challenger-replacement-plan-v1.schema.json"
 _ZERO_HASH = "0" * 64
 _MAX_PLAN_BYTES = 256 * 1024
 _MAX_SAFE_INTEGER = (1 << 53) - 1
+_MAX_JSON_CONTAINER_DEPTH = 64
 
 
 class ChallengerReplacementPlanError(ValueError):
@@ -368,6 +369,24 @@ def _strict_json_bytes(body: bytes) -> Mapping[str, Any]:
         raise ChallengerReplacementPlanError(
             "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"
         )
+    pending = [(value, 1)]
+    while pending:
+        candidate, depth = pending.pop()
+        if isinstance(candidate, (Mapping, list)):
+            if depth > _MAX_JSON_CONTAINER_DEPTH:
+                raise ChallengerReplacementPlanError(
+                    "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"
+                )
+            items = (
+                candidate.values()
+                if isinstance(candidate, Mapping)
+                else candidate
+            )
+            pending.extend(
+                (item, depth + 1)
+                for item in items
+                if isinstance(item, (Mapping, list))
+            )
     return value
 
 

@@ -222,7 +222,7 @@
     "src/crypto_quant/challenger_launchd_cli.py": "bab678ca17bab45393af77e8576071a414f0b8153470bc087863ff0270108e09",
     "src/crypto_quant/challenger_launchd_install.py": "8f88f97f2629939d041628e1270e1bfd3ece1256a336a02abfdb590354d25b75",
     "src/crypto_quant/challenger_launchd_install_cli.py": "acc479aa6d5feffe9d297b21a91f1d0b701835c760910151b1225bf546a299ac",
-    "src/crypto_quant/challenger_replacement_plan.py": "5911cd413c5e9933b88002239bb0a66f83b2e01c692e2ce055409aa55b827d8c",
+    "src/crypto_quant/challenger_replacement_plan.py": "661abda1a956be2f607adbbf7af3435ed2baacfe8f5bf7864a08f2e23443d5ae",
     "src/crypto_quant/contemporaneous_capture.py": "dd1ee4d7e7ad1033d7a641d2a2666ed478bcc49c4e77c04b1399a259827dabf3",
     "src/crypto_quant/context_cycle_orchestrator.py": "b4172ca6a1ca23bb91083188082f909246f6d4e6f6605748b802b9908c254639",
     "src/crypto_quant/context_cycle_orchestrator_cli.py": "6d2d58a3b9a148fae3bfb74d7aa5875f7953ea55fc52db3ae8d6d01b73479890",
@@ -350,7 +350,7 @@
     "tests/fixtures/launchctl/system-paper-not-running.txt": "56f82073682a9838de2eb56133e652d84620aaf5c98a64825fb913476c91f30c",
     "tests/fixtures/operations-projection-healthy.json": "bb1aec23580a2f18a723f33be86de3720a7b5a69342d5fbb82bc13a51707f0ba",
     "tests/system_paper_fixtures.py": "2c3ca742d23044392e7da1c2142f4d183a593216af6f59f17501b3c2ac5233db",
-    "tests/test_challenger_replacement_plan.py": "c3d0167a93c5a7bf1631902ef53c9430503bf849ccc63534b01a87fc04ef66d7",
+    "tests/test_challenger_replacement_plan.py": "a9708ba025395d0d6da01ab404558908355c7f11b2008b7ecac377df0f4b1833",
     "tests/test_estimators.py": "151aad648bae384a932fde4debdf31af4e252d4e595aa5cb37d959d8d8ed1d77",
     "tests/test_offline_paper.py": "7618c94adea6a543db911d23b12b8518f21934970bb99b73fbd5965e7acb664e",
     "tests/test_operations_alerts.py": "c9d2f4e16d69592155d7d1fadea8c2c80bfb53c32c7d2aa21ede2ee50ca9f6de",
@@ -371,7 +371,7 @@
     "tests/test_system_paper_scheduler.py": "bd602843f290cc40bcf84693955e4fd4296e21ffc1656496379fe1b7a634c13a",
     "tests/test_system_paper_start_receipt.py": "1c8b06335e2e426e59ba4c67873517e5492f2fb31bb79937670172181e6ede20"
   },
-  "build_input_tree_hash": "7669d4b3ef8808f4510a36e74a5694fbe59b9a3c9de048f21323d37ba978d1ef",
+  "build_input_tree_hash": "bf4621c2b3c13e018299dd0092e13519cfe94def15ed46dbcf3621985a41b115",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -379,5 +379,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "b06f86c147c0cb4b43af0c05fde4d5ff0a286f2031c5fd044f67274e08176791"
+  "manifest_hash": "d82c78edf3f66ab431aa4aa5cdd246779179a99ba24eddfbbf3dd8fc7151c863"
 }
