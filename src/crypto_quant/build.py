@@ -188,6 +188,20 @@ _FROZEN_RELEASE_PATHS = (
     "2026-08-05-tail-blind-operations-projection.md",
     "docs/adr/0060-tail-blind-operations-projection.md",
     "docs/implementation-status-v0.60.0.md",
+    "src/crypto_quant/dashboard/index.html",
+    "src/crypto_quant/dashboard/app.js",
+    "src/crypto_quant/dashboard/styles.css",
+    "tests/test_operations_alerts.py",
+    "tests/test_operations_dashboard.py",
+    "tests/fixtures/operations-projection-healthy.json",
+    "docs/superpowers/specs/"
+    "2026-08-05-loopback-read-only-operations-console-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-05-loopback-read-only-operations-console.md",
+    "docs/runbooks/system-paper-operations.md",
+    "docs/runbooks/operations-dashboard.md",
+    "docs/adr/0061-loopback-read-only-operations-console.md",
+    "docs/implementation-status-v0.61.0.md",
     "scripts/refresh_evaluator_build_manifest.py",
 )
 

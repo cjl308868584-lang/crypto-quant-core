@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crypto-quant-core"
-version = "0.60.0"
+version = "0.61.0"
 description = "Fail-closed deterministic core for the personal crypto quant system"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 system-paper-evaluation = "crypto_quant.system_paper_evaluation_cli:main"
+crypto-quant-operations-dashboard = "crypto_quant.operations_dashboard:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -22,4 +23,9 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-crypto_quant = ["schemas/*.json"]
+crypto_quant = [
+  "schemas/*.json",
+  "dashboard/*.html",
+  "dashboard/*.js",
+  "dashboard/*.css",
+]

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Crypto Quant Operations</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="page-header">
+      <p class="eyebrow">LOCAL · READ ONLY · TAIL BLIND</p>
+      <h1>Crypto Quant Operations</h1>
+      <p id="overall-state" class="overall-state">正在验证本地状态…</p>
+    </header>
+    <main>
+      <section id="project-summary" class="panel" aria-labelledby="summary-title">
+        <h2 id="summary-title">发布身份与总体状态</h2>
+        <dl class="facts" data-view="summary"></dl>
+      </section>
+      <section id="challenger-timeline" class="panel" aria-labelledby="challenger-title">
+        <h2 id="challenger-title">Challenger 连续性</h2>
+        <dl class="facts" data-view="challenger"></dl>
+      </section>
+      <section id="paper-runtime" class="panel" aria-labelledby="paper-title">
+        <h2 id="paper-title">System Paper 模拟运行</h2>
+        <dl class="facts" data-view="paper"></dl>
+      </section>
+      <section id="risk-alerts" class="panel" aria-labelledby="alerts-title">
+        <h2 id="alerts-title">风险与告警</h2>
+        <p data-view="risk-observation"></p>
+        <ul class="alerts" data-view="alerts"></ul>
+      </section>
+    </main>
+    <footer>此页面只显示严格验证后的运维投影，不构成交易授权或盈利证明。</footer>
+  </body>
+</html>
