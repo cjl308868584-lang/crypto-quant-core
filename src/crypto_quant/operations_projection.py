@@ -1,9 +1,74 @@
 """Pure, tail-blind operations projection boundary."""
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+import re
 from typing import Any, Callable, Dict, Mapping, Optional
 
 from .canonical import business_hash
+
+
+_VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
+_GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_SERVICE_HEALTH = frozenset(
+    {"NOT_LOADED", "HEALTHY", "DEGRADED", "FAILED_CLOSED"}
+)
+_EVIDENCE_HEALTH = frozenset(
+    {
+        "VERIFIED",
+        "STALE",
+        "INCIDENT_DETECTED",
+        "FAILED_CLOSED",
+        "NOT_AVAILABLE",
+    }
+)
+_CHALLENGER_PHASES = frozenset(
+    {
+        "LEGACY_FAILED_REPLACEMENT_NOT_STARTED",
+        "REPLACEMENT_NOT_STARTED",
+        "COLLECTING",
+        "FINAL",
+    }
+)
+_CHALLENGER_TERMINAL_GATES = frozenset(
+    {
+        "RESEARCH_CONTINUATION_GATE_PASS",
+        "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+        "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+    }
+)
+_CHALLENGER_GATES = _CHALLENGER_TERMINAL_GATES | frozenset(
+    {"NOT_AVAILABLE", "WITHHELD_PRE_TAIL"}
+)
+_SYSTEM_PAPER_PHASES = frozenset(
+    {"NOT_INSTALLED", "INSTALLED_NOT_STARTED", "COLLECTING", "FINAL"}
+)
+_RECONCILIATION = frozenset(
+    {"NOT_AVAILABLE", "RECONCILED", "FAILED_CLOSED"}
+)
+_RISK_STATES = frozenset(
+    {
+        "NOT_AVAILABLE",
+        "NORMAL",
+        "WARNING",
+        "REDUCE",
+        "HALT",
+        "HARD_BOUNDARY",
+    }
+)
+_SYSTEM_PAPER_TERMINAL_GATES = frozenset(
+    {
+        "SYSTEM_PAPER_GATE_PASS",
+        "SYSTEM_PAPER_GATE_DID_NOT_PASS",
+        "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+    }
+)
+_SYSTEM_PAPER_GATES = _SYSTEM_PAPER_TERMINAL_GATES | frozenset(
+    {"NOT_EVALUATED"}
+)
+_FRESH_WINDOW = timedelta(minutes=20)
+_MAX_FUTURE_SKEW = timedelta(minutes=5)
 
 
 class OperationsProjectionError(ValueError):
@@ -135,6 +200,195 @@ def _load_source(loader, expected_type):
     return value
 
 
+def _utc(value: object) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_TIME_INVALID")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise OperationsProjectionError(
+            "OPERATIONS_PROJECTION_TIME_INVALID"
+        ) from error
+    if (
+        parsed.tzinfo is None
+        or parsed.utcoffset() is None
+        or parsed.microsecond % 1000
+    ):
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_TIME_INVALID")
+    canonical = (
+        parsed.astimezone(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+    if value != canonical:
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_TIME_INVALID")
+    return parsed.astimezone(timezone.utc)
+
+
+def _nonnegative_integer(value: object) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _validate_provenance(
+    value: object,
+    expected_kind: str,
+    now: datetime,
+    *,
+    release_identity: bool = False,
+) -> str:
+    if (
+        type(value) is not SourceProvenance
+        or value.source_kind != expected_kind
+        or not isinstance(value.source_sha256, str)
+        or _SHA256.fullmatch(value.source_sha256) is None
+    ):
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_SOURCE_INVALID")
+    observed_at = _utc(value.observed_at)
+    age = now - observed_at
+    if age < -_MAX_FUTURE_SKEW:
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_FUTURE_SOURCE")
+    if release_identity:
+        return "IDENTITY_VERIFIED"
+    return "STALE" if age > _FRESH_WINDOW else "FRESH"
+
+
+def _validate_release(value: ReleaseOperationsSource, now: datetime) -> str:
+    if (
+        not isinstance(value.package_version, str)
+        or _VERSION.fullmatch(value.package_version) is None
+        or not isinstance(value.main_commit, str)
+        or _GIT_COMMIT.fullmatch(value.main_commit) is None
+        or not isinstance(value.tag_commit, str)
+        or _GIT_COMMIT.fullmatch(value.tag_commit) is None
+        or value.main_commit != value.tag_commit
+        or value.release_tag != "v" + value.package_version
+        or value.identity_status != "VERIFIED"
+    ):
+        raise OperationsProjectionError(
+            "OPERATIONS_PROJECTION_RELEASE_IDENTITY_MISMATCH"
+        )
+    return _validate_provenance(
+        value.provenance,
+        "RELEASE_IDENTITY",
+        now,
+        release_identity=True,
+    )
+
+
+def _validate_next_slot(value: object) -> None:
+    if value is not None:
+        _utc(value)
+
+
+def _validate_challenger(
+    value: ChallengerOperationsSource, now: datetime
+) -> str:
+    counts = (
+        value.verified_slot_count,
+        value.completed_episode_count,
+        value.incident_count,
+    )
+    if (
+        value.phase not in _CHALLENGER_PHASES
+        or value.service_health not in _SERVICE_HEALTH
+        or value.evidence_health not in _EVIDENCE_HEALTH
+        or value.gate_status not in _CHALLENGER_GATES
+        or any(not _nonnegative_integer(item) for item in counts)
+        or type(value.active_episode_present) is not bool
+    ):
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_SOURCE_INVALID")
+    _validate_next_slot(value.next_required_slot)
+    if value.phase in {
+        "LEGACY_FAILED_REPLACEMENT_NOT_STARTED",
+        "REPLACEMENT_NOT_STARTED",
+    }:
+        if (
+            value.verified_slot_count != 0
+            or value.completed_episode_count != 0
+            or value.active_episode_present
+            or value.next_required_slot is not None
+            or value.gate_status != "NOT_AVAILABLE"
+        ):
+            raise OperationsProjectionError(
+                "OPERATIONS_PROJECTION_SOURCE_INVALID"
+            )
+    elif value.phase == "COLLECTING":
+        if value.gate_status != "WITHHELD_PRE_TAIL":
+            raise OperationsProjectionError(
+                "OPERATIONS_PROJECTION_SOURCE_INVALID"
+            )
+    elif (
+        value.gate_status not in _CHALLENGER_TERMINAL_GATES
+        or value.active_episode_present
+        or value.next_required_slot is not None
+    ):
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_SOURCE_INVALID")
+    return _validate_provenance(
+        value.provenance, "CHALLENGER_OPERATIONS", now
+    )
+
+
+def _validate_system_paper(
+    value: SystemPaperOperationsSource, now: datetime
+) -> str:
+    counts = (
+        value.elapsed_days,
+        value.verified_slot_count,
+        value.submitted_order_count,
+        value.filled_order_count,
+        value.partially_filled_order_count,
+        value.cancelled_order_count,
+        value.rejected_order_count,
+        value.timeout_unknown_order_count,
+        value.incident_count,
+    )
+    if (
+        value.phase not in _SYSTEM_PAPER_PHASES
+        or value.service_health not in _SERVICE_HEALTH
+        or value.evidence_health not in _EVIDENCE_HEALTH
+        or value.reconciliation_status not in _RECONCILIATION
+        or value.risk_state not in _RISK_STATES
+        or value.gate_status not in _SYSTEM_PAPER_GATES
+        or any(not _nonnegative_integer(item) for item in counts)
+    ):
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_SOURCE_INVALID")
+    _validate_next_slot(value.next_required_slot)
+    if value.phase == "NOT_INSTALLED":
+        if (
+            any(item != 0 for item in counts)
+            or value.next_required_slot is not None
+            or value.reconciliation_status != "NOT_AVAILABLE"
+            or value.risk_state != "NOT_AVAILABLE"
+            or value.gate_status != "NOT_EVALUATED"
+        ):
+            raise OperationsProjectionError(
+                "OPERATIONS_PROJECTION_SOURCE_INVALID"
+            )
+    elif value.phase == "INSTALLED_NOT_STARTED":
+        if (
+            value.elapsed_days != 0
+            or value.verified_slot_count != 0
+            or value.next_required_slot is not None
+            or value.gate_status != "NOT_EVALUATED"
+        ):
+            raise OperationsProjectionError(
+                "OPERATIONS_PROJECTION_SOURCE_INVALID"
+            )
+    elif value.phase == "COLLECTING":
+        if value.gate_status != "NOT_EVALUATED":
+            raise OperationsProjectionError(
+                "OPERATIONS_PROJECTION_SOURCE_INVALID"
+            )
+    elif (
+        value.gate_status not in _SYSTEM_PAPER_TERMINAL_GATES
+        or value.next_required_slot is not None
+    ):
+        raise OperationsProjectionError("OPERATIONS_PROJECTION_SOURCE_INVALID")
+    return _validate_provenance(
+        value.provenance, "SYSTEM_PAPER_OPERATIONS", now
+    )
+
+
 def _provenance(value: SourceProvenance, freshness: str) -> Dict[str, Any]:
     return {
         "source_kind": value.source_kind,
@@ -152,6 +406,7 @@ def build_operations_projection(
 
     if type(sources) is not OperationsProjectionSources:
         raise OperationsProjectionError("OPERATIONS_PROJECTION_SOURCES_INVALID")
+    projected_at = _utc(now)
     release = _load_source(sources.release_loader, ReleaseOperationsSource)
     challenger = _load_source(
         sources.challenger_loader, ChallengerOperationsSource
@@ -159,6 +414,9 @@ def build_operations_projection(
     system_paper = _load_source(
         sources.system_paper_loader, SystemPaperOperationsSource
     )
+    release_freshness = _validate_release(release, projected_at)
+    challenger_freshness = _validate_challenger(challenger, projected_at)
+    paper_freshness = _validate_system_paper(system_paper, projected_at)
     projection: Dict[str, Any] = {
         "$schema": "./operations-projection-v1.schema.json",
         "schema_version": "1.0.0",
@@ -171,7 +429,7 @@ def build_operations_projection(
             "tag_commit": release.tag_commit,
             "identity_status": release.identity_status,
             "provenance": _provenance(
-                release.provenance, "IDENTITY_VERIFIED"
+                release.provenance, release_freshness
             ),
         },
         "challenger": {
@@ -184,7 +442,9 @@ def build_operations_projection(
             "next_required_slot": challenger.next_required_slot,
             "gate_status": challenger.gate_status,
             "incident_count": challenger.incident_count,
-            "provenance": _provenance(challenger.provenance, "FRESH"),
+            "provenance": _provenance(
+                challenger.provenance, challenger_freshness
+            ),
         },
         "system_paper": {
             "phase": system_paper.phase,
@@ -207,7 +467,9 @@ def build_operations_projection(
             "risk_state": system_paper.risk_state,
             "gate_status": system_paper.gate_status,
             "incident_count": system_paper.incident_count,
-            "provenance": _provenance(system_paper.provenance, "FRESH"),
+            "provenance": _provenance(
+                system_paper.provenance, paper_freshness
+            ),
         },
     }
     projection["projection_hash"] = business_hash(

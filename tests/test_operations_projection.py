@@ -2,6 +2,7 @@
 
 import dataclasses
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from crypto_quant.operations_projection import (
     ChallengerOperationsSource,
@@ -175,6 +176,263 @@ class OperationsProjectionSourceBoundaryTests(unittest.TestCase):
         build_operations_projection(NOW, sources)
 
         self.assertEqual((release, challenger, paper), before)
+
+
+class OperationsProjectionValidationTests(unittest.TestCase):
+    def build(self, *, now=NOW, release=None, challenger=None, paper=None):
+        return build_operations_projection(
+            now,
+            OperationsProjectionSources(
+                release_loader=lambda: release or release_source(),
+                challenger_loader=lambda: challenger or challenger_source(),
+                system_paper_loader=lambda: paper or paper_source(),
+            ),
+        )
+
+    def assert_reason(self, reason, operation):
+        with self.assertRaises(OperationsProjectionError) as caught:
+            operation()
+        self.assertEqual(caught.exception.reason_code, reason)
+
+    def test_rejects_release_identity_mismatches(self):
+        invalid = (
+            {"package_version": "0.59"},
+            {"package_version": "0.59.0", "release_tag": "v0.59.1"},
+            {"main_commit": "A" * 40},
+            {"tag_commit": "b" * 40},
+            {"identity_status": "UNVERIFIED"},
+        )
+        for override in invalid:
+            with self.subTest(override=override):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_RELEASE_IDENTITY_MISMATCH",
+                    lambda override=override: self.build(
+                        release=release_source(**override)
+                    ),
+                )
+
+    def test_rejects_invalid_provenance(self):
+        invalid = (
+            provenance("WRONG_KIND"),
+            SourceProvenance(
+                "RELEASE_IDENTITY", "A" * 64, "2026-08-04T23:00:00.000Z"
+            ),
+            SourceProvenance(
+                "RELEASE_IDENTITY", "a" * 63, "2026-08-04T23:00:00.000Z"
+            ),
+        )
+        for value in invalid:
+            with self.subTest(value=value):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
+                    lambda value=value: self.build(
+                        release=release_source(provenance=value)
+                    ),
+                )
+
+    def test_rejects_noncanonical_projection_and_observation_times(self):
+        cases = (
+            ("2026-08-05T00:25:00Z", None),
+            ("2026-08-05T08:25:00.000+08:00", None),
+            ("2026-08-05T00:25:00.000001Z", None),
+            (NOW, "2026-08-05T00:10:00Z"),
+            (NOW, "2026-08-05T08:10:00.000+08:00"),
+        )
+        for now, observed_at in cases:
+            with self.subTest(now=now, observed_at=observed_at):
+                challenger = (
+                    challenger_source(
+                        provenance=provenance(
+                            "CHALLENGER_OPERATIONS", observed_at
+                        )
+                    )
+                    if observed_at
+                    else None
+                )
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_TIME_INVALID",
+                    lambda now=now, challenger=challenger: self.build(
+                        now=now, challenger=challenger
+                    ),
+                )
+
+    def test_freshness_boundaries_and_future_limit(self):
+        def canonical(value):
+            return (
+                value.astimezone(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z")
+            )
+
+        now = datetime(2026, 8, 5, 0, 25, tzinfo=timezone.utc)
+        at_20 = canonical(now - timedelta(minutes=20))
+        after_20 = canonical(now - timedelta(minutes=20, milliseconds=1))
+        at_future_5 = canonical(now + timedelta(minutes=5))
+        after_future_5 = canonical(now + timedelta(minutes=5, milliseconds=1))
+
+        fresh = self.build(
+            challenger=challenger_source(
+                provenance=provenance("CHALLENGER_OPERATIONS", at_20)
+            )
+        )
+        stale = self.build(
+            challenger=challenger_source(
+                provenance=provenance("CHALLENGER_OPERATIONS", after_20)
+            )
+        )
+        future = self.build(
+            challenger=challenger_source(
+                provenance=provenance("CHALLENGER_OPERATIONS", at_future_5)
+            )
+        )
+        self.assertEqual(fresh["challenger"]["provenance"]["freshness"], "FRESH")
+        self.assertEqual(stale["challenger"]["provenance"]["freshness"], "STALE")
+        self.assertEqual(future["challenger"]["provenance"]["freshness"], "FRESH")
+        self.assert_reason(
+            "OPERATIONS_PROJECTION_FUTURE_SOURCE",
+            lambda: self.build(
+                challenger=challenger_source(
+                    provenance=provenance(
+                        "CHALLENGER_OPERATIONS", after_future_5
+                    )
+                )
+            ),
+        )
+
+    def test_rejects_bool_and_negative_integer_counts(self):
+        for value in (-1, True, "1"):
+            with self.subTest(value=value):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
+                    lambda value=value: self.build(
+                        challenger=challenger_source(
+                            verified_slot_count=value
+                        )
+                    ),
+                )
+
+
+class OperationsProjectionStateMachineTests(
+    OperationsProjectionValidationTests
+):
+    def test_accepts_all_challenger_phases(self):
+        cases = (
+            challenger_source(),
+            challenger_source(
+                phase="REPLACEMENT_NOT_STARTED", incident_count=0
+            ),
+            challenger_source(
+                phase="COLLECTING",
+                service_health="HEALTHY",
+                evidence_health="VERIFIED",
+                verified_slot_count=1,
+                active_episode_present=True,
+                next_required_slot="2026-08-05T04:00:00.000Z",
+                gate_status="WITHHELD_PRE_TAIL",
+                incident_count=0,
+            ),
+            challenger_source(
+                phase="FINAL",
+                service_health="HEALTHY",
+                evidence_health="VERIFIED",
+                verified_slot_count=540,
+                completed_episode_count=90,
+                gate_status="RESEARCH_CONTINUATION_GATE_PASS",
+                incident_count=0,
+            ),
+        )
+        for source in cases:
+            with self.subTest(phase=source.phase):
+                self.assertEqual(
+                    self.build(challenger=source)["challenger"]["phase"],
+                    source.phase,
+                )
+
+    def test_rejects_challenger_gate_phase_contradictions(self):
+        cases = (
+            challenger_source(
+                phase="COLLECTING", gate_status="NOT_AVAILABLE"
+            ),
+            challenger_source(
+                phase="COLLECTING",
+                gate_status="RESEARCH_CONTINUATION_GATE_PASS",
+            ),
+            challenger_source(
+                phase="FINAL", gate_status="WITHHELD_PRE_TAIL"
+            ),
+        )
+        for source in cases:
+            with self.subTest(phase=source.phase, gate=source.gate_status):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
+                    lambda source=source: self.build(challenger=source),
+                )
+
+    def test_accepts_all_system_paper_phases(self):
+        cases = (
+            paper_source(),
+            paper_source(phase="INSTALLED_NOT_STARTED"),
+            paper_source(
+                phase="COLLECTING",
+                service_health="HEALTHY",
+                evidence_health="VERIFIED",
+                elapsed_days=1,
+                verified_slot_count=6,
+                next_required_slot="2026-08-05T04:00:00.000Z",
+                submitted_order_count=1,
+                filled_order_count=1,
+                reconciliation_status="RECONCILED",
+                risk_state="NORMAL",
+            ),
+            paper_source(
+                phase="FINAL",
+                service_health="HEALTHY",
+                evidence_health="VERIFIED",
+                elapsed_days=90,
+                verified_slot_count=540,
+                submitted_order_count=30,
+                filled_order_count=30,
+                reconciliation_status="RECONCILED",
+                risk_state="NORMAL",
+                gate_status="SYSTEM_PAPER_GATE_PASS",
+            ),
+        )
+        for source in cases:
+            with self.subTest(phase=source.phase):
+                self.assertEqual(
+                    self.build(paper=source)["system_paper"]["phase"],
+                    source.phase,
+                )
+
+    def test_not_installed_requires_zero_and_unavailable_state(self):
+        cases = (
+            paper_source(verified_slot_count=1),
+            paper_source(submitted_order_count=1),
+            paper_source(next_required_slot="2026-08-05T04:00:00.000Z"),
+            paper_source(reconciliation_status="RECONCILED"),
+            paper_source(risk_state="NORMAL"),
+            paper_source(gate_status="SYSTEM_PAPER_GATE_PASS"),
+        )
+        for source in cases:
+            with self.subTest(source=source):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
+                    lambda source=source: self.build(paper=source),
+                )
+
+    def test_rejects_system_paper_gate_phase_contradictions(self):
+        cases = (
+            paper_source(
+                phase="COLLECTING", gate_status="SYSTEM_PAPER_GATE_PASS"
+            ),
+            paper_source(phase="FINAL", gate_status="NOT_EVALUATED"),
+        )
+        for source in cases:
+            with self.subTest(phase=source.phase, gate=source.gate_status):
+                self.assert_reason(
+                    "OPERATIONS_PROJECTION_SOURCE_INVALID",
+                    lambda source=source: self.build(paper=source),
+                )
 
 
 if __name__ == "__main__":
