@@ -53,9 +53,10 @@ v0.62 replacement plan artifact、old Challenger failure/decommission ancestry�
 ### 3.3 方案 C：独立 Python 3.12 one-shot sidecar（采用）
 
 当前系统通过 canonical JSON 请求文件输出已冻结的 Decision/Target/Risk 授权与固定 ETH 4H
-fixture。独立 Python 3.12 进程只启动一个 `BacktestNode`，不导入任何 live adapter，产生
-Order/Fills/Position/Fees 事件后退出。当前核心中的 Evidence Adapter 只读两边 exact
-artifacts 并生成差异报告。这是最小、方向明确、可拒绝的边界。
+fixture。独立 Python 3.12 进程只启动一个 low-level `BacktestEngine`，不导入任何 live adapter，
+产生 Order/Fills/Position/Fees 事件后退出。官方文档明确建议固定、小体量、内存数据使用
+low-level API；因此不为本 Spike 额外建 Parquet catalog 或 high-level node 配置。当前核心中的
+Evidence Adapter 只读两边 exact artifacts 并生成差异报告。这是最小、方向明确、可拒绝的边界。
 
 ## 4. 官方供应链候选
 
@@ -114,7 +115,7 @@ current Decision / Target / Risk authorization
         v
 nautilus-sandbox-request-v1.json
         |
-        | one CPython 3.12 process / one BacktestNode
+        | one CPython 3.12 process / one BacktestEngine
         v
 Order / Fill / Position / Fee events
         |
