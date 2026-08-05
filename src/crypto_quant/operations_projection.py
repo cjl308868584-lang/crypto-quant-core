@@ -398,6 +398,37 @@ def _provenance(value: SourceProvenance, freshness: str) -> Dict[str, Any]:
     }
 
 
+def _projection_status(
+    challenger: ChallengerOperationsSource,
+    challenger_freshness: str,
+    system_paper: SystemPaperOperationsSource,
+    paper_freshness: str,
+) -> str:
+    if (
+        "FAILED_CLOSED"
+        in {
+            challenger.service_health,
+            challenger.evidence_health,
+            system_paper.service_health,
+            system_paper.evidence_health,
+            system_paper.reconciliation_status,
+        }
+    ):
+        return "FAILED_CLOSED"
+    if (
+        "STALE" in {challenger_freshness, paper_freshness}
+        or "DEGRADED"
+        in {challenger.service_health, system_paper.service_health}
+        or challenger.evidence_health in {"STALE", "INCIDENT_DETECTED"}
+        or system_paper.evidence_health in {"STALE", "INCIDENT_DETECTED"}
+        or challenger.incident_count > 0
+        or system_paper.incident_count > 0
+        or system_paper.risk_state in {"HALT", "HARD_BOUNDARY"}
+    ):
+        return "DEGRADED"
+    return "HEALTHY"
+
+
 def build_operations_projection(
     now: str,
     sources: OperationsProjectionSources,
@@ -417,11 +448,17 @@ def build_operations_projection(
     release_freshness = _validate_release(release, projected_at)
     challenger_freshness = _validate_challenger(challenger, projected_at)
     paper_freshness = _validate_system_paper(system_paper, projected_at)
+    status = _projection_status(
+        challenger,
+        challenger_freshness,
+        system_paper,
+        paper_freshness,
+    )
     projection: Dict[str, Any] = {
         "$schema": "./operations-projection-v1.schema.json",
         "schema_version": "1.0.0",
         "projected_at": now,
-        "status": "HEALTHY",
+        "status": status,
         "release": {
             "package_version": release.package_version,
             "main_commit": release.main_commit,

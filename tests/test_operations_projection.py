@@ -4,6 +4,8 @@ import dataclasses
 import unittest
 from datetime import datetime, timedelta, timezone
 
+from crypto_quant.canonical import business_hash, canonical_json
+
 from crypto_quant.operations_projection import (
     ChallengerOperationsSource,
     OperationsProjectionError,
@@ -419,6 +421,216 @@ class OperationsProjectionStateMachineTests(
                     "OPERATIONS_PROJECTION_SOURCE_INVALID",
                     lambda source=source: self.build(paper=source),
                 )
+
+
+class OperationsProjectionAssemblyTests(
+    OperationsProjectionValidationTests
+):
+    def healthy_challenger(self, **overrides):
+        values = {
+            "phase": "REPLACEMENT_NOT_STARTED",
+            "incident_count": 0,
+        }
+        values.update(overrides)
+        return challenger_source(**values)
+
+    def collecting_paper(self, **overrides):
+        values = {
+            "phase": "COLLECTING",
+            "service_health": "HEALTHY",
+            "evidence_health": "VERIFIED",
+            "elapsed_days": 1,
+            "verified_slot_count": 6,
+            "next_required_slot": "2026-08-05T04:00:00.000Z",
+            "reconciliation_status": "RECONCILED",
+            "risk_state": "NORMAL",
+        }
+        values.update(overrides)
+        return paper_source(**values)
+
+    def test_assembles_only_exact_allowlisted_fields(self):
+        projection = self.build(challenger=self.healthy_challenger())
+
+        self.assertEqual(
+            set(projection),
+            {
+                "$schema",
+                "schema_version",
+                "projected_at",
+                "status",
+                "release",
+                "challenger",
+                "system_paper",
+                "projection_hash",
+            },
+        )
+        self.assertEqual(
+            set(projection["release"]),
+            {
+                "package_version",
+                "main_commit",
+                "release_tag",
+                "tag_commit",
+                "identity_status",
+                "provenance",
+            },
+        )
+        self.assertEqual(
+            set(projection["challenger"]),
+            {
+                "phase",
+                "service_health",
+                "evidence_health",
+                "verified_slot_count",
+                "completed_episode_count",
+                "active_episode_present",
+                "next_required_slot",
+                "gate_status",
+                "incident_count",
+                "provenance",
+            },
+        )
+        self.assertEqual(
+            set(projection["system_paper"]),
+            {
+                "phase",
+                "service_health",
+                "evidence_health",
+                "elapsed_days",
+                "verified_slot_count",
+                "next_required_slot",
+                "submitted_order_count",
+                "filled_order_count",
+                "partially_filled_order_count",
+                "cancelled_order_count",
+                "rejected_order_count",
+                "timeout_unknown_order_count",
+                "reconciliation_status",
+                "risk_state",
+                "gate_status",
+                "incident_count",
+                "provenance",
+            },
+        )
+
+    def test_derives_failed_closed_status(self):
+        cases = (
+            {"challenger": self.healthy_challenger(service_health="FAILED_CLOSED")},
+            {"challenger": self.healthy_challenger(evidence_health="FAILED_CLOSED")},
+            {"paper": self.collecting_paper(service_health="FAILED_CLOSED")},
+            {"paper": self.collecting_paper(evidence_health="FAILED_CLOSED")},
+            {"paper": self.collecting_paper(reconciliation_status="FAILED_CLOSED")},
+        )
+        for values in cases:
+            with self.subTest(values=values):
+                self.assertEqual(self.build(**values)["status"], "FAILED_CLOSED")
+
+    def test_derives_degraded_status(self):
+        stale = provenance(
+            "CHALLENGER_OPERATIONS", "2026-08-04T23:00:00.000Z"
+        )
+        cases = (
+            {"challenger": self.healthy_challenger(service_health="DEGRADED")},
+            {"challenger": self.healthy_challenger(evidence_health="STALE")},
+            {"challenger": self.healthy_challenger(evidence_health="INCIDENT_DETECTED")},
+            {"challenger": self.healthy_challenger(incident_count=1)},
+            {"challenger": self.healthy_challenger(provenance=stale)},
+            {"paper": self.collecting_paper(risk_state="HALT")},
+            {"paper": self.collecting_paper(risk_state="HARD_BOUNDARY")},
+        )
+        for values in cases:
+            with self.subTest(values=values):
+                self.assertEqual(self.build(**values)["status"], "DEGRADED")
+
+    def test_legitimate_not_started_state_is_healthy(self):
+        projection = self.build(challenger=self.healthy_challenger())
+        self.assertEqual(projection["status"], "HEALTHY")
+
+    def test_projection_hash_is_deterministic_and_purpose_bound(self):
+        first = self.build(challenger=self.healthy_challenger())
+        second = self.build(challenger=self.healthy_challenger())
+        without_hash = dict(first)
+        del without_hash["projection_hash"]
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            first["projection_hash"],
+            business_hash(
+                {
+                    "purpose": "TAIL_BLIND_OPERATIONS_PROJECTION_V1",
+                    **without_hash,
+                }
+            ),
+        )
+
+
+class OperationsProjectionTailBlindTests(
+    OperationsProjectionAssemblyTests
+):
+    FORBIDDEN = (
+        "pnl",
+        "profit",
+        "return",
+        "win_rate",
+        "drawdown",
+        "equity",
+        "price",
+        "fee",
+        "confidence",
+        "ranking",
+        "interval",
+        "power",
+    )
+
+    def assert_tail_blind(self, projection):
+        body = canonical_json(projection).lower()
+        for term in self.FORBIDDEN:
+            with self.subTest(term=term):
+                self.assertNotIn(term, body)
+
+    def test_pre_tail_and_final_states_are_structurally_tail_blind(self):
+        collecting = self.healthy_challenger(
+            phase="COLLECTING",
+            service_health="HEALTHY",
+            evidence_health="VERIFIED",
+            verified_slot_count=12,
+            active_episode_present=True,
+            next_required_slot="2026-08-05T04:00:00.000Z",
+            gate_status="WITHHELD_PRE_TAIL",
+        )
+        final = self.healthy_challenger(
+            phase="FINAL",
+            service_health="HEALTHY",
+            evidence_health="VERIFIED",
+            verified_slot_count=540,
+            completed_episode_count=90,
+            gate_status="RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+        )
+        self.assert_tail_blind(self.build(challenger=collecting))
+        self.assert_tail_blind(self.build(challenger=final))
+
+    def test_hostile_subclass_cannot_cross_the_boundary(self):
+        class HostileRelease(ReleaseOperationsSource):
+            __slots__ = ("pnl",)
+
+        clean = release_source()
+        hostile = HostileRelease(
+            clean.package_version,
+            clean.main_commit,
+            clean.release_tag,
+            clean.tag_commit,
+            clean.identity_status,
+            clean.provenance,
+        )
+        object.__setattr__(hostile, "pnl", {"credential": "/private/key"})
+
+        with self.assertRaises(OperationsProjectionError) as caught:
+            self.build(release=hostile)
+        self.assertEqual(
+            caught.exception.reason_code,
+            "OPERATIONS_PROJECTION_SOURCE_INVALID",
+        )
+        self.assertNotIn("/private/key", str(caught.exception))
 
     def test_rejects_system_paper_gate_phase_contradictions(self):
         cases = (
