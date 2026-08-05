@@ -110,12 +110,12 @@ Verify the isolated package can import only under Python 3.12 and that core test
 Run:
 
 ```bash
-python -m unittest tests.test_nautilus_sandbox_dependency -v
-uv run --project sandboxes/nautilus --frozen python -m unittest discover -s sandboxes/nautilus/tests -p 'test_dependency_boundary.py' -v
+PYTHONPATH=src python3 -m unittest tests.test_nautilus_sandbox_dependency -v
+PYTHONPATH=sandboxes/nautilus/src python3.12 -m unittest discover -s sandboxes/nautilus/tests -p 'test_dependency_boundary.py' -v
 git diff --check
 ```
 
-Expected: PASS. Commit message: `feat: freeze Nautilus sandbox supply chain`.
+Expected: PASS without creating `sandboxes/nautilus/.venv` or installing Nautilus. Commit message: `feat: freeze Nautilus sandbox supply chain`.
 
 ---
 
