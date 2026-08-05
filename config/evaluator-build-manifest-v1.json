@@ -342,7 +342,7 @@
     "tests/fixtures/launchctl/system-paper-not-running.txt": "56f82073682a9838de2eb56133e652d84620aaf5c98a64825fb913476c91f30c",
     "tests/fixtures/operations-projection-healthy.json": "bb1aec23580a2f18a723f33be86de3720a7b5a69342d5fbb82bc13a51707f0ba",
     "tests/system_paper_fixtures.py": "2c3ca742d23044392e7da1c2142f4d183a593216af6f59f17501b3c2ac5233db",
-    "tests/test_estimators.py": "6e84500c936f751b9db66ff28b5c541807ac38151d3567509c3b0a3f4795221d",
+    "tests/test_estimators.py": "55064421275e4588bee76d3fc9bff388cb87b6d0ab2000883567893f6907c4ab",
     "tests/test_offline_paper.py": "7618c94adea6a543db911d23b12b8518f21934970bb99b73fbd5965e7acb664e",
     "tests/test_operations_alerts.py": "c9d2f4e16d69592155d7d1fadea8c2c80bfb53c32c7d2aa21ede2ee50ca9f6de",
     "tests/test_operations_dashboard.py": "d2f1e67e6a6c04e96c62781e364c1e2e92a517ddfaea84eb252067fc5c65638e",
@@ -362,7 +362,7 @@
     "tests/test_system_paper_scheduler.py": "bd602843f290cc40bcf84693955e4fd4296e21ffc1656496379fe1b7a634c13a",
     "tests/test_system_paper_start_receipt.py": "1c8b06335e2e426e59ba4c67873517e5492f2fb31bb79937670172181e6ede20"
   },
-  "build_input_tree_hash": "79b478a9c79eac08582577123e1a89092051aa5ae3fefbb59bcd577c2f84348e",
+  "build_input_tree_hash": "a59031733569169e35e5da47d753f5936dd2aa408ceedb2cb3ac492687b9caeb",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -370,5 +370,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "53dc0891c1ad3aa95b735ead9cc99b3abff315a68392415a298130bb0080e057"
+  "manifest_hash": "a901a84662084b145afa126a919d11fe1745d16a8b90c8315d4ccdf54e2a2e83"
 }
