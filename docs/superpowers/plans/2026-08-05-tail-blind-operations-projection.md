@@ -366,7 +366,6 @@ Skip the commit if no files changed after the adversarial tests; do not create a
 - Modify: `pyproject.toml`
 - Modify: `setup.py`
 - Modify: `src/crypto_quant/__init__.py`
-- Modify: `src/crypto_quant_core.egg-info/PKG-INFO`
 - Create: `docs/adr/0060-tail-blind-operations-projection.md`
 - Create: `docs/implementation-status-v0.60.0.md`
 - Modify: `README.md`
@@ -421,7 +420,7 @@ git diff --check
 ```bash
 PYTHONPATH=src /usr/bin/python3 -m unittest tests.test_estimators -v
 git add pyproject.toml setup.py src/crypto_quant/__init__.py \
-  src/crypto_quant_core.egg-info/PKG-INFO src/crypto_quant/build.py \
+  src/crypto_quant/build.py \
   config/evaluator-build-manifest-v1.json \
   scripts/refresh_evaluator_build_manifest.py tests/test_estimators.py \
   docs/adr/0060-tail-blind-operations-projection.md \

@@ -59,6 +59,7 @@ _FROZEN_CONFIG_PATHS = (
     "config/historical-research-corpus-snapshot-v1.schema.json",
     "config/model-bundle-v1.1.schema.json",
     "config/offline-paper-run-v1.schema.json",
+    "config/operations-projection-v1.schema.json",
     "config/paper-runtime-snapshot-v1.schema.json",
     "config/paper-schedule-snapshot-v1.schema.json",
     "config/paired-risk-evaluation-snapshot-v1.schema.json",
@@ -180,6 +181,13 @@ _FROZEN_RELEASE_PATHS = (
     "2026-08-05-system-paper-finalization-residual.md",
     "docs/adr/0059-system-paper-fixed-tail-evaluation.md",
     "docs/implementation-status-v0.59.0.md",
+    "tests/test_operations_projection.py",
+    "docs/superpowers/specs/"
+    "2026-08-05-tail-blind-operations-projection-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-05-tail-blind-operations-projection.md",
+    "docs/adr/0060-tail-blind-operations-projection.md",
+    "docs/implementation-status-v0.60.0.md",
     "scripts/refresh_evaluator_build_manifest.py",
 )
 
