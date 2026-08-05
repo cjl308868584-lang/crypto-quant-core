@@ -210,27 +210,50 @@ def load_nautilus_sandbox_dependency_lock(path: Path) -> Dict[str, Any]:
     """Load an owner-only canonical artifact without enforcing the replay host OS."""
 
     requested = Path(path)
-    if not requested.is_absolute() or requested.is_symlink():
+    if not requested.is_absolute():
         raise NautilusSandboxDependencyError("DEPENDENCY_LOCK_UNSAFE_FILE")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
-        status = os.stat(requested, follow_symlinks=False)
+        descriptor = os.open(str(requested), flags)
     except OSError as exc:
         raise NautilusSandboxDependencyError("DEPENDENCY_LOCK_UNSAFE_FILE") from exc
-    if (
-        not stat.S_ISREG(status.st_mode)
-        or status.st_uid != os.getuid()
-        or status.st_nlink != 1
-        or stat.S_IMODE(status.st_mode) & 0o077
-        or status.st_size <= 0
-        or status.st_size > _MAX_BYTES
-    ):
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.getuid()
+            or before.st_nlink != 1
+            or stat.S_IMODE(before.st_mode) & 0o077
+            or before.st_size <= 0
+            or before.st_size > _MAX_BYTES
+        ):
+            raise NautilusSandboxDependencyError("DEPENDENCY_LOCK_UNSAFE_FILE")
+        chunks = []
+        remaining = before.st_size + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, min(65536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    identity_fields = (
+        "st_dev", "st_ino", "st_mode", "st_uid", "st_nlink", "st_size",
+        "st_mtime_ns", "st_ctime_ns",
+    )
+    if any(getattr(before, field) != getattr(after, field) for field in identity_fields):
         raise NautilusSandboxDependencyError("DEPENDENCY_LOCK_UNSAFE_FILE")
-    raw = requested.read_bytes()
+    if len(raw) != before.st_size:
+        raise NautilusSandboxDependencyError("DEPENDENCY_LOCK_UNSAFE_FILE")
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise NautilusSandboxDependencyError("DEPENDENCY_LOCK_JSON_INVALID") from exc
-    if not isinstance(payload, dict) or raw != canonical_json(payload).encode("utf-8"):
+    canonical = canonical_json(payload).encode("utf-8") if isinstance(payload, dict) else b""
+    if not isinstance(payload, dict) or raw not in (canonical, canonical + b"\n"):
         raise NautilusSandboxDependencyError("DEPENDENCY_LOCK_NOT_CANONICAL")
     workspace_root = Path(__file__).resolve().parents[2]
     return verify_nautilus_sandbox_dependency_lock(

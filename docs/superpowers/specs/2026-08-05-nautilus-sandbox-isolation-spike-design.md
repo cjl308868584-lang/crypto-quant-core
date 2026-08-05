@@ -8,6 +8,20 @@
 
 适用分支：`codex/v0.63-nautilus-sandbox-spike`
 
+## 0. 发布范围修订（实际终止分支）
+
+本文原始设计保留了“供应链成功后执行 fixture/runner/result 对照”的条件路径。
+实际执行在 frozen environment 未完整取得时进入失败关闭，因此 v0.63 的最终发布
+范围只有：exact dependency metadata/完整 `uv.lock`、严格 owner-only loader、只读
+preflight Evidence Adapter 与 `INCONCLUSIVE_BLOCKED` comparison/report。
+
+后文中的 request/result Schema、ETH 4H fixture、current reference、runner、engine、Golden、
+failure injection 和 fresh-process replay 均是条件路径，本版本未实现、未运行、未声称
+完成，对应未验证文件从发布中删除。两次 fetch 只能作为会话 attestation；
+exact transcript bytes 和外部 attestation 都不可用，所以不得称为 machine-replayable
+failure receipt。本节对 v0.63 实际交付范围具有优先效力；条件路径若重启，必须
+使用新语义版本和新预注册设计。
+
 ## 1. 决策摘要
 
 v0.63 实现一条完全隔离的 NautilusTrader 离线兼容性 Spike，用于判断下一代订单、

@@ -8,6 +8,18 @@
 
 **Tech Stack:** Python 3.9+ 核心、独立 CPython 3.12 sandbox、NautilusTrader `1.227.0`、`uv` frozen lock、JSON Schema 2020-12、标准库 `unittest`、canonical JSON/SHA-256、GitHub Actions Python 3.9/3.12（CI 只重放 committed evidence，不安装 145 MB wheel）。
 
+## Execution outcome / scope closure
+
+计划在 Task 1 的 frozen dependency acquisition 后进入失败关闭：官方同源、同版本、不放宽
+hash 的两次有界尝试都未产生可用环境。因此 Task 2–3 的 request/result、fixture、
+runner、engine 与 runtime failure suite 没有执行；已创建但未经引擎验证的通用协议文件已
+从最终发布删除。
+
+最终 v0.63 只交付 exact dependency lock、严格 loader、只读 preflight adapter 和
+`INCONCLUSIVE_BLOCKED` report。fetch 描述明示为不可机器重放的会话 attestation；
+`runtime_failure_suite_executed=false`。下文保留为原始条件实施计划的审计记录，
+不表示相应任务已完成。任何重启都必须使用新语义版本和新计划。
+
 ---
 
 ## Global constraints

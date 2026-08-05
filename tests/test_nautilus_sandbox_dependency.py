@@ -127,6 +127,16 @@ class NautilusSandboxDependencyTests(unittest.TestCase):
         expected = canonical_json(self.payload()).encode("utf-8") + b"\n"
         self.assertEqual(ARTIFACT.read_bytes(), expected)
 
+    def test_committed_exact_bytes_replay_through_owner_only_loader(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / ARTIFACT.name
+            path.write_bytes(ARTIFACT.read_bytes())
+            path.chmod(0o600)
+            self.assertEqual(
+                load_nautilus_sandbox_dependency_lock(path),
+                self.payload(),
+            )
+
     def test_loader_accepts_only_canonical_owner_only_regular_file(self):
         payload = self.payload()
         with tempfile.TemporaryDirectory() as raw:
