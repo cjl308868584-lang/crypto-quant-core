@@ -6,6 +6,8 @@ production-path inspection, network request, process invocation, or state write.
 
 import copy
 import json
+import os
+import stat
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
@@ -13,12 +15,13 @@ from typing import Any, Dict, Mapping, Tuple
 
 from jsonschema import Draft202012Validator
 
-from .canonical import business_hash, stable_id
+from .canonical import business_hash, canonical_json, stable_id
 from .evidence import artifact_self_hash
 
 
 _SCHEMA = "challenger-replacement-plan-v1.schema.json"
 _ZERO_HASH = "0" * 64
+_MAX_PLAN_BYTES = 256 * 1024
 
 
 class ChallengerReplacementPlanError(ValueError):
@@ -300,3 +303,136 @@ def challenger_replacement_plan_reasons(
 
 def _copy_plan(plan: Mapping[str, Any]) -> Dict[str, Any]:
     return copy.deepcopy(dict(plan))
+
+
+def _strict_json_bytes(body: bytes) -> Mapping[str, Any]:
+    if not isinstance(body, bytes) or not body or len(body) > _MAX_PLAN_BYTES:
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"
+        )
+
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ChallengerReplacementPlanError(
+                    "CHALLENGER_REPLACEMENT_PLAN_JSON_DUPLICATE_KEY"
+                )
+            result[key] = value
+        return result
+
+    def reject_number(_value):
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_JSON_FLOAT_FORBIDDEN"
+        )
+
+    try:
+        value = json.loads(
+            body.decode("utf-8"),
+            object_pairs_hook=pairs,
+            parse_float=reject_number,
+            parse_constant=reject_number,
+        )
+    except ChallengerReplacementPlanError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"
+        ) from error
+    if not isinstance(value, Mapping):
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"
+        )
+    return value
+
+
+def _read_owner_controlled_regular_file(path: Path) -> bytes:
+    try:
+        before = path.lstat()
+    except (OSError, ValueError) as error:
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID"
+        ) from error
+    mode = stat.S_IMODE(before.st_mode)
+    if (
+        not stat.S_ISREG(before.st_mode)
+        or before.st_uid != os.getuid()
+        or before.st_nlink != 1
+        or mode & 0o022
+        or before.st_size <= 0
+        or before.st_size > _MAX_PLAN_BYTES
+    ):
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID"
+        )
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID"
+        ) from error
+    try:
+        opened = os.fstat(descriptor)
+        if (
+            (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+            or not stat.S_ISREG(opened.st_mode)
+            or opened.st_uid != os.getuid()
+            or opened.st_nlink != 1
+            or stat.S_IMODE(opened.st_mode) & 0o022
+            or opened.st_size != before.st_size
+        ):
+            raise ChallengerReplacementPlanError(
+                "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID"
+            )
+        chunks = []
+        remaining = opened.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(remaining, 64 * 1024))
+            if not chunk:
+                raise ChallengerReplacementPlanError(
+                    "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID"
+                )
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        after = os.fstat(descriptor)
+        if (
+            (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            != (
+                opened.st_dev,
+                opened.st_ino,
+                opened.st_size,
+                opened.st_mtime_ns,
+            )
+        ):
+            raise ChallengerReplacementPlanError(
+                "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID"
+            )
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def load_challenger_replacement_plan(path: Path) -> Dict[str, Any]:
+    """Load only owner-controlled canonical bytes for the one frozen plan."""
+
+    plan_path = Path(path)
+    if not plan_path.is_absolute():
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID"
+        )
+    body = _read_owner_controlled_regular_file(plan_path)
+    plan = dict(_strict_json_bytes(body))
+    canonical = canonical_json(plan).encode("utf-8")
+    if body not in (canonical, canonical + b"\n"):
+        raise ChallengerReplacementPlanError(
+            "CHALLENGER_REPLACEMENT_PLAN_CANONICAL_BYTES_REQUIRED"
+        )
+    reasons = challenger_replacement_plan_reasons(plan)
+    if reasons:
+        raise ChallengerReplacementPlanError(reasons[0])
+    return _copy_plan(plan)

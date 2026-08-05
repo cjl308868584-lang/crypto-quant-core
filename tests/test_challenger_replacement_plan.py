@@ -1,7 +1,11 @@
+import ast
 import copy
+import hashlib
 import inspect
 import json
+import os
 import re
+import tempfile
 import unittest
 from pathlib import Path, PurePosixPath
 
@@ -9,9 +13,11 @@ from jsonschema import Draft202012Validator
 
 from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_plan import (
+    ChallengerReplacementPlanError,
     build_challenger_replacement_plan,
     challenger_replacement_plan_hash,
     challenger_replacement_plan_reasons,
+    load_challenger_replacement_plan,
 )
 
 
@@ -263,6 +269,221 @@ class ChallengerReplacementPlanBuilderTests(unittest.TestCase):
                 self.assertNotIn("https://", value.lower())
 
         visit(self.plan())
+
+
+class ChallengerReplacementPlanLoaderTests(unittest.TestCase):
+    def plan(self):
+        return build_challenger_replacement_plan()
+
+    def canonical_body(self, plan=None):
+        return canonical_json(plan or self.plan()).encode("utf-8")
+
+    def write(self, root, body=None, name="replacement-plan.json"):
+        path = Path(root).resolve() / name
+        path.write_bytes(self.canonical_body() if body is None else body)
+        path.chmod(0o600)
+        return path
+
+    def test_loader_rejects_nonabsolute_missing_directory_and_symlink_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            valid = self.write(root)
+            with self.assertRaisesRegex(
+                ChallengerReplacementPlanError,
+                "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID",
+            ):
+                load_challenger_replacement_plan(Path(valid.name))
+            with self.assertRaisesRegex(
+                ChallengerReplacementPlanError,
+                "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID",
+            ):
+                load_challenger_replacement_plan(root / "missing.json")
+            with self.assertRaisesRegex(
+                ChallengerReplacementPlanError,
+                "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID",
+            ):
+                load_challenger_replacement_plan(root)
+            symlink = root / "symlink.json"
+            symlink.symlink_to(valid)
+            with self.assertRaisesRegex(
+                ChallengerReplacementPlanError,
+                "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID",
+            ):
+                load_challenger_replacement_plan(symlink)
+
+    def test_loader_rejects_writable_hardlinked_empty_and_oversized_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            writable = self.write(root, name="writable.json")
+            writable.chmod(0o622)
+            hardlinked = self.write(root, name="hardlinked.json")
+            os.link(hardlinked, root / "second-link.json")
+            empty = self.write(root, b"", name="empty.json")
+            oversized = self.write(
+                root,
+                b"x" * (256 * 1024 + 1),
+                name="oversized.json",
+            )
+            for path in (writable, hardlinked, empty, oversized):
+                with self.subTest(path=path.name):
+                    with self.assertRaisesRegex(
+                        ChallengerReplacementPlanError,
+                        "CHALLENGER_REPLACEMENT_PLAN_PATH_INVALID",
+                    ):
+                        load_challenger_replacement_plan(path)
+
+    def test_loader_rejects_duplicate_keys_floats_constants_and_nonobjects(self):
+        cases = (
+            (
+                b'{"plan_hash":"' + b"0" * 64 + b'","plan_hash":"' + b"0" * 64 + b'"}',
+                "CHALLENGER_REPLACEMENT_PLAN_JSON_DUPLICATE_KEY",
+            ),
+            (b'{"unsafe":1.5}', "CHALLENGER_REPLACEMENT_PLAN_JSON_FLOAT_FORBIDDEN"),
+            (b'{"unsafe":NaN}', "CHALLENGER_REPLACEMENT_PLAN_JSON_FLOAT_FORBIDDEN"),
+            (b"[]", "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"),
+            (b"\xff", "CHALLENGER_REPLACEMENT_PLAN_JSON_INVALID"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for index, (body, reason) in enumerate(cases):
+                with self.subTest(reason=reason):
+                    path = self.write(root, body, name=f"unsafe-{index}.json")
+                    with self.assertRaisesRegex(ChallengerReplacementPlanError, reason):
+                        load_challenger_replacement_plan(path)
+
+    def test_loader_requires_exact_canonical_bytes_with_at_most_one_newline(self):
+        plan = self.plan()
+        canonical = self.canonical_body(plan)
+        cases = (
+            json.dumps(plan).encode("utf-8"),
+            canonical + b"\n\n",
+            b" " + canonical,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self.assertEqual(
+                load_challenger_replacement_plan(
+                    self.write(root, canonical, name="canonical.json")
+                ),
+                plan,
+            )
+            self.assertEqual(
+                load_challenger_replacement_plan(
+                    self.write(root, canonical + b"\n", name="newline.json")
+                ),
+                plan,
+            )
+            for index, body in enumerate(cases):
+                path = self.write(root, body, name=f"noncanonical-{index}.json")
+                with self.assertRaisesRegex(
+                    ChallengerReplacementPlanError,
+                    "CHALLENGER_REPLACEMENT_PLAN_CANONICAL_BYTES_REQUIRED",
+                ):
+                    load_challenger_replacement_plan(path)
+
+    def test_loader_rejects_schema_hash_policy_and_semantic_rehash_bypasses(self):
+        variants = []
+        unknown = copy.deepcopy(self.plan())
+        unknown["api_key"] = "forbidden"
+        unknown["plan_hash"] = challenger_replacement_plan_hash(unknown)
+        variants.append((unknown, "CHALLENGER_REPLACEMENT_PLAN_SCHEMA_INVALID"))
+        bad_hash = copy.deepcopy(self.plan())
+        bad_hash["plan_hash"] = "0" * 64
+        variants.append((bad_hash, "CHALLENGER_REPLACEMENT_PLAN_HASH_MISMATCH"))
+        bad_policy_hash = copy.deepcopy(self.plan())
+        bad_policy_hash["scope"]["policy_hash"] = "f" * 64
+        bad_policy_hash["plan_hash"] = challenger_replacement_plan_hash(bad_policy_hash)
+        variants.append(
+            (
+                bad_policy_hash,
+                "CHALLENGER_REPLACEMENT_PLAN_POLICY_HASH_MISMATCH",
+            )
+        )
+        reidentified = copy.deepcopy(self.plan())
+        reidentified["plan_id"] = "challenger_replacement_plan_" + "f" * 64
+        reidentified["plan_hash"] = challenger_replacement_plan_hash(reidentified)
+        variants.append(
+            (
+                reidentified,
+                "CHALLENGER_REPLACEMENT_PLAN_SEMANTIC_MISMATCH",
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for index, (plan, reason) in enumerate(variants):
+                with self.subTest(reason=reason):
+                    path = self.write(
+                        root,
+                        self.canonical_body(plan),
+                        name=f"tampered-{index}.json",
+                    )
+                    with self.assertRaisesRegex(ChallengerReplacementPlanError, reason):
+                        load_challenger_replacement_plan(path)
+
+    def test_loader_returns_an_independent_validated_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write(directory)
+            first = load_challenger_replacement_plan(path)
+            first["authority"]["credentials_allowed"] = True
+            second = load_challenger_replacement_plan(path)
+            self.assertFalse(second["authority"]["credentials_allowed"])
+
+    def test_predecessor_committed_bytes_match_all_frozen_business_identities(self):
+        plan = self.plan()["predecessor"]
+        for key in (
+            "failure_receipt",
+            "decommission_receipt",
+            "cohort_plan",
+            "evaluation_plan",
+        ):
+            binding = plan[key]
+            path = ROOT / binding["path"]
+            body = path.read_bytes()
+            document = json.loads(body)
+            self.assertEqual(hashlib.sha256(body).hexdigest(), binding["file_sha256"])
+            if "receipt_id" in binding:
+                self.assertEqual(document["receipt_id"], binding["receipt_id"])
+                self.assertEqual(document["receipt_hash"], binding["receipt_hash"])
+            else:
+                self.assertEqual(document["plan_id"], binding["plan_id"])
+                self.assertEqual(document["plan_hash"], binding["plan_hash"])
+
+    def test_module_ast_has_no_runtime_network_process_or_state_capability(self):
+        source_path = ROOT / "src" / "crypto_quant" / "challenger_replacement_plan.py"
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+        forbidden_import_roots = {
+            "sqlite3",
+            "socket",
+            "subprocess",
+            "urllib",
+            "requests",
+            "httpx",
+            "ccxt",
+        }
+        imports = set()
+        called_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module.split(".")[0])
+            elif isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name):
+                    called_names.add(node.func.id.lower())
+                elif isinstance(node.func, ast.Attribute):
+                    called_names.add(node.func.attr.lower())
+        self.assertTrue(forbidden_import_roots.isdisjoint(imports))
+        for forbidden in (
+            "launchctl",
+            "bootstrap",
+            "kickstart",
+            "runner",
+            "scheduler",
+            "maintenance",
+            "broker",
+            "submit_order",
+        ):
+            self.assertNotIn(forbidden, called_names)
 
 
 if __name__ == "__main__":
