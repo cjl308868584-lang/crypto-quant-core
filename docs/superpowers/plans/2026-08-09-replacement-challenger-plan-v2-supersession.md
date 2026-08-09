@@ -28,6 +28,7 @@
 - No formal artifact may be generated until the current platform feasibility gate passes. Linux Python 3.9/3.12 Draft-PR CI covers Linux; the target Mac must independently pass the Darwin gate before Task 5. Neither substitutes for the other.
 - After Task 5 commits the plan, freeze `HEAD=H` through collection, attestation and record assembly. Intermediate Git status must match the exact candidate-state allowlist; only `C0` and post-commit `C4` are called clean.
 - Protocol staging is separately inventoried even though its exact filename pattern is ignored by Git. A sealed orphan is never modified and does not prevent an exact publisher retry, but any remaining orphan blocks attestation, record assembly, commit and release.
+- An orphan-blocked worktree is retained unchanged as failure evidence. Recovery starts from the exact pre-artifact commit in a new isolated worktree and repeats the ceremony; it never deletes or modifies the orphan.
 - Keep `v0.65.0` reserved for the approved single end-to-end NautilusTrader Spike; replacement three-stage runtime is `v0.66.0` or later.
 - Run one local full suite for the final code state, one complete independent review, targeted re-review after fixes, PR Python 3.9/3.12 CI, merged-main CI, and annotated-tag identity verification.
 
@@ -360,6 +361,19 @@ Formal loaders reject a test qualification claim even when every observed count 
 state the limit explicitly: a loader cannot prove that identical bytes were not fabricated or that the
 attestation is true.
 
+Also commit these exact fixed-path regression skeletons before any formal artifact exists:
+
+```text
+test_committed_supersession_machine_evidence_exact
+test_committed_owner_attestation_exact
+test_committed_plan_supersession_record_exact
+```
+
+Each method may use only a method-level `skipUnless` for its own exact fixed formal-artifact path with
+reason `FIXED_FORMAL_SUPERSESSION_ARTIFACT_NOT_YET_PUBLISHED`. It must not catch loader exceptions,
+skip a class/module, inspect an alternate path or treat any other failure as absence. Once its fixed
+file exists, the production loader and all exact identity/binding assertions must execute.
+
 - [ ] **Step 2: Run and confirm red**
 
 ```bash
@@ -633,8 +647,12 @@ PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_plan_supersession -v
 ```
 
-Expected: all pass; no production root, plist or formal artifact exists. Tests may publish only under
-owner-only temporary fixture roots.
+Expected: all applicable tests pass; only the opposite-OS primitive test may use the platform skip
+defined in Step 6. No production root, plist or formal artifact exists. Before formal publication,
+only the three named fixed-path regression methods from Task 3 may additionally report the exact
+`FIXED_FORMAL_SUPERSESSION_ARTIFACT_NOT_YET_PUBLISHED` skip. No class/module-wide skip, caught loader
+failure or additional artifact-absence skip is allowed. Tests may publish only under owner-only
+temporary fixture roots.
 
 - [ ] **Step 8: Commit collector and fixed publisher without generated artifacts**
 
@@ -734,7 +752,6 @@ this is `C0_PLAN_COMMITTED_CLEAN`.
 - Create: `artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json`
 - Create: `artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json`
 - Create: `artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json`
-- Modify: `tests/test_challenger_replacement_plan_supersession.py`
 
 **Interfaces:**
 
@@ -805,11 +822,14 @@ record ID/hash, both plan identities, evidence/attestation hashes, reason and pr
 exact record bytes exist, compute the record canonical file SHA externally; bind it later in
 status/ADR/manifest, never inside the record.
 
-- [ ] **Step 7: Add committed-artifact regressions**
+- [ ] **Step 7: Run the pre-committed committed-artifact regressions**
 
-Test exact committed machine evidence, owner attestation and record through their production loaders.
-Test fixtures remain temporary and test-qualified. Tests assert loader capabilities are limited to
-structure/hash/claim/binding checks and do not describe fixture fabrication as technically impossible.
+Run the three exact fixed-path regression methods committed before `HEAD=H`. They load machine
+evidence, owner attestation and record through their production loaders. Require all three methods to
+execute and pass with zero skips; the pre-artifact absence-only `skipUnless` conditions are now false.
+Do not modify code or tests in Task 6. Test fixtures remain temporary and test-qualified, and the tests
+assert loader capabilities are limited to structure/hash/claim/binding checks without describing
+fixture fabrication as technically impossible.
 
 - [ ] **Step 8: Run focused tests to green**
 
@@ -820,7 +840,8 @@ PYTHONPATH=src python3 -m unittest \
 ```
 
 Expected: formal plan, machine evidence, owner attestation and record replay exactly with all bindings;
-the test report makes no historical-truth or unpatched-process claim.
+the three exact fixed-path regressions report zero skips, and the test report makes no historical-truth
+or unpatched-process claim. A broad skip, caught loader exception or unexpected skip is failure.
 
 - [ ] **Step 9: Commit the three immutable supersession artifacts**
 
@@ -831,8 +852,7 @@ empty. Any other entry or orphan blocks the commit.
 ```bash
 git add artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json \
   artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json \
-  artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json \
-  tests/test_challenger_replacement_plan_supersession.py
+  artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json
 git commit -m "feat: record pre-start replacement plan supersession"
 ```
 

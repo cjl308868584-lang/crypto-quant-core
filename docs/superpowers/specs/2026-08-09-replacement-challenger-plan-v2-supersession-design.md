@@ -438,6 +438,12 @@ transcript，必须称为 exact allowlisted dirty state，不得称 clean。每�
 loader 与 file identity 重放；额外 tracked/untracked entry、HEAD 变化或 allowlisted final identity 变化均
 失败关闭。
 
+machine-evidence、owner-attestation 与 supersession-record 的三个 fixed-path regression test
+骨架必须在冻结 `HEAD=H` 前提交。正式 artifact 尚不存在时，每个测试只能按自己的 exact fixed path
+使用 method-level absence-only skip；不得 broad skip 或捕获 loader 异常。到 Task 6 三项均生成后，必须
+只运行这些已提交测试，要求三项全部实际执行且 skip count 为零，不得修改任何 code/test。因此
+`C1`/`C2`/`C3` raw-status allowlist 始终只包含对应正式 JSON，`HEAD=H` 保持不变。
+
 staging basename 必须匹配 ASCII regex
 `\A\.v064-supersession-(plan|machine-evidence|owner-attestation|supersession-record)-[0-9a-f]{64}-[0-9a-f]{32}\.staging\Z`，并由精确
 `.gitignore` rule 从普通 status 排除；这不允许把它当作“不存在”。每个 precondition 还必须用
@@ -451,7 +457,8 @@ nonregular、wrong-owner/mode、超限 entry 或第65项使候选失败关闭。
 orphan。因此 external sentinel 的 bytes/mode/size/mtime/ctime/inode/nlink 保持不变。retry 成功后
 若 orphan inventory 非空，状态为 `RECOVERY_EVIDENCE_PRESENT_RELEASE_BLOCKED`，不得伪报 `C1`-`C4`，
 不得静默删除、quarantine 或忽略。本 v0.64 不设计 destructive cleanup；没有 orphan 的正常路径才能
-到达 `C4_THREE_FINALS_COMMITTED_CLEAN`。
+到达 `C4_THREE_FINALS_COMMITTED_CLEAN`。orphan 阻断的 worktree 必须原样保留作失败取证；恢复只能
+从 exact pre-artifact commit 创建全新隔离 worktree 并重走 ceremony，不得删除或修改 orphan。
 
 ### 6.6 Atomic no-replace 平台可行性门
 
