@@ -20,6 +20,8 @@ jobs:
         python-version: ["3.9", "3.12"]
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Configure Asia/Shanghai runtime timezone
         run: |
           sudo ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
@@ -45,10 +47,13 @@ jobs:
           sudo groupadd --gid 501 cryptoquant-ci
           sudo useradd --uid 501 --gid 501 --no-create-home --shell /usr/sbin/nologin cryptoquant-ci
           sudo install -d -o 501 -g 501 -m 700 /tmp/cryptoquant-ci-home
-          sudo chown -R 501:501 "$GITHUB_WORKSPACE"
+          sudo install -d -o 501 -g 501 -m 700 /tmp/cryptoquant-ci-workspace
+          sudo cp -a "$GITHUB_WORKSPACE/." /tmp/cryptoquant-ci-workspace/
+          sudo chown -R 501:501 /tmp/cryptoquant-ci-workspace
+          sudo chmod 700 /tmp/cryptoquant-ci-workspace
       - name: Run tests as fixed owner UID 501
         run: >-
           sudo -u '#501' env
           HOME=/tmp/cryptoquant-ci-home
           PATH="$PATH"
-          make test
+          make -C /tmp/cryptoquant-ci-workspace test

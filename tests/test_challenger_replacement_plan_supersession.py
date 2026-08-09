@@ -1276,6 +1276,12 @@ raise SystemExit(99)
 class SupersessionCliBoundaryTests(unittest.TestCase):
     def test_linux_ci_runs_tests_under_fixed_owner_uid_501(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        self.assertIn(
+            "      - uses: actions/checkout@v5\n"
+            "        with:\n"
+            "          fetch-depth: 0\n",
+            workflow,
+        )
         fixed_owner_boundary = """\
       - name: Configure fixed owner UID for security-boundary tests
         run: |
@@ -1284,16 +1290,21 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
           sudo groupadd --gid 501 cryptoquant-ci
           sudo useradd --uid 501 --gid 501 --no-create-home --shell /usr/sbin/nologin cryptoquant-ci
           sudo install -d -o 501 -g 501 -m 700 /tmp/cryptoquant-ci-home
-          sudo chown -R 501:501 "$GITHUB_WORKSPACE"
+          sudo install -d -o 501 -g 501 -m 700 /tmp/cryptoquant-ci-workspace
+          sudo cp -a "$GITHUB_WORKSPACE/." /tmp/cryptoquant-ci-workspace/
+          sudo chown -R 501:501 /tmp/cryptoquant-ci-workspace
+          sudo chmod 700 /tmp/cryptoquant-ci-workspace
       - name: Run tests as fixed owner UID 501
         run: >-
           sudo -u '#501' env
           HOME=/tmp/cryptoquant-ci-home
           PATH="$PATH"
-          make test
+          make -C /tmp/cryptoquant-ci-workspace test
 """
         self.assertIn(fixed_owner_boundary, workflow)
-        self.assertEqual(workflow.count("make test"), 1)
+        self.assertEqual(
+            workflow.count("make -C /tmp/cryptoquant-ci-workspace test"), 1
+        )
 
     @staticmethod
     def _completed(argv, returncode=0, stdout=b"", stderr=b""):
