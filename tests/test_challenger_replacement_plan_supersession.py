@@ -58,6 +58,13 @@ REAL_EVIDENCE_QUALIFICATION = "REAL_MACHINE_READ_ONLY_SUPERSESSION_PRECONDITION"
 ABSENCE_SKIP = "FIXED_FORMAL_SUPERSESSION_ARTIFACT_NOT_YET_PUBLISHED"
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 
+
+def _test_temp_root():
+    darwin_root = Path("/private/tmp")
+    if sys.platform == "darwin" and darwin_root.is_dir():
+        return darwin_root
+    return Path(tempfile.gettempdir())
+
 PREVIOUS_PLAN = {
     "release_tag": "v0.62.0",
     "peeled_commit": "e0a9b3eb6a3f385ea259722e6613df8708e8fe5a",
@@ -612,8 +619,20 @@ class CommittedSupersessionArtifactRegressionTests(unittest.TestCase):
 
 
 class FixedSupersessionPublisherTests(unittest.TestCase):
+    def test_test_temp_root_is_existing_and_platform_appropriate(self):
+        root = _test_temp_root()
+        self.assertTrue(root.is_dir())
+        if sys.platform == "darwin" and Path("/private/tmp").is_dir():
+            self.assertEqual(root, Path("/private/tmp"))
+        else:
+            self.assertEqual(root, Path(tempfile.gettempdir()))
+        with mock.patch.object(sys, "platform", "linux"), mock.patch.object(
+            tempfile, "gettempdir", return_value="/tmp"
+        ):
+            self.assertEqual(_test_temp_root(), Path("/tmp"))
+
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(dir="/private/tmp")
+        self.temporary = tempfile.TemporaryDirectory(dir=_test_temp_root())
         self.parent = Path(self.temporary.name) / "artifacts" / "challenger-replacement"
         self.parent.mkdir(parents=True, mode=0o755)
         self.parent.chmod(0o755)
@@ -1255,6 +1274,27 @@ raise SystemExit(99)
 
 
 class SupersessionCliBoundaryTests(unittest.TestCase):
+    def test_linux_ci_runs_tests_under_fixed_owner_uid_501(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        fixed_owner_boundary = """\
+      - name: Configure fixed owner UID for security-boundary tests
+        run: |
+          ! getent passwd 501
+          ! getent group 501
+          sudo groupadd --gid 501 cryptoquant-ci
+          sudo useradd --uid 501 --gid 501 --no-create-home --shell /usr/sbin/nologin cryptoquant-ci
+          sudo install -d -o 501 -g 501 -m 700 /tmp/cryptoquant-ci-home
+          sudo chown -R 501:501 "$GITHUB_WORKSPACE"
+      - name: Run tests as fixed owner UID 501
+        run: >-
+          sudo -u '#501' env
+          HOME=/tmp/cryptoquant-ci-home
+          PATH="$PATH"
+          make test
+"""
+        self.assertIn(fixed_owner_boundary, workflow)
+        self.assertEqual(workflow.count("make test"), 1)
+
     @staticmethod
     def _completed(argv, returncode=0, stdout=b"", stderr=b""):
         return type(
@@ -1345,11 +1385,14 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
         with mock.patch.object(supersession_cli.os, "geteuid", return_value=501), mock.patch.object(
             supersession_cli, "_require_absent"
         ) as absent_call, mock.patch.object(
+            supersession_cli, "_validate_reviewed_repo_root"
+        ) as validate_root, mock.patch.object(
             supersession_cli, "_run", side_effect=run
         ):
             evidence = supersession_cli._collect_machine_evidence()
 
         self.assertEqual(absent_call.call_count, 2)
+        validate_root.assert_called_once_with(repository)
         self.assertEqual(calls, [launch_argv, *supersession_cli._git_argv(repository)])
         self.assertEqual(
             evidence["observation"],
@@ -1401,7 +1444,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
         self.assertNotIn("GIT_WORK_TREE", run.call_args.kwargs["env"])
 
     def test_later_ceremony_rejects_head_changed_since_machine_evidence(self):
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
             root = Path(temporary)
             machine_path = root / supersession_cli._MACHINE_RELATIVE
             machine_path.parent.mkdir(parents=True)
@@ -1414,7 +1457,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
                 supersession_cli._require_original_candidate_head(root, results)
 
     def test_gitdir_marker_must_reciprocally_bind_reviewed_root(self):
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
             base = Path(temporary)
             reviewed = base / "reviewed"
             other = base / "other"
@@ -1440,7 +1483,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             )
 
     def test_module_symlink_ancestry_cannot_be_resolved_away(self):
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
             root = Path(temporary)
             target = root / "target.py"
             target.write_text("# fixture\n")
@@ -1468,7 +1511,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
     def test_owner_ceremony_displays_exact_hashes_and_requires_exact_ack(self):
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
             root = Path(temporary)
             artifact_root = root / "artifacts" / "challenger-replacement"
             artifact_root.mkdir(parents=True)
@@ -1600,7 +1643,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             changed_publish.assert_not_called()
 
     def test_temporary_git_ceremony_transitions_c0_through_c4_exactly(self):
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
             clone = Path(temporary) / "reviewed-clone"
             head = subprocess.run(
                 ["/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD"],
