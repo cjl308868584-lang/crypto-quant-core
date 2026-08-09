@@ -13,15 +13,19 @@
 
 v0.64 只发布一个显式 superseding preregistration v2。它不修改、替换或删除 v0.62
 tag 中的任何 byte，而是用新的 Schema、plan identity、plan hash 和独立 supersession
-record 公开说明：v0.62 在 replacement Challenger 尚未安装、尚未启动、没有 start
-receipt、没有 canonical event、没有真实槽位和没有 production state write 时，因冻结的
-SQLite 与重复 artifact storage contract 无法同时满足已批准的失败关闭安全门而被 v2
-取代。
+record 公开说明 storage safety correction。该 correction 只能在三层前置同时完整时被描述为
+pre-start supersession：采集时机器快照显示没有可观察 replacement state；accountable owner
+attestation 明确承担“在观察前从未 install/start/receipt/event/state write”的历史声明；
+不可变 Git/release history 封存其能够观察的 repository 事实。任何代码、loader、Git 或
+OS snapshot 都不得宣称证明 owner 历史声明为真；attestation 或可观察历史依据缺失时
+supersession 失败关闭。
 
 v2 保持研究对象不变：`scope`、`decision_policy`、`cohort_policy`、`evidence_policy`、
 `predecessor`、零启动/零交易 authority，以及 service identity 与 runtime root 必须与
-v0.62 committed canonical subtree byte-equal。只允许改变：Schema/version 与机械 release
-foundation、storage relative paths、唯一事实源合同、plan/status 的 supersession metadata。
+v0.62 committed canonical subtree byte-equal。只允许改变：Schema/version、只绑定 v0.63 predecessor
+release 的 exact foundation、storage relative paths、唯一事实源合同、plan/status 的 supersession
+metadata。v0.64 build/manifest identity 在 plan、machine evidence、attestation 和 record 全部生成后由
+release manifest/status/ADR 单向绑定，不反向进入 plan 或 record hash。
 
 v0.64 不实现 replacement runtime，不创建 production root/plist，不执行 Runner、scheduler、
 maintenance、市场、账户、Broker 或订单动作，不生成 start receipt，不开始 90 天计时。原定
@@ -141,10 +145,35 @@ v2 只允许以下研究外变化：
 /supersession
 ```
 
-`foundation` 只记录 v0.63 release baseline 和 v0.64 build identity，不得携带策略、日期、价格、
-费用、PnL 或结果。`status` 固定为
-`PLAN_FROZEN_REPLACEMENT_V2_NOT_STARTED`。新增 warning 只能是
-`V0_62_SUPERSEDED_PRE_START_STORAGE_SAFETY_CORRECTION`。
+`foundation` 只绑定 v0.63 predecessor release，必须是以下 exact object：
+
+```json
+{
+  "release_tag": "v0.63.0",
+  "peeled_commit": "df91e19240df14839125608422489adf3b902e76",
+  "package_version": "0.63.0",
+  "manifest_version": "1.57.0",
+  "build_input_tree_hash": "7fdfd6c69f1342892b222882b76ee4988487a482c958a9cdacf00461b2fd8f19",
+  "manifest_hash": "f4a74896a6d7b2166adba86075ef06b8d7986f900a086d04ee2f03754baded4b",
+  "manifest_file_sha256": "13bea4bfcf633e767eed73d431e57d496dcee47820aacf92e7b61b0efed5c546"
+}
+```
+
+v0.64 build/manifest identity 不进入此 object。`status` 固定为
+`PLAN_FROZEN_REPLACEMENT_V2_NOT_STARTED`。`warnings` 必须精确等于 v0.62 原六项的原顺序、
+原值，再且仅追加一项：
+
+```text
+OLD_COHORT_PERMANENTLY_FAILED_NO_BACKFILL
+REPLACEMENT_RUNTIME_NOT_IMPLEMENTED
+REPLACEMENT_NOT_INSTALLED_OR_STARTED
+NO_INTERIM_ECONOMIC_REPORTING
+NO_PROFITABILITY_OR_AI_ADVANTAGE_CLAIM
+CANARY_NOT_AUTHORIZED
+V0_62_SUPERSEDED_PRE_START_STORAGE_SAFETY_CORRECTION
+```
+
+删除、改写、重排原 warning，或追加第八项都失败关闭。
 
 ## 4. V2 storage contract
 
@@ -228,33 +257,63 @@ supersession_forbidden_after = FIRST_START_RECEIPT_OR_CANONICAL_EVENT
 正式 record 在正式 v2 plan artifact 已通过 loader 后才能生成。record 必须绑定：
 
 - v0.62 exact file SHA、plan ID、plan hash、tag peeled commit；
-- v2 exact path、file SHA、plan ID、plan hash、release baseline；
+- v2 exact path、file SHA、plan ID、plan hash 与 v0.63 predecessor release foundation；
 - `SUPERSEDED_PRE_START_STORAGE_SAFETY_CORRECTION`；
 - `PLAN_SUPERSESSION_FORBIDDEN_AFTER_FIRST_START_RECEIPT_OR_CANONICAL_EVENT`；
-- 真实机器零状态 evidence；
-- record ID、record hash 与 canonical file SHA。
+- `NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION` machine evidence 及其 canonical hash；
+- accountable owner attestation 及其 canonical hash；
+- immutable Git/release-history evidence 及其 transcript hash；
+- record ID 与 record hash。
 
 record 的 self-hash 只排除自身 `record_hash`。plan 不反向绑定 record，以免 plan/file hash 与
-record 形成循环；release status、ADR 和 build manifest 可以在 record 生成后绑定两者。
+record 形成循环。record canonical file SHA-256 是对已生成 exact bytes 的外部计算值，不是
+record 内部字段；release status、ADR 和 build manifest 在 record 生成后单向绑定 plan file
+SHA、attestation file SHA、record file SHA 与 v0.64 build identity，不将后者反向写入 plan 或 record。
 
-## 6. 零状态证据
+### 5.3 Accountable owner attestation
+
+owner attestation 是独立 canonical object，必须绑定 v0.62 exact identity、v2 plan ID/hash/file
+SHA、machine-evidence hash、Git-history-evidence hash，并包含：
+
+```text
+attestation_type = ACCOUNTABLE_OWNER_PRE_START_HISTORY_ATTESTATION_V1
+signer_github_login = cjl308868584-lang
+signer_os_username = chenm4
+signer_uid = 501
+signed_at = canonical UTC timestamp collected at the signing ceremony
+owner_acknowledgement = I_SIGN_AND_ACCEPT_ACCOUNTABILITY_FOR_THE_EXACT_DECLARATION
+```
+
+`declaration` 必须是以下 exact UTF-8 string：
+
+```text
+I attest that, before the signed_at timestamp in this object and before the linked machine observation, the replacement Challenger service_identity and runtime_root bound by previous_plan and superseding_plan in this object had never been installed or started and had produced no start receipt, canonical event, real slot, or production state write. I accept accountability for this historical declaration and understand that it is not proved by the collector, loader, Git history, or operating-system snapshot.
+```
+
+attestation 必须在 owner 看到 exact declaration、两个 plan identity 和 machine/Git evidence hash 后经显式
+确认，其 exact bytes 与审查 transcript 再进入 reviewed Git commit。这是可问责治理声明，不是
+代码可验证的历史事实，也不宣称具有独立密码学真实性。Schema/loader 只能校验字段、
+canonical hash 与绑定；审查者必须单独确认显式 owner approval 与提交 provenance。缺失、含糊、
+身份不一致或 owner 未显式确认均禁止 supersession。
+
+## 6. Snapshot、历史声明与 provenance
 
 ### 6.1 真实机器事实
 
-正式 supersession record 的 machine evidence 只能由独立、只读 production CLI 在 release
+正式 supersession record 的 machine evidence 只能由独立 OS 进程中的只读 production CLI 在 release
 候选机器上采集：
 
 ```text
+observation = NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION
 system UTC time and timezone
 effective uid
 replacement runtime root lstat = ENOENT
 target plist lstat = ENOENT
 launchctl print gui/501/local.crypto-quant.challenger-replacement-v1 = NOT_LOADED
-start receipt root/count = ABSENT / 0 (derived from absent runtime root)
-state event root/count = ABSENT / 0 (derived from absent runtime root)
-canonical event count = 0
-replacement production state write count = 0
-Runner/market/Broker/order invocation count performed by collector = 0
+current runtime-tree start receipt root/count = ABSENT / 0 (derived only from absent runtime root)
+current runtime-tree state event root/count = ABSENT / 0 (derived only from absent runtime root)
+current runtime-tree canonical event count = 0 (derived only from absent runtime root)
+collector state-write/Runner/market/Broker/order invocation counts = 0/0/0/0/0
 ```
 
 effective uid 必须精确为 `501`；其他 uid 下不得将动态 uid 代入 service domain，而是固定
@@ -263,11 +322,29 @@ mkdir、chmod、touch、写
 receipt、bootstrap、kickstart、Runner、scheduler、maintenance、市场、账户、Broker 或订单。
 所有命令参数、退出码、stdout/stderr exact bytes 或其封存 hash 都进入 machine evidence。
 
-“runtime root 不存在”允许派生其内部 start receipt/event count 为 0；不得声称证明机器历史上从未
-运行任意程序。record 证明的是 replacement v1 的冻结绝对身份在观察时未 materialize，且本
-collector 没有触发运行副作用。
+“runtime root 不存在”只允许派生“当前不存在的该树内 count=0”；不得推导历史 count=0、
+历史从未启动或删除前的状态。`collector state-write count=0` 只表示 collector 自身没有写入，
+不得命名或解释为 replacement production historical state-write count。machine evidence 的最强结论只是
+`NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION`。
 
-### 6.2 测试与真实证据隔离
+### 6.2 Immutable Git/release-history evidence
+
+独立只读进程还必须封存 exact argv、exit code、stdout/stderr bytes/hash，以观察：
+
+```text
+v0.62.0 annotated tag object and peeled commit
+v0.63.0 annotated tag object and peeled commit
+v0.62 exact plan path, file SHA, plan ID and plan hash
+reviewed v0.64 candidate commit, clean intended worktree and ancestry from v0.63.0
+Git history for committed artifacts/challenger-replacement and v0.62 ADR/status paths
+```
+
+该 evidence 只证明被查询 Git object/history 中可观察的事实；它不能证明未提交的机器行为、
+已删除 runtime tree 或 owner 的历史声明。任何 Git 命令不明确、tag/repository 身份不一致，或
+可观察 committed history 与 owner attestation 相矛盾，都禁止 supersession；空 Git 路径结果仍不替代
+owner attestation。
+
+### 6.3 可验证边界与治理 provenance
 
 测试 fixture 固定：
 
@@ -281,9 +358,43 @@ evidence_qualification = TEST_FIXTURE_ONLY_NOT_SUPERSESSION_EVIDENCE
 evidence_qualification = REAL_MACHINE_READ_ONLY_SUPERSESSION_PRECONDITION
 ```
 
-production loader 必须拒绝把 test fixture 当成正式 record。测试不得 monkeypatch production CLI
-后写入 committed正式artifact；正式生成任务必须单独运行真实 CLI，然后由另一个只读 loader
-重放 exact bytes。v0.64 文档阶段不执行这些检查，也不生成 receipt/record。
+Schema/loader 只能拒绝结构不合法、hash/绑定不一致或 qualification claim 不正确的 bytes；
+它不能证明 Python 进程未被 monkeypatch，也不能区分结构完全相同的伪造 fixture。测试只能证明
+公开 CLI 没有身份、count、status、reason、hash、路径或 qualification override，不得宣称“fixture
+在技术上不可伪造或提交”。
+
+正式 provenance 由以下治理门共同形成：独立 OS 进程；clean reviewed commit；固定无 override
+argv；封存 stdout/stderr/transcript；accountable owner attestation；另一个只读进程 replay；独立审查与
+reviewed Git commit ceremony。其中任何一项缺失都不能生成或接受正式 supersession record。
+v0.64 文档阶段不执行这些检查，也不生成 evidence/attestation/record。
+
+### 6.4 固定路径与耐久发布边界
+
+collector/attestation/record CLI 不接受 input path、output path、repository root 或任意 absolute path。它们
+只能从已审查 module identity 派生 repository root，验证 owner、非 symlink ancestor、clean exact
+candidate commit 和固定 relative artifact path；派生路径不符 reviewed repository 时失败关闭。
+
+所有正式 plan、evidence、attestation 和 record 只能经 replacement-supersession 专用 publisher 发布。禁止
+直接 `O_EXCL` 写 canonical final，也禁止复用 v0.63
+`system_paper_evidence.publish_owner_exact`。专用协议必须：
+
+1. retained parent dirfd 必须 owner uid=`501`、mode=`0755`，并经 identity、非 symlink ancestor 校验；缺少
+   `O_NOFOLLOW`/`O_DIRECTORY`/`O_NONBLOCK` 时显式 unsupported；
+2. 在同目录以非 canonical unique nonce staging name 和 `O_CREAT|O_EXCL|O_RDWR|O_NOFOLLOW`
+   新建 mode=`0644`，验证实际 uid=`501`、mode=`0644`、nlink=`1`，通过唯一 retained fd 处理
+   short write/EINTR；不得通过 path chmod 修复对象；
+3. 在同一 fd 上 seek/readback exact bytes、size/hash/identity，然后 `fsync(file)`；
+4. 用平台实证的 atomic no-replace primitive 发布到固定 canonical final，再
+   `fsync(parent dirfd)` 和重验 parent/final identity，只有完成后才返回成功；
+5. crash 留下的 staging 永不作为 canonical evidence；fresh process 只能忽略它们。final
+   exact+trusted 必须重做 directory fsync 与 identity replay 后返回 already-published；
+6. existing final 以 `O_RDONLY|O_NOFOLLOW|O_NONBLOCK` 打开后先 `fstat`，在读取前只接受
+   regular file、uid=`501`、mode=`0644`、nlink=`1` 和 bounded size；拒绝 FIFO、socket、directory、
+   symlink、hardlink/extra-link、wrong owner/mode/size 或 different bytes；
+7. file/dir fsync、close、identity 或 no-replace 任一失败不得返回成功，所有拒绝路径必须
+   保持外部 sentinel bytes/mode/size/mtime/ctime/inode/nlink 不变。
+
+上述 publisher 只服务本 supersession 的四个固定 artifact，不得演化为 generic storage API。
 
 ## 7. 三阶段 runtime 后续合同
 
@@ -318,11 +429,12 @@ PLAN_SUPERSESSION_FORBIDDEN_AFTER_FIRST_START_RECEIPT_OR_CANONICAL_EVENT
 
 任一条件成立即禁止生成或接受 supersession record：
 
-- replacement runtime root存在且身份不能证明为空；
-- start receipt count非零或不明确；
-- canonical event count非零或不明确；
-- service已加载；
-- production state write非零或不明确。
+- machine observation 不是 `NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION`；
+- replacement runtime root/plist 当前存在，或 service 当前已加载；
+- accountable owner attestation 缺失、不明确、未显式批准或与 plan/evidence identity 不符；
+- immutable Git/release-history evidence 缺失、不明确或与冻结 tag/artifact identity 不符；
+- owner attestation 不能声明历史 start receipt/canonical event/real slot/state write 均为零；
+- collector 自身 state-write/Runner/market/Broker/order counter 任一非零或不明确。
 
 规则不是允许未来自动创建 v3。任何后续计划变化都必须再次经过独立治理设计；一旦真实 cohort
 开始，storage、策略、窗口和evaluator合同不得以supersession方式改写。
@@ -348,12 +460,17 @@ v0.64 只有同时满足以下条件才可成为 release候选：
 2. 第3.1节所有canonical subtree byte-equality门通过；
 3. v2 relative path exact key set通过，旧三个key全部被拒绝；
 4. storage authority明确event-only、exports non-authoritative；
-5. v2 plan ID/hash/file SHA自动派生并由production loader重放；
-6. supersession record绑定v1、v2和真实机器零状态证据；
-7. test fixture不能成为正式record；
-8. old tag、artifact、ADR和status bytes与v0.62 tag完全一致；
-9. 没有production root/plist/service/start receipt/event/Runner/market/Broker/order/state write；
-10. repository没有replacement runtime、deployment或exporter实现混入本版本。
+5. foundation 精确等于 v0.63 predecessor object，warnings 精确等于 v0.62 list 加唯一追加项；
+6. v2 plan ID/hash/file SHA自动派生并由production loader重放；
+7. record 绑定 v1、v2、`NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION`、owner attestation 与
+   Git/release-history evidence；
+8. Schema/loader 测试只声称结构/hash/claim 校验，provenance 由独立进程、固定 argv、transcript、
+   owner approval、审查与 commit ceremony 核对；
+9. 四个正式 artifact 均通过第6.4节协议耐久发布，没有 partial canonical final；
+10. old tag、artifact、ADR和status bytes与v0.62 tag完全一致；
+11. machine snapshot 仅报告当前没有可观察 production root/plist/service/start receipt/event，collector 自身
+    Runner/market/Broker/order/state-write 均为零；
+12. repository没有replacement runtime、deployment或exporter实现混入本版本。
 
-任何值未知、路径存在、service已加载、event/start receipt非零、Schema/hash/identity不一致或旧
-bytes发生变化都停止发布，不生成“较好”record，不重新定义计划以绕过失败。
+任何值未知、当前路径存在、service已加载、attestation/provenance缺失、Schema/hash/identity
+不一致或旧 bytes发生变化都停止发布，不生成“较好”record，不重新定义计划以绕过失败。

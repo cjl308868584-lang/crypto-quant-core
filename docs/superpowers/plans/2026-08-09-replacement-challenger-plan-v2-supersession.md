@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Publish v0.64.0 as an explicit plan-only superseding preregistration v2 that replaces the infeasible v0.62 storage contract before any replacement installation, start receipt, canonical event, real slot, or production state write.
+**Goal:** Publish v0.64.0 as an explicit plan-only superseding preregistration v2 only when a current `NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION` snapshot, immutable Git/release-history evidence, and an accountable owner pre-start history attestation are all bound and reviewed.
 
-**Architecture:** A separate parameterless v2 builder copies the research-bearing v0.62 canonical subtrees exactly and changes only version/foundation, storage paths, event-log authority, and supersession metadata. Strict v2 plan and supersession-record loaders reject ambiguity and test evidence. A dedicated read-only collector can generate the sole real-machine supersession record only after the v2 plan artifact exists and only while the replacement identity remains absent and unused.
+**Architecture:** A separate parameterless v2 builder copies the research-bearing v0.62 canonical subtrees exactly, binds the exact v0.63 predecessor foundation, and changes only version, storage paths, event-log authority, and supersession metadata. Schema/loaders validate canonical structure, hashes, claims, and cross-artifact bindings but do not prove collection provenance or the truth of historical statements. A dedicated OS-process collector records only current machine and Git observations; an independently reviewed owner attestation supplies the accountable historical declaration, and a fixed-path crash-safe publisher durably publishes the four formal governance artifacts.
 
 **Tech Stack:** Python 3.9+, standard-library `json`/`hashlib`/`pathlib`/`os`/`subprocess`, Draft 2020-12 JSON Schema, existing canonical JSON and strict-loader conventions, `unittest`, Make validation, Git/GitHub Actions.
 
@@ -13,13 +13,17 @@
 - Work only from annotated `v0.63.0` peeled commit `df91e19240df14839125608422489adf3b902e76` on isolated branch `codex/v0.64-replacement-plan-v2`.
 - Never modify, regenerate, delete, or force-move v0.62 plan bytes, Schema, ADR, status document, annotated tag, tag object, or peeled commit.
 - v0.62 plan file SHA-256 is `d450d1e9f8dc422eb5a93beb8a5ffbb1746a4a6d1facb3c5a20a76f4bd527734`; plan ID/hash are the exact values in the design.
-- v0.64 is governance/plan-only. Do not add replacement runtime, event implementation, SQLite, artifact publisher, deployment, installer, observer, exporter, evaluator, Runner, scheduler, maintenance, market, account, Broker, credential, order, or production-state code.
+- v0.64 is governance/plan-only. Other than the private four-fixed-path governance publisher in this plan, do not add replacement runtime, event implementation, SQLite, runtime artifact publisher, deployment, installer, observer, exporter, evaluator, Runner, scheduler, maintenance, market, account, Broker, credential, order, or production-state code.
 - Never create the replacement runtime root or plist and never load/bootstrap/kickstart its service.
 - Preserve all v0.62 research-bearing canonical subtree bytes identified in the design.
 - Use `state/challenger-replacement-events-v1` as the sole future authority and `exports` only as a non-authoritative, reconstructible future output root.
 - Generate the formal v2 plan artifact only after all builder, Schema, equality, loader, and supersession-contract tests pass.
-- Generate the formal supersession record only after the committed-candidate v2 plan artifact passes its production loader and a real-machine read-only precondition check passes.
-- Test fixtures must use `TEST_FIXTURE_ONLY_NOT_SUPERSESSION_EVIDENCE`; they can never be committed as the formal supersession record.
+- Generate formal machine evidence only after the committed-candidate v2 plan artifact passes its production loader; generate the owner attestation only after the owner reviews its exact declaration and the linked evidence hashes; generate the supersession record only after both pass strict loaders.
+- Machine evidence proves only `NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION`. An absent runtime root derives only current absent-tree counts; it does not prove historical zero. Collector state-write count describes only collector actions.
+- Historical pre-start status requires the accountable owner attestation and observable immutable Git/release-history evidence. Missing or ambiguous provenance fails closed; no code or loader claims to prove the attestation true.
+- Test fixtures use `TEST_FIXTURE_ONLY_NOT_SUPERSESSION_EVIDENCE`. Schema/loaders reject mismatched qualification claims but cannot prove that structurally valid bytes came from an unpatched process; independent-process transcripts, owner approval, review and commit ceremony enforce provenance.
+- V2 `foundation` is the exact v0.63 predecessor object. V0.64 build/manifest identity is bound later by release manifest/status/ADR and never enters plan, attestation, or record hashes.
+- All formal governance artifacts use the dedicated fixed-path staging publisher; direct writes to canonical final and reuse of `system_paper_evidence.publish_owner_exact` are forbidden.
 - Keep `v0.65.0` reserved for the approved single end-to-end NautilusTrader Spike; replacement three-stage runtime is `v0.66.0` or later.
 - Run one local full suite for the final code state, one complete independent review, targeted re-review after fixes, PR Python 3.9/3.12 CI, merged-main CI, and annotated-tag identity verification.
 
@@ -36,16 +40,23 @@
 
 ### New supersession unit
 
-- `src/crypto_quant/challenger_replacement_plan_supersession.py`: strict record model, hash/ID derivation, real-evidence validation and loader.
+- `src/crypto_quant/challenger_replacement_plan_supersession.py`: strict machine-evidence, owner-attestation and record models, hash/ID derivation, binding validation and loaders.
+- `src/crypto_quant/schemas/challenger-replacement-supersession-machine-evidence-v1.schema.json`: package machine-evidence Schema.
+- `config/challenger-replacement-supersession-machine-evidence-v1.schema.json`: byte-identical config Schema mirror.
+- `src/crypto_quant/schemas/challenger-replacement-owner-attestation-v1.schema.json`: package owner-attestation Schema.
+- `config/challenger-replacement-owner-attestation-v1.schema.json`: byte-identical config Schema mirror.
 - `src/crypto_quant/schemas/challenger-replacement-plan-supersession-v1.schema.json`: package record Schema.
 - `config/challenger-replacement-plan-supersession-v1.schema.json`: byte-identical config Schema mirror.
-- `src/crypto_quant/challenger_replacement_plan_supersession_cli.py`: read-only real-machine collector and no-overwrite repository artifact writer.
+- `src/crypto_quant/challenger_replacement_plan_supersession_cli.py`: parameterless read-only machine/Git collector, owner-attestation ceremony and record assembly commands over fixed reviewed paths.
+- `src/crypto_quant/challenger_replacement_supersession_publish.py`: private fixed-path staging/readback/fsync/no-replace publisher used only by the four v0.64 governance artifacts.
 - `tests/test_challenger_replacement_plan_supersession.py`: fixture, collector boundary, no-side-effect and record tests.
 
 ### Generated only after test gates
 
 - `artifacts/challenger-replacement/challenger-replacement-plan-v0.64.0.json`: exact v2 plan artifact.
-- `artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json`: exact real-machine supersession record.
+- `artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json`: current snapshot plus immutable Git/release-history transcripts.
+- `artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json`: accountable owner declaration bound to both plans and evidence hashes.
+- `artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json`: exact supersession record binding plan, evidence and attestation.
 
 ### Governance and release
 
@@ -207,9 +218,12 @@ ALLOWED_DIFF_PREFIXES = (
 )
 ```
 
-Require all policy hashes and the overall self-hash to recompute. Derive `plan_id` from an identity
-containing the v1 exact identity, unchanged research policy hashes, new isolation/storage hashes,
-v0.62 peeled commit and v0.63 foundation.
+The allowed-prefix test is necessary but not sufficient. Require `foundation == V2_FOUNDATION` as an
+exact object. Require `warnings` to equal the six v1 strings in their original order and value plus
+exactly one final `V0_62_SUPERSEDED_PRE_START_STORAGE_SAFETY_CORRECTION`; deletion, rewrite, reorder or
+an eighth warning fails. Require all policy hashes and the overall self-hash to recompute. Derive
+`plan_id` from an identity containing the v1 exact identity, unchanged research policy hashes, new
+isolation/storage hashes, v0.62 peeled commit and exact v0.63 predecessor foundation.
 
 - [ ] **Step 3: Run the builder tests and confirm red**
 
@@ -232,6 +246,7 @@ V2_FOUNDATION = {
 }
 ```
 
+This exact object is the complete plan foundation; it contains no v0.64 build or manifest identity.
 The builder performs no filesystem inspection outside reading the committed v1 plan resource, no
 process call and no production write. Do not accept caller-supplied policy or path overrides.
 
@@ -244,8 +259,8 @@ equality and allowed-diff gates; Schema validity alone is insufficient.
 - [ ] **Step 6: Add adversarial tests**
 
 Reject recomputed tampering of any byte-equal subtree, authority leaf, service/root identity, old key,
-storage authority, supersession reason, v1 binding, policy hash, plan ID or plan hash. Reject v1 bytes
-as v2 and v2 bytes through the v1 loader.
+storage authority, supersession reason, v1 binding, foundation field, warning value/order/count, policy
+hash, plan ID or plan hash. Reject v1 bytes as v2 and v2 bytes through the v1 loader.
 
 - [ ] **Step 7: Run the focused tests to green**
 
@@ -267,11 +282,15 @@ git commit -m "feat: define replacement preregistration v2"
 
 ---
 
-## Task 3: Freeze the Supersession Record Contract Without Real Collection
+## Task 3: Freeze Machine Evidence, Owner Attestation and Record Contracts
 
 **Files:**
 
 - Create: `src/crypto_quant/challenger_replacement_plan_supersession.py`
+- Create: `config/challenger-replacement-supersession-machine-evidence-v1.schema.json`
+- Create: `src/crypto_quant/schemas/challenger-replacement-supersession-machine-evidence-v1.schema.json`
+- Create: `config/challenger-replacement-owner-attestation-v1.schema.json`
+- Create: `src/crypto_quant/schemas/challenger-replacement-owner-attestation-v1.schema.json`
 - Create: `config/challenger-replacement-plan-supersession-v1.schema.json`
 - Create: `src/crypto_quant/schemas/challenger-replacement-plan-supersession-v1.schema.json`
 - Create: `tests/test_challenger_replacement_plan_supersession.py`
@@ -282,21 +301,47 @@ git commit -m "feat: define replacement preregistration v2"
 
 ```python
 def build_challenger_replacement_plan_supersession_record(
-    *, v2_plan_path: Path, machine_evidence: Mapping[str, Any]
+    *,
+    v2_plan_path: Path,
+    machine_evidence_path: Path,
+    owner_attestation_path: Path,
+) -> Dict[str, Any]: ...
+
+def load_challenger_replacement_supersession_machine_evidence(
+    path: Path,
+) -> Dict[str, Any]: ...
+
+def load_challenger_replacement_owner_attestation(
+    path: Path, *, v2_plan_path: Path, machine_evidence_path: Path
 ) -> Dict[str, Any]: ...
 
 def load_challenger_replacement_plan_supersession_record(
-    path: Path, *, v2_plan_path: Path
+    path: Path,
+    *,
+    v2_plan_path: Path,
+    machine_evidence_path: Path,
+    owner_attestation_path: Path,
 ) -> Dict[str, Any]: ...
 ```
 
-The builder is internal to the collector; no public caller may supply individual count, status,
-reason, hash, ID or authority fields.
+The record builder is internal to the fixed-path assembly command; no public caller or CLI may supply
+individual count, history claim, status, reason, hash, ID, qualification, service identity or
+authority fields. Python callers can still construct or monkeypatch bytes; loaders validate structure
+and bindings, not provenance or historical truth.
 
 - [ ] **Step 1: Add failing exact-binding and qualification tests**
 
-Require the record to bind the exact v1 constants, dynamically loaded v2 path/file SHA/plan ID/hash,
-reason `SUPERSEDED_PRE_START_STORAGE_SAFETY_CORRECTION`, and prohibition
+Require machine evidence to distinguish current observations from history: exact observation
+`NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION`, absent current runtime root/plist, not-loaded current
+service, absent-tree-derived current counts, and collector-only write/Runner/market/Broker/order
+counters. No field named or described as historical production state-write count is allowed.
+
+Require owner attestation to bind the exact v1 constants, dynamically loaded v2 path/file SHA/plan
+ID/hash, machine-evidence hash, Git-history-evidence hash, fixed signer identity
+`cjl308868584-lang`/`chenm4`/uid `501`, exact declaration and explicit acknowledgement from the design.
+Its exact type is `ACCOUNTABLE_OWNER_PRE_START_HISTORY_ATTESTATION_V1`.
+Require the record to bind those artifacts, reason
+`SUPERSEDED_PRE_START_STORAGE_SAFETY_CORRECTION`, and prohibition
 `PLAN_SUPERSESSION_FORBIDDEN_AFTER_FIRST_START_RECEIPT_OR_CANONICAL_EVENT`.
 
 Fixture evidence is:
@@ -306,7 +351,9 @@ TEST_EVIDENCE_QUALIFICATION = "TEST_FIXTURE_ONLY_NOT_SUPERSESSION_EVIDENCE"
 REAL_EVIDENCE_QUALIFICATION = "REAL_MACHINE_READ_ONLY_SUPERSESSION_PRECONDITION"
 ```
 
-The formal-record loader must reject the test qualification even when every count is zero.
+Formal loaders reject a test qualification claim even when every observed count is zero. Tests must
+state the limit explicitly: a loader cannot prove that identical bytes were not fabricated or that the
+attestation is true.
 
 - [ ] **Step 2: Run and confirm red**
 
@@ -317,33 +364,43 @@ PYTHONPATH=src python3 -m unittest \
 
 Expected: missing module and Schema failures.
 
-- [ ] **Step 3: Implement strict record Schemas**
+- [ ] **Step 3: Implement the three strict Schemas**
 
-Require exact objects for `previous_plan`, `superseding_plan`, `machine_evidence`, `prohibition`,
-`authority`, `record_id`, `record_hash`, `status` and `warnings`. Machine evidence requires observed
-UTC time, timezone, effective uid, root/plist/service observations, derived start/event counts,
-collector action counters and exact launchctl transcript metadata. Every object uses
-`additionalProperties: false`.
+Machine evidence requires observed UTC time, timezone, effective uid, current root/plist/service
+observations, explicitly current absent-tree-derived counts, collector action counters, and exact
+launchctl and Git command transcript metadata. Owner attestation requires signer identity/uid,
+canonical signed time, exact declaration/acknowledgement, both plan bindings and both evidence hashes.
+The record requires exact objects for `previous_plan`, `superseding_plan`, `machine_evidence_binding`,
+`owner_attestation_binding`, `prohibition`, `authority`, `record_id`, `record_hash`, `status` and
+`warnings`. Every object uses `additionalProperties: false`.
 
 - [ ] **Step 4: Implement deterministic record identity and loader**
 
-Derive record ID from both exact plan identities, v1/v2 file SHAs, observed machine-evidence hash,
-reason and prohibition. Exclude only `record_hash` from self-hash. Recompute every hash and reject
-unknown/missing fields, duplicate keys, floats, noncanonical bytes, unsafe paths and ambiguous counts.
+Derive record ID from both exact plan identities and file SHAs, machine-evidence hash,
+owner-attestation hash, Git-history-evidence hash, reason and prohibition. Exclude only `record_hash`
+from self-hash. The record file SHA is external and must not be a record field. Recompute every hash
+and reject unknown/missing fields, duplicate keys, floats, noncanonical bytes, unsafe paths and
+ambiguous observations. V0.64 build/manifest identity is not a plan, attestation or record field.
 
 - [ ] **Step 5: Add prohibition tests**
 
-Each of the following independently rejects the record:
+Each of the following independently rejects formal assembly or loading:
 
 ```text
-runtime root present or observation unknown
-plist present or observation unknown
-service loaded or observation unknown
-start receipt count != 0 or unknown
-canonical event count != 0 or unknown
-state write count != 0 or unknown
-collector Runner/market/Broker/order count != 0
+observation != NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION
+current runtime root present or observation unknown
+current plist present or observation unknown
+current service loaded or observation unknown
+current absent-tree-derived start/event count != 0 or unknown
+collector state-write/Runner/market/Broker/order count != 0 or unknown
+owner attestation absent, ambiguous, test-qualified or not explicitly acknowledged
+owner identity/uid/declaration/signed time or plan/evidence binding differs
+Git/release-history transcript absent, ambiguous or disagrees with frozen identities
 ```
+
+Also assert that a structurally valid fabricated fixture can pass pure structure/hash validation when
+labeled accordingly; this negative-boundary test prevents documentation or code from claiming that a
+loader proves collection provenance.
 
 - [ ] **Step 6: Run the record contract tests to green**
 
@@ -354,6 +411,10 @@ touching any production path.
 
 ```bash
 git add src/crypto_quant/challenger_replacement_plan_supersession.py \
+  config/challenger-replacement-supersession-machine-evidence-v1.schema.json \
+  src/crypto_quant/schemas/challenger-replacement-supersession-machine-evidence-v1.schema.json \
+  config/challenger-replacement-owner-attestation-v1.schema.json \
+  src/crypto_quant/schemas/challenger-replacement-owner-attestation-v1.schema.json \
   config/challenger-replacement-plan-supersession-v1.schema.json \
   src/crypto_quant/schemas/challenger-replacement-plan-supersession-v1.schema.json \
   tests/test_challenger_replacement_plan_supersession.py
@@ -362,25 +423,29 @@ git commit -m "feat: freeze replacement plan supersession contract"
 
 ---
 
-## Task 4: Implement the Read-Only Real-Machine Collector With No Artifact Yet
+## Task 4: Implement Fixed Collector and Crash-Safe Supersession Publisher
 
 **Files:**
 
 - Create: `src/crypto_quant/challenger_replacement_plan_supersession_cli.py`
+- Create: `src/crypto_quant/challenger_replacement_supersession_publish.py`
 - Modify: `tests/test_challenger_replacement_plan_supersession.py`
 
 **Interfaces:**
 
-- Produces CLI:
+- Produces parameterless fixed-path commands:
 
 ```text
-python -m crypto_quant.challenger_replacement_plan_supersession_cli \
-  --v2-plan /absolute/repository/path/to/challenger-replacement-plan-v0.64.0.json \
-  --output /absolute/repository/path/to/challenger-replacement-plan-supersession-v0.64.0.json
+python -m crypto_quant.challenger_replacement_plan_supersession_cli collect-machine-evidence
+python -m crypto_quant.challenger_replacement_plan_supersession_cli record-owner-attestation
+python -m crypto_quant.challenger_replacement_plan_supersession_cli assemble-record
 ```
 
-CLI arguments select only the reviewed v2 input and no-overwrite output. They do not accept service,
-runtime root, plist, count, status, reason, hash, ID, command or transcript overrides.
+The subcommand is the only argument. The module derives the repository root from its reviewed module
+location, verifies the exact clean candidate commit and fixed relative input/output paths, and rejects
+symlink ancestry or a different Git root. It accepts no repository root, input/output path, service,
+runtime root, plist, count, history claim, signer identity, status, reason, hash, ID, command,
+transcript or qualification override.
 
 - [ ] **Step 1: Add failing zero-side-effect collector tests**
 
@@ -395,8 +460,46 @@ os.lstat(fixed target plist)
 /bin/launchctl print gui/501/local.crypto-quant.challenger-replacement-v1
 ```
 
-Forbid `mkdir`, `chmod`, `unlink`, `rename`, bootstrap, kickstart, Runner, scheduler, maintenance and
-all network APIs. Output is the sole allowed write and must use no-overwrite semantics.
+Add fixed Git observations for the v0.62/v0.63 annotated tag objects and peeled commits, v0.62 exact
+plan identity, clean reviewed v0.64 candidate/ancestry, and committed history under
+`artifacts/challenger-replacement/`, `docs/adr/0062-replacement-challenger-preregistration-isolation.md` and
+`docs/implementation-status-v0.62.0.md`. Capture exact argv, exit code, stdout/stderr bytes/hash. State
+in tests that these are repository observations, not proof of machine execution history.
+
+The collector builds these exact argv tuples after deriving and validating `reviewed_repo_root` from
+the reviewed module location:
+
+```python
+GIT_ARGV = (
+    ("/usr/bin/git", "-C", str(reviewed_repo_root), "rev-parse", "v0.62.0"),
+    ("/usr/bin/git", "-C", str(reviewed_repo_root), "cat-file", "-t", "v0.62.0"),
+    ("/usr/bin/git", "-C", str(reviewed_repo_root), "rev-parse", "v0.62.0^{}"),
+    ("/usr/bin/git", "-C", str(reviewed_repo_root), "rev-parse", "v0.63.0"),
+    ("/usr/bin/git", "-C", str(reviewed_repo_root), "cat-file", "-t", "v0.63.0"),
+    ("/usr/bin/git", "-C", str(reviewed_repo_root), "rev-parse", "v0.63.0^{}"),
+    ("/usr/bin/git", "-C", str(reviewed_repo_root), "rev-parse", "HEAD"),
+    ("/usr/bin/git", "-C", str(reviewed_repo_root), "merge-base", "--is-ancestor", "v0.63.0", "HEAD"),
+    ("/usr/bin/git", "-C", str(reviewed_repo_root), "status", "--porcelain=v1", "--untracked-files=all"),
+    (
+        "/usr/bin/git", "-C", str(reviewed_repo_root), "show",
+        "v0.62.0:artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json",
+    ),
+    (
+        "/usr/bin/git", "-C", str(reviewed_repo_root), "log", "--all", "--full-history",
+        "--format=%H", "--", "artifacts/challenger-replacement/",
+        "docs/adr/0062-replacement-challenger-preregistration-isolation.md",
+        "docs/implementation-status-v0.62.0.md",
+    ),
+)
+```
+
+Both tag `cat-file -t` results must be `tag`; each transcript records argv, exit code and exact
+stdout/stderr bytes or their canonical encoding plus SHA-256. The empty status result proves only that
+the intended worktree was clean immediately before evidence publication.
+
+Forbid `mkdir`, `chmod`, `unlink`, bootstrap, kickstart, Runner, scheduler, maintenance and all network
+APIs. The only allowed mutation is through the private fixed-path publisher after all observations
+pass.
 
 - [ ] **Step 2: Run and confirm red**
 
@@ -411,23 +514,53 @@ observations. Execute only
 not-loaded class, while unexpected exit or ambiguous transcript fails closed. Capture argv, exit code,
 stdout/stderr bytes encoded deterministically, and SHA-256.
 
-Derive internal start/event counts as zero only because the entire fixed runtime root is absent. Do not
-claim global machine history. Set collector action counters for Runner, market, Broker, order and state
-write to zero because the collector has no such code paths.
+Set observation to `NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION`. Derive current-tree start/event
+counts as zero only because the entire fixed runtime root is currently absent. Never call them
+historical counts. Set collector-only action counters for state write, Runner, market, Broker and order
+to zero because the collector has no such code paths.
 
-- [ ] **Step 4: Implement owner-only no-overwrite output**
+- [ ] **Step 4: Add failing fixed-path and publication crash tests**
 
-Write the record only after the v2 loader and all preconditions pass. Use a repository-targeted atomic
-no-overwrite protocol or existing reviewed exact-publish primitive that cannot overwrite an existing
-record. Never write under the replacement runtime root.
+Require every derived input/output to remain under the exact reviewed repository and exact artifact
+filename. Require the retained artifact parent to be a regular directory owned by uid `501` with mode
+`0755`. Reject arbitrary cwd, alternative Git root, symlink ancestor, wrong owner/mode, unclean
+candidate or mismatched HEAD before creating staging.
 
-- [ ] **Step 5: Add real-vs-test separation tests**
+At each crash point—partial staging write, file-fsync boundary, no-replace boundary and directory-fsync
+boundary—start a fresh process. Partial staging is ignored and never blocks an idempotent retry. A
+visible exact trusted final requires directory fsync plus identity replay before already-published.
+Different bytes and symlink/hardlink/FIFO/socket/directory/wrong-owner/wrong-mode/extra-link finals fail
+without blocking or altering external sentinel bytes/mode/size/mtime/ctime/inode/nlink. Missing
+`O_NOFOLLOW`, `O_DIRECTORY` or `O_NONBLOCK` fails as unsupported without downgraded flags.
 
-Test helper-produced evidence remains test-qualified. Only the unpatched collector path can label
-evidence `REAL_MACHINE_READ_ONLY_SUPERSESSION_PRECONDITION`; production code must not expose a
-qualification override. Static-scan the CLI signature and parser for count/status/reason/hash/ID inputs.
+- [ ] **Step 5: Implement the private artifact-specific publisher**
 
-- [ ] **Step 6: Run focused and adjacent tests**
+Do not call `system_paper_evidence.publish_owner_exact` and do not open a canonical final for direct
+write. Retain a validated parent dirfd; create a same-directory noncanonical nonce staging file with
+`O_CREAT|O_EXCL|O_RDWR|O_NOFOLLOW` and requested mode `0644`; verify actual uid `501`, mode `0644` and
+nlink `1` without path chmod; handle short write/EINTR; read back exact bytes from the same fd;
+verify size/hash/identity; fsync the file; use the platform-proven atomic no-replace primitive; fsync
+the parent directory; and revalidate parent/final before success. Existing final opens use
+`O_RDONLY|O_NOFOLLOW|O_NONBLOCK` and require regular file, uid `501`, mode `0644`, nlink `1` and bounded
+size before read. Every fd close
+is attempted exactly once; fsync/close/identity failure never returns success.
+
+Keep the module private and expose only the four fixed artifact publications. Do not create a generic
+path/data publisher API.
+
+- [ ] **Step 6: Add provenance-boundary and owner-ceremony tests**
+
+Test helper-produced evidence remains test-qualified. Static-scan the CLI signature/parser for every
+forbidden override and prove only the three fixed subcommands exist. Test that the owner command shows
+the exact declaration and exact plan/evidence hashes, requires the exact acknowledgement
+`I_SIGN_AND_ACCEPT_ACCOUNTABILITY_FOR_THE_EXACT_DECLARATION` from an interactive ceremony, fixes the
+signer to `cjl308868584-lang`/`chenm4`/uid `501`, and fails without explicit acknowledgement.
+
+Tests must say explicitly that monkeypatching/direct Python calls can fabricate identical bytes; the
+governance gate—independent process, exact transcript, owner approval, review and commit ceremony—not
+the loader, determines formal provenance.
+
+- [ ] **Step 7: Run focused and adjacent tests**
 
 ```bash
 PYTHONPATH=src python3 -m unittest \
@@ -436,14 +569,16 @@ PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_plan_supersession -v
 ```
 
-Expected: all pass; no production root, plist or formal artifact exists.
+Expected: all pass; no production root, plist or formal artifact exists. Tests may publish only under
+owner-only temporary fixture roots.
 
-- [ ] **Step 7: Commit collector code without generated artifacts**
+- [ ] **Step 8: Commit collector and fixed publisher without generated artifacts**
 
 ```bash
 git add src/crypto_quant/challenger_replacement_plan_supersession_cli.py \
+  src/crypto_quant/challenger_replacement_supersession_publish.py \
   tests/test_challenger_replacement_plan_supersession.py
-git commit -m "feat: add read-only replacement supersession collector"
+git commit -m "feat: add fixed replacement supersession evidence boundary"
 ```
 
 ---
@@ -458,7 +593,7 @@ git commit -m "feat: add read-only replacement supersession collector"
 **Interfaces:**
 
 - Consumes: fully tested `build_challenger_replacement_plan_v2()` and v2 loader.
-- Produces: exact canonical v2 plan bytes required by the real-machine collector.
+- Produces: exact canonical v2 plan bytes required by the current-machine/Git collector.
 
 - [ ] **Step 1: Re-run all pre-artifact design/Schema tests**
 
@@ -467,14 +602,15 @@ forbidden before this gate.
 
 - [ ] **Step 2: Generate the plan from the parameterless builder**
 
-Use a repository script or one-shot module that writes exactly:
+Use the reviewed fixed-path publisher to publish exactly:
 
 ```python
 canonical_json(build_challenger_replacement_plan_v2()).encode("utf-8") + b"\n"
 ```
 
-to the fixed artifact path with no overwrite. Do not hand-edit plan ID, plan hash, policy hash or file
-bytes.
+to the fixed artifact path through nonce staging, same-fd readback/file fsync, atomic no-replace and
+directory fsync. Do not call a generic/direct-final writer and do not hand-edit plan ID, plan hash,
+policy hash or file bytes.
 
 - [ ] **Step 3: Add committed-artifact regression**
 
@@ -484,7 +620,8 @@ equality assertion against the committed artifact.
 
 - [ ] **Step 4: Prove v0.62 remains unchanged**
 
-Recompute v0.62 file SHA and compare exact bytes against `git show v0.62.0:<path>`. Verify
+Recompute v0.62 file SHA and compare exact bytes against
+`git show v0.62.0:artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json`. Verify
 `git rev-parse v0.62.0^{}` equals `e0a9b3...`. Any mismatch stops the version.
 
 - [ ] **Step 5: Run focused tests to green**
@@ -505,40 +642,82 @@ git commit -m "feat: freeze replacement preregistration v2 artifact"
 
 ---
 
-## Task 6: Perform the One Real Read-Only Check and Freeze the Supersession Record
+## Task 6: Freeze Machine Evidence, Owner Attestation and Supersession Record
 
 **Files:**
 
+- Create: `artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json`
+- Create: `artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json`
 - Create: `artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json`
 - Modify: `tests/test_challenger_replacement_plan_supersession.py`
 
 **Interfaces:**
 
-- Consumes: exact v2 plan artifact and the fixed v1 identity.
-- Produces: the sole real-machine supersession record. This task is a release gate, not a unit-test fixture.
+- Consumes: exact v2 plan artifact, fixed v1 identity, current read-only observations, immutable
+  Git/release-history transcripts and explicit owner approval.
+- Produces: machine-evidence, owner-attestation and supersession-record artifacts. This task is a
+  governance release gate; loaders validate bytes and bindings but do not prove provenance or
+  historical truth.
 
 - [ ] **Step 1: Read-only precheck repository and machine identity**
 
-Verify clean intended worktree, v0.63 baseline ancestry, unchanged v0.62 tag, effective uid, and absence
-of runtime root/plist/service. Do not create the missing paths. If any observation is present or
-ambiguous, stop without output.
+Verify exact reviewed candidate, clean intended worktree, v0.63 baseline ancestry, unchanged v0.62 and
+v0.63 annotated tag identities, effective uid, and current absence of runtime root/plist/service. Run
+the fixed Git-history queries for the committed challenger-replacement artifact, ADR and status paths.
+Do not create missing runtime paths. If any observation or transcript is ambiguous, stop without
+output.
 
-- [ ] **Step 2: Run the production collector exactly once**
+- [ ] **Step 2: Collect and durably publish the machine/Git evidence exactly once**
 
-Run the CLI with only the two reviewed absolute paths. Do not patch, inject or manually pass machine
-facts. The CLI must fail rather than overwrite an existing output.
+In a new OS process run exactly:
 
-- [ ] **Step 3: Replay the exact record with the production loader**
+```bash
+PYTHONPATH=src python3 -m \
+  crypto_quant.challenger_replacement_plan_supersession_cli \
+  collect-machine-evidence
+```
 
-Load the record against the exact v2 plan, verify real evidence qualification, both plan bindings,
-record ID/hash/file SHA, zero-state facts, transcript hashes, reason and prohibition.
+The command takes no path or fact overrides, records exact argv/exit/stdout/stderr hashes, labels the
+result only `NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION`, and uses the fixed publisher. It must
+state that absent-tree counts are current-only and collector state-write count is collector-only.
 
-- [ ] **Step 4: Add committed-record regression**
+- [ ] **Step 3: Replay evidence in a separate read-only process**
 
-Test exact committed bytes through the production loader. Test fixtures remain in temporary directories
-and retain the test-only qualification.
+Load exact bytes from the fixed path; verify Schema, canonical hash, observation claim, plan/Git
+bindings and transcripts. Compute and report its external file SHA. Do not call this replay proof of an
+unpatched collector or historical non-use.
 
-- [ ] **Step 5: Run focused tests to green**
+- [ ] **Step 4: Obtain explicit accountable owner approval and publish attestation**
+
+Show the owner the exact declaration from the design, signer identity/uid, signed-at time, v0.62/v2
+identities, machine-evidence hash and Git-history-evidence hash. Stop and request explicit approval;
+prior general project authorization is not a substitute for signing these exact bytes. After approval,
+run only the parameterless `record-owner-attestation` command and enter the exact acknowledgement
+through its interactive ceremony. Publish through the fixed publisher, then replay in a separate
+read-only process. Record the owner approval transcript reference in review notes; do not claim the
+loader proves the statement true.
+
+- [ ] **Step 5: Assemble and publish the supersession record**
+
+Run only the parameterless `assemble-record` command. It loads exact fixed plan, machine-evidence and
+attestation paths, verifies every binding, and publishes with the fixed publisher. It accepts no
+caller-supplied fact or path. A missing/ambiguous attestation, current observation, Git transcript or
+provenance review stops without record output.
+
+- [ ] **Step 6: Replay record and compute external file SHA**
+
+In a separate read-only process load the exact record against the exact three input artifacts. Verify
+record ID/hash, both plan identities, evidence/attestation hashes, reason and prohibition. Only after
+exact record bytes exist, compute the record canonical file SHA externally; bind it later in
+status/ADR/manifest, never inside the record.
+
+- [ ] **Step 7: Add committed-artifact regressions**
+
+Test exact committed machine evidence, owner attestation and record through their production loaders.
+Test fixtures remain temporary and test-qualified. Tests assert loader capabilities are limited to
+structure/hash/claim/binding checks and do not describe fixture fabrication as technically impossible.
+
+- [ ] **Step 8: Run focused tests to green**
 
 ```bash
 PYTHONPATH=src python3 -m unittest \
@@ -546,12 +725,15 @@ PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_plan_supersession -v
 ```
 
-Expected: formal plan and formal real-machine record both replay exactly.
+Expected: formal plan, machine evidence, owner attestation and record replay exactly with all bindings;
+the test report makes no historical-truth or unpatched-process claim.
 
-- [ ] **Step 6: Commit the immutable record**
+- [ ] **Step 9: Commit the three immutable supersession artifacts**
 
 ```bash
-git add artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json \
+git add artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json \
+  artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json \
+  artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json \
   tests/test_challenger_replacement_plan_supersession.py
 git commit -m "feat: record pre-start replacement plan supersession"
 ```
@@ -572,15 +754,18 @@ git commit -m "feat: record pre-start replacement plan supersession"
 
 **Interfaces:**
 
-- Consumes: exact v1 plan, exact v2 plan and exact supersession record.
+- Consumes: exact v1/v2 plans, machine evidence, owner attestation and exact supersession record.
 - Produces: honest v0.64 release identity; no runtime eligibility.
 
 - [ ] **Step 1: Write ADR-0064**
 
 Record the infeasibility of strict v0.62 storage under the approved security model, explicit pre-start
 supersession, canonical subtree equality, event-only authority, non-authoritative exports, old-plan
-immutability, zero-state machine evidence and post-start supersession prohibition. State that v0.62 is
-historical and superseded, not silently amended and not a failed research cohort.
+immutability and post-start supersession prohibition. Use the precise layered account: current
+`NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION` machine snapshot, immutable Git/release-history
+observations, and accountable owner historical attestation. State explicitly that neither snapshot,
+Git nor loader proves the attestation true. State that v0.62 is historical and superseded, not silently
+amended and not a failed research cohort.
 
 - [ ] **Step 2: Write implementation status**
 
@@ -590,15 +775,19 @@ Status must say:
 PLAN_FROZEN_REPLACEMENT_V2_NOT_STARTED
 ```
 
-List both plan identities and file SHAs, supersession record identity/hash/SHA, real zero-state facts,
-and explicit ineligibility for runtime, deployment, start, 90-day completion, profitability, AI
-advantage, Canary and live trading.
+List both plan identities/file SHAs, machine-evidence/attestation identities and file SHAs,
+supersession record identity/hash/external file SHA, current observable facts, owner declaration and
+provenance limits. List the v0.64 build/manifest identity only here and in ADR/manifest after all four
+artifacts exist; never write it back into plan, attestation or record. Preserve explicit ineligibility
+for runtime, deployment, start, 90-day completion, profitability, AI advantage, Canary and live
+trading.
 
 - [ ] **Step 3: Update README and release metadata**
 
 Set package version `0.64.0`, advance manifest version once, register all new code/Schema/artifact/docs
 files in the build file set, and recompute manifest hashes through the repository validation workflow.
-Do not add runtime or deployment claims.
+The release manifest/status/ADR bind plan, evidence, attestation and record external file SHAs plus the
+v0.64 build identity in one direction only. Do not add runtime or deployment claims.
 
 - [ ] **Step 4: Run focused, adjacent and full validation once**
 
@@ -647,8 +836,9 @@ git commit -m "docs: publish replacement plan v2 governance"
 
 - [ ] **Step 1: Perform one complete independent review**
 
-Review v1 immutability, allowed-diff gate, Schema/loader strictness, collector read-only boundary,
-real-vs-test qualification, zero-state evidence, post-start prohibition and absence of runtime scope.
+Review v1 immutability, exact foundation/warning gates, Schema/loader capability limits, collector
+read-only boundary, fixed-path crash-safe publication, current-snapshot vs historical-attestation
+separation, Git/release provenance, post-start prohibition and absence of runtime scope.
 Critical and Important findings must reach zero. After fixes, review only changed areas.
 
 - [ ] **Step 2: Re-run proportionate verification after review fixes**
