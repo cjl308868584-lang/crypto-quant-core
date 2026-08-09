@@ -24,6 +24,10 @@
 - Test fixtures use `TEST_FIXTURE_ONLY_NOT_SUPERSESSION_EVIDENCE`. Schema/loaders reject mismatched qualification claims but cannot prove that structurally valid bytes came from an unpatched process; independent-process transcripts, owner approval, review and commit ceremony enforce provenance.
 - V2 `foundation` is the exact v0.63 predecessor object. V0.64 build/manifest identity is bound later by release manifest/status/ADR and never enters plan, attestation, or record hashes.
 - All formal governance artifacts use the dedicated fixed-path staging publisher; direct writes to canonical final and reuse of `system_paper_evidence.publish_owner_exact` are forbidden.
+- Darwin uses only `renameatx_np(..., RENAME_EXCL=0x00000004)`; Linux uses only `renameat2(..., RENAME_NOREPLACE=1)`, both through controlled `ctypes`. Missing/incorrect platform semantics fail closed with no rename/hardlink/direct-final fallback.
+- No formal artifact may be generated until the current platform feasibility gate passes. Linux Python 3.9/3.12 Draft-PR CI covers Linux; the target Mac must independently pass the Darwin gate before Task 5. Neither substitutes for the other.
+- After Task 5 commits the plan, freeze `HEAD=H` through collection, attestation and record assembly. Intermediate Git status must match the exact candidate-state allowlist; only `C0` and post-commit `C4` are called clean.
+- Protocol staging is separately inventoried even though its exact filename pattern is ignored by Git. A sealed orphan is never modified and does not prevent an exact publisher retry, but any remaining orphan blocks attestation, record assembly, commit and release.
 - Keep `v0.65.0` reserved for the approved single end-to-end NautilusTrader Spike; replacement three-stage runtime is `v0.66.0` or later.
 - Run one local full suite for the final code state, one complete independent review, targeted re-review after fixes, PR Python 3.9/3.12 CI, merged-main CI, and annotated-tag identity verification.
 
@@ -49,6 +53,7 @@
 - `config/challenger-replacement-plan-supersession-v1.schema.json`: byte-identical config Schema mirror.
 - `src/crypto_quant/challenger_replacement_plan_supersession_cli.py`: parameterless read-only machine/Git collector, owner-attestation ceremony and record assembly commands over fixed reviewed paths.
 - `src/crypto_quant/challenger_replacement_supersession_publish.py`: private fixed-path staging/readback/fsync/no-replace publisher used only by the four v0.64 governance artifacts.
+- `.gitignore`: exact v0.64 staging basename rule; ignored staging remains subject to explicit dirfd inventory and is never treated as absent.
 - `tests/test_challenger_replacement_plan_supersession.py`: fixture, collector boundary, no-side-effect and record tests.
 
 ### Generated only after test gates
@@ -429,6 +434,7 @@ git commit -m "feat: freeze replacement plan supersession contract"
 
 - Create: `src/crypto_quant/challenger_replacement_plan_supersession_cli.py`
 - Create: `src/crypto_quant/challenger_replacement_supersession_publish.py`
+- Modify: `.gitignore`
 - Modify: `tests/test_challenger_replacement_plan_supersession.py`
 
 **Interfaces:**
@@ -442,7 +448,8 @@ python -m crypto_quant.challenger_replacement_plan_supersession_cli assemble-rec
 ```
 
 The subcommand is the only argument. The module derives the repository root from its reviewed module
-location, verifies the exact clean candidate commit and fixed relative input/output paths, and rejects
+location, verifies the exact candidate-state-machine HEAD/status/final/staging precondition and fixed
+relative input/output paths, and rejects
 symlink ancestry or a different Git root. It accepts no repository root, input/output path, service,
 runtime root, plist, count, history claim, signer identity, status, reason, hash, ID, command,
 transcript or qualification override.
@@ -461,7 +468,7 @@ os.lstat(fixed target plist)
 ```
 
 Add fixed Git observations for the v0.62/v0.63 annotated tag objects and peeled commits, v0.62 exact
-plan identity, clean reviewed v0.64 candidate/ancestry, and committed history under
+plan identity, C0-empty-status reviewed v0.64 candidate/ancestry, and committed history under
 `artifacts/challenger-replacement/`, `docs/adr/0062-replacement-challenger-preregistration-isolation.md` and
 `docs/implementation-status-v0.62.0.md`. Capture exact argv, exit code, stdout/stderr bytes/hash. State
 in tests that these are repository observations, not proof of machine execution history.
@@ -481,6 +488,10 @@ GIT_ARGV = (
     ("/usr/bin/git", "-C", str(reviewed_repo_root), "merge-base", "--is-ancestor", "v0.63.0", "HEAD"),
     ("/usr/bin/git", "-C", str(reviewed_repo_root), "status", "--porcelain=v1", "--untracked-files=all"),
     (
+        "/usr/bin/git", "-C", str(reviewed_repo_root), "status", "--porcelain=v1",
+        "--untracked-files=all", "--ignored=matching", "--", "artifacts/challenger-replacement/",
+    ),
+    (
         "/usr/bin/git", "-C", str(reviewed_repo_root), "show",
         "v0.62.0:artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json",
     ),
@@ -495,7 +506,7 @@ GIT_ARGV = (
 
 Both tag `cat-file -t` results must be `tag`; each transcript records argv, exit code and exact
 stdout/stderr bytes or their canonical encoding plus SHA-256. The empty status result proves only that
-the intended worktree was clean immediately before evidence publication.
+the intended worktree was in `C0_PLAN_COMMITTED_CLEAN` immediately before evidence staging creation.
 
 Forbid `mkdir`, `chmod`, `unlink`, bootstrap, kickstart, Runner, scheduler, maintenance and all network
 APIs. The only allowed mutation is through the private fixed-path publisher after all observations
@@ -523,15 +534,45 @@ to zero because the collector has no such code paths.
 
 Require every derived input/output to remain under the exact reviewed repository and exact artifact
 filename. Require the retained artifact parent to be a regular directory owned by uid `501` with mode
-`0755`. Reject arbitrary cwd, alternative Git root, symlink ancestor, wrong owner/mode, unclean
-candidate or mismatched HEAD before creating staging.
+`0755`. Add exactly this ignore rule and no broader directory rule:
+
+```gitignore
+/artifacts/challenger-replacement/.v064-supersession-*.staging
+```
+
+Inventory accepts only basenames matching
+`\A\.v064-supersession-(plan|machine-evidence|owner-attestation|supersession-record)-[0-9a-f]{64}-[0-9a-f]{32}\.staging\Z`.
+
+Test the exact candidate states: after the plan commit `C0` is empty at `HEAD=H`; collect produces
+only evidence; attest requires exactly evidence and produces exactly evidence+attestation; assemble
+requires those two and produces exactly three; committing those exact three produces empty status at
+`H2`. Reject arbitrary cwd, alternative Git root, symlink ancestor, wrong owner/mode, unexpected
+tracked/untracked path, mutated allowlisted final or mismatched HEAD before staging.
+Use byte-sorted exact porcelain tuples: C1 contains only
+`?? artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json`;
+C2 adds only
+`?? artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json`; C3 adds
+only `?? artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json`.
 
 At each crash point—partial staging write, file-fsync boundary, no-replace boundary and directory-fsync
-boundary—start a fresh process. Partial staging is ignored and never blocks an idempotent retry. A
+boundary—start a fresh process. Before every create, emit the exact staging basename in the command
+transcript. Inventory the ignored staging namespace independently through the retained dirfd. A fresh
+process classifies up to 64 exact-grammar, regular, uid-501/mode-0644/nlink-1, bounded-size entries as
+`SEALED_UNTRUSTED_PROTOCOL_NAMESPACE_ENTRY` without claiming creator provenance or reading their
+contents. Such an orphan does not block a new-nonce idempotent retry,
+but fresh recovery never reads, writes, chmods, unlinks, renames or quarantines it. Retry may publish
+the exact final, then must return `RECOVERY_EVIDENCE_PRESENT_RELEASE_BLOCKED`; later subcommands and
+release stay blocked while any orphan exists. A nonconforming or 65th staging entry fails closed. A
 visible exact trusted final requires directory fsync plus identity replay before already-published.
 Different bytes and symlink/hardlink/FIFO/socket/directory/wrong-owner/wrong-mode/extra-link finals fail
 without blocking or altering external sentinel bytes/mode/size/mtime/ctime/inode/nlink. Missing
 `O_NOFOLLOW`, `O_DIRECTORY` or `O_NONBLOCK` fails as unsupported without downgraded flags.
+Precreate an exact-grammar regular nlink-1 sentinel and snapshot bytes/mode/size/mtime/ctime/dev/ino/nlink;
+fresh retry must seal it as untrusted, leave every snapshot field unchanged, publish via a different
+nonce, and return the release-blocked status. Precreated symlink/hardlink/nonregular staging entries
+must fail before retry and likewise leave their external sentinels unchanged.
+Assert normal no-crash publication removes its current staging name through atomic rename and leaves
+an empty staging inventory; only that path may enter the next candidate state.
 
 - [ ] **Step 5: Implement the private artifact-specific publisher**
 
@@ -539,8 +580,19 @@ Do not call `system_paper_evidence.publish_owner_exact` and do not open a canoni
 write. Retain a validated parent dirfd; create a same-directory noncanonical nonce staging file with
 `O_CREAT|O_EXCL|O_RDWR|O_NOFOLLOW` and requested mode `0644`; verify actual uid `501`, mode `0644` and
 nlink `1` without path chmod; handle short write/EINTR; read back exact bytes from the same fd;
-verify size/hash/identity; fsync the file; use the platform-proven atomic no-replace primitive; fsync
-the parent directory; and revalidate parent/final before success. Existing final opens use
+verify size/hash/identity; fsync the file; then use exactly one platform primitive:
+
+```text
+Darwin renameatx_np(dirfd, staging, dirfd, final, RENAME_EXCL=0x00000004)
+Linux  renameat2(dirfd, staging, dirfd, final, RENAME_NOREPLACE=1)
+```
+
+Resolve the current-platform symbol only through `ctypes.CDLL(None, use_errno=True)` with signature
+`c_int, c_char_p, c_int, c_char_p, c_uint -> c_int`. Missing symbol or
+`ENOSYS`/`EOPNOTSUPP`/`ENOTSUP` maps to
+`CHALLENGER_REPLACEMENT_SUPERSESSION_ATOMIC_NOREPLACE_UNSUPPORTED`. Never call `os.rename`,
+`os.replace`, hardlink, a raw syscall number or a non-no-replace fallback. After successful no-replace,
+fsync the parent directory and revalidate parent/final before success. Existing final opens use
 `O_RDONLY|O_NOFOLLOW|O_NONBLOCK` and require regular file, uid `501`, mode `0644`, nlink `1` and bounded
 size before read. Every fd close
 is attempted exactly once; fsync/close/identity failure never returns success.
@@ -548,7 +600,19 @@ is attempted exactly once; fsync/close/identity failure never returns success.
 Keep the module private and expose only the four fixed artifact publications. Do not create a generic
 path/data publisher API.
 
-- [ ] **Step 6: Add provenance-boundary and owner-ceremony tests**
+- [ ] **Step 6: Add platform feasibility and provenance tests**
+
+In owner-only temporary directories, actual current-platform tests must prove: two fresh processes
+racing the same final yield exactly one success and one `EEXIST`; an existing final keeps exact
+bytes/dev/ino; source/final use the same retained dirfd; and file-fsync/no-replace/dir-fsync crash
+boundaries replay as specified. Patch symbol absence and unsupported errno to prove fixed unsupported
+reasons and zero fallback calls. Static-scan for forbidden `os.rename`, `os.replace`, hardlink and
+syscall-number paths.
+
+Darwin tests call actual `renameatx_np`; Linux tests call actual `renameat2`. Platform skips may skip
+only the other operating system, never the current one. Linux Python 3.9/3.12 CI must execute the
+actual Linux test; target-Mac execution must execute the actual Darwin test. A mock success is not a
+platform gate.
 
 Test helper-produced evidence remains test-qualified. Static-scan the CLI signature/parser for every
 forbidden override and prove only the three fixed subcommands exist. Test that the owner command shows
@@ -575,11 +639,22 @@ owner-only temporary fixture roots.
 - [ ] **Step 8: Commit collector and fixed publisher without generated artifacts**
 
 ```bash
-git add src/crypto_quant/challenger_replacement_plan_supersession_cli.py \
+git add .gitignore src/crypto_quant/challenger_replacement_plan_supersession_cli.py \
   src/crypto_quant/challenger_replacement_supersession_publish.py \
   tests/test_challenger_replacement_plan_supersession.py
 git commit -m "feat: add fixed replacement supersession evidence boundary"
 ```
+
+- [ ] **Step 9: Run both pre-artifact platform gates**
+
+On the target Mac, run the focused tests with Python 3.9 and Python 3.12 when both interpreters are
+available; the actual Darwin feasibility test must pass at least once on the release candidate. After
+read-only GitHub identity/ADMIN verification, push the Task 4 commit and create the version Draft PR
+without any formal artifact. Require its Python 3.9/3.12 Ubuntu jobs to execute and pass the actual
+Linux feasibility test. Record exact local command/output and Draft-PR run/job identities.
+
+If target-Darwin or either Linux job is unsupported, skipped, mocked, absent or failing, stop before
+Task 5. Do not generate any formal plan/evidence/attestation/record artifact.
 
 ---
 
@@ -598,7 +673,10 @@ git commit -m "feat: add fixed replacement supersession evidence boundary"
 - [ ] **Step 1: Re-run all pre-artifact design/Schema tests**
 
 Run the Task 4 focused command. Expected: all pass. Stop if any test fails; artifact generation is
-forbidden before this gate.
+forbidden before this gate. Independently verify the target-Mac Darwin gate passed on the current
+Task 4 commit and the open Draft PR recorded successful, non-skipped Python 3.9/3.12 Ubuntu jobs that
+executed the actual Linux primitive. Exact run/job/commit identities must match; CI mock coverage is
+insufficient.
 
 - [ ] **Step 2: Generate the plan from the parameterless builder**
 
@@ -634,11 +712,18 @@ Expected: exact artifact regression passes.
 
 - [ ] **Step 6: Commit only the formal plan artifact and regression**
 
+Before staging the commit, require the protocol-staging inventory to be empty and raw Git status to
+contain exactly the plan artifact plus its intended test change. Any sealed orphan may be retried but
+keeps the release blocked; do not commit around it.
+
 ```bash
 git add artifacts/challenger-replacement/challenger-replacement-plan-v0.64.0.json \
   tests/test_challenger_replacement_plan_v2.py
 git commit -m "feat: freeze replacement preregistration v2 artifact"
 ```
+
+Record the resulting exact commit as `H`. Require raw Git status empty immediately after the commit;
+this is `C0_PLAN_COMMITTED_CLEAN`.
 
 ---
 
@@ -661,7 +746,8 @@ git commit -m "feat: freeze replacement preregistration v2 artifact"
 
 - [ ] **Step 1: Read-only precheck repository and machine identity**
 
-Verify exact reviewed candidate, clean intended worktree, v0.63 baseline ancestry, unchanged v0.62 and
+Verify exact `HEAD=H`, state `C0_PLAN_COMMITTED_CLEAN`, empty protocol-staging inventory, v0.63 baseline
+ancestry, unchanged v0.62 and
 v0.63 annotated tag identities, effective uid, and current absence of runtime root/plist/service. Run
 the fixed Git-history queries for the committed challenger-replacement artifact, ADR and status paths.
 Do not create missing runtime paths. If any observation or transcript is ambiguous, stop without
@@ -679,13 +765,17 @@ PYTHONPATH=src python3 -m \
 
 The command takes no path or fact overrides, records exact argv/exit/stdout/stderr hashes, labels the
 result only `NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION`, and uses the fixed publisher. It must
-state that absent-tree counts are current-only and collector state-write count is collector-only.
+state that absent-tree counts are current-only and collector state-write count is collector-only. Its
+embedded raw Git-status transcript is the empty `C0` status collected before staging creation.
+Successful publication must leave an empty staging inventory and produce exactly
+`C1_EVIDENCE_ONLY` at unchanged `HEAD=H`.
 
 - [ ] **Step 3: Replay evidence in a separate read-only process**
 
 Load exact bytes from the fixed path; verify Schema, canonical hash, observation claim, plan/Git
 bindings and transcripts. Compute and report its external file SHA. Do not call this replay proof of an
-unpatched collector or historical non-use.
+unpatched collector or historical non-use. Before proceeding require raw status exactly equal to the
+evidence final, staging inventory empty, and evidence bytes/hash/stat/identity unchanged.
 
 - [ ] **Step 4: Obtain explicit accountable owner approval and publish attestation**
 
@@ -695,14 +785,18 @@ prior general project authorization is not a substitute for signing these exact 
 run only the parameterless `record-owner-attestation` command and enter the exact acknowledgement
 through its interactive ceremony. Publish through the fixed publisher, then replay in a separate
 read-only process. Record the owner approval transcript reference in review notes; do not claim the
-loader proves the statement true.
+loader proves the statement true. The command must save the exact `C1_EVIDENCE_ONLY` precondition
+transcript and, on success with empty staging inventory, produce exactly
+`C2_EVIDENCE_ATTESTATION_ONLY` at unchanged `HEAD=H`.
 
 - [ ] **Step 5: Assemble and publish the supersession record**
 
 Run only the parameterless `assemble-record` command. It loads exact fixed plan, machine-evidence and
 attestation paths, verifies every binding, and publishes with the fixed publisher. It accepts no
 caller-supplied fact or path. A missing/ambiguous attestation, current observation, Git transcript or
-provenance review stops without record output.
+provenance review stops without record output. It saves the exact `C2_EVIDENCE_ATTESTATION_ONLY`
+precondition transcript and, on success with empty staging inventory, produces exactly
+`C3_THREE_FINALS_UNCOMMITTED` at unchanged `HEAD=H`.
 
 - [ ] **Step 6: Replay record and compute external file SHA**
 
@@ -730,6 +824,10 @@ the test report makes no historical-truth or unpatched-process claim.
 
 - [ ] **Step 9: Commit the three immutable supersession artifacts**
 
+Require raw status exact allowlist to contain only evidence, attestation and record finals; require
+all three strict replays, identities and external SHAs to match and protocol-staging inventory to be
+empty. Any other entry or orphan blocks the commit.
+
 ```bash
 git add artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json \
   artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json \
@@ -737,6 +835,9 @@ git add artifacts/challenger-replacement/challenger-replacement-supersession-mac
   tests/test_challenger_replacement_plan_supersession.py
 git commit -m "feat: record pre-start replacement plan supersession"
 ```
+
+Record the new commit as `H2`; require raw Git status empty and staging inventory empty. Only this is
+`C4_THREE_FINALS_COMMITTED_CLEAN`.
 
 ---
 
@@ -824,7 +925,7 @@ git commit -m "docs: publish replacement plan v2 governance"
 
 ---
 
-## Task 8: Review, PR, Main CI and Annotated Tag
+## Task 8: Review, Final Draft-PR CI, Main CI and Annotated Tag
 
 **Files:**
 
@@ -838,7 +939,8 @@ git commit -m "docs: publish replacement plan v2 governance"
 
 Review v1 immutability, exact foundation/warning gates, Schema/loader capability limits, collector
 read-only boundary, fixed-path crash-safe publication, current-snapshot vs historical-attestation
-separation, Git/release provenance, post-start prohibition and absence of runtime scope.
+separation, exact C0-C4 state machine, sealed-orphan release block, Darwin/Linux no-replace feasibility,
+Git/release provenance, post-start prohibition and absence of runtime scope.
 Critical and Important findings must reach zero. After fixes, review only changed areas.
 
 - [ ] **Step 2: Re-run proportionate verification after review fixes**
@@ -846,16 +948,18 @@ Critical and Important findings must reach zero. After fixes, review only change
 Run focused tests for touched files; run the full suite again only if production code changed after its
 single final-state run. Never rerun the same unchanged full state mechanically.
 
-- [ ] **Step 3: Verify GitHub write authority before mutation**
+- [ ] **Step 3: Re-verify GitHub write authority before the final push**
 
-Check target private repository, exact origin URL, remote main, authenticated ADMIN permission, intended
+Recheck target private repository, exact origin URL, remote main, authenticated ADMIN permission, intended
 branch and clean worktree. A connector 404 for the private repository may fall back only to authenticated
 `gh` after target identity is proven.
 
-- [ ] **Step 4: Create Draft PR and wait for Python 3.9/3.12 CI**
+- [ ] **Step 4: Update the existing Draft PR and wait for final Python 3.9/3.12 CI**
 
-Push `codex/v0.64-replacement-plan-v2`, create a Draft PR, verify its exact head commit, and wait for both
-Python jobs. Do not merge on failure or ambiguity.
+The Draft PR was created at Task 4 solely to run both pre-artifact Linux feasibility jobs. Push the
+remaining reviewed commits to that same PR, verify its exact final head commit, and wait for both
+Python jobs again on the final state. Require the actual Linux `renameat2` gate to remain executed and
+green. Do not create a second PR and do not merge on failure, skip or ambiguity.
 
 - [ ] **Step 5: Merge, verify main CI and tag identity**
 

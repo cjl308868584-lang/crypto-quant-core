@@ -335,7 +335,7 @@ receipt、bootstrap、kickstart、Runner、scheduler、maintenance、市场、�
 v0.62.0 annotated tag object and peeled commit
 v0.63.0 annotated tag object and peeled commit
 v0.62 exact plan path, file SHA, plan ID and plan hash
-reviewed v0.64 candidate commit, clean intended worktree and ancestry from v0.63.0
+reviewed v0.64 candidate commit, C0 raw Git status empty and ancestry from v0.63.0
 Git history for committed artifacts/challenger-replacement and v0.62 ADR/status paths
 ```
 
@@ -363,7 +363,7 @@ Schema/loader 只能拒绝结构不合法、hash/绑定不一致或 qualificatio
 公开 CLI 没有身份、count、status、reason、hash、路径或 qualification override，不得宣称“fixture
 在技术上不可伪造或提交”。
 
-正式 provenance 由以下治理门共同形成：独立 OS 进程；clean reviewed commit；固定无 override
+正式 provenance 由以下治理门共同形成：独立 OS 进程；exact reviewed HEAD 与候选状态 transcript；固定无 override
 argv；封存 stdout/stderr/transcript；accountable owner attestation；另一个只读进程 replay；独立审查与
 reviewed Git commit ceremony。其中任何一项缺失都不能生成或接受正式 supersession record。
 v0.64 文档阶段不执行这些检查，也不生成 evidence/attestation/record。
@@ -371,8 +371,10 @@ v0.64 文档阶段不执行这些检查，也不生成 evidence/attestation/reco
 ### 6.4 固定路径与耐久发布边界
 
 collector/attestation/record CLI 不接受 input path、output path、repository root 或任意 absolute path。它们
-只能从已审查 module identity 派生 repository root，验证 owner、非 symlink ancestor、clean exact
-candidate commit 和固定 relative artifact path；派生路径不符 reviewed repository 时失败关闭。
+只能从已审查 module identity 派生 repository root，验证 owner、非 symlink ancestor、exact candidate
+HEAD、第6.5节定义的 Git status allowlist、独立 protocol-staging inventory 和固定 relative artifact
+path；派生路径不符 reviewed repository 时失败关闭。只有初始状态与最终提交后状态可称为
+Git clean，中间状态必须按 allowlist 精确命名。
 
 所有正式 plan、evidence、attestation 和 record 只能经 replacement-supersession 专用 publisher 发布。禁止
 直接 `O_EXCL` 写 canonical final，也禁止复用 v0.63
@@ -384,10 +386,13 @@ candidate commit 和固定 relative artifact path；派生路径不符 reviewed 
    新建 mode=`0644`，验证实际 uid=`501`、mode=`0644`、nlink=`1`，通过唯一 retained fd 处理
    short write/EINTR；不得通过 path chmod 修复对象；
 3. 在同一 fd 上 seek/readback exact bytes、size/hash/identity，然后 `fsync(file)`；
-4. 用平台实证的 atomic no-replace primitive 发布到固定 canonical final，再
+4. 用第6.6节冻结并实证的 atomic no-replace primitive 发布到固定 canonical final，再
    `fsync(parent dirfd)` 和重验 parent/final identity，只有完成后才返回成功；
-5. crash 留下的 staging 永不作为 canonical evidence；fresh process 只能忽略它们。final
-   exact+trusted 必须重做 directory fsync 与 identity replay 后返回 already-published；
+5. crash 留下的 staging 永不作为 canonical evidence；fresh process 必须按第6.5节单独分类、封存且
+   永不读/写/chmod/unlink/rename 它们。retry 可用新 nonce staging 完成同一 canonical final，但
+   任何 orphan 残留都使 release 保持 `RECOVERY_EVIDENCE_PRESENT_RELEASE_BLOCKED`，禁止进入后续
+   attestation/record/commit；final exact+trusted 必须重做 directory fsync 与 identity replay 后返回
+   already-published；
 6. existing final 以 `O_RDONLY|O_NOFOLLOW|O_NONBLOCK` 打开后先 `fstat`，在读取前只接受
    regular file、uid=`501`、mode=`0644`、nlink=`1` 和 bounded size；拒绝 FIFO、socket、directory、
    symlink、hardlink/extra-link、wrong owner/mode/size 或 different bytes；
@@ -395,6 +400,83 @@ candidate commit 和固定 relative artifact path；派生路径不符 reviewed 
    保持外部 sentinel bytes/mode/size/mtime/ctime/inode/nlink 不变。
 
 上述 publisher 只服务本 supersession 的四个固定 artifact，不得演化为 generic storage API。
+
+### 6.5 候选 Git/发布状态机
+
+Task 5 将 plan artifact 提交后冻结 `HEAD=H`。三项 supersession artifact 在同一 `H` 上顺序
+生成，中间不得 commit/amend/rebase/checkout。每个命令必须在创建 staging 前封存 raw
+`git status --porcelain=v1 --untracked-files=all`、`HEAD`、所有 allowlisted final 的 exact bytes/hash/stat/identity
+与独立 staging inventory：
+
+| State | HEAD | raw Git status exact allowlist | Next command |
+|---|---|---|---|
+| `C0_PLAN_COMMITTED_CLEAN` | `H` | empty | `collect-machine-evidence` |
+| `C1_EVIDENCE_ONLY` | `H` | evidence final only | `record-owner-attestation` |
+| `C2_EVIDENCE_ATTESTATION_ONLY` | `H` | evidence + attestation finals only | `assemble-record` |
+| `C3_THREE_FINALS_UNCOMMITTED` | `H` | evidence + attestation + record finals only | exact three-file commit |
+| `C4_THREE_FINALS_COMMITTED_CLEAN` | new commit `H2` | empty | release metadata/review |
+
+表中的 allowlist 必须按以下 exact porcelain lines 以 byte-sorted tuple 比较：
+
+```text
+C1:
+?? artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json
+
+C2:
+?? artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json
+?? artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json
+
+C3:
+?? artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json
+?? artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json
+?? artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json
+```
+
+`collect-machine-evidence` 内的 machine evidence 保存创建 evidence staging 之前 `C0` 的 raw status exact
+bytes，所以它能说“采集前 Git clean”。attestation 和 record 分别保存 `C1`/`C2` precondition
+transcript，必须称为 exact allowlisted dirty state，不得称 clean。每个既有 final 都必须用 strict
+loader 与 file identity 重放；额外 tracked/untracked entry、HEAD 变化或 allowlisted final identity 变化均
+失败关闭。
+
+staging basename 必须匹配 ASCII regex
+`\A\.v064-supersession-(plan|machine-evidence|owner-attestation|supersession-record)-[0-9a-f]{64}-[0-9a-f]{32}\.staging\Z`，并由精确
+`.gitignore` rule 从普通 status 排除；这不允许把它当作“不存在”。每个 precondition 还必须用
+retained artifact-parent dirfd 列出 staging namespace，封存 basename/lstat/uid/mode/size/dev/ino/nlink/mtime_ns/
+ctime_ns。fresh process 对符合 exact basename grammar、regular file、uid=`501`、mode=`0644`、nlink=`1`
+与 bounded size 的每一项只标记 `SEALED_UNTRUSTED_PROTOCOL_NAMESPACE_ENTRY`；不声称它由前一进程
+创建，也不读取其内容作为 evidence。inventory 最多接受 64 项；symlink、hardlink/extra-link、
+nonregular、wrong-owner/mode、超限 entry 或第65项使候选失败关闭。
+
+已封存 orphan 不阻止 publisher 以新 nonce 对同一 exact final 做幂等 retry，但 fresh process 绝不修改
+orphan。因此 external sentinel 的 bytes/mode/size/mtime/ctime/inode/nlink 保持不变。retry 成功后
+若 orphan inventory 非空，状态为 `RECOVERY_EVIDENCE_PRESENT_RELEASE_BLOCKED`，不得伪报 `C1`-`C4`，
+不得静默删除、quarantine 或忽略。本 v0.64 不设计 destructive cleanup；没有 orphan 的正常路径才能
+到达 `C4_THREE_FINALS_COMMITTED_CLEAN`。
+
+### 6.6 Atomic no-replace 平台可行性门
+
+本设计明确不选择 hardlink staging→final，避免 link 成功后 unlink 前崩溃留下 nlink=2 而
+无法在不变更 external sentinel 的前提下安全恢复。唯一允许的 primitives 是：
+
+- Darwin：用 `ctypes.CDLL(None, use_errno=True)` 解析
+  `renameatx_np(src_dirfd, src_name, dst_dirfd, dst_name, RENAME_EXCL)`，`RENAME_EXCL=0x00000004`；
+- Linux：用 `ctypes.CDLL(None, use_errno=True)` 解析
+  `renameat2(src_dirfd, src_name, dst_dirfd, dst_name, RENAME_NOREPLACE)`，`RENAME_NOREPLACE=1`。
+
+两者都以同一 retained artifact-parent dirfd 同时作为 src/dst dirfd，只接受固定 relative basenames。
+`ctypes` signature 必须冻结为 `c_int, c_char_p, c_int, c_char_p, c_uint -> c_int`，并在读取
+errno 前保留返回值。缺少 symbol，或返回 `ENOSYS`/`EOPNOTSUPP`/`ENOTSUP`，统一为
+`CHALLENGER_REPLACEMENT_SUPERSESSION_ATOMIC_NOREPLACE_UNSUPPORTED`。禁止 `os.rename`、
+`os.replace`、直写 final、hardlink 和任何 syscall-number/非 no-replace 静默降级。
+
+在任何 Task 5 artifact 生成前，Task 4 代码提交必须先建立不含正式 artifact 的 Draft PR，并在
+owner-only temporary directory 完成两个实证门：
+同目录两进程竞争同一 final 只有一个 success、一个 `EEXIST`；existing final bytes/inode 不被
+替换；file fsync、no-replace、directory fsync 各 crash boundary 的 fresh-process replay 符合第6.4/6.5节。
+Draft PR 的 Linux Python 3.9/3.12 CI 都必须实际运行 Linux 路径；macOS release candidate 必须在目标
+Mac 上实际运行 Darwin gate。Linux CI、Darwin mock 或任一平台 skip 不能替代目标实证。两个门都绑定
+同一 Task 4 commit，且任一语义、symbol、kernel/filesystem 支持不符即在
+artifact 前停止，不生成 plan/evidence/attestation/record。
 
 ## 7. 三阶段 runtime 后续合同
 
@@ -470,7 +552,12 @@ v0.64 只有同时满足以下条件才可成为 release候选：
 10. old tag、artifact、ADR和status bytes与v0.62 tag完全一致；
 11. machine snapshot 仅报告当前没有可观察 production root/plist/service/start receipt/event，collector 自身
     Runner/market/Broker/order/state-write 均为零；
-12. repository没有replacement runtime、deployment或exporter实现混入本版本。
+12. C0-C4 每一步 HEAD/raw status/final identity/transcript 与 staging inventory 精确符合第6.5节，只有
+    C0/C4 被称为 clean；
+13. Draft-PR Linux Python 3.9/3.12 actual `renameat2` gate 与目标Mac actual `renameatx_np` gate 在
+    Task 5 前绑定同一代码提交并通过；
+14. protocol orphan 永不改变 external sentinel，且任何残留 orphan 都阻断 attestation/record/commit/release；
+15. repository没有replacement runtime、deployment或exporter实现混入本版本。
 
 任何值未知、当前路径存在、service已加载、attestation/provenance缺失、Schema/hash/identity
 不一致或旧 bytes发生变化都停止发布，不生成“较好”record，不重新定义计划以绕过失败。
