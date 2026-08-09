@@ -218,6 +218,7 @@ def _reidentify(plan):
 def _write_plan(path, plan, *, newline=True):
     body = canonical_json(plan).encode("utf-8")
     path.write_bytes(body + (b"\n" if newline else b""))
+    path.chmod(0o644)
     return path
 
 
@@ -499,6 +500,16 @@ class ChallengerReplacementPlanV2BuilderTests(unittest.TestCase):
 
 
 class ChallengerReplacementPlanV2LoaderTests(unittest.TestCase):
+    def test_fixture_writer_has_explicit_formal_artifact_mode(self):
+        plan = build_challenger_replacement_plan_v2()
+        with tempfile.TemporaryDirectory() as directory:
+            previous_umask = os.umask(0o022)
+            try:
+                path = _write_plan(Path(directory) / "owner-only.json", plan)
+            finally:
+                os.umask(previous_umask)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+
     def test_loader_accepts_only_exact_canonical_v2_bytes(self):
         plan = build_challenger_replacement_plan_v2()
         with tempfile.TemporaryDirectory() as directory:

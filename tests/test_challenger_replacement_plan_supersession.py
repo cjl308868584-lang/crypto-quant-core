@@ -85,6 +85,7 @@ PREVIOUS_PLAN = {
 
 def _canonical_file(path, value):
     path.write_bytes(canonical_json(value).encode("utf-8") + b"\n")
+    path.chmod(0o644)
     return path
 
 
@@ -313,6 +314,14 @@ class SupersessionContractTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def test_canonical_fixture_files_have_explicit_formal_artifact_mode(self):
+        previous_umask = os.umask(0o022)
+        try:
+            path = _canonical_file(self.root / "owner-only.json", self.machine)
+        finally:
+            os.umask(previous_umask)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
 
     def test_machine_evidence_separates_current_observation_from_history(self):
         loaded = load_challenger_replacement_supersession_machine_evidence(
@@ -618,6 +627,10 @@ class CommittedSupersessionArtifactRegressionTests(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(
+    os.geteuid() == 501,
+    "FIXED_OWNER_UID_501_SECURITY_BOUNDARY_REQUIRES_DEDICATED_CI_STEP",
+)
 class FixedSupersessionPublisherTests(unittest.TestCase):
     def test_test_temp_root_is_existing_and_platform_appropriate(self):
         root = _test_temp_root()
@@ -1274,7 +1287,7 @@ raise SystemExit(99)
 
 
 class SupersessionCliBoundaryTests(unittest.TestCase):
-    def test_linux_ci_runs_tests_under_fixed_owner_uid_501(self):
+    def test_linux_ci_runs_full_suite_and_fixed_owner_boundary_separately(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         self.assertIn(
             "      - uses: actions/checkout@v5\n"
@@ -1283,6 +1296,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             workflow,
         )
         fixed_owner_boundary = """\
+      - run: make test
       - name: Configure fixed owner UID for security-boundary tests
         run: |
           ! getent passwd 501
@@ -1294,18 +1308,21 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
           sudo cp -a "$GITHUB_WORKSPACE/." /opt/cryptoquant-ci-workspace/
           sudo chown -R 501:501 /opt/cryptoquant-ci-workspace
           sudo chmod 700 /opt/cryptoquant-ci-workspace
-      - name: Run tests as fixed owner UID 501
+      - name: Run fixed-owner supersession security-boundary tests
         run: >-
           sudo -u '#501' env
           HOME=/opt/cryptoquant-ci-home
           TMPDIR=/opt/cryptoquant-ci-home
           PATH="$PATH"
-          make -C /opt/cryptoquant-ci-workspace test
+          PYTHONPATH=/opt/cryptoquant-ci-workspace/src:/opt/cryptoquant-ci-workspace/tests
+          python3 -m unittest
+          -v
+          test_challenger_replacement_plan_supersession.FixedSupersessionPublisherTests
+          test_challenger_replacement_plan_supersession.SupersessionCliBoundaryTests.test_temporary_git_ceremony_transitions_c0_through_c4_exactly
 """
         self.assertIn(fixed_owner_boundary, workflow)
-        self.assertEqual(
-            workflow.count("make -C /opt/cryptoquant-ci-workspace test"), 1
-        )
+        self.assertEqual(workflow.count("make test"), 1)
+        self.assertEqual(workflow.count("python3 -m unittest"), 1)
 
     @staticmethod
     def _completed(argv, returncode=0, stdout=b"", stderr=b""):
@@ -1654,6 +1671,10 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
                     supersession_cli._attestation_command()
             changed_publish.assert_not_called()
 
+    @unittest.skipUnless(
+        os.geteuid() == 501,
+        "FIXED_OWNER_UID_501_SECURITY_BOUNDARY_REQUIRES_DEDICATED_CI_STEP",
+    )
     def test_temporary_git_ceremony_transitions_c0_through_c4_exactly(self):
         with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
             clone = Path(temporary) / "reviewed-clone"
