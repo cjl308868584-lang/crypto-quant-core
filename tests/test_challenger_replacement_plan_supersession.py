@@ -1289,21 +1289,21 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
           ! getent group 501
           sudo groupadd --gid 501 cryptoquant-ci
           sudo useradd --uid 501 --gid 501 --no-create-home --shell /usr/sbin/nologin cryptoquant-ci
-          sudo install -d -o 501 -g 501 -m 700 /tmp/cryptoquant-ci-home
-          sudo install -d -o 501 -g 501 -m 700 /tmp/cryptoquant-ci-workspace
-          sudo cp -a "$GITHUB_WORKSPACE/." /tmp/cryptoquant-ci-workspace/
-          sudo chown -R 501:501 /tmp/cryptoquant-ci-workspace
-          sudo chmod 700 /tmp/cryptoquant-ci-workspace
+          sudo install -d -o 501 -g 501 -m 700 /opt/cryptoquant-ci-home
+          sudo install -d -o 501 -g 501 -m 700 /opt/cryptoquant-ci-workspace
+          sudo cp -a "$GITHUB_WORKSPACE/." /opt/cryptoquant-ci-workspace/
+          sudo chown -R 501:501 /opt/cryptoquant-ci-workspace
+          sudo chmod 700 /opt/cryptoquant-ci-workspace
       - name: Run tests as fixed owner UID 501
         run: >-
           sudo -u '#501' env
-          HOME=/tmp/cryptoquant-ci-home
+          HOME=/opt/cryptoquant-ci-home
           PATH="$PATH"
-          make -C /tmp/cryptoquant-ci-workspace test
+          make -C /opt/cryptoquant-ci-workspace test
 """
         self.assertIn(fixed_owner_boundary, workflow)
         self.assertEqual(
-            workflow.count("make -C /tmp/cryptoquant-ci-workspace test"), 1
+            workflow.count("make -C /opt/cryptoquant-ci-workspace test"), 1
         )
 
     @staticmethod
