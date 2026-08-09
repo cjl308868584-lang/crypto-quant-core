@@ -264,6 +264,8 @@ supersession_forbidden_after = FIRST_START_RECEIPT_OR_CANONICAL_EVENT
 - accountable owner attestation 及其 canonical hash；
 - immutable Git/release-history evidence 及其 transcript hash；
 - record ID 与 record hash。
+- `C2_EVIDENCE_ATTESTATION_ONLY` 的 exact HEAD/status transcript、空 staging inventory，以及
+  machine-evidence 与 attestation final 的 file SHA/stat identity。
 
 record 的 self-hash 只排除自身 `record_hash`。plan 不反向绑定 record，以免 plan/file hash 与
 record 形成循环。record canonical file SHA-256 是对已生成 exact bytes 的外部计算值，不是
@@ -283,6 +285,11 @@ signer_uid = 501
 signed_at = canonical UTC timestamp collected at the signing ceremony
 owner_acknowledgement = I_SIGN_AND_ACCEPT_ACCOUNTABILITY_FOR_THE_EXACT_DECLARATION
 ```
+
+它还必须保存 `C1_EVIDENCE_ONLY` 的 exact HEAD/status transcript、空 staging inventory 与
+machine-evidence final 的 file SHA/stat identity。`st_dev`、`st_ino`、`st_mtime_ns`、`st_ctime_ns`
+以 canonical unsigned decimal string 保存，避免超过 exact JSON safe-integer 范围；mode 固定为
+`0644`、nlink 固定为 `1`，size 必须在既定 1..4MiB 边界内。
 
 `declaration` 必须是以下 exact UTF-8 string：
 
@@ -400,6 +407,15 @@ Git clean，中间状态必须按 allowlist 精确命名。
    保持外部 sentinel bytes/mode/size/mtime/ctime/inode/nlink 不变。
 
 上述 publisher 只服务本 supersession 的四个固定 artifact，不得演化为 generic storage API。
+
+该边界采用分层威胁模型：它必须拒绝不可信既有对象、symlink/hardlink/nonregular、可观察的
+parent/staging/final identity replacement，以及多个遵守协议的并发 publisher；随机 nonce、retained
+dirfd、pre/post attachment checks 与 atomic no-replace 用于捕获这些冲突并失败关闭。它不声称抵抗一个
+可持续以同一 UID 枚举目录并在最后一次 attachment check 与内核 rename 调用之间主动替换目录项的
+恶意进程；Darwin `renameatx_np` 与 Linux `renameat2` 均不提供“仅当 source inode 等于已持有 fd”这一
+原子条件。若该强对手属于范围，必须使用独立 OS UID/sandbox/特权 publisher，这是独立架构项目，
+不得用 post-check 冒充已经防住。任何 post-check 冲突、unexpected final 或 orphan 都禁止 commit/release，
+并保留该 worktree 取证。
 
 ### 6.5 候选 Git/发布状态机
 

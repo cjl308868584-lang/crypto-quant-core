@@ -311,6 +311,7 @@ def build_challenger_replacement_plan_supersession_record(
     v2_plan_path: Path,
     machine_evidence_path: Path,
     owner_attestation_path: Path,
+    ceremony_precondition: Mapping[str, Any],
 ) -> Dict[str, Any]: ...
 
 def load_challenger_replacement_supersession_machine_evidence(
@@ -388,16 +389,23 @@ Expected: missing module and Schema failures.
 Machine evidence requires observed UTC time, timezone, effective uid, current root/plist/service
 observations, explicitly current absent-tree-derived counts, collector action counters, and exact
 launchctl and Git command transcript metadata. Owner attestation requires signer identity/uid,
-canonical signed time, exact declaration/acknowledgement, both plan bindings and both evidence hashes.
-The record requires exact objects for `previous_plan`, `superseding_plan`, `machine_evidence_binding`,
+canonical signed time, exact declaration/acknowledgement, both plan bindings, both evidence hashes,
+and the exact `C1_EVIDENCE_ONLY` ceremony precondition. The record requires the exact
+`C2_EVIDENCE_ATTESTATION_ONLY` ceremony precondition plus exact objects for
+`previous_plan`, `superseding_plan`, `machine_evidence_binding`,
 `owner_attestation_binding`, `prohibition`, `authority`, `record_id`, `record_hash`, `status` and
-`warnings`. Every object uses `additionalProperties: false`.
+`warnings`. Every ceremony precondition binds the candidate HEAD/status transcripts, empty staging
+inventory and the allowlisted finals' file SHA plus stat identity; device/inode/mtime/ctime nanosecond
+values use canonical unsigned decimal strings because native values may exceed the exact JSON integer
+range.
+Every object uses `additionalProperties: false`.
 
 - [ ] **Step 4: Implement deterministic record identity and loader**
 
 Derive record ID from both exact plan identities and file SHAs, machine-evidence hash,
 owner-attestation hash, Git-history-evidence hash, reason and prohibition. Exclude only `record_hash`
-from self-hash. The record file SHA is external and must not be a record field. Recompute every hash
+from self-hash. The record identity and self-hash also bind the full `C2` ceremony precondition. The
+record file SHA is external and must not be a record field. Recompute every hash
 and reject unknown/missing fields, duplicate keys, floats, noncanonical bytes, unsafe paths and
 ambiguous observations. V0.64 build/manifest identity is not a plan, attestation or record field.
 
@@ -449,6 +457,9 @@ git commit -m "feat: freeze replacement plan supersession contract"
 - Create: `src/crypto_quant/challenger_replacement_plan_supersession_cli.py`
 - Create: `src/crypto_quant/challenger_replacement_supersession_publish.py`
 - Modify: `.gitignore`
+- Modify: `src/crypto_quant/challenger_replacement_plan_supersession.py`
+- Modify: owner-attestation and supersession-record Schema mirrors from Task 3
+- Modify: this plan and its design spec to close the discovered C1/C2 transcript-contract omission
 - Modify: `tests/test_challenger_replacement_plan_supersession.py`
 
 **Interfaces:**
@@ -614,6 +625,13 @@ is attempted exactly once; fsync/close/identity failure never returns success.
 Keep the module private and expose only the four fixed artifact publications. Do not create a generic
 path/data publisher API.
 
+The implementation and tests use the design's baseline threat model: they cover untrusted existing
+objects, observable attachment replacement and cooperating publisher races. They must not claim that
+`renameatx_np`/`renameat2` atomically binds the source pathname to an already-held staging fd or that
+the boundary resists a persistent malicious same-UID directory-entry swapper. Such a conflict may
+leave forensic bytes but can never authorize commit/release; the strong-adversary solution requires a
+separate OS isolation boundary and is outside v0.64.
+
 - [ ] **Step 6: Add platform feasibility and provenance tests**
 
 In owner-only temporary directories, actual current-platform tests must prove: two fresh processes
@@ -659,6 +677,13 @@ temporary fixture roots.
 ```bash
 git add .gitignore src/crypto_quant/challenger_replacement_plan_supersession_cli.py \
   src/crypto_quant/challenger_replacement_supersession_publish.py \
+  src/crypto_quant/challenger_replacement_plan_supersession.py \
+  config/challenger-replacement-owner-attestation-v1.schema.json \
+  src/crypto_quant/schemas/challenger-replacement-owner-attestation-v1.schema.json \
+  config/challenger-replacement-plan-supersession-v1.schema.json \
+  src/crypto_quant/schemas/challenger-replacement-plan-supersession-v1.schema.json \
+  docs/superpowers/specs/2026-08-09-replacement-challenger-plan-v2-supersession-design.md \
+  docs/superpowers/plans/2026-08-09-replacement-challenger-plan-v2-supersession.md \
   tests/test_challenger_replacement_plan_supersession.py
 git commit -m "feat: add fixed replacement supersession evidence boundary"
 ```

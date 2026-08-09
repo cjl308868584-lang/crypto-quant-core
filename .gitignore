@@ -31,3 +31,4 @@ logs/
 *.key
 
 .DS_Store
+/artifacts/challenger-replacement/.v064-supersession-*.staging

@@ -1,10 +1,19 @@
 import base64
 import copy
+import ctypes
+import errno
 import hashlib
+import io
+import inspect
 import json
+import multiprocessing
 import os
+import stat
+import subprocess
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -21,6 +30,8 @@ from crypto_quant.challenger_replacement_plan_supersession import (
     supersession_artifact_hash,
 )
 import crypto_quant.challenger_replacement_plan_supersession as supersession_module
+import crypto_quant.challenger_replacement_plan_supersession_cli as supersession_cli
+import crypto_quant.challenger_replacement_supersession_publish as publish_module
 from crypto_quant.challenger_replacement_plan_v2 import (
     build_challenger_replacement_plan_v2,
 )
@@ -186,6 +197,47 @@ def _superseding_plan_binding(v2_path, v2):
     }
 
 
+def _final_snapshot(path, relative_path):
+    value = path.stat()
+    return {
+        "path": relative_path,
+        "file_sha256": _file_sha(path),
+        "device_decimal": str(value.st_dev),
+        "inode_decimal": str(value.st_ino),
+        "mode_octal": format(stat.S_IMODE(value.st_mode), "04o"),
+        "nlink": value.st_nlink,
+        "size": value.st_size,
+        "mtime_ns_decimal": str(value.st_mtime_ns),
+        "ctime_ns_decimal": str(value.st_ctime_ns),
+    }
+
+
+def _ceremony_precondition(state, status_lines, snapshots):
+    head = "1" * 40
+    status = b"".join((line + "\n").encode() for line in sorted(status_lines))
+    return {
+        "state": state,
+        "candidate_head": head,
+        "head_transcript": _transcript(
+            state.lower() + "_head",
+            ("/usr/bin/git", "rev-parse", "HEAD"),
+            (head + "\n").encode(),
+        ),
+        "status_transcript": _transcript(
+            state.lower() + "_status",
+            (
+                "/usr/bin/git",
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+            ),
+            status,
+        ),
+        "allowlisted_finals": snapshots,
+        "staging_inventory": [],
+    }
+
+
 def _attestation(v2_path, machine_path, *, qualification=REAL_EVIDENCE_QUALIFICATION):
     v2 = build_challenger_replacement_plan_v2()
     machine = json.loads(machine_path.read_bytes())
@@ -216,6 +268,20 @@ def _attestation(v2_path, machine_path, *, qualification=REAL_EVIDENCE_QUALIFICA
                 "git_history_evidence_hash"
             ],
         },
+        "ceremony_precondition": _ceremony_precondition(
+            "C1_EVIDENCE_ONLY",
+            (
+                "?? artifacts/challenger-replacement/"
+                "challenger-replacement-supersession-machine-evidence-v0.64.0.json",
+            ),
+            [
+                _final_snapshot(
+                    machine_path,
+                    "artifacts/challenger-replacement/"
+                    "challenger-replacement-supersession-machine-evidence-v0.64.0.json",
+                )
+            ],
+        ),
     }
     return _finalize(
         value,
@@ -304,10 +370,32 @@ class SupersessionContractTests(unittest.TestCase):
         )
 
     def test_record_builder_and_loader_bind_every_exact_input(self):
+        record_precondition = _ceremony_precondition(
+            "C2_EVIDENCE_ATTESTATION_ONLY",
+            (
+                "?? artifacts/challenger-replacement/"
+                "challenger-replacement-owner-attestation-v0.64.0.json",
+                "?? artifacts/challenger-replacement/"
+                "challenger-replacement-supersession-machine-evidence-v0.64.0.json",
+            ),
+            [
+                _final_snapshot(
+                    self.attestation_path,
+                    "artifacts/challenger-replacement/"
+                    "challenger-replacement-owner-attestation-v0.64.0.json",
+                ),
+                _final_snapshot(
+                    self.machine_path,
+                    "artifacts/challenger-replacement/"
+                    "challenger-replacement-supersession-machine-evidence-v0.64.0.json",
+                ),
+            ],
+        )
         record = build_challenger_replacement_plan_supersession_record(
             v2_plan_path=self.v2_path,
             machine_evidence_path=self.machine_path,
             owner_attestation_path=self.attestation_path,
+            ceremony_precondition=record_precondition,
         )
         record_path = _canonical_file(self.root / "record.json", record)
         self.assertEqual(
@@ -380,6 +468,31 @@ class SupersessionContractTests(unittest.TestCase):
                 _finalize(changed, id_field="attestation_id", hash_field="attestation_hash", prefix="challenger_replacement_owner_attestation")
                 path = _canonical_file(self.root / f"attestation-{key}.json", changed)
                 with self.assertRaises(ChallengerReplacementPlanSupersessionError):
+                    load_challenger_replacement_owner_attestation(
+                        path,
+                        v2_plan_path=self.v2_path,
+                        machine_evidence_path=self.machine_path,
+                    )
+
+        for key, value in (
+            ("candidate_head", "2" * 40),
+            ("staging_inventory", [{"unexpected": True}]),
+        ):
+            with self.subTest(precondition=key):
+                changed = copy.deepcopy(self.attestation)
+                changed["ceremony_precondition"][key] = value
+                _finalize(
+                    changed,
+                    id_field="attestation_id",
+                    hash_field="attestation_hash",
+                    prefix="challenger_replacement_owner_attestation",
+                )
+                path = _canonical_file(
+                    self.root / f"attestation-precondition-{key}.json", changed
+                )
+                with self.assertRaises(
+                    ChallengerReplacementPlanSupersessionError
+                ):
                     load_challenger_replacement_owner_attestation(
                         path,
                         v2_plan_path=self.v2_path,
@@ -496,3 +609,1156 @@ class CommittedSupersessionArtifactRegressionTests(unittest.TestCase):
             machine_evidence_path=MACHINE_ARTIFACT,
             owner_attestation_path=ATTESTATION_ARTIFACT,
         )
+
+
+class FixedSupersessionPublisherTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(dir="/private/tmp")
+        self.parent = Path(self.temporary.name) / "artifacts" / "challenger-replacement"
+        self.parent.mkdir(parents=True, mode=0o755)
+        self.parent.chmod(0o755)
+        self.parent_patch = mock.patch.object(
+            publish_module, "_artifact_parent", return_value=self.parent
+        )
+        self.parent_patch.start()
+        self.publisher_stderr = io.StringIO()
+        self.stderr_patch = mock.patch.object(
+            publish_module.sys, "stderr", self.publisher_stderr
+        )
+        self.stderr_patch.start()
+
+    def tearDown(self):
+        self.stderr_patch.stop()
+        self.parent_patch.stop()
+        self.temporary.cleanup()
+
+    def test_public_publishers_accept_bytes_but_no_path_or_override(self):
+        for function in (
+            publish_module.publish_challenger_replacement_plan_v2_bytes,
+            publish_module.publish_challenger_replacement_machine_evidence_bytes,
+            publish_module.publish_challenger_replacement_owner_attestation_bytes,
+            publish_module.publish_challenger_replacement_supersession_record_bytes,
+        ):
+            self.assertEqual(tuple(inspect.signature(function).parameters), ("data",))
+
+    def test_exact_publish_is_no_overwrite_and_replayable(self):
+        data = b'{"fixed":true}\n'
+        first = publish_module.publish_challenger_replacement_plan_v2_bytes(data)
+        final = self.parent / "challenger-replacement-plan-v0.64.0.json"
+        first_stat = final.stat()
+        self.assertEqual(first["status"], "COMMITTED")
+        self.assertEqual(final.read_bytes(), data)
+        self.assertEqual(stat.S_IMODE(first_stat.st_mode), 0o644)
+        self.assertEqual(first_stat.st_nlink, 1)
+
+        second = publish_module.publish_challenger_replacement_plan_v2_bytes(data)
+        second_stat = final.stat()
+        self.assertEqual(second["status"], "ALREADY_PUBLISHED")
+        self.assertEqual((second_stat.st_dev, second_stat.st_ino), (first_stat.st_dev, first_stat.st_ino))
+        with self.assertRaises(publish_module.SupersessionPublishError):
+            publish_module.publish_challenger_replacement_plan_v2_bytes(b"different\n")
+        self.assertEqual(final.read_bytes(), data)
+
+    def test_untrusted_final_and_sealed_orphan_never_modify_sentinel(self):
+        sentinel = Path(self.temporary.name) / "sentinel"
+        sentinel.write_bytes(b"sentinel")
+        sentinel.chmod(0o600)
+        final = self.parent / "challenger-replacement-plan-v0.64.0.json"
+        final.symlink_to(sentinel)
+        before = sentinel.stat()
+        with self.assertRaises(publish_module.SupersessionPublishError):
+            publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+        after = sentinel.stat()
+        self.assertEqual(sentinel.read_bytes(), b"sentinel")
+        self.assertEqual(
+            (after.st_mode, after.st_size, after.st_mtime_ns, after.st_ctime_ns, after.st_dev, after.st_ino, after.st_nlink),
+            (before.st_mode, before.st_size, before.st_mtime_ns, before.st_ctime_ns, before.st_dev, before.st_ino, before.st_nlink),
+        )
+
+        final.unlink()
+        orphan = self.parent / (
+            ".v064-supersession-plan-" + "a" * 64 + "-" + "b" * 32 + ".staging"
+        )
+        orphan.write_bytes(b"sealed")
+        orphan.chmod(0o644)
+        orphan_before = orphan.stat()
+        with self.assertRaisesRegex(
+            publish_module.SupersessionPublishError,
+            "RECOVERY_EVIDENCE_PRESENT_RELEASE_BLOCKED",
+        ):
+            publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+        orphan_after = orphan.stat()
+        self.assertEqual(orphan.read_bytes(), b"sealed")
+        self.assertEqual(
+            (orphan_after.st_mode, orphan_after.st_size, orphan_after.st_mtime_ns, orphan_after.st_ctime_ns, orphan_after.st_dev, orphan_after.st_ino, orphan_after.st_nlink),
+            (orphan_before.st_mode, orphan_before.st_size, orphan_before.st_mtime_ns, orphan_before.st_ctime_ns, orphan_before.st_dev, orphan_before.st_ino, orphan_before.st_nlink),
+        )
+        self.assertEqual(final.read_bytes(), b"plan\n")
+
+    def test_untrusted_staging_entries_fail_without_touching_external_inode(self):
+        sentinel = Path(self.temporary.name) / "external-sentinel"
+        sentinel.write_bytes(b"external")
+        sentinel.chmod(0o600)
+        for kind in ("symlink", "hardlink"):
+            staging = self.parent / (
+                ".v064-supersession-plan-" + "c" * 64 + "-" + "d" * 32 + ".staging"
+            )
+            if kind == "symlink":
+                staging.symlink_to(sentinel)
+            else:
+                os.link(sentinel, staging)
+            before = sentinel.stat()
+            with self.subTest(kind=kind), self.assertRaisesRegex(
+                publish_module.SupersessionPublishError,
+                "STAGING_INVENTORY_INVALID",
+            ):
+                publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+            after = sentinel.stat()
+            self.assertEqual(sentinel.read_bytes(), b"external")
+            self.assertEqual(
+                (
+                    after.st_mode,
+                    after.st_size,
+                    after.st_mtime_ns,
+                    after.st_ctime_ns,
+                    after.st_dev,
+                    after.st_ino,
+                    after.st_nlink,
+                ),
+                (
+                    before.st_mode,
+                    before.st_size,
+                    before.st_mtime_ns,
+                    before.st_ctime_ns,
+                    before.st_dev,
+                    before.st_ino,
+                    before.st_nlink,
+                ),
+            )
+            staging.unlink()
+
+    def test_sixty_fifth_protocol_staging_entry_fails_closed(self):
+        for index in range(65):
+            entry = self.parent / (
+                ".v064-supersession-plan-"
+                + "e" * 64
+                + "-"
+                + format(index, "032x")
+                + ".staging"
+            )
+            entry.write_bytes(b"")
+            entry.chmod(0o644)
+        with self.assertRaisesRegex(
+            publish_module.SupersessionPublishError,
+            "STAGING_INVENTORY_INVALID",
+        ):
+            publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+
+    def test_actual_platform_no_replace_preserves_existing_inode(self):
+        staging = self.parent / "staging"
+        final = self.parent / "final"
+        staging.write_bytes(b"new")
+        final.write_bytes(b"old")
+        before = final.stat()
+        descriptor = os.open(self.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with self.assertRaises(FileExistsError):
+                publish_module._atomic_no_replace(
+                    descriptor, staging.name, final.name
+                )
+        finally:
+            os.close(descriptor)
+        after = final.stat()
+        self.assertEqual(final.read_bytes(), b"old")
+        self.assertEqual((after.st_dev, after.st_ino), (before.st_dev, before.st_ino))
+        self.assertTrue(staging.exists())
+
+    def test_two_fresh_interpreters_race_raw_primitive_success_and_eexist(self):
+        staging_names = ("raw-staging-a", "raw-staging-b")
+        for name in staging_names:
+            (self.parent / name).write_bytes(name.encode())
+        start = Path(self.temporary.name) / "start-race"
+        script = r'''
+import sys, time
+from pathlib import Path
+import crypto_quant.challenger_replacement_supersession_publish as module
+parent, staging, start = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+deadline = time.monotonic() + 5
+while not start.exists():
+    if time.monotonic() >= deadline:
+        raise SystemExit(90)
+    time.sleep(0.005)
+descriptor = __import__("os").open(parent, __import__("os").O_RDONLY | __import__("os").O_DIRECTORY)
+try:
+    module._atomic_no_replace(descriptor, staging, "raw-final")
+except FileExistsError:
+    print("EEXIST")
+else:
+    print("SUCCESS")
+finally:
+    __import__("os").close(descriptor)
+'''
+        environment = {"PYTHONPATH": str(ROOT / "src")}
+        processes = [
+            subprocess.Popen(
+                [sys.executable, "-c", script, str(self.parent), name, str(start)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+            )
+            for name in staging_names
+        ]
+        start.touch()
+        outputs = []
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 0, stderr)
+            outputs.append(stdout.strip())
+        self.assertEqual(sorted(outputs), [b"EEXIST", b"SUCCESS"])
+        self.assertTrue((self.parent / "raw-final").is_file())
+
+    def test_actual_two_process_publication_race_leaves_exact_final_but_blocks_release(self):
+        context = multiprocessing.get_context("fork")
+        barrier = context.Barrier(2)
+        queue = context.Queue()
+
+        def publish_after_barrier():
+            barrier.wait()
+            try:
+                result = publish_module.publish_challenger_replacement_plan_v2_bytes(
+                    b'{"race":true}\n'
+                )
+                queue.put(("ok", result["status"], result["inode"]))
+            except BaseException as error:
+                queue.put(("error", type(error).__name__, str(error)))
+
+        workers = [context.Process(target=publish_after_barrier) for _ in range(2)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(5)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(worker.exitcode, 0)
+        outcomes = [queue.get(timeout=1) for _ in workers]
+        self.assertTrue(any(item[0] == "error" for item in outcomes))
+        for item in outcomes:
+            if item[0] == "error":
+                self.assertIn("RECOVERY_EVIDENCE_PRESENT_RELEASE_BLOCKED", item[2])
+            else:
+                self.assertEqual(item[1], "COMMITTED")
+        final = self.parent / "challenger-replacement-plan-v0.64.0.json"
+        self.assertEqual(final.read_bytes(), b'{"race":true}\n')
+        self.assertEqual(final.stat().st_nlink, 1)
+
+    def test_directory_fsync_failure_is_repaired_before_exact_retry_succeeds(self):
+        data = b'{"durable":true}\n'
+        real_fsync = publish_module._fsync_retry
+        calls = []
+
+        def fail_before_directory_fsync(descriptor):
+            calls.append(descriptor)
+            if len(calls) == 2:
+                raise publish_module.SupersessionPublishError(
+                    "CHALLENGER_REPLACEMENT_SUPERSESSION_FSYNC_FAILED"
+                )
+            return real_fsync(descriptor)
+
+        with mock.patch.object(
+            publish_module,
+            "_fsync_retry",
+            side_effect=fail_before_directory_fsync,
+        ):
+            with self.assertRaisesRegex(
+                publish_module.SupersessionPublishError, "FSYNC_FAILED"
+            ):
+                publish_module.publish_challenger_replacement_plan_v2_bytes(data)
+        final = self.parent / "challenger-replacement-plan-v0.64.0.json"
+        self.assertEqual(final.read_bytes(), data)
+
+        with mock.patch.object(
+            publish_module, "_fsync_retry", wraps=real_fsync
+        ) as repaired:
+            result = publish_module.publish_challenger_replacement_plan_v2_bytes(data)
+        self.assertEqual(result["status"], "ALREADY_PUBLISHED")
+        self.assertEqual(repaired.call_count, 1)
+
+    def test_fresh_interpreter_repairs_visible_final_after_dir_fsync_crash(self):
+        environment = {"PYTHONPATH": str(ROOT / "src")}
+        crash_script = r'''
+import sys
+from pathlib import Path
+import crypto_quant.challenger_replacement_supersession_publish as module
+module._artifact_parent = lambda: Path(sys.argv[1])
+real = module._fsync_retry
+count = 0
+def fail_before_directory_fsync(descriptor):
+    global count
+    count += 1
+    if count == 2:
+        raise module.SupersessionPublishError("CHALLENGER_REPLACEMENT_SUPERSESSION_FSYNC_FAILED")
+    return real(descriptor)
+module._fsync_retry = fail_before_directory_fsync
+try:
+    module.publish_challenger_replacement_plan_v2_bytes(b'{"fresh":true}\n')
+except module.SupersessionPublishError as error:
+    print(error.reason_code)
+    raise SystemExit(17)
+raise SystemExit(99)
+'''
+        crashed = subprocess.run(
+            [sys.executable, "-c", crash_script, str(self.parent)],
+            capture_output=True,
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(crashed.returncode, 17, crashed.stderr)
+        self.assertIn(b"FSYNC_FAILED", crashed.stdout)
+        final = self.parent / "challenger-replacement-plan-v0.64.0.json"
+        first_inode = final.stat().st_ino
+
+        replay_script = r'''
+import sys
+from pathlib import Path
+import crypto_quant.challenger_replacement_supersession_publish as module
+module._artifact_parent = lambda: Path(sys.argv[1])
+result = module.publish_challenger_replacement_plan_v2_bytes(b'{"fresh":true}\n')
+print(result["status"])
+'''
+        replayed = subprocess.run(
+            [sys.executable, "-c", replay_script, str(self.parent)],
+            capture_output=True,
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(replayed.returncode, 0, replayed.stderr)
+        self.assertEqual(replayed.stdout, b"ALREADY_PUBLISHED\n")
+        self.assertEqual(final.stat().st_ino, first_inode)
+
+    def test_fresh_interpreter_recovers_partial_file_fsync_and_noreplace_crashes(self):
+        environment = {"PYTHONPATH": str(ROOT / "src")}
+        crash_script = r'''
+import os, sys
+from pathlib import Path
+import crypto_quant.challenger_replacement_supersession_publish as module
+module._artifact_parent = lambda: Path(sys.argv[1])
+scenario = sys.argv[2]
+if scenario == "partial-write":
+    def partial(descriptor, data):
+        os.write(descriptor, data[:2])
+        raise module.SupersessionPublishError("CHALLENGER_REPLACEMENT_SUPERSESSION_WRITE_FAILED")
+    module._write_all = partial
+elif scenario == "file-fsync":
+    real = module._fsync_retry
+    count = 0
+    def fail_file_fsync(descriptor):
+        global count
+        count += 1
+        if count == 1:
+            raise module.SupersessionPublishError("CHALLENGER_REPLACEMENT_SUPERSESSION_FSYNC_FAILED")
+        return real(descriptor)
+    module._fsync_retry = fail_file_fsync
+elif scenario == "no-replace":
+    def fail_no_replace(*unused):
+        raise module.SupersessionPublishError("CHALLENGER_REPLACEMENT_SUPERSESSION_ATOMIC_NOREPLACE_FAILED")
+    module._atomic_no_replace = fail_no_replace
+try:
+    module.publish_challenger_replacement_plan_v2_bytes(b'{"fresh":true}\n')
+except module.SupersessionPublishError as error:
+    print(error.reason_code)
+    raise SystemExit(17)
+raise SystemExit(99)
+'''
+        retry_script = r'''
+import sys
+from pathlib import Path
+import crypto_quant.challenger_replacement_supersession_publish as module
+module._artifact_parent = lambda: Path(sys.argv[1])
+try:
+    module.publish_challenger_replacement_plan_v2_bytes(b'{"fresh":true}\n')
+except module.SupersessionPublishError as error:
+    print(error.reason_code)
+    raise SystemExit(18)
+raise SystemExit(99)
+'''
+        for scenario in ("partial-write", "file-fsync", "no-replace"):
+            with self.subTest(scenario=scenario):
+                parent = (
+                    Path(self.temporary.name)
+                    / ("crash-" + scenario)
+                    / "artifacts"
+                    / "challenger-replacement"
+                )
+                parent.mkdir(parents=True, mode=0o755)
+                parent.chmod(0o755)
+                crashed = subprocess.run(
+                    [sys.executable, "-c", crash_script, str(parent), scenario],
+                    capture_output=True,
+                    env=environment,
+                    check=False,
+                )
+                self.assertEqual(crashed.returncode, 17, crashed.stderr)
+                retried = subprocess.run(
+                    [sys.executable, "-c", retry_script, str(parent)],
+                    capture_output=True,
+                    env=environment,
+                    check=False,
+                )
+                self.assertEqual(retried.returncode, 18, retried.stderr)
+                self.assertIn(
+                    b"RECOVERY_EVIDENCE_PRESENT_RELEASE_BLOCKED",
+                    retried.stdout,
+                )
+                self.assertEqual(
+                    (parent / "challenger-replacement-plan-v0.64.0.json").read_bytes(),
+                    b'{"fresh":true}\n',
+                )
+                self.assertEqual(
+                    len(tuple(parent.glob(".v064-supersession-*.staging"))),
+                    1,
+                )
+
+    def test_new_orphan_seen_after_final_replay_blocks_success(self):
+        data = b'{"final":true}\n'
+        publish_module.publish_challenger_replacement_plan_v2_bytes(data)
+        real_inventory = publish_module._inventory_staging
+        calls = 0
+
+        def inject_before_post_inventory(parent_fd):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                entry = self.parent / (
+                    ".v064-supersession-plan-"
+                    + "f" * 64
+                    + "-"
+                    + "1" * 32
+                    + ".staging"
+                )
+                entry.write_bytes(b"sealed")
+                entry.chmod(0o644)
+            return real_inventory(parent_fd)
+
+        with mock.patch.object(
+            publish_module,
+            "_inventory_staging",
+            side_effect=inject_before_post_inventory,
+        ):
+            with self.assertRaisesRegex(
+                publish_module.SupersessionPublishError,
+                "RECOVERY_EVIDENCE_PRESENT_RELEASE_BLOCKED",
+            ):
+                publish_module.publish_challenger_replacement_plan_v2_bytes(data)
+
+    def test_missing_platform_no_replace_symbol_fails_closed(self):
+        descriptor = os.open(self.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with mock.patch.object(
+                publish_module.ctypes, "CDLL", return_value=object()
+            ):
+                with self.assertRaisesRegex(
+                    publish_module.SupersessionPublishError,
+                    "ATOMIC_NOREPLACE_UNSUPPORTED",
+                ):
+                    publish_module._atomic_no_replace(
+                        descriptor, "staging", "final"
+                    )
+        finally:
+            os.close(descriptor)
+
+    def test_unsupported_platform_errnos_have_one_fixed_failure(self):
+        class FailingPrimitive:
+            argtypes = None
+            restype = None
+
+            def __init__(self, code):
+                self.code = code
+
+            def __call__(self, *unused_args):
+                ctypes.set_errno(self.code)
+                return -1
+
+        descriptor = os.open(self.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for code in {
+                errno.ENOSYS,
+                getattr(errno, "EOPNOTSUPP", errno.ENOSYS),
+                getattr(errno, "ENOTSUP", errno.ENOSYS),
+            }:
+                library = type("Library", (), {})()
+                attribute = (
+                    "renameatx_np"
+                    if publish_module.platform.system() == "Darwin"
+                    else "renameat2"
+                )
+                setattr(library, attribute, FailingPrimitive(code))
+                with self.subTest(code=code), mock.patch.object(
+                    publish_module.ctypes, "CDLL", return_value=library
+                ):
+                    with self.assertRaisesRegex(
+                        publish_module.SupersessionPublishError,
+                        "ATOMIC_NOREPLACE_UNSUPPORTED",
+                    ):
+                        publish_module._atomic_no_replace(
+                            descriptor, "staging", "final"
+                        )
+        finally:
+            os.close(descriptor)
+
+    def test_parent_replacement_before_success_fails_closed(self):
+        real_no_replace = publish_module._atomic_no_replace
+        displaced = self.parent.with_name("challenger-replacement-displaced")
+
+        def replace_parent_after_publish(parent_fd, staging_name, final_name):
+            real_no_replace(parent_fd, staging_name, final_name)
+            os.rename(self.parent, displaced)
+            self.parent.mkdir(mode=0o755)
+            self.parent.chmod(0o755)
+
+        with mock.patch.object(
+            publish_module,
+            "_atomic_no_replace",
+            side_effect=replace_parent_after_publish,
+        ):
+            with self.assertRaisesRegex(
+                publish_module.SupersessionPublishError, "PARENT_INVALID"
+            ):
+                publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+        self.assertFalse(
+            (self.parent / "challenger-replacement-plan-v0.64.0.json").exists()
+        )
+        self.assertEqual(
+            (displaced / "challenger-replacement-plan-v0.64.0.json").read_bytes(),
+            b"plan\n",
+        )
+
+    def test_staging_path_swap_during_file_fsync_never_reaches_final(self):
+        attacker = self.parent / "attacker"
+        attacker.write_bytes(b"attacker")
+        attacker.chmod(0o644)
+        real_fsync = publish_module._fsync_retry
+        calls = 0
+
+        def swap_after_file_fsync(descriptor):
+            nonlocal calls
+            real_fsync(descriptor)
+            calls += 1
+            if calls == 1:
+                staging = next(self.parent.glob(".v064-supersession-*.staging"))
+                os.replace(attacker, staging)
+
+        with mock.patch.object(
+            publish_module, "_fsync_retry", side_effect=swap_after_file_fsync
+        ):
+            with self.assertRaisesRegex(
+                publish_module.SupersessionPublishError,
+                "STAGING_UNTRUSTED",
+            ):
+                publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+        self.assertFalse(
+            (self.parent / "challenger-replacement-plan-v0.64.0.json").exists()
+        )
+
+    def test_missing_required_open_flags_fail_before_open(self):
+        for name in ("O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK"):
+            parent_fd = None
+            if name == "O_NONBLOCK":
+                parent_fd = os.open(self.parent, os.O_RDONLY | os.O_DIRECTORY)
+            with self.subTest(name=name), mock.patch.object(
+                publish_module.os, name, 0
+            ), mock.patch.object(publish_module.os, "open") as opened:
+                with self.assertRaisesRegex(
+                    publish_module.SupersessionPublishError,
+                    "PLATFORM_UNSUPPORTED",
+                ):
+                    if name == "O_NONBLOCK":
+                        publish_module._read_final(parent_fd, "missing")
+                    else:
+                        publish_module._open_parent()
+                opened.assert_not_called()
+            if parent_fd is not None:
+                os.close(parent_fd)
+
+    def test_fifo_final_is_rejected_without_blocking(self):
+        final = self.parent / "challenger-replacement-plan-v0.64.0.json"
+        os.mkfifo(final, 0o644)
+        started = __import__("time").monotonic()
+        with self.assertRaisesRegex(
+            publish_module.SupersessionPublishError, "FINAL_UNTRUSTED"
+        ):
+            publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+        self.assertLess(__import__("time").monotonic() - started, 1.0)
+
+    def test_partial_staging_is_sealed_and_retry_cannot_claim_release_clean(self):
+        with mock.patch.object(
+            publish_module,
+            "_write_all",
+            side_effect=publish_module.SupersessionPublishError(
+                "CHALLENGER_REPLACEMENT_SUPERSESSION_WRITE_FAILED"
+            ),
+        ):
+            with self.assertRaisesRegex(
+                publish_module.SupersessionPublishError, "WRITE_FAILED"
+            ):
+                publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+        staging = tuple(self.parent.glob(".v064-supersession-*.staging"))
+        self.assertEqual(len(staging), 1)
+        self.assertIn(
+            "staging_basename=" + staging[0].name,
+            self.publisher_stderr.getvalue(),
+        )
+        with self.assertRaisesRegex(
+            publish_module.SupersessionPublishError,
+            "RECOVERY_EVIDENCE_PRESENT_RELEASE_BLOCKED",
+        ):
+            publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+        self.assertEqual(staging[0].stat().st_nlink, 1)
+        self.assertEqual(
+            (self.parent / "challenger-replacement-plan-v0.64.0.json").read_bytes(),
+            b"plan\n",
+        )
+
+    def test_final_fstat_error_is_mapped_and_every_open_fd_is_closed(self):
+        final = self.parent / "challenger-replacement-plan-v0.64.0.json"
+        final.write_bytes(b"plan\n")
+        final.chmod(0o644)
+        real_fstat = os.fstat
+        real_close = os.close
+        fstat_calls = []
+        closed = []
+
+        def fail_final_fstat(descriptor):
+            fstat_calls.append(descriptor)
+            if len(fstat_calls) == 2:
+                raise OSError(5, "injected EIO")
+            return real_fstat(descriptor)
+
+        def record_close(descriptor):
+            closed.append(descriptor)
+            return real_close(descriptor)
+
+        with mock.patch.object(
+            publish_module.os, "fstat", side_effect=fail_final_fstat
+        ), mock.patch.object(
+            publish_module.os, "close", side_effect=record_close
+        ):
+            with self.assertRaisesRegex(
+                publish_module.SupersessionPublishError, "FINAL_UNTRUSTED"
+            ):
+                publish_module.publish_challenger_replacement_plan_v2_bytes(b"plan\n")
+        self.assertEqual(len(closed), 2)
+        self.assertEqual(len(set(closed)), 2)
+
+    def test_source_contains_no_fallback_rename_or_hardlink(self):
+        source = Path(publish_module.__file__).read_text()
+        for forbidden in ("os.rename", "os.replace", "os.link", "os.symlink", "syscall("):
+            self.assertNotIn(forbidden, source)
+
+
+class SupersessionCliBoundaryTests(unittest.TestCase):
+    @staticmethod
+    def _completed(argv, returncode=0, stdout=b"", stderr=b""):
+        return type(
+            "Completed",
+            (),
+            {
+                "args": argv,
+                "returncode": returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+            },
+        )()
+
+    def test_only_three_parameterless_commands_are_registered(self):
+        self.assertEqual(
+            supersession_cli.COMMANDS,
+            (
+                "collect-machine-evidence",
+                "record-owner-attestation",
+                "assemble-record",
+            ),
+        )
+        self.assertEqual(tuple(inspect.signature(supersession_cli.main).parameters), ())
+        ignore_lines = (ROOT / ".gitignore").read_text().splitlines()
+        self.assertEqual(
+            [line for line in ignore_lines if "v064-supersession" in line],
+            ["/artifacts/challenger-replacement/.v064-supersession-*.staging"],
+        )
+
+    def test_git_argv_is_fixed_to_reviewed_repository(self):
+        repository = Path("/reviewed/repository")
+        argv = supersession_cli._git_argv(repository)
+        self.assertEqual(len(argv), 12)
+        self.assertEqual(argv[0], ("/usr/bin/git", "-C", str(repository), "rev-parse", "v0.62.0"))
+        self.assertEqual(argv[8][-2:], ("--porcelain=v1", "--untracked-files=all"))
+        self.assertEqual(
+            argv[-1][-3:],
+            (
+                "artifacts/challenger-replacement/",
+                "docs/adr/0062-replacement-challenger-preregistration-isolation.md",
+                "docs/implementation-status-v0.62.0.md",
+            ),
+        )
+
+    def test_collector_uses_only_fixed_read_only_boundaries(self):
+        repository = supersession_cli._repository_root()
+        plan_bytes = (
+            repository
+            / "artifacts/challenger-replacement/"
+            "challenger-replacement-plan-v0.62.0.json"
+        ).read_bytes()
+        git_stdout = (
+            b"b33c0cf58a954f548f76792f0b7cf989dcf0900c\n",
+            b"tag\n",
+            b"e0a9b3eb6a3f385ea259722e6613df8708e8fe5a\n",
+            b"a142927d96c4e6d52df22f79e929e679a219e82e\n",
+            b"tag\n",
+            b"df91e19240df14839125608422489adf3b902e76\n",
+            b"c" * 40 + b"\n",
+            b"",
+            b"",
+            b"",
+            plan_bytes,
+            b"e0a9b3eb6a3f385ea259722e6613df8708e8fe5a\n",
+        )
+        launch_argv = (
+            "/bin/launchctl",
+            "print",
+            "gui/501/local.crypto-quant.challenger-replacement-v1",
+        )
+        calls = []
+
+        def run(argv):
+            calls.append(tuple(argv))
+            if tuple(argv) == launch_argv:
+                return self._completed(
+                    argv,
+                    returncode=113,
+                    stderr=(
+                        b'Bad request.\nCould not find service "'
+                        b'local.crypto-quant.challenger-replacement-v1" '
+                        b'in domain for user gui: 501\n'
+                    ),
+                )
+            index = supersession_cli._git_argv(repository).index(tuple(argv))
+            return self._completed(argv, stdout=git_stdout[index])
+
+        with mock.patch.object(supersession_cli.os, "geteuid", return_value=501), mock.patch.object(
+            supersession_cli, "_require_absent"
+        ) as absent_call, mock.patch.object(
+            supersession_cli, "_run", side_effect=run
+        ):
+            evidence = supersession_cli._collect_machine_evidence()
+
+        self.assertEqual(absent_call.call_count, 2)
+        self.assertEqual(calls, [launch_argv, *supersession_cli._git_argv(repository)])
+        self.assertEqual(
+            evidence["observation"],
+            "NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION",
+        )
+        self.assertEqual(evidence["current_observations"]["canonical_event_count"], 0)
+        self.assertEqual(evidence["collector_actions"]["state_write_count"], 0)
+        self.assertEqual(
+            evidence["git_history"]["candidate_status_porcelain_base64"], ""
+        )
+
+    def test_wrong_uid_fails_before_launchctl(self):
+        with mock.patch.object(supersession_cli.os, "geteuid", return_value=502), mock.patch.object(
+            supersession_cli, "_run"
+        ) as run:
+            with self.assertRaisesRegex(
+                supersession_cli.SupersessionCommandError, "UID_INVALID"
+            ):
+                supersession_cli._collect_machine_evidence()
+        run.assert_not_called()
+
+    def test_absence_boundary_uses_lstat_and_rejects_any_present_object(self):
+        path = Path("/fixed/absent")
+        with mock.patch.object(
+            supersession_cli.os, "lstat", side_effect=FileNotFoundError
+        ) as lstat_call:
+            self.assertIsNone(supersession_cli._require_absent(path, "PRESENT"))
+        lstat_call.assert_called_once_with(path)
+        with mock.patch.object(
+            supersession_cli.os, "lstat", return_value=mock.Mock()
+        ):
+            with self.assertRaisesRegex(
+                supersession_cli.SupersessionCommandError, "PRESENT"
+            ):
+                supersession_cli._require_absent(path, "PRESENT")
+
+    def test_processes_receive_no_inherited_git_or_locale_environment(self):
+        completed = self._completed(("/usr/bin/git",), stdout=b"ok\n")
+        with mock.patch.object(
+            supersession_cli.subprocess, "run", return_value=completed
+        ) as run:
+            self.assertIs(
+                supersession_cli._run(("/usr/bin/git", "version")), completed
+            )
+        self.assertEqual(
+            run.call_args.kwargs["env"], supersession_cli._PROCESS_ENV
+        )
+        self.assertNotIn("GIT_DIR", run.call_args.kwargs["env"])
+        self.assertNotIn("GIT_WORK_TREE", run.call_args.kwargs["env"])
+
+    def test_later_ceremony_rejects_head_changed_since_machine_evidence(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+            root = Path(temporary)
+            machine_path = root / supersession_cli._MACHINE_RELATIVE
+            machine_path.parent.mkdir(parents=True)
+            _canonical_file(machine_path, _machine_evidence())
+            results = [self._completed(()) for unused in range(7)]
+            results[6] = self._completed((), stdout=b"2" * 40 + b"\n")
+            with self.assertRaisesRegex(
+                supersession_cli.SupersessionCommandError, "HEAD_CHANGED"
+            ):
+                supersession_cli._require_original_candidate_head(root, results)
+
+    def test_gitdir_marker_must_reciprocally_bind_reviewed_root(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+            base = Path(temporary)
+            reviewed = base / "reviewed"
+            other = base / "other"
+            metadata = base / "metadata"
+            reviewed.mkdir(mode=0o755)
+            other.mkdir(mode=0o755)
+            metadata.mkdir(mode=0o755)
+            marker = reviewed / ".git"
+            marker.write_text("gitdir: " + str(metadata) + "\n")
+            marker.chmod(0o644)
+            reciprocal = metadata / "gitdir"
+            reciprocal.write_text(str(other / ".git") + "\n")
+            reciprocal.chmod(0o644)
+            with self.assertRaisesRegex(
+                supersession_cli.SupersessionCommandError,
+                "REPOSITORY_INVALID",
+            ):
+                supersession_cli._validate_reviewed_repo_root(reviewed)
+
+            reciprocal.write_text(str(reviewed / ".git") + "\n")
+            self.assertIsNone(
+                supersession_cli._validate_reviewed_repo_root(reviewed)
+            )
+
+    def test_module_symlink_ancestry_cannot_be_resolved_away(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+            root = Path(temporary)
+            target = root / "target.py"
+            target.write_text("# fixture\n")
+            linked = root / "linked.py"
+            linked.symlink_to(target)
+            with mock.patch.object(
+                supersession_cli, "__file__", str(linked)
+            ):
+                with self.assertRaisesRegex(
+                    supersession_cli.SupersessionCommandError,
+                    "REPOSITORY_INVALID",
+                ):
+                    supersession_cli._repository_root()
+
+    def test_cli_has_no_mutating_or_network_process_commands(self):
+        source = Path(supersession_cli.__file__).read_text()
+        for forbidden in (
+            "mkdir(",
+            "chmod(",
+            '"kickstart"',
+            '"bootstrap"',
+            "requests.",
+            "urllib.",
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_owner_ceremony_displays_exact_hashes_and_requires_exact_ack(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+            root = Path(temporary)
+            artifact_root = root / "artifacts" / "challenger-replacement"
+            artifact_root.mkdir(parents=True)
+            plan_path = artifact_root / "challenger-replacement-plan-v0.64.0.json"
+            machine_path = artifact_root / (
+                "challenger-replacement-supersession-machine-evidence-v0.64.0.json"
+            )
+            _canonical_file(plan_path, build_challenger_replacement_plan_v2())
+            _canonical_file(machine_path, _machine_evidence())
+            precondition = _ceremony_precondition(
+                "C1_EVIDENCE_ONLY",
+                (
+                    "?? artifacts/challenger-replacement/"
+                    "challenger-replacement-supersession-machine-evidence-v0.64.0.json",
+                ),
+                [
+                    _final_snapshot(
+                        machine_path,
+                        "artifacts/challenger-replacement/"
+                        "challenger-replacement-supersession-machine-evidence-v0.64.0.json",
+                    )
+                ],
+            )
+            output = io.StringIO()
+            output.isatty = lambda: True
+            rejected_output = io.StringIO()
+            rejected_output.isatty = lambda: True
+            with mock.patch.object(
+                supersession_cli, "_repository_root", return_value=root
+            ), mock.patch.object(
+                supersession_cli,
+                "_capture_ceremony_precondition",
+                return_value=(precondition, ()),
+            ), mock.patch.object(
+                supersession_cli, "_timestamp", return_value="2026-08-10T00:05:00.000Z"
+            ), mock.patch.object(
+                supersession_cli.sys,
+                "stdin",
+                mock.Mock(isatty=mock.Mock(return_value=True)),
+            ), mock.patch("builtins.input", return_value=supersession_cli._ACKNOWLEDGEMENT), mock.patch.object(
+                supersession_cli,
+                "publish_challenger_replacement_owner_attestation_bytes",
+            ) as publish, redirect_stdout(output):
+                self.assertEqual(supersession_cli._attestation_command(), 0)
+            published = publish.call_args.args[0]
+            attestation = json.loads(published)
+            self.assertEqual(attestation["declaration"], ACCOUNTABLE_OWNER_DECLARATION)
+            self.assertIn(
+                "declaration_sha256="
+                + hashlib.sha256(ACCOUNTABLE_OWNER_DECLARATION.encode()).hexdigest(),
+                output.getvalue(),
+            )
+            self.assertRegex(output.getvalue(), r"binding_sha256=[0-9a-f]{64}")
+
+            with mock.patch.object(
+                supersession_cli, "_repository_root", return_value=root
+            ), mock.patch.object(
+                supersession_cli,
+                "_capture_ceremony_precondition",
+                return_value=(precondition, ()),
+            ), mock.patch.object(
+                supersession_cli, "_timestamp", return_value="2026-08-10T00:05:00.000Z"
+            ), mock.patch.object(
+                supersession_cli.sys,
+                "stdin",
+                mock.Mock(isatty=mock.Mock(return_value=True)),
+            ), mock.patch("builtins.input", return_value="no"), mock.patch.object(
+                supersession_cli,
+                "publish_challenger_replacement_owner_attestation_bytes",
+            ) as rejected_publish, redirect_stdout(rejected_output):
+                with self.assertRaisesRegex(
+                    supersession_cli.SupersessionCommandError,
+                    "ACKNOWLEDGEMENT_REQUIRED",
+                ):
+                    supersession_cli._attestation_command()
+            rejected_publish.assert_not_called()
+
+            with mock.patch.object(
+                supersession_cli, "_repository_root", return_value=root
+            ), mock.patch.object(
+                supersession_cli,
+                "_capture_ceremony_precondition",
+                return_value=(precondition, ()),
+            ), mock.patch.object(
+                supersession_cli, "_timestamp", return_value="2026-08-10T00:05:00.000Z"
+            ), mock.patch.object(
+                supersession_cli.sys,
+                "stdin",
+                mock.Mock(isatty=mock.Mock(return_value=True)),
+            ), mock.patch("builtins.input", return_value=supersession_cli._ACKNOWLEDGEMENT), mock.patch.object(
+                supersession_cli,
+                "publish_challenger_replacement_owner_attestation_bytes",
+            ) as hidden_publish, redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(
+                    supersession_cli.SupersessionCommandError,
+                    "INTERACTIVE_TTY_REQUIRED",
+                ):
+                    supersession_cli._attestation_command()
+            hidden_publish.assert_not_called()
+
+            changed_precondition = copy.deepcopy(precondition)
+            changed_precondition["allowlisted_finals"][0]["inode_decimal"] = str(
+                int(changed_precondition["allowlisted_finals"][0]["inode_decimal"])
+                + 1
+            )
+            changed_output = io.StringIO()
+            changed_output.isatty = lambda: True
+            with mock.patch.object(
+                supersession_cli, "_repository_root", return_value=root
+            ), mock.patch.object(
+                supersession_cli,
+                "_capture_ceremony_precondition",
+                side_effect=[(precondition, ()), (changed_precondition, ())],
+            ), mock.patch.object(
+                supersession_cli, "_timestamp", return_value="2026-08-10T00:05:00.000Z"
+            ), mock.patch.object(
+                supersession_cli.sys,
+                "stdin",
+                mock.Mock(isatty=mock.Mock(return_value=True)),
+            ), mock.patch("builtins.input", return_value=supersession_cli._ACKNOWLEDGEMENT), mock.patch.object(
+                supersession_cli,
+                "publish_challenger_replacement_owner_attestation_bytes",
+            ) as changed_publish, redirect_stdout(changed_output):
+                with self.assertRaisesRegex(
+                    supersession_cli.SupersessionCommandError,
+                    "PRECONDITION_CHANGED",
+                ):
+                    supersession_cli._attestation_command()
+            changed_publish.assert_not_called()
+
+    def test_temporary_git_ceremony_transitions_c0_through_c4_exactly(self):
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as temporary:
+            clone = Path(temporary) / "reviewed-clone"
+            head = subprocess.run(
+                ["/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+            ).stdout.decode("ascii").strip()
+            subprocess.run(
+                [
+                    "/usr/bin/git",
+                    "clone",
+                    "--no-local",
+                    "--no-hardlinks",
+                    "--no-checkout",
+                    str(ROOT),
+                    str(clone),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(clone), "checkout", "--detach", head],
+                check=True,
+                capture_output=True,
+            )
+            artifact_root = clone / "artifacts" / "challenger-replacement"
+            plan_path = artifact_root / "challenger-replacement-plan-v0.64.0.json"
+            _canonical_file(plan_path, build_challenger_replacement_plan_v2())
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(clone), "add", str(plan_path)],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "/usr/bin/git",
+                    "-C",
+                    str(clone),
+                    "-c",
+                    "user.name=Fixture",
+                    "-c",
+                    "user.email=fixture@invalid",
+                    "commit",
+                    "-m",
+                    "fixture: freeze plan",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                subprocess.run(
+                    ["/usr/bin/git", "-C", str(clone), "status", "--porcelain=v1"],
+                    check=True,
+                    capture_output=True,
+                ).stdout,
+                b"",
+            )
+
+            real_run = supersession_cli._run
+
+            def run_with_absent_service(argv):
+                if tuple(argv) == (
+                    "/bin/launchctl",
+                    "print",
+                    "gui/501/local.crypto-quant.challenger-replacement-v1",
+                ):
+                    return self._completed(
+                        argv,
+                        returncode=113,
+                        stderr=(
+                            b'Bad request.\nCould not find service "'
+                            b'local.crypto-quant.challenger-replacement-v1" '
+                            b'in domain for user gui: 501\n'
+                        ),
+                    )
+                return real_run(argv)
+
+            tty_stdout = io.StringIO()
+            tty_stdout.isatty = lambda: True
+            tty_stderr = io.StringIO()
+            tty_stderr.isatty = lambda: True
+            with mock.patch.object(
+                supersession_cli, "_repository_root", return_value=clone
+            ), mock.patch.object(
+                publish_module, "_artifact_parent", return_value=artifact_root
+            ), mock.patch.object(
+                supersession_cli, "_run", side_effect=run_with_absent_service
+            ), mock.patch.object(
+                supersession_cli, "_require_absent"
+            ), mock.patch.object(
+                supersession_cli.sys, "stdin", mock.Mock(isatty=mock.Mock(return_value=True))
+            ), mock.patch.object(
+                supersession_cli.sys, "stdout", tty_stdout
+            ), mock.patch.object(
+                publish_module.sys, "stderr", tty_stderr
+            ), mock.patch(
+                "builtins.input", return_value=supersession_cli._ACKNOWLEDGEMENT
+            ):
+                unexpected = clone / "unexpected.txt"
+                unexpected.write_text("unexpected")
+                with self.assertRaisesRegex(
+                    supersession_cli.SupersessionCommandError,
+                    "CANDIDATE_STATE_INVALID",
+                ):
+                    supersession_cli._collect_command()
+                unexpected.unlink()
+                self.assertEqual(supersession_cli._collect_command(), 0)
+                self.assertEqual(supersession_cli._attestation_command(), 0)
+                self.assertEqual(supersession_cli._assemble_command(), 0)
+
+            expected_c3 = tuple(
+                sorted(
+                    (
+                        "?? artifacts/challenger-replacement/"
+                        "challenger-replacement-owner-attestation-v0.64.0.json",
+                        "?? artifacts/challenger-replacement/"
+                        "challenger-replacement-plan-supersession-v0.64.0.json",
+                        "?? artifacts/challenger-replacement/"
+                        "challenger-replacement-supersession-machine-evidence-v0.64.0.json",
+                    )
+                )
+            )
+            c3 = tuple(
+                subprocess.run(
+                    ["/usr/bin/git", "-C", str(clone), "status", "--porcelain=v1"],
+                    check=True,
+                    capture_output=True,
+                ).stdout.decode("utf-8").splitlines()
+            )
+            self.assertEqual(c3, expected_c3)
+            formal_paths = [
+                clone / line[3:] for line in expected_c3
+            ]
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(clone), "add", *map(str, formal_paths)],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "/usr/bin/git",
+                    "-C",
+                    str(clone),
+                    "-c",
+                    "user.name=Fixture",
+                    "-c",
+                    "user.email=fixture@invalid",
+                    "commit",
+                    "-m",
+                    "fixture: record supersession",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                subprocess.run(
+                    ["/usr/bin/git", "-C", str(clone), "status", "--porcelain=v1"],
+                    check=True,
+                    capture_output=True,
+                ).stdout,
+                b"",
+            )

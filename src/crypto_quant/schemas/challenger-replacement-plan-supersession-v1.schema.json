@@ -16,7 +16,8 @@
     "prohibition",
     "authority",
     "status",
-    "warnings"
+        "warnings",
+        "ceremony_precondition"
   ],
   "properties": {
     "$schema": {
@@ -287,17 +288,63 @@
     "status": {
       "const": "PLAN_SUPERSESSION_RECORDED_PRE_START"
     },
-    "warnings": {
+        "warnings": {
       "const": [
         "OWNER_ATTESTATION_IS_GOVERNANCE_CLAIM_NOT_MACHINE_PROOF",
         "NO_RUNTIME_OR_START_AUTHORITY"
-      ]
-    }
+            ]
+        },
+        "ceremony_precondition": {
+            "$ref": "#/$defs/ceremony_precondition"
+        }
   },
   "$defs": {
-    "hash": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
-    }
+        "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "transcript": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "argv", "exit_code", "stdout_base64", "stdout_sha256", "stderr_base64", "stderr_sha256"],
+            "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                "exit_code": {"const": 0},
+                "stdout_base64": {"type": "string", "pattern": "^[A-Za-z0-9+/]*={0,2}$"},
+                "stdout_sha256": {"$ref": "#/$defs/hash"},
+                "stderr_base64": {"const": ""},
+                "stderr_sha256": {"const": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+            }
+        },
+        "final_snapshot": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "file_sha256", "device_decimal", "inode_decimal", "mode_octal", "nlink", "size", "mtime_ns_decimal", "ctime_ns_decimal"],
+            "properties": {
+                "path": {"type": "string", "minLength": 1},
+                "file_sha256": {"$ref": "#/$defs/hash"},
+                "device_decimal": {"type": "string", "pattern": "^[0-9]+$"},
+                "inode_decimal": {"type": "string", "pattern": "^[0-9]+$"},
+                "mode_octal": {"const": "0644"},
+                "nlink": {"const": 1},
+                "size": {"type": "integer", "minimum": 1, "maximum": 4194304},
+                "mtime_ns_decimal": {"type": "string", "pattern": "^[0-9]+$"},
+                "ctime_ns_decimal": {"type": "string", "pattern": "^[0-9]+$"}
+            }
+        },
+        "ceremony_precondition": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["state", "candidate_head", "head_transcript", "status_transcript", "allowlisted_finals", "staging_inventory"],
+            "properties": {
+                "state": {"const": "C2_EVIDENCE_ATTESTATION_ONLY"},
+                "candidate_head": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "head_transcript": {"$ref": "#/$defs/transcript"},
+                "status_transcript": {"$ref": "#/$defs/transcript"},
+                "allowlisted_finals": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/final_snapshot"}},
+                "staging_inventory": {"const": []}
+            }
+        }
   }
 }

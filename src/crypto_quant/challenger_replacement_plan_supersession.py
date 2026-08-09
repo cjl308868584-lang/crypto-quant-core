@@ -293,6 +293,52 @@ def _machine_binding(
     }
 
 
+def _ceremony_precondition_valid(
+    value: Mapping[str, Any],
+    *,
+    state: str,
+    candidate_head: str,
+    expected_paths_and_hashes: Tuple[Tuple[str, str], ...],
+) -> bool:
+    try:
+        head = value["head_transcript"]
+        status = value["status_transcript"]
+        if (
+            value["state"] != state
+            or value["candidate_head"] != candidate_head
+            or value["staging_inventory"] != []
+            or not _transcript_valid(head)
+            or not _transcript_valid(status)
+            or head["exit_code"] != 0
+            or status["exit_code"] != 0
+            or head["stderr_base64"] != ""
+            or status["stderr_base64"] != ""
+            or tuple(head["argv"][-2:]) != ("rev-parse", "HEAD")
+            or tuple(status["argv"][-2:])
+            != ("--porcelain=v1", "--untracked-files=all")
+        ):
+            return False
+        head_bytes = base64.b64decode(head["stdout_base64"], validate=True)
+        status_bytes = base64.b64decode(
+            status["stdout_base64"], validate=True
+        )
+        expected_status = b"".join(
+            ("?? " + path + "\n").encode("utf-8")
+            for path, unused_hash in sorted(expected_paths_and_hashes)
+        )
+        snapshots = tuple(
+            (item["path"], item["file_sha256"])
+            for item in value["allowlisted_finals"]
+        )
+        return (
+            head_bytes == (candidate_head + "\n").encode("ascii")
+            and status_bytes == expected_status
+            and snapshots == tuple(sorted(expected_paths_and_hashes))
+        )
+    except (KeyError, TypeError, ValueError, UnicodeError):
+        return False
+
+
 def _attestation_reasons(
     attestation: Mapping[str, Any],
     *,
@@ -346,6 +392,18 @@ def _attestation_reasons(
         ):
             reasons.append(
                 "CHALLENGER_REPLACEMENT_OWNER_ATTESTATION_EVIDENCE_BINDING_MISMATCH"
+            )
+        expected_machine = _machine_binding(machine_evidence_path, machine)
+        if not _ceremony_precondition_valid(
+            attestation["ceremony_precondition"],
+            state="C1_EVIDENCE_ONLY",
+            candidate_head=machine["git_history"]["candidate_head"],
+            expected_paths_and_hashes=((
+                expected_machine["path"], expected_machine["file_sha256"]
+            ),),
+        ):
+            reasons.append(
+                "CHALLENGER_REPLACEMENT_OWNER_ATTESTATION_PRECONDITION_INVALID"
             )
     except (
         CanonicalizationError,
@@ -430,6 +488,7 @@ def _record_identity(record: Mapping[str, Any]) -> Mapping[str, Any]:
         "supersession_forbidden_after": record["prohibition"][
             "supersession_forbidden_after"
         ],
+        "ceremony_precondition": record["ceremony_precondition"],
     }
 
 
@@ -438,6 +497,7 @@ def build_challenger_replacement_plan_supersession_record(
     v2_plan_path: Path,
     machine_evidence_path: Path,
     owner_attestation_path: Path,
+    ceremony_precondition: Mapping[str, Any],
 ) -> Dict[str, Any]:
     """Build the one record from three already validated exact artifacts."""
 
@@ -453,6 +513,20 @@ def build_challenger_replacement_plan_supersession_record(
         v2_plan_path=v2_path,
         machine_evidence_path=machine_path,
     )
+    machine_binding = _record_machine_binding(machine_path, machine)
+    owner_binding = _owner_binding(attestation_path, attestation)
+    if not _ceremony_precondition_valid(
+        ceremony_precondition,
+        state="C2_EVIDENCE_ATTESTATION_ONLY",
+        candidate_head=machine["git_history"]["candidate_head"],
+        expected_paths_and_hashes=tuple(sorted((
+            (machine_binding["path"], machine_binding["file_sha256"]),
+            (owner_binding["path"], owner_binding["file_sha256"]),
+        ))),
+    ):
+        raise ChallengerReplacementPlanSupersessionError(
+            "CHALLENGER_REPLACEMENT_PLAN_SUPERSESSION_PRECONDITION_INVALID"
+        )
     record: Dict[str, Any] = {
         "$schema": "./challenger-replacement-plan-supersession-v1.schema.json",
         "schema_version": "1.0.0",
@@ -460,12 +534,8 @@ def build_challenger_replacement_plan_supersession_record(
         "record_hash": "0" * 64,
         "previous_plan": copy.deepcopy(_PREVIOUS_PLAN),
         "superseding_plan": _superseding_plan_binding(v2_path, v2_plan),
-        "machine_evidence_binding": _record_machine_binding(
-            machine_path, machine
-        ),
-        "owner_attestation_binding": _owner_binding(
-            attestation_path, attestation
-        ),
+        "machine_evidence_binding": machine_binding,
+        "owner_attestation_binding": owner_binding,
         "prohibition": copy.deepcopy(_PROHIBITION),
         "authority": copy.deepcopy(_AUTHORITY),
         "status": "PLAN_SUPERSESSION_RECORDED_PRE_START",
@@ -473,6 +543,7 @@ def build_challenger_replacement_plan_supersession_record(
             "OWNER_ATTESTATION_IS_GOVERNANCE_CLAIM_NOT_MACHINE_PROOF",
             "NO_RUNTIME_OR_START_AUTHORITY",
         ],
+        "ceremony_precondition": copy.deepcopy(ceremony_precondition),
     }
     record["record_id"] = stable_id(
         "challenger_replacement_plan_supersession", _record_identity(record)
@@ -516,6 +587,7 @@ def load_challenger_replacement_plan_supersession_record(
             v2_plan_path=Path(v2_plan_path),
             machine_evidence_path=Path(machine_evidence_path),
             owner_attestation_path=Path(owner_attestation_path),
+            ceremony_precondition=record["ceremony_precondition"],
         )
         if business_hash(record) != business_hash(expected):
             raise ChallengerReplacementPlanSupersessionError(
