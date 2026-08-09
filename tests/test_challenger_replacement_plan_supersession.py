@@ -1298,6 +1298,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
         run: >-
           sudo -u '#501' env
           HOME=/opt/cryptoquant-ci-home
+          TMPDIR=/opt/cryptoquant-ci-home
           PATH="$PATH"
           make -C /opt/cryptoquant-ci-workspace test
 """
