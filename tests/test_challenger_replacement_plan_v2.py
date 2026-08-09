@@ -1,12 +1,26 @@
+import ast
+import copy
 import hashlib
+import inspect
 import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from crypto_quant.canonical import business_hash, canonical_json, stable_id
 from crypto_quant.challenger_replacement_plan import (
+    ChallengerReplacementPlanError,
     load_challenger_replacement_plan,
+)
+from crypto_quant.challenger_replacement_plan_v2 import (
+    ChallengerReplacementPlanV2Error,
+    build_challenger_replacement_plan_v2,
+    challenger_replacement_plan_v2_hash,
+    challenger_replacement_plan_v2_reasons,
+    load_challenger_replacement_plan_v2,
 )
 
 
@@ -109,6 +123,39 @@ EXPECTED_WARNINGS = [
     "V0_62_SUPERSEDED_PRE_START_STORAGE_SAFETY_CORRECTION",
 ]
 
+V2_FOUNDATION = {
+    "release_tag": "v0.63.0",
+    "peeled_commit": "df91e19240df14839125608422489adf3b902e76",
+    "package_version": "0.63.0",
+    "manifest_version": "1.57.0",
+    "build_input_tree_hash": "7fdfd6c69f1342892b222882b76ee4988487a482c958a9cdacf00461b2fd8f19",
+    "manifest_hash": "f4a74896a6d7b2166adba86075ef06b8d7986f900a086d04ee2f03754baded4b",
+    "manifest_file_sha256": "13bea4bfcf633e767eed73d431e57d496dcee47820aacf92e7b61b0efed5c546",
+}
+
+BYTE_EQUAL_PATHS = (
+    "scope",
+    "decision_policy",
+    "cohort_policy",
+    "evidence_policy",
+    "predecessor",
+    "eligibility",
+)
+
+ALLOWED_DIFF_PREFIXES = (
+    "/$schema",
+    "/schema_version",
+    "/foundation",
+    "/plan_id",
+    "/plan_hash",
+    "/status",
+    "/warnings",
+    "/isolation_policy/relative_paths",
+    "/isolation_policy/policy_hash",
+    "/storage_authority",
+    "/supersession",
+)
+
 
 def _const_object(schema):
     return {
@@ -116,6 +163,62 @@ def _const_object(schema):
         for key, value in schema["properties"].items()
         if "const" in value
     }
+
+
+def _diff_paths(left, right, path=""):
+    if isinstance(left, dict) and isinstance(right, dict):
+        paths = []
+        for key in sorted(set(left) | set(right)):
+            child = f"{path}/{key}"
+            if key not in left or key not in right:
+                paths.append(child)
+            else:
+                paths.extend(_diff_paths(left[key], right[key], child))
+        return paths
+    if isinstance(left, list) and isinstance(right, list):
+        paths = []
+        for index in range(max(len(left), len(right))):
+            child = f"{path}/{index}"
+            if index >= len(left) or index >= len(right):
+                paths.append(child)
+            else:
+                paths.extend(_diff_paths(left[index], right[index], child))
+        return paths
+    return [] if left == right else [path]
+
+
+def _v2_identity(plan):
+    return {
+        "previous_plan_file_sha256": plan["supersession"][
+            "previous_plan_file_sha256"
+        ],
+        "previous_plan_id": plan["supersession"]["previous_plan_id"],
+        "previous_plan_hash": plan["supersession"]["previous_plan_hash"],
+        "previous_plan_peeled_commit": plan["supersession"][
+            "previous_plan_peeled_commit"
+        ],
+        "foundation": plan["foundation"],
+        "scope_policy_hash": plan["scope"]["policy_hash"],
+        "decision_policy_hash": plan["decision_policy"]["policy_hash"],
+        "cohort_policy_hash": plan["cohort_policy"]["policy_hash"],
+        "isolation_policy_hash": plan["isolation_policy"]["policy_hash"],
+        "evidence_policy_hash": plan["evidence_policy"]["policy_hash"],
+        "storage_authority_policy_hash": plan["storage_authority"][
+            "policy_hash"
+        ],
+    }
+
+
+def _reidentify(plan):
+    plan["plan_id"] = stable_id("challenger_replacement_plan", _v2_identity(plan))
+    plan["plan_hash"] = challenger_replacement_plan_v2_hash(plan)
+    return plan
+
+
+def _write_plan(path, plan, *, newline=True):
+    body = canonical_json(plan).encode("utf-8")
+    path.write_bytes(body + (b"\n" if newline else b""))
+    return path
 
 
 class ChallengerReplacementPlanV1ImmutableSourceTests(unittest.TestCase):
@@ -215,3 +318,247 @@ class ChallengerReplacementPlanV2SchemaTests(unittest.TestCase):
                 pending.extend(node.values())
             elif isinstance(node, list):
                 pending.extend(node)
+
+
+class ChallengerReplacementPlanV2BuilderTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.v1 = load_challenger_replacement_plan(V1_PATH)
+
+    def test_builder_is_parameterless_and_deterministic(self):
+        self.assertEqual(
+            tuple(inspect.signature(build_challenger_replacement_plan_v2).parameters),
+            (),
+        )
+        first = canonical_json(build_challenger_replacement_plan_v2()).encode(
+            "utf-8"
+        )
+        for _ in range(100):
+            self.assertEqual(
+                canonical_json(build_challenger_replacement_plan_v2()).encode(
+                    "utf-8"
+                ),
+                first,
+            )
+
+    def test_research_subtrees_authority_and_isolation_identity_are_unchanged(self):
+        v2 = build_challenger_replacement_plan_v2()
+        for key in BYTE_EQUAL_PATHS:
+            self.assertEqual(
+                canonical_json(v2[key]).encode("utf-8"),
+                canonical_json(self.v1[key]).encode("utf-8"),
+                key,
+            )
+        self.assertEqual(v2["authority"], self.v1["authority"])
+        for key, value in self.v1["isolation_policy"].items():
+            if key not in ("relative_paths", "policy_hash"):
+                self.assertEqual(v2["isolation_policy"][key], value, key)
+        for key in ("service_label", "service_identity", "runtime_root", "target_plist"):
+            self.assertEqual(v2["isolation_policy"][key], self.v1["isolation_policy"][key])
+        self.assertNotIn("strategy", v2)
+        self.assertNotIn("evaluation", v2)
+
+    def test_only_preregistered_paths_change_and_exact_new_objects_are_frozen(self):
+        v2 = build_challenger_replacement_plan_v2()
+        differences = _diff_paths(self.v1, v2)
+        self.assertTrue(differences)
+        for path in differences:
+            self.assertTrue(
+                any(
+                    path == prefix or path.startswith(prefix + "/")
+                    for prefix in ALLOWED_DIFF_PREFIXES
+                ),
+                path,
+            )
+        self.assertEqual(v2["foundation"], V2_FOUNDATION)
+        self.assertEqual(v2["warnings"], EXPECTED_WARNINGS)
+        self.assertEqual(v2["isolation_policy"]["relative_paths"], EXPECTED_RELATIVE_PATHS)
+        self.assertEqual(
+            {key: v2["storage_authority"][key] for key in EXPECTED_STORAGE_AUTHORITY},
+            EXPECTED_STORAGE_AUTHORITY,
+        )
+        self.assertEqual(v2["supersession"], EXPECTED_SUPERSESSION)
+
+    def test_policy_plan_hash_and_plan_identity_recompute_exactly(self):
+        plan = build_challenger_replacement_plan_v2()
+        for key in (
+            "scope",
+            "decision_policy",
+            "cohort_policy",
+            "isolation_policy",
+            "evidence_policy",
+            "storage_authority",
+        ):
+            policy = dict(plan[key])
+            claimed = policy.pop("policy_hash")
+            self.assertEqual(claimed, business_hash(policy), key)
+        self.assertEqual(
+            plan["plan_id"],
+            stable_id("challenger_replacement_plan", _v2_identity(plan)),
+        )
+        self.assertEqual(plan["plan_hash"], challenger_replacement_plan_v2_hash(plan))
+        self.assertEqual(challenger_replacement_plan_v2_reasons(plan), ())
+
+    def test_rehashed_semantic_tampering_is_rejected(self):
+        cases = {
+            "scope": lambda plan: plan["scope"].__setitem__("market", "FUTURES"),
+            "decision": lambda plan: plan["decision_policy"].__setitem__(
+                "minimum_hold_hours", 9
+            ),
+            "cohort": lambda plan: plan["cohort_policy"].__setitem__(
+                "duration_days", 91
+            ),
+            "evidence": lambda plan: plan["evidence_policy"].__setitem__(
+                "old_decisions_migrated", True
+            ),
+            "predecessor": lambda plan: plan["predecessor"][
+                "failure_receipt"
+            ].__setitem__("failure_reason", "DIFFERENT"),
+            "eligibility": lambda plan: plan["eligibility"].__setitem__(
+                "runtime", "ELIGIBLE"
+            ),
+            "authority": lambda plan: plan["authority"].__setitem__(
+                "production_activation", True
+            ),
+            "service": lambda plan: plan["isolation_policy"].__setitem__(
+                "service_label", "different"
+            ),
+            "runtime_root": lambda plan: plan["isolation_policy"].__setitem__(
+                "runtime_root", "/different"
+            ),
+            "old_path": lambda plan: plan["isolation_policy"][
+                "relative_paths"
+            ].__setitem__("state", "state/old.sqlite"),
+            "storage": lambda plan: plan["storage_authority"].__setitem__(
+                "exports_authoritative", True
+            ),
+            "supersession": lambda plan: plan["supersession"].__setitem__(
+                "reason", "DIFFERENT"
+            ),
+            "v1_binding": lambda plan: plan["supersession"].__setitem__(
+                "previous_plan_hash", "f" * 64
+            ),
+            "foundation": lambda plan: plan["foundation"].__setitem__(
+                "release_tag", "v0.64.0"
+            ),
+            "warning_value": lambda plan: plan["warnings"].__setitem__(
+                0, "DIFFERENT"
+            ),
+            "warning_order": lambda plan: plan["warnings"].reverse(),
+            "warning_count": lambda plan: plan["warnings"].append("EIGHTH"),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name=name):
+                changed = copy.deepcopy(build_challenger_replacement_plan_v2())
+                mutate(changed)
+                for key in (
+                    "scope",
+                    "decision_policy",
+                    "cohort_policy",
+                    "isolation_policy",
+                    "evidence_policy",
+                    "storage_authority",
+                ):
+                    policy = dict(changed[key])
+                    policy.pop("policy_hash")
+                    changed[key]["policy_hash"] = business_hash(policy)
+                _reidentify(changed)
+                self.assertTrue(challenger_replacement_plan_v2_reasons(changed))
+
+    def test_claimed_policy_id_and_plan_hash_tampering_is_rejected(self):
+        for name, mutate in {
+            "policy_hash": lambda plan: plan["scope"].__setitem__(
+                "policy_hash", "f" * 64
+            ),
+            "plan_id": lambda plan: plan.__setitem__(
+                "plan_id", "challenger_replacement_plan_" + "f" * 64
+            ),
+            "plan_hash": lambda plan: plan.__setitem__("plan_hash", "f" * 64),
+        }.items():
+            with self.subTest(name=name):
+                changed = copy.deepcopy(build_challenger_replacement_plan_v2())
+                mutate(changed)
+                self.assertTrue(challenger_replacement_plan_v2_reasons(changed))
+
+    def test_module_ast_has_no_process_network_or_state_capability(self):
+        source = (
+            ROOT / "src" / "crypto_quant" / "challenger_replacement_plan_v2.py"
+        ).read_text()
+        tree = ast.parse(source)
+        imported = {
+            alias.name.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        }
+        self.assertTrue(
+            {"subprocess", "socket", "urllib", "requests", "sqlite3"}.isdisjoint(
+                imported
+            )
+        )
+
+
+class ChallengerReplacementPlanV2LoaderTests(unittest.TestCase):
+    def test_loader_accepts_only_exact_canonical_v2_bytes(self):
+        plan = build_challenger_replacement_plan_v2()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for newline in (False, True):
+                path = _write_plan(root / f"plan-{newline}.json", plan, newline=newline)
+                self.assertEqual(load_challenger_replacement_plan_v2(path), plan)
+
+            pretty = root / "pretty.json"
+            pretty.write_text(json.dumps(plan, indent=2))
+            with self.assertRaises(ChallengerReplacementPlanV2Error):
+                load_challenger_replacement_plan_v2(pretty)
+
+    def test_loader_rejects_v1_duplicate_float_and_nonabsolute_inputs(self):
+        plan = build_challenger_replacement_plan_v2()
+        canonical = canonical_json(plan)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            duplicate = root / "duplicate.json"
+            duplicate.write_text(
+                canonical.replace(
+                    '"schema_version":"2.0.0"',
+                    '"schema_version":"2.0.0","schema_version":"2.0.0"',
+                    1,
+                )
+            )
+            floating = root / "float.json"
+            floating.write_text(
+                canonical.replace('"required_slot_count":540', '"required_slot_count":540.0', 1)
+            )
+            for path in (duplicate, floating, V1_PATH):
+                with self.subTest(path=path.name):
+                    with self.assertRaises(ChallengerReplacementPlanV2Error):
+                        load_challenger_replacement_plan_v2(path)
+            with self.assertRaises(ChallengerReplacementPlanV2Error):
+                load_challenger_replacement_plan_v2(Path("relative.json"))
+
+    def test_loader_rejects_writable_hardlinked_symlinked_and_oversized_files(self):
+        plan = build_challenger_replacement_plan_v2()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            writable = _write_plan(root / "writable.json", plan)
+            writable.chmod(0o666)
+            hardlink_source = _write_plan(root / "hardlink-source.json", plan)
+            hardlink = root / "hardlink.json"
+            os.link(hardlink_source, hardlink)
+            symlink = root / "symlink.json"
+            symlink.symlink_to(hardlink_source)
+            oversized = root / "oversized.json"
+            oversized.write_bytes(b"{" + b" " * (256 * 1024))
+            for path in (writable, hardlink, symlink, oversized):
+                with self.subTest(path=path.name):
+                    with self.assertRaises(ChallengerReplacementPlanV2Error):
+                        load_challenger_replacement_plan_v2(path)
+
+    def test_v1_and_v2_loaders_reject_the_other_schema(self):
+        plan = build_challenger_replacement_plan_v2()
+        with tempfile.TemporaryDirectory() as directory:
+            path = _write_plan(Path(directory) / "v2.json", plan)
+            with self.assertRaises(ChallengerReplacementPlanError):
+                load_challenger_replacement_plan(path)
+        with self.assertRaises(ChallengerReplacementPlanV2Error):
+            load_challenger_replacement_plan_v2(V1_PATH)
