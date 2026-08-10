@@ -1794,6 +1794,10 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             attestation = json.loads(published)
             self.assertEqual(attestation["declaration"], ACCOUNTABLE_OWNER_DECLARATION)
             self.assertIn(
+                "signed_at=2026-08-10T00:05:00.000Z",
+                output.getvalue(),
+            )
+            self.assertIn(
                 "declaration_sha256="
                 + hashlib.sha256(ACCOUNTABLE_OWNER_DECLARATION.encode()).hexdigest(),
                 output.getvalue(),

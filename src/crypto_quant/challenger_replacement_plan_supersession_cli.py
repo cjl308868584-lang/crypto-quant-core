@@ -573,6 +573,7 @@ def _attestation_command() -> int:
             }
         ).encode("utf-8")
     ).hexdigest()
+    print("signed_at=" + value["signed_at"])
     print(ACCOUNTABLE_OWNER_DECLARATION)
     print("declaration_sha256=" + declaration_hash)
     print("binding_sha256=" + binding_hash)
