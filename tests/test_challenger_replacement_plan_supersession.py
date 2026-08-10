@@ -34,6 +34,7 @@ import crypto_quant.challenger_replacement_plan_supersession_cli as supersession
 import crypto_quant.challenger_replacement_supersession_publish as publish_module
 from crypto_quant.challenger_replacement_plan_v2 import (
     build_challenger_replacement_plan_v2,
+    load_challenger_replacement_plan_v2,
 )
 
 
@@ -87,6 +88,108 @@ def _canonical_file(path, value):
     path.write_bytes(canonical_json(value).encode("utf-8") + b"\n")
     path.chmod(0o644)
     return path
+
+
+def _git_fixture(repository, *arguments):
+    return subprocess.run(
+        ["/usr/bin/git", "-C", str(repository), *arguments],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _prepare_ceremony_plan_fixture(repository, artifact_root):
+    status = _git_fixture(repository, "status", "--porcelain=v1").stdout
+    if status != b"":
+        raise AssertionError("ceremony fixture repository is not clean")
+    plan_path = artifact_root / "challenger-replacement-plan-v0.64.0.json"
+    relative_path = plan_path.relative_to(repository).as_posix()
+    head_entry = _git_fixture(
+        repository, "ls-tree", "-z", "HEAD", "--", relative_path
+    ).stdout
+    expected = (
+        canonical_json(build_challenger_replacement_plan_v2()).encode("utf-8")
+        + b"\n"
+    )
+    if head_entry:
+        try:
+            metadata, entry_path = head_entry[:-1].split(b"\t", 1)
+            entry_mode, entry_kind, object_id = metadata.split(b" ", 2)
+        except ValueError as exc:
+            raise AssertionError("HEAD ceremony plan entry is untrusted") from exc
+        if (
+            not head_entry.endswith(b"\0")
+            or entry_mode != b"100644"
+            or entry_kind != b"blob"
+            or len(object_id) not in (40, 64)
+            or any(byte not in b"0123456789abcdef" for byte in object_id)
+            or entry_path != relative_path.encode("utf-8")
+        ):
+            raise AssertionError("HEAD ceremony plan entry is untrusted")
+        head_bytes = _git_fixture(repository, "show", "HEAD:" + relative_path).stdout
+        pre_normalization = plan_path.lstat()
+        if (
+            not stat.S_ISREG(pre_normalization.st_mode)
+            or pre_normalization.st_uid != os.geteuid()
+            or pre_normalization.st_nlink != 1
+            or stat.S_IMODE(pre_normalization.st_mode) not in (0o644, 0o664)
+        ):
+            raise AssertionError("tracked ceremony plan file is untrusted")
+        if head_bytes != expected or plan_path.read_bytes() != expected:
+            raise AssertionError("HEAD and worktree ceremony plan bytes are not canonical")
+        plan_path.chmod(0o644)
+        load_challenger_replacement_plan_v2(plan_path)
+        return plan_path
+    if plan_path.exists():
+        raise AssertionError("ceremony plan fixture is neither absent nor exact tracked input")
+
+    _canonical_file(plan_path, build_challenger_replacement_plan_v2())
+    _git_fixture(repository, "add", str(plan_path))
+    _git_fixture(
+        repository,
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@invalid",
+        "commit",
+        "-m",
+        "fixture: freeze plan",
+    )
+    return plan_path
+
+
+def _clone_committed_plan_fixture(temporary):
+    source = Path(temporary) / "source"
+    source.mkdir(mode=0o700)
+    _git_fixture(source, "init")
+    source_artifact_root = source / "artifacts" / "challenger-replacement"
+    source_artifact_root.mkdir(parents=True, mode=0o755)
+    source_plan = source_artifact_root / "challenger-replacement-plan-v0.64.0.json"
+    _canonical_file(source_plan, build_challenger_replacement_plan_v2())
+    _git_fixture(source, "add", str(source_plan))
+    _git_fixture(
+        source,
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@invalid",
+        "commit",
+        "-m",
+        "fixture: freeze plan",
+    )
+    repository = Path(temporary) / "repository"
+    previous_umask = os.umask(0o002)
+    try:
+        subprocess.run(
+            ["/usr/bin/git", "clone", str(source), str(repository)],
+            check=True,
+            capture_output=True,
+        )
+    finally:
+        os.umask(previous_umask)
+    artifact_root = repository / "artifacts" / "challenger-replacement"
+    plan_path = artifact_root / "challenger-replacement-plan-v0.64.0.json"
+    return source_plan, repository, artifact_root, plan_path
 
 
 def _file_sha(path):
@@ -1287,6 +1390,108 @@ raise SystemExit(99)
 
 
 class SupersessionCliBoundaryTests(unittest.TestCase):
+    def test_ceremony_fixture_rejects_non_regular_head_tree_mode(self):
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
+            _, repository, artifact_root, plan_path = _clone_committed_plan_fixture(
+                temporary
+            )
+            relative_path = plan_path.relative_to(repository).as_posix()
+            _git_fixture(repository, "update-index", "--chmod=+x", relative_path)
+            _git_fixture(
+                repository,
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@invalid",
+                "commit",
+                "-m",
+                "fixture: make plan executable in HEAD",
+            )
+            _git_fixture(repository, "config", "core.fileMode", "false")
+            self.assertEqual(
+                _git_fixture(repository, "status", "--porcelain=v1").stdout,
+                b"",
+            )
+
+            with self.assertRaisesRegex(
+                AssertionError, "HEAD ceremony plan entry is untrusted"
+            ):
+                _prepare_ceremony_plan_fixture(repository, artifact_root)
+
+    def test_ceremony_fixture_rejects_hardlink_without_modifying_sentinel(self):
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
+            source_plan, repository, artifact_root, plan_path = (
+                _clone_committed_plan_fixture(temporary)
+            )
+            plan_path.unlink()
+            source_plan.chmod(0o664)
+            os.link(source_plan, plan_path)
+            before = source_plan.stat()
+            snapshot = (
+                source_plan.read_bytes(),
+                stat.S_IMODE(before.st_mode),
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ino,
+                before.st_nlink,
+                before.st_ctime_ns,
+            )
+
+            with self.assertRaisesRegex(
+                AssertionError, "tracked ceremony plan file is untrusted"
+            ):
+                _prepare_ceremony_plan_fixture(repository, artifact_root)
+
+            after = source_plan.stat()
+            self.assertEqual(
+                (
+                    source_plan.read_bytes(),
+                    stat.S_IMODE(after.st_mode),
+                    after.st_size,
+                    after.st_mtime_ns,
+                    after.st_ino,
+                    after.st_nlink,
+                    after.st_ctime_ns,
+                ),
+                snapshot,
+            )
+
+    def test_ceremony_fixture_rejects_world_writable_tracked_plan(self):
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
+            _, repository, artifact_root, plan_path = _clone_committed_plan_fixture(
+                temporary
+            )
+            plan_path.chmod(0o666)
+
+            with self.assertRaisesRegex(
+                AssertionError, "tracked ceremony plan file is untrusted"
+            ):
+                _prepare_ceremony_plan_fixture(repository, artifact_root)
+
+            self.assertEqual(stat.S_IMODE(plan_path.stat().st_mode), 0o666)
+
+    def test_ceremony_fixture_reuses_exact_tracked_plan_without_empty_commit(self):
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
+            _, repository, artifact_root, plan_path = _clone_committed_plan_fixture(
+                temporary
+            )
+            self.assertEqual(stat.S_IMODE(plan_path.stat().st_mode), 0o664)
+            head_before = _git_fixture(repository, "rev-parse", "HEAD").stdout
+
+            _prepare_ceremony_plan_fixture(repository, artifact_root)
+
+            head_after = _git_fixture(repository, "rev-parse", "HEAD").stdout
+            self.assertEqual(head_after, head_before)
+            self.assertEqual(
+                _git_fixture(repository, "status", "--porcelain=v1").stdout,
+                b"",
+            )
+            unrelated = repository / "unrelated.txt"
+            unrelated.write_text("must not enter the fixture commit", encoding="utf-8")
+            _git_fixture(repository, "add", str(unrelated))
+            with self.assertRaisesRegex(AssertionError, "repository is not clean"):
+                _prepare_ceremony_plan_fixture(repository, artifact_root)
+
     def test_linux_ci_runs_full_suite_and_fixed_owner_boundary_separately(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         self.assertIn(
@@ -1706,29 +1911,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             artifact_root = clone / "artifacts" / "challenger-replacement"
             artifact_root.chmod(0o755)
             self.assertEqual(stat.S_IMODE(artifact_root.stat().st_mode), 0o755)
-            plan_path = artifact_root / "challenger-replacement-plan-v0.64.0.json"
-            _canonical_file(plan_path, build_challenger_replacement_plan_v2())
-            subprocess.run(
-                ["/usr/bin/git", "-C", str(clone), "add", str(plan_path)],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                [
-                    "/usr/bin/git",
-                    "-C",
-                    str(clone),
-                    "-c",
-                    "user.name=Fixture",
-                    "-c",
-                    "user.email=fixture@invalid",
-                    "commit",
-                    "-m",
-                    "fixture: freeze plan",
-                ],
-                check=True,
-                capture_output=True,
-            )
+            _prepare_ceremony_plan_fixture(clone, artifact_root)
             self.assertEqual(
                 subprocess.run(
                     ["/usr/bin/git", "-C", str(clone), "status", "--porcelain=v1"],
