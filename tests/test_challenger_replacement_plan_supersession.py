@@ -1701,7 +1701,11 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
                 check=True,
                 capture_output=True,
             )
+            (clone / ".git").chmod(0o700)
+            self.assertEqual(stat.S_IMODE((clone / ".git").stat().st_mode), 0o700)
             artifact_root = clone / "artifacts" / "challenger-replacement"
+            artifact_root.chmod(0o755)
+            self.assertEqual(stat.S_IMODE(artifact_root.stat().st_mode), 0o755)
             plan_path = artifact_root / "challenger-replacement-plan-v0.64.0.json"
             _canonical_file(plan_path, build_challenger_replacement_plan_v2())
             subprocess.run(
