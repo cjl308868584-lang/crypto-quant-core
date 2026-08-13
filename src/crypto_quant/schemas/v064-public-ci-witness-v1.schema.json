@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/v064-public-ci-witness-v1.schema.json",
+  "title": "V0.64 public Linux CI witness V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "witness_id", "witness_hash", "status", "private_source", "public_source", "bundle", "workflow", "run", "jobs", "raw_evidence", "ancestry", "safety", "non_claims"],
+  "properties": {
+    "$schema": {"const": "./v064-public-ci-witness-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "witness_id": {"type": "string", "pattern": "^v064_public_ci_witness_[0-9a-f]{64}$"},
+    "witness_hash": {"$ref": "#/$defs/hash"},
+    "status": {"const": "PUBLIC_LINUX_PORTABILITY_WITNESS_COMPLETED"},
+    "private_source": {"$ref": "#/$defs/private_source"},
+    "public_source": {"$ref": "#/$defs/public_source"},
+    "bundle": {"$ref": "#/$defs/bundle"},
+    "workflow": {"$ref": "#/$defs/workflow"},
+    "run": {"$ref": "#/$defs/run"},
+    "jobs": {"$ref": "#/$defs/jobs"},
+    "raw_evidence": {"$ref": "#/$defs/raw_evidence"},
+    "ancestry": {"$ref": "#/$defs/ancestry"},
+    "safety": {"$ref": "#/$defs/safety"},
+    "non_claims": {"$ref": "#/$defs/non_claims"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "git_oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "timestamp": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "private_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "candidate_commit", "candidate_tree", "object_format", "historical_billing_blocked_private_pr"],
+      "properties": {
+        "repository": {"const": "cjl308868584-lang/crypto-quant-core"},
+        "candidate_commit": {"$ref": "#/$defs/git_oid"},
+        "candidate_tree": {"$ref": "#/$defs/git_oid"},
+        "object_format": {"const": "sha1"},
+        "historical_billing_blocked_private_pr": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["number", "run_id", "status"],
+          "properties": {
+            "number": {"const": 32},
+            "run_id": {"const": 31436609135},
+            "status": {"const": "PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED"}
+          }
+        }
+      }
+    },
+    "public_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "tree", "branch", "parent_count"],
+      "properties": {
+        "repository": {"const": "cjl308868584-lang/crypto-quant-v064-public-ci"},
+        "commit": {"$ref": "#/$defs/git_oid"},
+        "tree": {"$ref": "#/$defs/git_oid"},
+        "branch": {"const": "main"},
+        "parent_count": {"const": 0}
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_sha256", "file_set_sha256"],
+      "properties": {
+        "manifest_sha256": {"$ref": "#/$defs/hash"},
+        "file_set_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "blob_oid", "sha256"],
+      "properties": {
+        "path": {"const": ".github/workflows/ci.yml"},
+        "blob_oid": {"$ref": "#/$defs/git_oid"},
+        "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "workflow_id", "run_attempt", "event", "head_branch", "head_sha", "status", "conclusion", "created_at", "updated_at"],
+      "properties": {
+        "run_id": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "workflow_id": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "run_attempt": {"const": 1},
+        "event": {"enum": ["push", "workflow_dispatch"]},
+        "head_branch": {"const": "main"},
+        "head_sha": {"$ref": "#/$defs/git_oid"},
+        "status": {"const": "completed"},
+        "conclusion": {"const": "success"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "updated_at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "name", "status", "conclusion"],
+      "properties": {
+        "number": {"type": "integer", "minimum": 1},
+        "name": {"type": "string", "minLength": 1},
+        "status": {"const": "completed"},
+        "conclusion": {"const": "success"}
+      }
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python_version", "job_id", "name", "status", "conclusion", "runner_os", "started_at", "completed_at", "steps"],
+      "properties": {
+        "python_version": {"enum": ["3.9", "3.12"]},
+        "job_id": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "name": {"type": "string", "minLength": 1},
+        "status": {"const": "completed"},
+        "conclusion": {"const": "success"},
+        "runner_os": {"const": "Linux"},
+        "started_at": {"$ref": "#/$defs/timestamp"},
+        "completed_at": {"$ref": "#/$defs/timestamp"},
+        "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}}
+      }
+    },
+    "jobs": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/job"}, {"properties": {"python_version": {"const": "3.9"}}}]},
+        {"allOf": [{"$ref": "#/$defs/job"}, {"properties": {"python_version": {"const": "3.12"}}}]}
+      ],
+      "items": false
+    },
+    "raw_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "size": {"type": "integer", "minimum": 1, "maximum": 67108864},
+        "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "raw_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_api", "jobs_api", "run_log", "acquisition_transcript"],
+      "properties": {
+        "run_api": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci/v064-public-ci-run-api-v1.json"}}}]},
+        "jobs_api": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci/v064-public-ci-jobs-api-v1.json"}}}]},
+        "run_log": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci/v064-public-ci-run-log-v1.txt"}}}]},
+        "acquisition_transcript": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci/v064-public-ci-acquisition-transcript-v1.json"}}}]}
+      }
+    },
+    "ancestry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["witness_binds_private_source_f", "public_commit_is_parentless", "candidate_g_not_yet_bound"],
+      "properties": {
+        "witness_binds_private_source_f": {"const": true},
+        "public_commit_is_parentless": {"const": true},
+        "candidate_g_not_yet_bound": {"const": true}
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["production_activation", "credentials_present", "broker_allowed", "orders_allowed", "runtime_state_write_allowed"],
+      "properties": {
+        "production_activation": {"const": false},
+        "credentials_present": {"const": false},
+        "broker_allowed": {"const": false},
+        "orders_allowed": {"const": false},
+        "runtime_state_write_allowed": {"const": false}
+      }
+    },
+    "non_claims": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "NOT_FULL_PROJECT_CI"},
+        {"const": "NOT_PRIVATE_PR_CHECK"},
+        {"const": "NOT_STRATEGY_CORRECTNESS_EVIDENCE"},
+        {"const": "NOT_PROFITABILITY_OR_AI_ADVANTAGE_EVIDENCE"},
+        {"const": "NOT_PAPER_CANARY_OR_LIVE_TRADING_AUTHORIZATION"}
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    }
+  }
+}

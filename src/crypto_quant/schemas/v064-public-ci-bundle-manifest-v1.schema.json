@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/v064-public-ci-bundle-manifest-v1.schema.json",
+  "title": "V0.64 minimal public CI bundle manifest V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "purpose", "source", "public_repository", "files", "file_set_sha256", "safety", "non_claims"],
+  "properties": {
+    "$schema": {"const": "./v064-public-ci-bundle-manifest-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "purpose": {"const": "V064_LINUX_PORTABILITY_WITNESS_ONLY"},
+    "source": {"$ref": "#/$defs/source"},
+    "public_repository": {"const": "cjl308868584-lang/crypto-quant-v064-public-ci"},
+    "files": {"$ref": "#/$defs/files"},
+    "file_set_sha256": {"$ref": "#/$defs/hash"},
+    "safety": {"$ref": "#/$defs/safety"},
+    "non_claims": {"$ref": "#/$defs/non_claims"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "git_oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["private_repository", "candidate_commit", "candidate_tree", "private_release_baseline", "object_format", "historical_billing_blocked_private_pr"],
+      "properties": {
+        "private_repository": {"const": "cjl308868584-lang/crypto-quant-core"},
+        "candidate_commit": {"$ref": "#/$defs/git_oid"},
+        "candidate_tree": {"$ref": "#/$defs/git_oid"},
+        "private_release_baseline": {"const": "df91e19240df14839125608422489adf3b902e76"},
+        "object_format": {"const": "sha1"},
+        "historical_billing_blocked_private_pr": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["number", "run_id", "status"],
+          "properties": {
+            "number": {"const": 32},
+            "run_id": {"const": 31436609135},
+            "status": {"const": "PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED"}
+          }
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size", "sha256", "source_kind", "source_blob_oid"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "size": {"type": "integer", "minimum": 1, "maximum": 4194304},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "source_kind": {"enum": ["PRIVATE_GIT_BLOB", "PRIVATE_TEMPLATE_BLOB"]},
+        "source_blob_oid": {"$ref": "#/$defs/git_oid"}
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/file"}, {"properties": {"path": {"const": ".github/workflows/ci.yml"}, "source_kind": {"const": "PRIVATE_TEMPLATE_BLOB"}}}]},
+        {"allOf": [{"$ref": "#/$defs/file"}, {"properties": {"path": {"const": ".gitignore"}, "source_kind": {"const": "PRIVATE_TEMPLATE_BLOB"}}}]},
+        {"allOf": [{"$ref": "#/$defs/file"}, {"properties": {"path": {"const": "NOTICE.md"}, "source_kind": {"const": "PRIVATE_TEMPLATE_BLOB"}}}]},
+        {"allOf": [{"$ref": "#/$defs/file"}, {"properties": {"path": {"const": "README.md"}, "source_kind": {"const": "PRIVATE_TEMPLATE_BLOB"}}}]},
+        {"allOf": [{"$ref": "#/$defs/file"}, {"properties": {"path": {"const": "SECURITY.md"}, "source_kind": {"const": "PRIVATE_TEMPLATE_BLOB"}}}]},
+        {"allOf": [{"$ref": "#/$defs/file"}, {"properties": {"path": {"const": "src/crypto_quant/challenger_replacement_supersession_publish.py"}, "source_kind": {"const": "PRIVATE_GIT_BLOB"}}}]},
+        {"allOf": [{"$ref": "#/$defs/file"}, {"properties": {"path": {"const": "tests/test_v064_linux_supersession_publish.py"}, "source_kind": {"const": "PRIVATE_GIT_BLOB"}}}]}
+      ],
+      "items": false
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["production_activation", "credentials_present", "broker_allowed", "orders_allowed", "runtime_state_write_allowed"],
+      "properties": {
+        "production_activation": {"const": false},
+        "credentials_present": {"const": false},
+        "broker_allowed": {"const": false},
+        "orders_allowed": {"const": false},
+        "runtime_state_write_allowed": {"const": false}
+      }
+    },
+    "non_claims": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "NOT_FULL_PROJECT_CI"},
+        {"const": "NOT_PRIVATE_PR_CHECK"},
+        {"const": "NOT_STRATEGY_CORRECTNESS_EVIDENCE"},
+        {"const": "NOT_PROFITABILITY_OR_AI_ADVANTAGE_EVIDENCE"},
+        {"const": "NOT_PAPER_CANARY_OR_LIVE_TRADING_AUTHORIZATION"}
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    }
+  }
+}
