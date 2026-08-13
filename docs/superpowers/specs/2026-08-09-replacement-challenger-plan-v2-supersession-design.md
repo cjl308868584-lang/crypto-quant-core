@@ -496,10 +496,39 @@ errno 前保留返回值。缺少 symbol，或返回 `ENOSYS`/`EOPNOTSUPP`/`ENOT
 owner-only temporary directory 完成两个实证门：
 同目录两进程竞争同一 final 只有一个 success、一个 `EEXIST`；existing final bytes/inode 不被
 替换；file fsync、no-replace、directory fsync 各 crash boundary 的 fresh-process replay 符合第6.4/6.5节。
-Draft PR 的 Linux Python 3.9/3.12 CI 都必须实际运行 Linux 路径；macOS release candidate 必须在目标
-Mac 上实际运行 Darwin gate。Linux CI、Darwin mock 或任一平台 skip 不能替代目标实证。两个门都绑定
-同一 Task 4 commit，且任一语义、symbol、kernel/filesystem 支持不符即在
+Linux Python 3.9/3.12 witness 都必须实际运行 Linux 路径；macOS release candidate 必须在目标
+Mac 上实际运行 Darwin gate。Linux witness、Darwin mock 或任一平台 skip 不能替代目标实证。两个门都绑定
+同一已审查私有 source candidate，且任一语义、symbol、kernel/filesystem 支持不符即在
 artifact 前停止，不生成 plan/evidence/attestation/record。
+
+### 6.7 2026-08-13 Linux witness transport amendment
+
+2026-08 的私有 GitHub Actions 免费额度在 runner 分配前耗尽。私有 Draft PR #32 的 run
+`31436609135` 没有执行 Python 测试：Python 3.9 job 因 billing 在 runner 前失败，Python 3.12 job
+被取消。该 run 必须永久如实保留，不能被解释为代码或测试失败，也不能被伪报为已运行的 PR CI。
+
+本修订只替换第6.6节和验收项13的 **pre-artifact Linux portability transport**：
+
+```text
+PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED = run 31436609135
+PUBLIC_SOURCE_CANDIDATE_F = reviewed private source commit exported byte-for-byte
+PUBLIC_LINUX_PORTABILITY_WITNESS_NOT_PRIVATE_PR_CHECK = independent bound transport
+POST_WITNESS_PRIVATE_CANDIDATE_G = strict descendant of F with unchanged public-source blobs
+```
+
+- 私有 Draft PR 仍是代码审查和最终发布对象；它不因公开 witness 而获得绿色 PR check；
+- `F` 包含已审查 publisher、public-only test、固定 exporter/verifier 与 witness loader；公开 manifest
+  和 Linux run 逐字节绑定 `F`；
+- 最小公开仓库只运行冻结的实际 Linux no-replace/竞态/崩溃门，是独立 portability witness，
+  不是 private PR check、全量 CI、策略或盈利证据；
+- `G` 是公开 run 后新增 exact witness 的 `F` 严格后代；进入 Task 5 前必须证明所有公开源 blob
+  在 `F` 与 `G` 间不变；
+- 正式 Task 5 plan artifact 在目标 Mac Darwin gate、公开 Python 3.9/3.12 Linux witness、strict
+  witness loader 和 `F`→`G` unchanged-blob gate 全部通过前禁止生成。
+
+除上述不可用 transport 外，测试语义、失败阈值、私有仓库和 release authority、v0.62 bytes/tag、
+owner approval、C0-C4、Task 5-8 证据 ceremony 以及最终 private PR/main/tag 门均不变。公开仓库创建与
+push 必须在 exact eight-file approval package 后取得单独明确批准；本修订本身不授权该外部写入。
 
 ## 7. 三阶段 runtime 后续合同
 
@@ -577,8 +606,8 @@ v0.64 只有同时满足以下条件才可成为 release候选：
     Runner/market/Broker/order/state-write 均为零；
 12. C0-C4 每一步 HEAD/raw status/final identity/transcript 与 staging inventory 精确符合第6.5节，只有
     C0/C4 被称为 clean；
-13. Draft-PR Linux Python 3.9/3.12 actual `renameat2` gate 与目标Mac actual `renameatx_np` gate 在
-    Task 5 前绑定同一代码提交并通过；
+13. 与 `F` exact bytes 绑定的公开 Linux Python 3.9/3.12 actual `renameat2` witness、目标Mac actual
+    `renameatx_np` gate、strict witness loader 和 `F`→`G` unchanged-blob gate 在 Task 5 前全部通过；
 14. protocol orphan 永不改变 external sentinel，且任何残留 orphan 都阻断 attestation/record/commit/release；
 15. repository没有replacement runtime、deployment或exporter实现混入本版本。
 

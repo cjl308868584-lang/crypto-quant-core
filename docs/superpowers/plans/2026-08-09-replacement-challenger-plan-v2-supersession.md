@@ -25,12 +25,36 @@
 - V2 `foundation` is the exact v0.63 predecessor object. V0.64 build/manifest identity is bound later by release manifest/status/ADR and never enters plan, attestation, or record hashes.
 - All formal governance artifacts use the dedicated fixed-path staging publisher; direct writes to canonical final and reuse of `system_paper_evidence.publish_owner_exact` are forbidden.
 - Darwin uses only `renameatx_np(..., RENAME_EXCL=0x00000004)`; Linux uses only `renameat2(..., RENAME_NOREPLACE=1)`, both through controlled `ctypes`. Missing/incorrect platform semantics fail closed with no rename/hardlink/direct-final fallback.
-- No formal artifact may be generated until the current platform feasibility gate passes. Linux Python 3.9/3.12 Draft-PR CI covers Linux; the target Mac must independently pass the Darwin gate before Task 5. Neither substitutes for the other.
+- No formal artifact may be generated until the current platform feasibility gate passes. The 2026-08-13 transport amendment replaces only the billing-blocked pre-artifact Linux Draft-PR jobs with an exact-byte-bound public Linux witness; the target Mac must independently pass the Darwin gate before Task 5. Neither substitutes for the other.
 - After Task 5 commits the plan, freeze `HEAD=H` through collection, attestation and record assembly. Intermediate Git status must match the exact candidate-state allowlist; only `C0` and post-commit `C4` are called clean.
 - Protocol staging is separately inventoried even though its exact filename pattern is ignored by Git. A sealed orphan is never modified and does not prevent an exact publisher retry, but any remaining orphan blocks attestation, record assembly, commit and release.
 - An orphan-blocked worktree is retained unchanged as failure evidence. Recovery starts from the exact pre-artifact commit in a new isolated worktree and repeats the ceremony; it never deletes or modifies the orphan.
 - Keep `v0.65.0` reserved for the approved single end-to-end NautilusTrader Spike; replacement three-stage runtime is `v0.66.0` or later.
 - Run one local full suite for the final code state, one complete independent review, targeted re-review after fixes, PR Python 3.9/3.12 CI, merged-main CI, and annotated-tag identity verification.
+
+### 2026-08-13 pre-artifact Linux transport amendment
+
+Private PR #32 run `31436609135` did not execute tests because the private Actions quota blocked runner
+allocation. Preserve it with the exact status:
+
+```text
+PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED = run 31436609135
+PUBLIC_SOURCE_CANDIDATE_F = reviewed private source commit exported byte-for-byte
+PUBLIC_LINUX_PORTABILITY_WITNESS_NOT_PRIVATE_PR_CHECK = independent bound transport
+POST_WITNESS_PRIVATE_CANDIDATE_G = strict descendant of F with unchanged public-source blobs
+```
+
+The private Draft PR remains the code-review and release object. The public run is a permanently
+auditable, minimal Linux portability witness for exact files from `F`; it is not a private PR check or
+full-project CI. After the run, `G` may add only the sealed witness/regression/build-manifest delta and
+must prove strict `F` ancestry plus unchanged public-source blobs. No Task 5 artifact may exist before
+the target-Mac Darwin gate, public Python 3.9/3.12 Linux witness, strict witness replay and `F`→`G`
+unchanged-blob verification all pass.
+
+Only this unavailable pre-artifact transport changes. Test semantics, thresholds, private release
+authority, v0.62 bytes/tag, the owner-approval gate, C0-C4 and the Task 5-8 evidence ceremony remain
+unchanged. The public repository and push require the separate exact eight-file approval package; this
+amendment grants no external-write authority.
 
 ---
 
@@ -642,7 +666,7 @@ reasons and zero fallback calls. Static-scan for forbidden `os.rename`, `os.repl
 syscall-number paths.
 
 Darwin tests call actual `renameatx_np`; Linux tests call actual `renameat2`. Platform skips may skip
-only the other operating system, never the current one. Linux Python 3.9/3.12 CI must execute the
+only the other operating system, never the current one. Linux Python 3.9/3.12 witness must execute the
 actual Linux test; target-Mac execution must execute the actual Darwin test. A mock success is not a
 platform gate.
 
@@ -691,13 +715,15 @@ git commit -m "feat: add fixed replacement supersession evidence boundary"
 - [ ] **Step 9: Run both pre-artifact platform gates**
 
 On the target Mac, run the focused tests with Python 3.9 and Python 3.12 when both interpreters are
-available; the actual Darwin feasibility test must pass at least once on the release candidate. After
-read-only GitHub identity/ADMIN verification, push the Task 4 commit and create the version Draft PR
-without any formal artifact. Require its Python 3.9/3.12 Ubuntu jobs to execute and pass the actual
-Linux feasibility test. Record exact local command/output and Draft-PR run/job identities.
+available; the actual Darwin feasibility test must pass at least once on the release candidate. Preserve
+private Draft PR #32 and run `31436609135` as billing-blocked pre-run evidence. Then follow the fixed
+minimal-public-witness plan to freeze private source candidate `F`, obtain the separate irreversible
+eight-file approval, run Python 3.9/3.12 Ubuntu against the exact exported bytes, seal the run, and create
+strict descendant `G`. Record exact local/public commands, commit/tree/blob identities and run/job IDs.
 
-If target-Darwin or either Linux job is unsupported, skipped, mocked, absent or failing, stop before
-Task 5. Do not generate any formal plan/evidence/attestation/record artifact.
+If target-Darwin or either public Linux job is unsupported, skipped, mocked, absent or failing, or strict
+witness replay / `F`→`G` unchanged-source verification fails, stop before Task 5. Do not generate any
+formal plan/evidence/attestation/record artifact.
 
 ---
 
@@ -716,10 +742,11 @@ Task 5. Do not generate any formal plan/evidence/attestation/record artifact.
 - [ ] **Step 1: Re-run all pre-artifact design/Schema tests**
 
 Run the Task 4 focused command. Expected: all pass. Stop if any test fails; artifact generation is
-forbidden before this gate. Independently verify the target-Mac Darwin gate passed on the current
-Task 4 commit and the open Draft PR recorded successful, non-skipped Python 3.9/3.12 Ubuntu jobs that
-executed the actual Linux primitive. Exact run/job/commit identities must match; CI mock coverage is
-insufficient.
+forbidden before this gate. Independently verify the target-Mac Darwin gate passed on `F`, the exact
+public mirror bytes from `F` recorded successful non-skipped Python 3.9/3.12 Ubuntu jobs executing the
+actual Linux primitive, the strict witness replay passed, and `G` is a strict descendant of `F` with all
+public-source blobs unchanged. Exact private/public commit/tree/blob/run/job identities must match;
+private run `31436609135` remains honestly billing-blocked and mock coverage is insufficient.
 
 - [ ] **Step 2: Generate the plan from the parameterless builder**
 
@@ -1001,10 +1028,12 @@ branch and clean worktree. A connector 404 for the private repository may fall b
 
 - [ ] **Step 4: Update the existing Draft PR and wait for final Python 3.9/3.12 CI**
 
-The Draft PR was created at Task 4 solely to run both pre-artifact Linux feasibility jobs. Push the
-remaining reviewed commits to that same PR, verify its exact final head commit, and wait for both
-Python jobs again on the final state. Require the actual Linux `renameat2` gate to remain executed and
-green. Do not create a second PR and do not merge on failure, skip or ambiguity.
+The Draft PR remains the private code-review and release object even though its original pre-artifact
+run was billing-blocked. Push the remaining reviewed commits to the approved private PR, verify its
+exact final head commit, and wait for both private Python jobs on the final state. The public witness
+does not make these private checks green and does not replace this final release gate. If private hosted
+CI is still quota-blocked, retain that evidence and keep the release pending until the private jobs can
+actually execute; do not merge on billing block, failure, skip or ambiguity.
 
 - [ ] **Step 5: Merge, verify main CI and tag identity**
 

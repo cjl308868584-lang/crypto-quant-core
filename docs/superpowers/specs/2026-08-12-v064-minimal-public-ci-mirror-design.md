@@ -5,6 +5,18 @@
 **当前私有 Draft PR：** `cjl308868584-lang/crypto-quant-core#32`  
 **公开仓库候选名：** `cjl308868584-lang/crypto-quant-v064-public-ci`
 
+## 0. 治理身份
+
+```text
+PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED = run 31436609135
+PUBLIC_SOURCE_CANDIDATE_F = reviewed private source commit exported byte-for-byte
+PUBLIC_LINUX_PORTABILITY_WITNESS_NOT_PRIVATE_PR_CHECK = independent bound transport
+POST_WITNESS_PRIVATE_CANDIDATE_G = strict descendant of F with unchanged public-source blobs
+```
+
+这些身份只修订 v0.64 Task 5 前不可用的 Linux transport。测试语义、阈值、私有 release
+authority、v0.62 bytes/tag、owner approval 与原 Task 5-8 ceremony 均不改变。
+
 ## 1. 问题与目标
 
 `crypto-quant-core` 必须保持私有。GitHub Actions 在 2026-08 计费周期已用完该账户的

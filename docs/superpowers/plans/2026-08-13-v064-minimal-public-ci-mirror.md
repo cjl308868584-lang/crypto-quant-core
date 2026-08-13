@@ -84,39 +84,16 @@
 - Modify: `docs/superpowers/specs/2026-08-09-replacement-challenger-plan-v2-supersession-design.md`
 - Modify: `docs/superpowers/plans/2026-08-09-replacement-challenger-plan-v2-supersession.md`
 - Modify: `docs/superpowers/specs/2026-08-12-v064-minimal-public-ci-mirror-design.md`
-- Test: `tests/test_challenger_replacement_plan_supersession.py`
 
 **Interfaces:**
 - Consumes: failed private run `31436609135`, private PR #32, confirmed public-mirror design.
 - Produces: exact `F`/public-run/`G` governance language that later builders and ceremony gates must enforce.
 
-- [ ] **Step 1: Write the failing governance tests**
+- [ ] **Step 1: Capture the pre-amendment contradiction**
 
-Add tests that read the three documents and require these exact statements or machine-readable markers:
+Run read-only searches showing that the existing frozen documents still require Linux jobs inside the private Draft PR and do not define `F`/`G`. Save the exact command/output in the Task 1 checkpoint; do not add a permanent unit test that merely greps human prose.
 
-```python
-self.assertIn("PUBLIC_SOURCE_CANDIDATE_F", design)
-self.assertIn("POST_WITNESS_PRIVATE_CANDIDATE_G", design)
-self.assertIn("31436609135", supersession_plan)
-self.assertIn("PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED", supersession_plan)
-self.assertIn("PUBLIC_LINUX_PORTABILITY_WITNESS_NOT_PRIVATE_PR_CHECK", supersession_spec)
-self.assertNotIn("public mirror counts as PR #32 CI", supersession_spec.lower())
-```
-
-Also require that original Task 5–8 headings and owner-attestation approval text remain present byte-for-byte outside the amended pre-artifact paragraphs.
-
-- [ ] **Step 2: Run RED**
-
-Run:
-
-```bash
-PYTHONPATH=src /usr/bin/python3 -m unittest -v \
-  tests.test_challenger_replacement_plan_supersession.SupersessionGovernanceTests
-```
-
-Expected: FAIL because the existing frozen documents still require Linux jobs inside the private Draft PR and do not define `F`/`G`.
-
-- [ ] **Step 3: Make the minimum explicit document amendment**
+- [ ] **Step 2: Make the minimum explicit document amendment**
 
 Add a dated amendment that says:
 
@@ -129,9 +106,9 @@ POST_WITNESS_PRIVATE_CANDIDATE_G = strict descendant of F with unchanged public-
 
 State that this changes only the unavailable CI transport, not the test semantics, thresholds, private release authority, v0.62 bytes, owner-approval gate, or Task 5–8 evidence ceremony.
 
-- [ ] **Step 4: Run GREEN and diff checks**
+- [ ] **Step 3: Run document verification and diff checks**
 
-Run the targeted governance test, then:
+Run the targeted marker/heading searches, then:
 
 ```bash
 git diff --check
@@ -140,16 +117,16 @@ git diff -- docs/superpowers/specs/2026-08-09-replacement-challenger-plan-v2-sup
   docs/superpowers/specs/2026-08-12-v064-minimal-public-ci-mirror-design.md
 ```
 
-Expected: targeted tests PASS; diff changes only the explicit transport paragraphs and new test.
+Expected: each marker occurs in the intended amended section; original Task 5–8 headings and owner-attestation approval requirements remain; diff changes only the explicit transport paragraphs and this implementation-plan correction. Later Schema/builder/exporter/witness tests enforce the machine behavior and identities rather than testing prose.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add \
   docs/superpowers/specs/2026-08-09-replacement-challenger-plan-v2-supersession-design.md \
   docs/superpowers/plans/2026-08-09-replacement-challenger-plan-v2-supersession.md \
   docs/superpowers/specs/2026-08-12-v064-minimal-public-ci-mirror-design.md \
-  tests/test_challenger_replacement_plan_supersession.py
+  docs/superpowers/plans/2026-08-13-v064-minimal-public-ci-mirror.md
 git commit -m "docs: preregister public Linux witness transport"
 ```
 
