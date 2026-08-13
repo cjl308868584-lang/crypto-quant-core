@@ -296,7 +296,7 @@ Require the public-only test to reject itself if it contains imports outside thi
 
 ```python
 ALLOWED_IMPORTS = {
-    "ctypes", "errno", "hashlib", "importlib", "json", "multiprocessing",
+    "ast", "ctypes", "errno", "hashlib", "importlib.util", "json", "multiprocessing",
     "os", "pathlib", "socket", "stat", "subprocess", "sys", "tempfile",
     "time", "unittest"
 }
