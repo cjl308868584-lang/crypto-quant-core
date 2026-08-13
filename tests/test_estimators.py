@@ -278,6 +278,26 @@ class EstimatorRegistryTests(unittest.TestCase):
 
 
 class EvaluatorBuildTests(unittest.TestCase):
+    def test_v064_public_ci_private_contract_is_frozen_in_build_inputs(self):
+        expected = set(EvaluatorBuild.expected_file_paths(ROOT))
+        required = {
+            "config/v064-public-ci-bundle-manifest-v1.schema.json",
+            "config/v064-public-ci-witness-v1.schema.json",
+            "docs/superpowers/plans/2026-08-09-replacement-challenger-plan-v2-supersession.md",
+            "docs/superpowers/plans/2026-08-13-v064-minimal-public-ci-mirror.md",
+            "docs/superpowers/specs/2026-08-09-replacement-challenger-plan-v2-supersession-design.md",
+            "docs/superpowers/specs/2026-08-12-v064-minimal-public-ci-mirror-design.md",
+            "public_ci/v064/.github/workflows/ci.yml",
+            "public_ci/v064/.gitignore",
+            "public_ci/v064/NOTICE.md",
+            "public_ci/v064/README.md",
+            "public_ci/v064/SECURITY.md",
+            "tests/test_v064_linux_supersession_publish.py",
+            "tests/test_v064_public_ci_bundle.py",
+            "tests/test_v064_public_ci_witness.py",
+        }
+        self.assertEqual(required - expected, set())
+
     @classmethod
     def setUpClass(cls):
         catalog = load_json_strict(

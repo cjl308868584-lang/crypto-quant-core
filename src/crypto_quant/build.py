@@ -231,6 +231,26 @@ _FROZEN_RELEASE_PATHS = (
     "scripts/refresh_evaluator_build_manifest.py",
 )
 
+_V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS = (
+    "config/v064-public-ci-bundle-manifest-v1.schema.json",
+    "config/v064-public-ci-witness-v1.schema.json",
+    "docs/superpowers/plans/"
+    "2026-08-09-replacement-challenger-plan-v2-supersession.md",
+    "docs/superpowers/plans/2026-08-13-v064-minimal-public-ci-mirror.md",
+    "docs/superpowers/specs/"
+    "2026-08-09-replacement-challenger-plan-v2-supersession-design.md",
+    "docs/superpowers/specs/"
+    "2026-08-12-v064-minimal-public-ci-mirror-design.md",
+    "public_ci/v064/.github/workflows/ci.yml",
+    "public_ci/v064/.gitignore",
+    "public_ci/v064/NOTICE.md",
+    "public_ci/v064/README.md",
+    "public_ci/v064/SECURITY.md",
+    "tests/test_v064_linux_supersession_publish.py",
+    "tests/test_v064_public_ci_bundle.py",
+    "tests/test_v064_public_ci_witness.py",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -261,6 +281,7 @@ class EvaluatorBuild:
                 + list(_FROZEN_CONFIG_PATHS)
                 + list(_FROZEN_ARTIFACT_PATHS)
                 + list(_FROZEN_RELEASE_PATHS)
+                + list(_V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS)
             )
         )
 
