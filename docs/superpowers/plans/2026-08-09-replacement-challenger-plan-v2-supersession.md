@@ -1026,14 +1026,15 @@ Recheck target private repository, exact origin URL, remote main, authenticated 
 branch and clean worktree. A connector 404 for the private repository may fall back only to authenticated
 `gh` after target identity is proven.
 
-- [ ] **Step 4: Update the existing Draft PR and wait for final Python 3.9/3.12 CI**
+- [ ] **Step 4: Update the approved replacement Draft PR and wait for final Python 3.9/3.12 CI**
 
-The Draft PR remains the private code-review and release object even though its original pre-artifact
-run was billing-blocked. Push the remaining reviewed commits to the approved private PR, verify its
-exact final head commit, and wait for both private Python jobs on the final state. The public witness
-does not make these private checks green and does not replace this final release gate. If private hosted
-CI is still quota-blocked, retain that evidence and keep the release pending until the private jobs can
-actually execute; do not merge on billing block, failure, skip or ambiguity.
+PR #32 and run `31436609135` remain immutable historical evidence of the original billing-blocked
+attempt; they are not the replacement PR's original run. After the separate private integration approval,
+push `G` and the later reviewed commits only to the approved replacement private Draft PR, verify its
+exact final head commit, and require both final Python jobs to belong to and execute on that exact head.
+The public witness does not make these private checks green and does not replace this final release gate.
+If private hosted CI is still quota-blocked, retain that evidence and keep the release pending until the
+replacement PR jobs can actually execute; do not merge on billing block, failure, skip or ambiguity.
 
 - [ ] **Step 5: Merge, verify main CI and tag identity**
 
