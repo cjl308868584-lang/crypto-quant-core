@@ -1,0 +1,150 @@
+name: V064 Linux portability witness
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portability:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Verify closed bundle before repository imports
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "cjl308868584-lang/crypto-quant-v064-public-ci"
+          test "$GITHUB_REF" = "refs/heads/main"
+          python3 - <<'PY'
+          import ast, hashlib, json, pathlib, re, subprocess, sys
+          root = pathlib.Path.cwd()
+          expected = {
+              ".github/workflows/ci.yml", ".gitignore", "NOTICE.md", "README.md",
+              "SECURITY.md", "bundle-manifest-v1.json",
+              "src/crypto_quant/challenger_replacement_supersession_publish.py",
+              "tests/test_v064_linux_supersession_publish.py",
+          }
+          actual = {
+              str(path.relative_to(root)) for path in root.rglob("*")
+              if path.is_file() and ".git" not in path.relative_to(root).parts
+          }
+          if actual != expected:
+              raise SystemExit("PUBLIC_FILE_SET_INVALID")
+          manifest = json.loads((root / "bundle-manifest-v1.json").read_bytes())
+          files = manifest["files"]
+          if [item["path"] for item in files] != sorted(expected - {"bundle-manifest-v1.json"}):
+              raise SystemExit("PUBLIC_MANIFEST_FILE_SET_INVALID")
+          for item in files:
+              body = (root / item["path"]).read_bytes()
+              if len(body) != item["size"] or hashlib.sha256(body).hexdigest() != item["sha256"]:
+                  raise SystemExit("PUBLIC_FILE_HASH_INVALID")
+              blob = subprocess.run(
+                  ["/usr/bin/git", "hash-object", "--", item["path"]],
+                  check=True, stdout=subprocess.PIPE,
+              ).stdout.decode("ascii").strip()
+              if blob != item["source_blob_oid"]:
+                  raise SystemExit("PUBLIC_BLOB_IDENTITY_INVALID")
+          normalized = json.dumps(files, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+          if hashlib.sha256(normalized).hexdigest() != manifest["file_set_sha256"]:
+              raise SystemExit("PUBLIC_FILE_SET_HASH_INVALID")
+          tracked = subprocess.run(
+              ["/usr/bin/git", "ls-files", "-z"], check=True, stdout=subprocess.PIPE
+          ).stdout.split(b"\0")
+          if {item.decode() for item in tracked if item} != expected:
+              raise SystemExit("PUBLIC_TRACKED_SET_INVALID")
+          forbidden = re.compile(
+              rb"ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|/" +
+              rb"Users/|BEGIN PRIVATE KEY"
+          )
+          if any(forbidden.search((root / item).read_bytes()) for item in expected):
+              raise SystemExit("PUBLIC_SENSITIVE_BYTES_INVALID")
+          combined = b"\n".join((root / item).read_bytes() for item in expected)
+          email_pattern = rb"[A-Za-z0-9._+-]+" + b"@" + rb"[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+          if re.search(email_pattern, combined):
+              raise SystemExit("PUBLIC_EMAIL_INVALID")
+          if re.search(rb"https?://", combined, flags=re.IGNORECASE):
+              raise SystemExit("PUBLIC_URL_INVALID")
+          lowered = combined.lower()
+          for term in (
+              b"stra" + b"tegy_result", b"econ" + b"omic_result",
+              b"bro" + b"kerclient", b"ord" + b"er_submission",
+              b"cred" + b"ential_access",
+          ):
+              if term in lowered:
+                  raise SystemExit("PUBLIC_FORBIDDEN_TERM")
+          test_tree = ast.parse((root / "tests/test_v064_linux_supersession_publish.py").read_text())
+          imports = {
+              alias.name for node in ast.walk(test_tree) if isinstance(node, ast.Import)
+              for alias in node.names
+          } | {
+              node.module for node in ast.walk(test_tree)
+              if isinstance(node, ast.ImportFrom) and node.module
+          }
+          allowed = {"ast", "ctypes", "errno", "importlib.util", "os", "pathlib", "socket", "stat", "subprocess", "sys", "tempfile", "time", "unittest"}
+          if imports != allowed:
+              raise SystemExit("PUBLIC_IMPORT_SET_INVALID")
+          for node in ast.walk(test_tree):
+              if isinstance(node, ast.Call):
+                  name = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else ""
+                  if name in {"__import__", "import_module", "urlopen", "request", "connect", "create_connection", "system", "popen"}:
+                      raise SystemExit("PUBLIC_DYNAMIC_CALL_INVALID")
+                  if name in {"run", "Popen", "check_call", "check_output"}:
+                      if not node.args or not isinstance(node.args[0], (ast.Tuple, ast.List)):
+                          raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
+                      first = node.args[0].elts[0] if node.args[0].elts else None
+                      fixed_git = isinstance(first, ast.Constant) and first.value == "/usr/bin/git"
+                      fixed_python = isinstance(first, ast.Attribute) and isinstance(first.value, ast.Name) and first.value.id == "sys" and first.attr == "executable"
+                      if not (fixed_git or fixed_python):
+                          raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
+                      if fixed_python and (len(node.args[0].elts) < 2 or not isinstance(node.args[0].elts[1], ast.Constant) or node.args[0].elts[1].value != "-c"):
+                          raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
+                      if fixed_git:
+                          elts = node.args[0].elts
+                          git_ls = len(elts) == 3 and all(isinstance(item, ast.Constant) for item in elts) and [item.value for item in elts] == ["/usr/bin/git", "ls-files", "-z"]
+                          git_hash = len(elts) == 4 and all(isinstance(item, ast.Constant) for item in elts[:3]) and [item.value for item in elts[:3]] == ["/usr/bin/git", "hash-object", "--"] and isinstance(elts[3], ast.Subscript)
+                          if not (git_ls or git_hash):
+                              raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
+                      if fixed_python:
+                          elts = node.args[0].elts
+                          source = elts[2] if len(elts) > 2 else None
+                          expected_lengths = {"RAW_RACE_CHILD": 6, "CRASH_CHILD": 5, "RETRY_CHILD": 4, "FIFO_READ_CHILD": 5}
+                          if not isinstance(source, ast.Name) or source.id not in expected_lengths or len(elts) != expected_lengths[source.id]:
+                              raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
+                          if not all(isinstance(item, (ast.Name, ast.Attribute, ast.Call)) for item in elts[3:]):
+                              raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
+                          if any(isinstance(item, ast.Call) and (not isinstance(item.func, ast.Name) or item.func.id != "str" or len(item.args) != 1) for item in elts[3:]):
+                              raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
+          manifest_sha = hashlib.sha256((root / "bundle-manifest-v1.json").read_bytes()).hexdigest()
+          print("source_candidate_f=" + manifest["source"]["candidate_commit"])
+          print("public_commit=" + "${{ github.sha }}")
+          print("manifest_sha256=" + manifest_sha)
+          print("file_set_sha256=" + manifest["file_set_sha256"])
+          PY
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run fixed-owner public boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! getent passwd 501
+          ! getent group 501
+          sudo groupadd --gid 501 v064-public-ci
+          sudo useradd --uid 501 --gid 501 --no-create-home --shell /usr/sbin/nologin v064-public-ci
+          sudo install -d -o 501 -g 501 -m 700 /opt/v064-public-ci-home
+          sudo install -d -o 501 -g 501 -m 700 /opt/v064-public-ci-workspace
+          sudo cp -a "$GITHUB_WORKSPACE/." /opt/v064-public-ci-workspace/
+          sudo chown -R 501:501 /opt/v064-public-ci-workspace
+          sudo chmod 700 /opt/v064-public-ci-workspace
+          sudo install -d -o 501 -g 501 -m 755 /opt/v064-public-ci-home/artifacts/challenger-replacement
+          sudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home V064_PUBLIC_LINUX_REQUIRED=1 PYTHONPATH=/opt/v064-public-ci-workspace/src:/opt/v064-public-ci-workspace/tests /bin/bash -c 'cd /opt/v064-public-ci-workspace && python --version && uname -sr && ldd --version | head -1 && exec python -m unittest -v tests/test_v064_linux_supersession_publish.py'
