@@ -93,10 +93,8 @@ runner 注册和系统权限会引入比本问题更大的运维面。
 4. `SECURITY.md`
 5. `NOTICE.md`
 6. `bundle-manifest-v1.json`
-7. `src/crypto_quant/__init__.py`
-8. `src/crypto_quant/challenger_replacement_supersession_publish.py`
-9. `tests/__init__.py`
-10. `tests/test_v064_linux_supersession_publish.py`
+7. `src/crypto_quant/challenger_replacement_supersession_publish.py`
+8. `tests/test_v064_linux_supersession_publish.py`
 
 ### 5.1 私有候选原样文件
 
@@ -104,8 +102,8 @@ runner 注册和系统权限会引入比本问题更大的运维面。
 相等。公开过程不得删除项目名、改错误码、改 UID 或重写 OS primitive；否则测试的就不是候选
 代码。
 
-`src/crypto_quant/__init__.py` 仅在它是 import 所必需且通过敏感信息扫描时原样复制；若不需要，实施
-计划必须从白名单删除，不得以空占位文件替代。
+公开测试通过 `importlib.util.spec_from_file_location` 从固定路径加载单一 publisher 模块，因此
+`src/crypto_quant/__init__.py` 和 `tests/__init__.py` 都不需要，且禁止用空占位文件把它们加回公开集合。
 
 ### 5.2 新增的 public-only 测试
 
@@ -162,6 +160,21 @@ runner 注册和系统权限会引入比本问题更大的运维面。
 6. 在临时 owner-only staging 生成整个公开 tree，最后重放 manifest；
 7. 若目标仓库非空、已有其他历史或文件集不等，失败关闭。
 
+### 6.1 两阶段私有提交身份
+
+- `F` 是 **public-source candidate**：它包含已审查的 publisher、public-only test、exporter/verifier
+  和 witness loader 代码。公开 manifest 的 `source_candidate_commit/tree` 精确绑定 `F`；Linux CI
+  证明的也只是 `F` 中被导出的 bytes。
+- `G` 是 **post-witness private candidate**：它是 `F` 的严格后代，只在公开 CI 完成后新增
+  exact public witness 与相应 regression/manifest 绑定。`G` 不被反向写入早已运行的公开
+  manifest，否则会产生循环。
+- Task 5 及后续 v0.64 ceremony 从 `G` 继续；它们必须同时证明 `G` 是 `F` 的后代，
+  且 `F` 中所有公开源文件的 blob OID 在 `G` 中仍精确不变。
+
+public witness 自身只绑定 `F`、public commit/tree 和 run evidence；它不包含尚未存在的 `G`
+OID。`F→G` 的 ancestry/unchanged-blob 结论由 `G` 提交后的 verifier、regression 和 build manifest
+外部绑定，不反向写入 witness。
+
 ## 7. 公开 workflow 合同
 
 workflow 只在 owner push 和手动 `workflow_dispatch` 上运行，不监听 `pull_request`、
@@ -180,14 +193,22 @@ manifest 不包含 public commit OID 或 public tree OID；否则它会通过自
 
 - `runs-on: ubuntu-latest`，不使用 larger/self-hosted runner；
 - `permissions: contents: read`，无 secrets、OIDC、packages、cache、artifact upload 或发布权限；
-- `actions/checkout` 和 `actions/setup-python` 必须锁定精确 commit SHA，不使用浮动 `@vN`；
+- `actions/checkout` 锁定 `fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09`，
+  `actions/setup-python` 锁定 `ece7cb06caefa5fff74198d8649806c4678c61a1`，不使用浮动 `@vN`；
 - checkout 是唯一先于 bundle 验证执行的第三方 action，必须使用 `persist-credentials: false`；
   bundle 验证之前不得 import/执行仓库 Python 或其他仓库脚本，只允许 workflow 内联 shell 验证；
 - 不安装项目 package 或第三方 Python 运行依赖；
 - Python 3.9/3.12 两个 job 都必须实际执行，不允许 skip/continue-on-error；
+- 每个 job 都必须先 fail-closed 确认 UID/GID 501 未被占用，再创建临时用户/组与 owner-only
+  HOME/TMPDIR/workspace，复制已验证 bundle 后固定 owner/mode，最后以真实 euid 501 执行测试；
+  不允许 mock `geteuid`、修改 publisher 的 501 合同或用 root 直接跑边界测试；
 - 每个 job 都必须输出 `sys.version`、`platform`、kernel release、glibc 身份和公开 commit；
 - 失败或取消必须保持失败，不重跑以寻找更好结果。只有 GitHub 基础设施失败且无
   test step 时，才可对同一 exact public commit 重跑一次。
+
+workflow 不硬编码 manifest SHA-256；manifest 已包含 workflow 文件身份，反向在 workflow 中硬编码
+manifest SHA 会产生另一个不可解的循环。workflow 只根据 manifest bytes 重算非 manifest 文件集；
+public commit/tree/workflow/manifest 的整体身份由推送前批准包和推送后私有 witness 外部绑定。
 
 ## 8. 结果回流与私有发布门
 
