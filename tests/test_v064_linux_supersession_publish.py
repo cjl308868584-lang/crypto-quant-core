@@ -634,6 +634,7 @@ class V064StaticAndPortableBoundaryTests(unittest.TestCase):
             ("FIFO_READ_CHILD", FIFO_READ_CHILD),
         ):
             child_imports = _imports_from_source(child_source, name)
+            self.assertNotIn("DYNAMIC_IMPORT_FORBIDDEN", child_imports)
             publisher_import = (
                 "crypto_quant.challenger_replacement_supersession_publish"
             )

@@ -479,14 +479,14 @@ Static-scan CLI/parser signatures and patch fixed command outputs. Assert there 
 Run only these command families with a minimal environment:
 
 ```text
-/opt/homebrew/bin/gh api repos/cjl308868584-lang/crypto-quant-v064-public-ci/actions/runs/31400000000
-/opt/homebrew/bin/gh api 'repos/cjl308868584-lang/crypto-quant-v064-public-ci/actions/runs/31400000000/jobs?filter=all&per_page=100'
-/opt/homebrew/bin/gh run view 31400000000 --repo cjl308868584-lang/crypto-quant-v064-public-ci --log
+/Users/chenm4/.local/bin/gh api repos/cjl308868584-lang/crypto-quant-v064-public-ci/actions/runs/31400000000 --jq <reviewed-run-projection>
+/Users/chenm4/.local/bin/gh api 'repos/cjl308868584-lang/crypto-quant-v064-public-ci/actions/runs/31400000000/jobs?filter=all&per_page=100' --jq <reviewed-jobs-projection>
+/Users/chenm4/.local/bin/gh run view 31400000000 --repo cjl308868584-lang/crypto-quant-v064-public-ci --log
 ```
 
 `31400000000` is a test-fixture decimal value in this code block. In production the CLI validates the sole user-supplied decimal `--run-id`, renders it into the same three fixed argv positions, and rejects every other argument.
 
-Resolve actual `gh` path once during design implementation and freeze it for the target Mac; if the reviewed absolute path differs, update the plan/spec before artifact acquisition. Capture stdout/stderr exact bytes, exit code, byte count, and SHA-256. Never print environment or tokens.
+The target Mac's reviewed executable is frozen at `/Users/chenm4/.local/bin/gh`; before acquisition record and verify its regular-file identity, executable mode, owner, `gh --version` bytes, and SHA-256. The two API commands use fixed `--jq` projections so additive upstream response fields cannot silently enter the canonical evidence grammar. Capture each projected stdout and the unmodified run-log stdout as exact bytes together with argv, exit code, stdout/stderr byte counts, and SHA-256. Never print environment or tokens. A path, binary identity, projection, or version mismatch fails closed and requires a new reviewed code state before artifact acquisition.
 
 - [ ] **Step 5: Write/implement `F`→`G` unchanged-source proof**
 
