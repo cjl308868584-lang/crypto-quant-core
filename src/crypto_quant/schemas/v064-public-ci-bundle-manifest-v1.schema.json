@@ -4,13 +4,14 @@
   "title": "V0.64 minimal public CI bundle manifest V1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "purpose", "source", "public_repository", "files", "file_set_sha256", "safety", "non_claims"],
+  "required": ["$schema", "schema_version", "purpose", "source", "public_repository", "predecessor_failed_public_witness", "files", "file_set_sha256", "safety", "non_claims"],
   "properties": {
     "$schema": {"const": "./v064-public-ci-bundle-manifest-v1.schema.json"},
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "1.1.0"},
     "purpose": {"const": "V064_LINUX_PORTABILITY_WITNESS_ONLY"},
     "source": {"$ref": "#/$defs/source"},
-    "public_repository": {"const": "cjl308868584-lang/crypto-quant-v064-public-ci"},
+    "public_repository": {"const": "cjl308868584-lang/crypto-quant-v064-public-ci-r2"},
+    "predecessor_failed_public_witness": {"$ref": "#/$defs/predecessor_failed_public_witness"},
     "files": {"$ref": "#/$defs/files"},
     "file_set_sha256": {"$ref": "#/$defs/hash"},
     "safety": {"$ref": "#/$defs/safety"},
@@ -19,6 +20,54 @@
   "$defs": {
     "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "git_oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "failed_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python_version", "job_id", "conclusion", "test_step_conclusion"],
+      "properties": {
+        "python_version": {"enum": ["3.9", "3.12"]},
+        "job_id": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "conclusion": {"const": "failure"},
+        "test_step_conclusion": {"const": "skipped"}
+      }
+    },
+    "failed_jobs": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/failed_job"}, {"properties": {"python_version": {"const": "3.9"}, "job_id": {"const": 94924270273}}}]},
+        {"allOf": [{"$ref": "#/$defs/failed_job"}, {"properties": {"python_version": {"const": "3.12"}, "job_id": {"const": 94924270340}}}]}
+      ],
+      "items": false
+    },
+    "predecessor_failed_public_witness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "private_candidate_f", "private_tree_f", "public_commit", "public_tree", "manifest_sha256", "file_set_sha256", "workflow_blob_oid", "run_id", "run_attempt", "event", "head_branch", "status", "conclusion", "jobs", "reason_code", "run_json_sha256", "jobs_json_sha256", "run_log_sha256", "transcript_summary_sha256"],
+      "properties": {
+        "repository": {"const": "cjl308868584-lang/crypto-quant-v064-public-ci"},
+        "private_candidate_f": {"const": "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff"},
+        "private_tree_f": {"const": "5389cc01164ce6dd5955df1d014e974f4bf1a104"},
+        "public_commit": {"const": "0429837e5de8052e9e8216ed08ba9c7aa9c905b3"},
+        "public_tree": {"const": "4ebb723e73dc9eb43b7273febd96af3ef87ef951"},
+        "manifest_sha256": {"const": "c238c904495b167e436b2c32e822d8fa55285e42eaaad8e095805e73570e3fd7"},
+        "file_set_sha256": {"const": "2d7ed3d4b3380b43e50f16f04113eae46360397e46aeba2edd639ce46a7f76c7"},
+        "workflow_blob_oid": {"const": "d2c0104eafb8e1aa5ea68a60f716921f2668ce42"},
+        "run_id": {"const": 31850146784},
+        "run_attempt": {"const": 1},
+        "event": {"const": "push"},
+        "head_branch": {"const": "main"},
+        "status": {"const": "completed"},
+        "conclusion": {"const": "failure"},
+        "jobs": {"$ref": "#/$defs/failed_jobs"},
+        "reason_code": {"const": "PUBLIC_SENSITIVE_BYTES_INVALID"},
+        "run_json_sha256": {"const": "f442ae366539fc4a244977fdafb2cd5de383b4248483381d8d79b751ea6a6099"},
+        "jobs_json_sha256": {"const": "9a69273c07548e97dbc2f43883eea4b5935f84256b7ad95b2874ca498bc67923"},
+        "run_log_sha256": {"const": "e47462120131eadb3161a40ffe679f4f74889103d7b3a13bb563df705f9ef32c"},
+        "transcript_summary_sha256": {"const": "cd2072e246698bec6d8767d37da4a3dca82d09fc38466a8009aea9690a0c9790"}
+      }
+    },
     "source": {
       "type": "object",
       "additionalProperties": false,

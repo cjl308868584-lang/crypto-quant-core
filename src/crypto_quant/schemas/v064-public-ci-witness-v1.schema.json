@@ -4,13 +4,14 @@
   "title": "V0.64 public Linux CI witness V1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "witness_id", "witness_hash", "status", "private_source", "public_source", "bundle", "workflow", "run", "jobs", "raw_evidence", "ancestry", "safety", "non_claims"],
+  "required": ["$schema", "schema_version", "witness_id", "witness_hash", "status", "predecessor_failed_public_witness", "private_source", "public_source", "bundle", "workflow", "run", "jobs", "raw_evidence", "ancestry", "safety", "non_claims"],
   "properties": {
     "$schema": {"const": "./v064-public-ci-witness-v1.schema.json"},
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "1.1.0"},
     "witness_id": {"type": "string", "pattern": "^v064_public_ci_witness_[0-9a-f]{64}$"},
     "witness_hash": {"$ref": "#/$defs/hash"},
     "status": {"const": "PUBLIC_LINUX_PORTABILITY_WITNESS_COMPLETED"},
+    "predecessor_failed_public_witness": {"$ref": "#/$defs/predecessor_failed_public_witness"},
     "private_source": {"$ref": "#/$defs/private_source"},
     "public_source": {"$ref": "#/$defs/public_source"},
     "bundle": {"$ref": "#/$defs/bundle"},
@@ -25,6 +26,54 @@
   "$defs": {
     "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "git_oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "failed_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python_version", "job_id", "conclusion", "test_step_conclusion"],
+      "properties": {
+        "python_version": {"enum": ["3.9", "3.12"]},
+        "job_id": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "conclusion": {"const": "failure"},
+        "test_step_conclusion": {"const": "skipped"}
+      }
+    },
+    "failed_jobs": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/failed_job"}, {"properties": {"python_version": {"const": "3.9"}, "job_id": {"const": 94924270273}}}]},
+        {"allOf": [{"$ref": "#/$defs/failed_job"}, {"properties": {"python_version": {"const": "3.12"}, "job_id": {"const": 94924270340}}}]}
+      ],
+      "items": false
+    },
+    "predecessor_failed_public_witness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "private_candidate_f", "private_tree_f", "public_commit", "public_tree", "manifest_sha256", "file_set_sha256", "workflow_blob_oid", "run_id", "run_attempt", "event", "head_branch", "status", "conclusion", "jobs", "reason_code", "run_json_sha256", "jobs_json_sha256", "run_log_sha256", "transcript_summary_sha256"],
+      "properties": {
+        "repository": {"const": "cjl308868584-lang/crypto-quant-v064-public-ci"},
+        "private_candidate_f": {"const": "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff"},
+        "private_tree_f": {"const": "5389cc01164ce6dd5955df1d014e974f4bf1a104"},
+        "public_commit": {"const": "0429837e5de8052e9e8216ed08ba9c7aa9c905b3"},
+        "public_tree": {"const": "4ebb723e73dc9eb43b7273febd96af3ef87ef951"},
+        "manifest_sha256": {"const": "c238c904495b167e436b2c32e822d8fa55285e42eaaad8e095805e73570e3fd7"},
+        "file_set_sha256": {"const": "2d7ed3d4b3380b43e50f16f04113eae46360397e46aeba2edd639ce46a7f76c7"},
+        "workflow_blob_oid": {"const": "d2c0104eafb8e1aa5ea68a60f716921f2668ce42"},
+        "run_id": {"const": 31850146784},
+        "run_attempt": {"const": 1},
+        "event": {"const": "push"},
+        "head_branch": {"const": "main"},
+        "status": {"const": "completed"},
+        "conclusion": {"const": "failure"},
+        "jobs": {"$ref": "#/$defs/failed_jobs"},
+        "reason_code": {"const": "PUBLIC_SENSITIVE_BYTES_INVALID"},
+        "run_json_sha256": {"const": "f442ae366539fc4a244977fdafb2cd5de383b4248483381d8d79b751ea6a6099"},
+        "jobs_json_sha256": {"const": "9a69273c07548e97dbc2f43883eea4b5935f84256b7ad95b2874ca498bc67923"},
+        "run_log_sha256": {"const": "e47462120131eadb3161a40ffe679f4f74889103d7b3a13bb563df705f9ef32c"},
+        "transcript_summary_sha256": {"const": "cd2072e246698bec6d8767d37da4a3dca82d09fc38466a8009aea9690a0c9790"}
+      }
+    },
     "timestamp": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
     "private_source": {
       "type": "object",
@@ -52,7 +101,7 @@
       "additionalProperties": false,
       "required": ["repository", "commit", "tree", "branch", "parent_count"],
       "properties": {
-        "repository": {"const": "cjl308868584-lang/crypto-quant-v064-public-ci"},
+        "repository": {"const": "cjl308868584-lang/crypto-quant-v064-public-ci-r2"},
         "commit": {"$ref": "#/$defs/git_oid"},
         "tree": {"$ref": "#/$defs/git_oid"},
         "branch": {"const": "main"},
@@ -147,10 +196,10 @@
       "additionalProperties": false,
       "required": ["run_api", "jobs_api", "run_log", "acquisition_transcript"],
       "properties": {
-        "run_api": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci/v064-public-ci-run-api-v1.json"}}}]},
-        "jobs_api": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci/v064-public-ci-jobs-api-v1.json"}}}]},
-        "run_log": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci/v064-public-ci-run-log-v1.txt"}}}]},
-        "acquisition_transcript": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci/v064-public-ci-acquisition-transcript-v1.json"}}}]}
+        "run_api": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci-r2/v064-public-ci-r2-run-api-v1.json"}}}]},
+        "jobs_api": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci-r2/v064-public-ci-r2-jobs-api-v1.json"}}}]},
+        "run_log": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci-r2/v064-public-ci-r2-run-log-v1.txt"}}}]},
+        "acquisition_transcript": {"allOf": [{"$ref": "#/$defs/raw_file"}, {"properties": {"path": {"const": "artifacts/v064-public-ci-r2/v064-public-ci-r2-acquisition-transcript-v1.json"}}}]}
       }
     },
     "ancestry": {

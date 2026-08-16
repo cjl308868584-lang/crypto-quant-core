@@ -48,6 +48,41 @@ EXACT_FILES = (
     ),
 )
 TEMPLATE_ROOT = ROOT / "public_ci" / "v064"
+PREDECESSOR_FAILED_PUBLIC_WITNESS = {
+    "repository": "cjl308868584-lang/crypto-quant-v064-public-ci",
+    "private_candidate_f": "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff",
+    "private_tree_f": "5389cc01164ce6dd5955df1d014e974f4bf1a104",
+    "public_commit": "0429837e5de8052e9e8216ed08ba9c7aa9c905b3",
+    "public_tree": "4ebb723e73dc9eb43b7273febd96af3ef87ef951",
+    "manifest_sha256": "c238c904495b167e436b2c32e822d8fa55285e42eaaad8e095805e73570e3fd7",
+    "file_set_sha256": "2d7ed3d4b3380b43e50f16f04113eae46360397e46aeba2edd639ce46a7f76c7",
+    "workflow_blob_oid": "d2c0104eafb8e1aa5ea68a60f716921f2668ce42",
+    "run_id": 31850146784,
+    "run_attempt": 1,
+    "event": "push",
+    "head_branch": "main",
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs": [
+        {
+            "python_version": "3.9",
+            "job_id": 94924270273,
+            "conclusion": "failure",
+            "test_step_conclusion": "skipped",
+        },
+        {
+            "python_version": "3.12",
+            "job_id": 94924270340,
+            "conclusion": "failure",
+            "test_step_conclusion": "skipped",
+        },
+    ],
+    "reason_code": "PUBLIC_SENSITIVE_BYTES_INVALID",
+    "run_json_sha256": "f442ae366539fc4a244977fdafb2cd5de383b4248483381d8d79b751ea6a6099",
+    "jobs_json_sha256": "9a69273c07548e97dbc2f43883eea4b5935f84256b7ad95b2874ca498bc67923",
+    "run_log_sha256": "e47462120131eadb3161a40ffe679f4f74889103d7b3a13bb563df705f9ef32c",
+    "transcript_summary_sha256": "cd2072e246698bec6d8767d37da4a3dca82d09fc38466a8009aea9690a0c9790",
+}
 
 
 def _file(path, source_kind):
@@ -63,7 +98,7 @@ def _file(path, source_kind):
 def valid_bundle_manifest():
     return {
         "$schema": "./v064-public-ci-bundle-manifest-v1.schema.json",
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "purpose": "V064_LINUX_PORTABILITY_WITNESS_ONLY",
         "source": {
             "private_repository": "cjl308868584-lang/crypto-quant-core",
@@ -77,7 +112,10 @@ def valid_bundle_manifest():
                 "status": "PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED",
             },
         },
-        "public_repository": "cjl308868584-lang/crypto-quant-v064-public-ci",
+        "public_repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+        "predecessor_failed_public_witness": copy.deepcopy(
+            PREDECESSOR_FAILED_PUBLIC_WITNESS
+        ),
         "files": [
             _file(".github/workflows/ci.yml", "PRIVATE_TEMPLATE_BLOB"),
             _file(".gitignore", "PRIVATE_TEMPLATE_BLOB"),
@@ -136,6 +174,76 @@ class V064PublicCiSchemaTests(unittest.TestCase):
         schema = self.schema()
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema).validate(valid_bundle_manifest())
+
+    def test_manifest_requires_exact_predecessor_failed_public_witness(self):
+        schema = self.schema()
+        validator = Draft202012Validator(schema)
+
+        missing = copy.deepcopy(valid_bundle_manifest())
+        del missing["predecessor_failed_public_witness"]
+        with self.assertRaises(ValidationError):
+            validator.validate(missing)
+
+        predecessor = PREDECESSOR_FAILED_PUBLIC_WITNESS
+        scalar_replacements = {
+            "repository": "cjl308868584-lang/wrong",
+            "private_candidate_f": "0" * 40,
+            "private_tree_f": "0" * 40,
+            "public_commit": "0" * 40,
+            "public_tree": "0" * 40,
+            "manifest_sha256": "0" * 64,
+            "file_set_sha256": "0" * 64,
+            "workflow_blob_oid": "0" * 40,
+            "run_id": predecessor["run_id"] + 1,
+            "run_attempt": 2,
+            "event": "workflow_dispatch",
+            "head_branch": "wrong",
+            "status": "queued",
+            "conclusion": "success",
+            "reason_code": "WRONG",
+            "run_json_sha256": "0" * 64,
+            "jobs_json_sha256": "0" * 64,
+            "run_log_sha256": "0" * 64,
+            "transcript_summary_sha256": "0" * 64,
+        }
+        for key, replacement in scalar_replacements.items():
+            changed = copy.deepcopy(valid_bundle_manifest())
+            changed["predecessor_failed_public_witness"][key] = replacement
+            with self.subTest(field=key), self.assertRaises(ValidationError):
+                validator.validate(changed)
+
+        for index, job in enumerate(predecessor["jobs"]):
+            for key, original in job.items():
+                changed = copy.deepcopy(valid_bundle_manifest())
+                replacement = original + 1 if isinstance(original, int) else "wrong"
+                changed["predecessor_failed_public_witness"]["jobs"][index][key] = replacement
+                with self.subTest(job=index, field=key), self.assertRaises(ValidationError):
+                    validator.validate(changed)
+
+        structural_mutations = []
+        extra = copy.deepcopy(valid_bundle_manifest())
+        extra["predecessor_failed_public_witness"]["unexpected"] = True
+        structural_mutations.append(extra)
+        reordered = copy.deepcopy(valid_bundle_manifest())
+        reordered["predecessor_failed_public_witness"]["jobs"].reverse()
+        structural_mutations.append(reordered)
+        duplicate = copy.deepcopy(valid_bundle_manifest())
+        duplicate["predecessor_failed_public_witness"]["jobs"][1] = copy.deepcopy(
+            duplicate["predecessor_failed_public_witness"]["jobs"][0]
+        )
+        structural_mutations.append(duplicate)
+        unsafe = copy.deepcopy(valid_bundle_manifest())
+        unsafe["predecessor_failed_public_witness"]["run_id"] = 2**53
+        structural_mutations.append(unsafe)
+        long_oid = copy.deepcopy(valid_bundle_manifest())
+        long_oid["predecessor_failed_public_witness"]["public_commit"] = "f" * 64
+        structural_mutations.append(long_oid)
+        uppercase_hash = copy.deepcopy(valid_bundle_manifest())
+        uppercase_hash["predecessor_failed_public_witness"]["run_log_sha256"] = "A" * 64
+        structural_mutations.append(uppercase_hash)
+        for changed in structural_mutations:
+            with self.assertRaises(ValidationError):
+                validator.validate(changed)
 
     def test_manifest_rejects_wrong_purpose_permissions_and_source_identity(self):
         schema = self.schema()
