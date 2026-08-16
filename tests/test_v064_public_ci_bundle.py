@@ -1,5 +1,6 @@
 import copy
 import hashlib
+import inspect
 import json
 import os
 import subprocess
@@ -19,6 +20,7 @@ from crypto_quant.v064_public_ci_bundle import (
     stage_v064_public_ci_bundle,
     verify_v064_public_ci_bundle,
 )
+from crypto_quant import v064_public_ci_bundle_cli
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -391,6 +393,15 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
             .strip(),
         )
         self.assertEqual(manifest["source"]["candidate_commit"], self.commit)
+        self.assertEqual(manifest["schema_version"], "1.1.0")
+        self.assertEqual(
+            manifest["public_repository"],
+            "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+        )
+        self.assertEqual(
+            manifest["predecessor_failed_public_witness"],
+            PREDECESSOR_FAILED_PUBLIC_WITNESS,
+        )
         self.assertEqual(manifest["safety"], valid_bundle_manifest()["safety"])
         self.assertEqual(manifest["non_claims"], valid_bundle_manifest()["non_claims"])
         Draft202012Validator(self.schema()).validate(manifest)
@@ -432,6 +443,49 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
             V064PublicCiBundleError, "V064_PUBLIC_CI_SOURCE_NOT_REVIEWED_HEAD"
         ):
             build_v064_public_ci_bundle_manifest(self.repository, old_commit)
+
+    def test_real_publisher_and_linux_test_blobs_remain_identical_to_f(self):
+        source_commit = subprocess.run(
+            ("/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD^{commit}"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        ).stdout.decode("ascii").strip()
+        manifest = build_v064_public_ci_bundle_manifest(ROOT, source_commit)
+        entries = {entry["path"]: entry for entry in manifest["files"]}
+        for relative in (
+            "src/crypto_quant/challenger_replacement_supersession_publish.py",
+            "tests/test_v064_linux_supersession_publish.py",
+        ):
+            expected_oid = subprocess.run(
+                (
+                    "/usr/bin/git",
+                    "-C",
+                    str(ROOT),
+                    "rev-parse",
+                    "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff:%s" % relative,
+                ),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            ).stdout.decode("ascii").strip()
+            self.assertEqual(entries[relative]["source_blob_oid"], expected_oid)
+            self.assertEqual(
+                (ROOT / relative).read_bytes(),
+                subprocess.run(
+                    (
+                        "/usr/bin/git",
+                        "-C",
+                        str(ROOT),
+                        "cat-file",
+                        "blob",
+                        expected_oid,
+                    ),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                ).stdout,
+            )
 
     def test_builder_rejects_executable_or_symlink_source_entries(self):
         for case_name in ("executable", "symlink"):
@@ -762,3 +816,20 @@ class V064PublicCiWorkflowContractTests(unittest.TestCase):
             ),
             1,
         )
+
+
+class V064PublicCiBundleCliTests(unittest.TestCase):
+    def test_cli_has_only_fixed_r2_candidate_and_no_repository_or_path_input(self):
+        self.assertEqual(
+            v064_public_ci_bundle_cli._CANDIDATE,
+            Path("/private/tmp/crypto-quant-v064-public-ci-r2-candidate"),
+        )
+        self.assertEqual(
+            tuple(inspect.signature(v064_public_ci_bundle_cli._build).parameters), ()
+        )
+        self.assertEqual(
+            tuple(inspect.signature(v064_public_ci_bundle_cli._verify).parameters), ()
+        )
+        source = inspect.getsource(v064_public_ci_bundle_cli)
+        for forbidden in ("--repository", "--candidate", "--path", "--output"):
+            self.assertNotIn(forbidden, source)

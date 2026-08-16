@@ -22,6 +22,41 @@ from .challenger_replacement_supersession_publish import _atomic_no_replace
 _SCHEMA = "v064-public-ci-bundle-manifest-v1.schema.json"
 _MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 _BASELINE = "df91e19240df14839125608422489adf3b902e76"
+_PREDECESSOR_FAILED_PUBLIC_WITNESS = {
+    "repository": "cjl308868584-lang/crypto-quant-v064-public-ci",
+    "private_candidate_f": "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff",
+    "private_tree_f": "5389cc01164ce6dd5955df1d014e974f4bf1a104",
+    "public_commit": "0429837e5de8052e9e8216ed08ba9c7aa9c905b3",
+    "public_tree": "4ebb723e73dc9eb43b7273febd96af3ef87ef951",
+    "manifest_sha256": "c238c904495b167e436b2c32e822d8fa55285e42eaaad8e095805e73570e3fd7",
+    "file_set_sha256": "2d7ed3d4b3380b43e50f16f04113eae46360397e46aeba2edd639ce46a7f76c7",
+    "workflow_blob_oid": "d2c0104eafb8e1aa5ea68a60f716921f2668ce42",
+    "run_id": 31850146784,
+    "run_attempt": 1,
+    "event": "push",
+    "head_branch": "main",
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs": [
+        {
+            "python_version": "3.9",
+            "job_id": 94924270273,
+            "conclusion": "failure",
+            "test_step_conclusion": "skipped",
+        },
+        {
+            "python_version": "3.12",
+            "job_id": 94924270340,
+            "conclusion": "failure",
+            "test_step_conclusion": "skipped",
+        },
+    ],
+    "reason_code": "PUBLIC_SENSITIVE_BYTES_INVALID",
+    "run_json_sha256": "f442ae366539fc4a244977fdafb2cd5de383b4248483381d8d79b751ea6a6099",
+    "jobs_json_sha256": "9a69273c07548e97dbc2f43883eea4b5935f84256b7ad95b2874ca498bc67923",
+    "run_log_sha256": "e47462120131eadb3161a40ffe679f4f74889103d7b3a13bb563df705f9ef32c",
+    "transcript_summary_sha256": "cd2072e246698bec6d8767d37da4a3dca82d09fc38466a8009aea9690a0c9790",
+}
 _FILES: Tuple[Tuple[str, str, str], ...] = (
     (".github/workflows/ci.yml", "PRIVATE_TEMPLATE_BLOB", "public_ci/v064/.github/workflows/ci.yml"),
     (".gitignore", "PRIVATE_TEMPLATE_BLOB", "public_ci/v064/.gitignore"),
@@ -139,7 +174,7 @@ def build_v064_public_ci_bundle_manifest(
         )
     manifest: Dict[str, Any] = {
         "$schema": "./v064-public-ci-bundle-manifest-v1.schema.json",
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "purpose": "V064_LINUX_PORTABILITY_WITNESS_ONLY",
         "source": {
             "private_repository": "cjl308868584-lang/crypto-quant-core",
@@ -153,7 +188,10 @@ def build_v064_public_ci_bundle_manifest(
                 "status": "PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED",
             },
         },
-        "public_repository": "cjl308868584-lang/crypto-quant-v064-public-ci",
+        "public_repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+        "predecessor_failed_public_witness": copy.deepcopy(
+            _PREDECESSOR_FAILED_PUBLIC_WITNESS
+        ),
         "files": entries,
         "file_set_sha256": business_hash(entries),
         "safety": copy.deepcopy(_SAFETY),
