@@ -14,7 +14,7 @@ from .canonical import canonical_json
 
 
 _GH = "/Users/chenm4/.local/bin/gh"
-_REPOSITORY = "cjl308868584-lang/crypto-quant-v064-public-ci"
+_REPOSITORY = "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
 _GH_SHA256 = "b1d6c442fde99ca27c04e1e74d624895abe37785f4a3e9e9b684bf7586ce4bc8"
 _GH_VERSION = (
     b"gh version 2.96.0 (2026-07-02)\n"

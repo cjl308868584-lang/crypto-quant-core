@@ -26,8 +26,8 @@ from .v064_public_ci_witness_cli import _commands
 
 _SCHEMA = "v064-public-ci-witness-v1.schema.json"
 _MAX_BYTES = 64 * 1024 * 1024
-_PUBLIC_REPOSITORY = "cjl308868584-lang/crypto-quant-v064-public-ci"
-_PUBLIC_ROOT = Path("/private/tmp/crypto-quant-v064-public-ci-candidate")
+_PUBLIC_REPOSITORY = "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+_PUBLIC_ROOT = Path("/private/tmp/crypto-quant-v064-public-ci-r2-candidate")
 
 
 class V064PublicCiWitnessError(ValueError):
@@ -263,9 +263,12 @@ def derive_v064_public_ci_witness(*, bundle: dict, run_bytes: bytes, jobs_bytes:
         raise V064PublicCiWitnessError("V064_PUBLIC_CI_BUNDLE_INVALID")
     identity = {"private_commit": bundle["source"]["candidate_commit"], "public_commit": candidate["commit"], "run_id": run["id"], "manifest_sha256": candidate["manifest_sha256"]}
     value: Dict[str, Any] = {
-        "$schema": "./v064-public-ci-witness-v1.schema.json", "schema_version": "1.0.0",
+        "$schema": "./v064-public-ci-witness-v1.schema.json", "schema_version": "1.1.0",
         "witness_id": stable_id("v064_public_ci_witness", identity), "witness_hash": "0" * 64,
         "status": "PUBLIC_LINUX_PORTABILITY_WITNESS_COMPLETED",
+        "predecessor_failed_public_witness": copy.deepcopy(
+            bundle["predecessor_failed_public_witness"]
+        ),
         "private_source": {
             "repository": bundle["source"]["private_repository"],
             "candidate_commit": bundle["source"]["candidate_commit"],
@@ -284,10 +287,10 @@ def derive_v064_public_ci_witness(*, bundle: dict, run_bytes: bytes, jobs_bytes:
         },
         "jobs": normalized,
         "raw_evidence": {
-            "run_api": _raw("artifacts/v064-public-ci/v064-public-ci-run-api-v1.json", run_bytes),
-            "jobs_api": _raw("artifacts/v064-public-ci/v064-public-ci-jobs-api-v1.json", jobs_bytes),
-            "run_log": _raw("artifacts/v064-public-ci/v064-public-ci-run-log-v1.txt", log_bytes),
-            "acquisition_transcript": _raw("artifacts/v064-public-ci/v064-public-ci-acquisition-transcript-v1.json", transcript_bytes),
+            "run_api": _raw("artifacts/v064-public-ci-r2/v064-public-ci-r2-run-api-v1.json", run_bytes),
+            "jobs_api": _raw("artifacts/v064-public-ci-r2/v064-public-ci-r2-jobs-api-v1.json", jobs_bytes),
+            "run_log": _raw("artifacts/v064-public-ci-r2/v064-public-ci-r2-run-log-v1.txt", log_bytes),
+            "acquisition_transcript": _raw("artifacts/v064-public-ci-r2/v064-public-ci-r2-acquisition-transcript-v1.json", transcript_bytes),
         },
         "ancestry": {"witness_binds_private_source_f": True, "public_commit_is_parentless": True, "candidate_g_not_yet_bound": True},
         "safety": {"production_activation": False, "credentials_present": False, "broker_allowed": False, "orders_allowed": False, "runtime_state_write_allowed": False},

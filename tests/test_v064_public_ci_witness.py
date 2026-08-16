@@ -381,7 +381,7 @@ def _realistic_inputs():
         "created_at": "2026-08-13T00:59:00Z",
         "updated_at": "2026-08-13T01:06:00Z",
         "path": ".github/workflows/ci.yml",
-        "repository": "cjl308868584-lang/crypto-quant-v064-public-ci",
+        "repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
     }
     jobs = {
         "total_count": 2,
@@ -442,6 +442,9 @@ def _realistic_inputs():
         ))
     log = ("\n".join(lines) + "\n").encode("utf-8")
     bundle = {
+        "predecessor_failed_public_witness": copy.deepcopy(
+            PREDECESSOR_FAILED_PUBLIC_WITNESS
+        ),
         "source": {
             "private_repository": "cjl308868584-lang/crypto-quant-core",
             "candidate_commit": "3" * 40,
@@ -527,6 +530,15 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
             private_repository=ROOT,
         )
         self.assertEqual([job["python_version"] for job in witness["jobs"]], ["3.9", "3.12"])
+        self.assertEqual(witness["schema_version"], "1.1.0")
+        self.assertEqual(
+            witness["predecessor_failed_public_witness"],
+            PREDECESSOR_FAILED_PUBLIC_WITNESS,
+        )
+        self.assertEqual(
+            witness["public_source"]["repository"],
+            "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+        )
         replay.assert_called_once_with(ROOT, bundle)
 
     @mock.patch("crypto_quant.v064_public_ci_witness._replay_public_candidate")
@@ -611,7 +623,7 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
 
     def test_cli_retains_exact_stdout_and_has_no_supplied_result_fields(self):
         source = inspect.getsource(v064_public_ci_witness_cli)
-        for forbidden in ("--status", "--conclusion", "--verified", "--repository", "--filename", "--python-version"):
+        for forbidden in ("--status", "--conclusion", "--verified", "--repository", "--filename", "--output", "--python-version", "--predecessor"):
             self.assertNotIn(forbidden, source)
         completed = mock.Mock(
             returncode=0, stdout=b"exact stdout\n", stderr=b""
