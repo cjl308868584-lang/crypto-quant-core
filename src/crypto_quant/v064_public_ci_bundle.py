@@ -270,10 +270,7 @@ def _read_manifest(path: Path) -> bytes:
                 pass
 
 
-def load_v064_public_ci_bundle_manifest(path: Path) -> Dict[str, Any]:
-    """Load and semantically replay one canonical external manifest."""
-
-    body = _read_manifest(Path(path))
+def _load_v064_public_ci_bundle_manifest_bytes(body: bytes) -> Dict[str, Any]:
     try:
         value = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -288,6 +285,12 @@ def load_v064_public_ci_bundle_manifest(path: Path) -> Dict[str, Any]:
     if value["file_set_sha256"] != business_hash(value["files"]):
         raise V064PublicCiBundleError("V064_PUBLIC_CI_FILE_SET_HASH_MISMATCH")
     return copy.deepcopy(dict(value))
+
+
+def load_v064_public_ci_bundle_manifest(path: Path) -> Dict[str, Any]:
+    """Load and semantically replay one canonical external manifest."""
+
+    return _load_v064_public_ci_bundle_manifest_bytes(_read_manifest(Path(path)))
 
 
 def _forbidden_public_bytes(body: bytes, relative_path: str = "") -> bool:
@@ -470,6 +473,66 @@ def _retained_parent(root_descriptor: int, parts: Tuple[str, ...]) -> int:
         raise
 
 
+def _retained_existing_parent(
+    root_descriptor: int, parts: Tuple[str, ...]
+) -> int:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    if not isinstance(nofollow, int) or not nofollow or not isinstance(directory, int) or not directory:
+        raise V064PublicCiBundleError("V064_PUBLIC_CI_UNSUPPORTED")
+    current = os.dup(root_descriptor)
+    completed = False
+    primary = None
+    try:
+        for part in parts:
+            before = os.stat(part, dir_fd=current, follow_symlinks=False)
+            if (
+                not stat.S_ISDIR(before.st_mode)
+                or before.st_uid != os.getuid()
+                or stat.S_IMODE(before.st_mode) != 0o700
+            ):
+                raise V064PublicCiBundleError(
+                    "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+                )
+            next_descriptor = None
+            try:
+                next_descriptor = os.open(
+                    part, os.O_RDONLY | directory | nofollow, dir_fd=current
+                )
+                opened = os.fstat(next_descriptor)
+                attached = os.stat(
+                    part, dir_fd=current, follow_symlinks=False
+                )
+                if (
+                    (opened.st_dev, opened.st_ino)
+                    != (before.st_dev, before.st_ino)
+                    or (attached.st_dev, attached.st_ino)
+                    != (before.st_dev, before.st_ino)
+                ):
+                    raise V064PublicCiBundleError(
+                        "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+                    )
+                previous = current
+                current = None
+                _close_public_descriptor(previous)
+                current = next_descriptor
+                next_descriptor = None
+            except BaseException as error:
+                if next_descriptor is not None:
+                    _close_public_descriptor(
+                        next_descriptor, error, "directory_close_failure"
+                    )
+                raise
+        completed = True
+        return current
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        if current is not None and not completed:
+            _close_public_descriptor(current, primary, "directory_close_failure")
+
+
 def stage_v064_public_ci_bundle(
     repository: Path, source_commit: str, destination: Path
 ) -> Dict[str, Any]:
@@ -541,39 +604,32 @@ def _read_public_file(path: Path, root_descriptor: int = None, relative: str = "
     if not isinstance(nofollow, int) or not nofollow or not isinstance(nonblock, int) or not nonblock:
         raise V064PublicCiBundleError("V064_PUBLIC_CI_UNSUPPORTED")
     parent_descriptor = None
+    descriptor = None
+    primary = None
     name = path.name
-    if root_descriptor is not None:
-        parts = Path(relative).parts
-        parent_descriptor = _retained_parent(root_descriptor, tuple(parts[:-1]))
-        name = parts[-1]
-        try:
-            before = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
-        except BaseException:
-            os.close(parent_descriptor)
-            raise
-    else:
-        before = path.lstat()
-    if (
-        not stat.S_ISREG(before.st_mode)
-        or before.st_uid != os.getuid()
-        or before.st_nlink != 1
-        or stat.S_IMODE(before.st_mode) != 0o644
-        or not 0 < before.st_size <= _MAX_MANIFEST_BYTES
-    ):
-        if parent_descriptor is not None:
-            os.close(parent_descriptor)
-        raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
     try:
+        if root_descriptor is not None:
+            parts = Path(relative).parts
+            parent_descriptor = _retained_existing_parent(
+                root_descriptor, tuple(parts[:-1])
+            )
+            name = parts[-1]
+            before = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+        else:
+            before = path.lstat()
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.getuid()
+            or before.st_nlink != 1
+            or stat.S_IMODE(before.st_mode) != 0o644
+            or not 0 < before.st_size <= _MAX_MANIFEST_BYTES
+        ):
+            raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
         descriptor = os.open(
             name if parent_descriptor is not None else path,
             os.O_RDONLY | nofollow | nonblock,
             dir_fd=parent_descriptor,
         )
-    except BaseException:
-        if parent_descriptor is not None:
-            os.close(parent_descriptor)
-        raise
-    try:
         opened = os.fstat(descriptor)
         if (opened.st_dev, opened.st_ino, opened.st_size) != (before.st_dev, before.st_ino, before.st_size):
             raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
@@ -594,10 +650,171 @@ def _read_public_file(path: Path, root_descriptor: int = None, relative: str = "
         if (after.st_dev, after.st_ino, after.st_size) != (opened.st_dev, opened.st_ino, opened.st_size) or (attached.st_dev, attached.st_ino) != (opened.st_dev, opened.st_ino):
             raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
         return b"".join(chunks)
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        os.close(descriptor)
+        deferred = None
+        if descriptor is not None:
+            try:
+                _close_public_descriptor(
+                    descriptor, primary, "file_close_failure"
+                )
+            except BaseException as error:
+                deferred = error
         if parent_descriptor is not None:
-            os.close(parent_descriptor)
+            try:
+                _close_public_descriptor(
+                    parent_descriptor,
+                    primary if primary is not None else deferred,
+                    "parent_close_failure",
+                )
+            except BaseException as error:
+                if deferred is None:
+                    deferred = error
+        if primary is None and deferred is not None:
+            raise deferred
+
+
+def _close_public_descriptor(
+    descriptor: int,
+    primary: BaseException = None,
+    diagnostic: str = "root_close_failure",
+) -> None:
+    try:
+        os.close(descriptor)
+    except OSError as error:
+        if primary is not None:
+            try:
+                setattr(primary, diagnostic, repr(error))
+            except (AttributeError, TypeError):
+                pass
+            return
+        raise V064PublicCiBundleError(
+            "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+        ) from error
+
+
+def _open_public_root(root: Path) -> Tuple[int, os.stat_result]:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    if (
+        not isinstance(nofollow, int) or not nofollow
+        or not isinstance(directory, int) or not directory
+    ):
+        raise V064PublicCiBundleError("V064_PUBLIC_CI_UNSUPPORTED")
+    descriptor = None
+    primary = None
+    completed = False
+    try:
+        before = root.lstat()
+        if (
+            not stat.S_ISDIR(before.st_mode)
+            or before.st_uid != os.getuid()
+            or stat.S_IMODE(before.st_mode) != 0o700
+        ):
+            raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
+        descriptor = os.open(root, os.O_RDONLY | directory | nofollow)
+        opened = os.fstat(descriptor)
+        attached = root.lstat()
+        if (
+            not stat.S_ISDIR(opened.st_mode)
+            or opened.st_uid != os.getuid()
+            or stat.S_IMODE(opened.st_mode) != 0o700
+            or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+            or (attached.st_dev, attached.st_ino) != (before.st_dev, before.st_ino)
+        ):
+            raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
+        completed = True
+        return descriptor, before
+    except V064PublicCiBundleError as error:
+        primary = error
+        raise
+    except OSError as error:
+        mapped = V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
+        primary = mapped
+        raise mapped from error
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        if descriptor is not None and not completed:
+            _close_public_descriptor(descriptor, primary)
+
+
+def _validate_public_root_attachment(
+    root: Path, descriptor: int, identity: os.stat_result
+) -> None:
+    try:
+        opened = os.fstat(descriptor)
+        attached = root.lstat()
+    except OSError as error:
+        raise V064PublicCiBundleError(
+            "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+        ) from error
+    if (
+        not stat.S_ISDIR(opened.st_mode)
+        or opened.st_uid != os.getuid()
+        or stat.S_IMODE(opened.st_mode) != 0o700
+        or (opened.st_dev, opened.st_ino) != (identity.st_dev, identity.st_ino)
+        or (attached.st_dev, attached.st_ino)
+        != (identity.st_dev, identity.st_ino)
+    ):
+        raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
+
+
+def _inventory_public_root(
+    root_descriptor: int,
+) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+    files = []
+    directories = []
+
+    def visit(descriptor: int, prefix: str) -> None:
+        try:
+            names = sorted(os.listdir(descriptor))
+        except OSError as error:
+            raise V064PublicCiBundleError(
+                "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+            ) from error
+        for name in names:
+            relative = name if not prefix else prefix + "/" + name
+            try:
+                entry = os.stat(
+                    name, dir_fd=descriptor, follow_symlinks=False
+                )
+            except OSError as error:
+                raise V064PublicCiBundleError(
+                    "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+                ) from error
+            if stat.S_ISREG(entry.st_mode):
+                files.append(relative)
+                continue
+            if not stat.S_ISDIR(entry.st_mode):
+                raise V064PublicCiBundleError(
+                    "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+                )
+            if (
+                entry.st_uid != os.getuid()
+                or stat.S_IMODE(entry.st_mode) != 0o700
+            ):
+                raise V064PublicCiBundleError(
+                    "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+                )
+            child = None
+            primary = None
+            try:
+                child = _retained_existing_parent(descriptor, (name,))
+                directories.append(relative)
+                visit(child, relative)
+            except BaseException as error:
+                primary = error
+                raise
+            finally:
+                if child is not None:
+                    _close_public_descriptor(child, primary)
+
+    visit(root_descriptor, "")
+    return tuple(files), tuple(directories)
 
 
 def _object_git(git_directory: Path, arguments: Tuple[str, ...], body: bytes = b"") -> bytes:
@@ -663,47 +880,52 @@ def build_v064_public_root_commit(
     """Build and replay one deterministic parentless public root commit."""
 
     root = Path(public_root)
-    expected_manifest = build_v064_public_ci_bundle_manifest(repository, source_commit)
-    manifest_path = root / "bundle-manifest-v1.json"
-    actual_manifest = load_v064_public_ci_bundle_manifest(manifest_path)
-    if actual_manifest != expected_manifest:
-        raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
-    expected_paths = sorted(
-        [entry["path"] for entry in actual_manifest["files"]]
-        + ["bundle-manifest-v1.json"]
-    )
-    allowed_directories = {
-        str(Path(relative).parent)
-        for relative in expected_paths
-        if str(Path(relative).parent) != "."
-    }
-    allowed_directories |= {
-        str(parent)
-        for relative in tuple(allowed_directories)
-        for parent in Path(relative).parents
-        if str(parent) != "."
-    }
-    actual_objects = list(root.rglob("*"))
-    actual_paths = []
-    actual_directories = set()
-    for path in actual_objects:
-        entry = path.lstat()
-        relative = str(path.relative_to(root))
-        if stat.S_ISREG(entry.st_mode):
-            actual_paths.append(relative)
-        elif stat.S_ISDIR(entry.st_mode):
-            if entry.st_uid != os.getuid() or stat.S_IMODE(entry.st_mode) != 0o700:
-                raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
-            actual_directories.add(relative)
-        else:
-            raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
-    actual_paths.sort()
-    if actual_paths != expected_paths or actual_directories != allowed_directories:
-        raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
-    files = {}
-    entry_by_path = {entry["path"]: entry for entry in actual_manifest["files"]}
-    root_descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    root_descriptor, root_identity = _open_public_root(root)
+    primary = None
     try:
+        expected_manifest = build_v064_public_ci_bundle_manifest(
+            repository, source_commit
+        )
+        manifest_body = _read_public_file(
+            root / "bundle-manifest-v1.json",
+            root_descriptor,
+            "bundle-manifest-v1.json",
+        )
+        actual_manifest = _load_v064_public_ci_bundle_manifest_bytes(
+            manifest_body
+        )
+        if actual_manifest != expected_manifest:
+            raise V064PublicCiBundleError(
+                "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+            )
+        expected_paths = sorted(
+            [entry["path"] for entry in actual_manifest["files"]]
+            + ["bundle-manifest-v1.json"]
+        )
+        allowed_directories = {
+            str(Path(relative).parent)
+            for relative in expected_paths
+            if str(Path(relative).parent) != "."
+        }
+        allowed_directories |= {
+            str(parent)
+            for relative in tuple(allowed_directories)
+            for parent in Path(relative).parents
+            if str(parent) != "."
+        }
+        actual_paths, actual_directories = _inventory_public_root(
+            root_descriptor
+        )
+        if list(actual_paths) != expected_paths or set(
+            actual_directories
+        ) != allowed_directories:
+            raise V064PublicCiBundleError(
+                "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+            )
+        files = {}
+        entry_by_path = {
+            entry["path"]: entry for entry in actual_manifest["files"]
+        }
         for relative in expected_paths:
             path = root / relative
             body = _read_public_file(path, root_descriptor, relative)
@@ -712,8 +934,14 @@ def build_v064_public_root_commit(
                 if len(body) != entry["size"] or hashlib.sha256(body).hexdigest() != entry["sha256"]:
                     raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
             files[relative] = ("100644", body)
+        _validate_public_root_attachment(
+            root, root_descriptor, root_identity
+        )
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        os.close(root_descriptor)
+        _close_public_descriptor(root_descriptor, primary)
     git_directory = root.parent / (root.name + ".git")
     fresh_store = not git_directory.exists()
     if fresh_store:
@@ -827,48 +1055,67 @@ def verify_v064_public_ci_bundle(
     """Replay the public tree against exact private source Git objects."""
 
     root = Path(public_root)
-    manifest = load_v064_public_ci_bundle_manifest(root / "bundle-manifest-v1.json")
-    expected = build_v064_public_ci_bundle_manifest(repository, source_commit)
-    if manifest != expected:
-        raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
-    expected_paths = sorted(
-        [entry["path"] for entry in manifest["files"]]
-        + ["bundle-manifest-v1.json"]
-    )
-    actual_paths = sorted(
-        str(path.relative_to(root))
-        for path in root.rglob("*")
-        if path.is_file()
-    )
-    if actual_paths != expected_paths:
-        raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
-    source_paths = {relative: source for relative, _kind, source in _FILES}
-    for entry in manifest["files"]:
-        path = root / entry["path"]
-        try:
-            opened = path.lstat()
-            body = path.read_bytes()
-        except OSError as error:
-            raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID") from error
-        if (
-            not stat.S_ISREG(opened.st_mode)
-            or opened.st_uid != os.getuid()
-            or opened.st_nlink != 1
-            or stat.S_IMODE(opened.st_mode) != 0o644
-            or len(body) != entry["size"]
-            or hashlib.sha256(body).hexdigest() != entry["sha256"]
-        ):
-            raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
-        oid, exact = _blob(repository, source_commit, source_paths[entry["path"]])
-        if oid != entry["source_blob_oid"] or body != exact:
-            raise V064PublicCiBundleError("V064_PUBLIC_CI_PUBLIC_ROOT_INVALID")
+    root_descriptor, root_identity = _open_public_root(root)
+    primary = None
+    try:
+        manifest_body = _read_public_file(
+            root / "bundle-manifest-v1.json",
+            root_descriptor,
+            "bundle-manifest-v1.json",
+        )
+        manifest = _load_v064_public_ci_bundle_manifest_bytes(manifest_body)
+        expected = build_v064_public_ci_bundle_manifest(
+            repository, source_commit
+        )
+        if manifest != expected:
+            raise V064PublicCiBundleError(
+                "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+            )
+        expected_paths = sorted(
+            [entry["path"] for entry in manifest["files"]]
+            + ["bundle-manifest-v1.json"]
+        )
+        actual_paths, _actual_directories = _inventory_public_root(
+            root_descriptor
+        )
+        if list(actual_paths) != expected_paths:
+            raise V064PublicCiBundleError(
+                "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+            )
+        source_paths = {
+            relative: source for relative, _kind, source in _FILES
+        }
+        for entry in manifest["files"]:
+            body = _read_public_file(
+                root / entry["path"], root_descriptor, entry["path"]
+            )
+            if (
+                len(body) != entry["size"]
+                or hashlib.sha256(body).hexdigest() != entry["sha256"]
+            ):
+                raise V064PublicCiBundleError(
+                    "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+                )
+            oid, exact = _blob(
+                repository, source_commit, source_paths[entry["path"]]
+            )
+            if oid != entry["source_blob_oid"] or body != exact:
+                raise V064PublicCiBundleError(
+                    "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+                )
+        _validate_public_root_attachment(
+            root, root_descriptor, root_identity
+        )
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        _close_public_descriptor(root_descriptor, primary)
     candidate = build_v064_public_root_commit(repository, source_commit, root)
     return {
         "status": "V064_PUBLIC_CI_BUNDLE_VERIFIED",
         "file_count": len(expected_paths),
-        "manifest_sha256": hashlib.sha256(
-            (root / "bundle-manifest-v1.json").read_bytes()
-        ).hexdigest(),
+        "manifest_sha256": hashlib.sha256(manifest_body).hexdigest(),
         "file_set_sha256": manifest["file_set_sha256"],
         "commit": candidate["commit"],
         "tree": candidate["tree"],

@@ -5,4 +5,5 @@ This bounded repository replays one storage-safety test module on Python 3.9 and
 or authorization for paper, canary, or live trading.
 
 R2 preserves the first public Run 31850146784 as failed evidence and corrects
-only the workflow self-scan that prevented the bounded Linux tests from running.
+two fixed workflow preflight false positives: the workflow self-scan and the
+exact `CRASH_CHILD` `directory-fsync` literal required by the frozen test.

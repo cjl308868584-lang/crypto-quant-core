@@ -3,6 +3,7 @@ import hashlib
 import inspect
 import json
 import os
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -20,7 +21,7 @@ from crypto_quant.v064_public_ci_bundle import (
     stage_v064_public_ci_bundle,
     verify_v064_public_ci_bundle,
 )
-from crypto_quant import v064_public_ci_bundle_cli
+from crypto_quant import v064_public_ci_bundle, v064_public_ci_bundle_cli
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -860,6 +861,313 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
                         self.repository, self.commit, public_root
                     )
 
+    def test_builder_and_verifier_reject_untrusted_candidate_root_before_git_write(self):
+        for operation in (build_v064_public_root_commit, verify_v064_public_ci_bundle):
+            with self.subTest(operation=operation.__name__):
+                public_root = Path(self.temporary.name) / ("mode-" + operation.__name__)
+                stage_v064_public_ci_bundle(self.repository, self.commit, public_root)
+                public_root.chmod(0o755)
+                with self.assertRaisesRegex(
+                    V064PublicCiBundleError, "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+                ):
+                    operation(self.repository, self.commit, public_root)
+                self.assertFalse(
+                    (public_root.parent / (public_root.name + ".git")).exists()
+                )
+
+    def test_builder_rejects_wrong_owner_root_identity_before_git_write(self):
+        public_root = Path(self.temporary.name) / "wrong-owner-root"
+        stage_v064_public_ci_bundle(self.repository, self.commit, public_root)
+        real_fstat = os.fstat
+        replaced = False
+
+        def wrong_owner(descriptor):
+            nonlocal replaced
+            value = real_fstat(descriptor)
+            if not replaced and stat.S_ISDIR(value.st_mode):
+                replaced = True
+                fields = list(value)
+                fields[4] = value.st_uid + 1
+                return os.stat_result(fields)
+            return value
+
+        with mock.patch.object(
+            v064_public_ci_bundle.os, "fstat", side_effect=wrong_owner
+        ):
+            with self.assertRaisesRegex(
+                V064PublicCiBundleError, "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+            ):
+                build_v064_public_root_commit(
+                    self.repository, self.commit, public_root
+                )
+        self.assertFalse(
+            (public_root.parent / (public_root.name + ".git")).exists()
+        )
+
+    def test_root_replacement_after_inventory_fails_before_git_write(self):
+        public_root = Path(self.temporary.name) / "replace-after-inventory"
+        displaced = Path(self.temporary.name) / "displaced-candidate"
+        stage_v064_public_ci_bundle(self.repository, self.commit, public_root)
+        real_inventory = v064_public_ci_bundle._inventory_public_root
+
+        def replace_after_inventory(descriptor):
+            result = real_inventory(descriptor)
+            public_root.rename(displaced)
+            public_root.mkdir(mode=0o700)
+            return result
+
+        with mock.patch.object(
+            v064_public_ci_bundle,
+            "_inventory_public_root",
+            side_effect=replace_after_inventory,
+        ):
+            with self.assertRaisesRegex(
+                V064PublicCiBundleError, "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+            ):
+                build_v064_public_root_commit(
+                    self.repository, self.commit, public_root
+                )
+        self.assertFalse(
+            (public_root.parent / (public_root.name + ".git")).exists()
+        )
+
+    def test_unexpected_primary_is_preserved_when_root_close_fails(self):
+        public_root = Path(self.temporary.name) / "primary-close"
+        stage_v064_public_ci_bundle(self.repository, self.commit, public_root)
+        real_open_root = v064_public_ci_bundle._open_public_root
+        real_close = os.close
+        root_descriptor = []
+
+        def record_root(root):
+            descriptor, identity = real_open_root(root)
+            root_descriptor.append(descriptor)
+            return descriptor, identity
+
+        def close_root_then_fail(descriptor):
+            real_close(descriptor)
+            if root_descriptor and descriptor == root_descriptor[0]:
+                raise OSError("test-only root close failure")
+
+        with mock.patch.object(
+            v064_public_ci_bundle, "_open_public_root", side_effect=record_root
+        ), mock.patch.object(
+            v064_public_ci_bundle,
+            "_inventory_public_root",
+            side_effect=RuntimeError("test-only primary"),
+        ), mock.patch.object(
+            v064_public_ci_bundle.os, "close", side_effect=close_root_then_fail
+        ):
+            with self.assertRaisesRegex(RuntimeError, "test-only primary") as captured:
+                build_v064_public_root_commit(
+                    self.repository, self.commit, public_root
+                )
+        self.assertIn("root close failure", captured.exception.root_close_failure)
+
+    def test_existing_parent_failure_matrix_closes_each_owned_descriptor_once(self):
+        real_dup = os.dup
+        real_open = os.open
+        real_fstat = os.fstat
+        real_stat = os.stat
+        real_close = os.close
+        for failure_point in ("child-fstat", "attachment-stat", "current-close"):
+            with self.subTest(failure_point=failure_point):
+                public_root = Path(self.temporary.name) / ("parent-" + failure_point)
+                stage_v064_public_ci_bundle(self.repository, self.commit, public_root)
+                root_descriptor = real_open(
+                    public_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                )
+                current_descriptor = []
+                child_descriptor = []
+                close_attempts = []
+                attachment_stats = []
+
+                def record_dup(descriptor):
+                    duplicated = real_dup(descriptor)
+                    current_descriptor.append(duplicated)
+                    return duplicated
+
+                def record_open(*arguments, **keywords):
+                    descriptor = real_open(*arguments, **keywords)
+                    child_descriptor.append(descriptor)
+                    return descriptor
+
+                def inject_fstat(descriptor):
+                    if failure_point == "child-fstat" and descriptor in child_descriptor:
+                        raise OSError("test-only child fstat failure")
+                    return real_fstat(descriptor)
+
+                def inject_stat(name, *arguments, **keywords):
+                    if name == "src":
+                        attachment_stats.append(name)
+                        if failure_point == "attachment-stat" and len(attachment_stats) == 2:
+                            raise OSError("test-only attachment stat failure")
+                    return real_stat(name, *arguments, **keywords)
+
+                def record_close(descriptor):
+                    close_attempts.append(descriptor)
+                    real_close(descriptor)
+                    if (
+                        failure_point == "current-close"
+                        and current_descriptor
+                        and descriptor == current_descriptor[0]
+                    ):
+                        raise OSError("test-only current close failure")
+
+                try:
+                    with mock.patch.object(
+                        v064_public_ci_bundle.os, "dup", side_effect=record_dup
+                    ), mock.patch.object(
+                        v064_public_ci_bundle.os, "open", side_effect=record_open
+                    ), mock.patch.object(
+                        v064_public_ci_bundle.os, "fstat", side_effect=inject_fstat
+                    ), mock.patch.object(
+                        v064_public_ci_bundle.os, "stat", side_effect=inject_stat
+                    ), mock.patch.object(
+                        v064_public_ci_bundle.os, "close", side_effect=record_close
+                    ):
+                        with self.assertRaises(BaseException):
+                            v064_public_ci_bundle._retained_existing_parent(
+                                root_descriptor, ("src",)
+                            )
+                    self.assertEqual(len(current_descriptor), 1)
+                    self.assertEqual(len(child_descriptor), 1)
+                    self.assertNotEqual(current_descriptor[0], child_descriptor[0])
+                    self.assertEqual(close_attempts.count(current_descriptor[0]), 1)
+                    self.assertEqual(close_attempts.count(child_descriptor[0]), 1)
+                finally:
+                    real_close(root_descriptor)
+
+    def test_read_primary_and_close_failure_matrix_preserves_first_failure(self):
+        cases = (
+            ("fstat", frozenset(("parent",)), ("parent_close_failure",)),
+            (
+                "read",
+                frozenset(("file", "parent")),
+                ("file_close_failure", "parent_close_failure"),
+            ),
+            ("stat", frozenset(("file",)), ("file_close_failure",)),
+        )
+        for primary_point, failing_closes, diagnostics in cases:
+            with self.subTest(
+                primary_point=primary_point, failing_closes=failing_closes
+            ):
+                captured = self._exercise_public_read_close_failures(
+                    primary_point, failing_closes
+                )
+                self.assertIsInstance(captured.exception, RuntimeError)
+                self.assertIn("test-only %s primary" % primary_point, str(captured.exception))
+                for diagnostic in diagnostics:
+                    self.assertIn("close failure", getattr(captured.exception, diagnostic))
+
+    def test_read_close_failure_without_primary_is_fixed_domain_failure(self):
+        for failing_closes in (
+            frozenset(("file",)),
+            frozenset(("parent",)),
+            frozenset(("file", "parent")),
+        ):
+            with self.subTest(failing_closes=failing_closes):
+                captured = self._exercise_public_read_close_failures(
+                    None, failing_closes
+                )
+                self.assertIsInstance(captured.exception, V064PublicCiBundleError)
+                self.assertEqual(
+                    str(captured.exception), "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
+                )
+
+    def _exercise_public_read_close_failures(self, primary_point, failing_closes):
+        suffix = primary_point or "no-primary"
+        suffix += "-" + "-".join(sorted(failing_closes))
+        public_root = Path(self.temporary.name) / ("read-close-" + suffix)
+        stage_v064_public_ci_bundle(self.repository, self.commit, public_root)
+        real_retained = v064_public_ci_bundle._retained_existing_parent
+        real_open = os.open
+        real_fstat = os.fstat
+        real_read = os.read
+        real_stat = os.stat
+        real_close = os.close
+        root_descriptor = real_open(
+            public_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        )
+        parent_descriptor = []
+        file_descriptor = []
+        close_attempts = []
+        file_fstats = []
+        file_stats = []
+
+        def record_retained(*arguments, **keywords):
+            descriptor = real_retained(*arguments, **keywords)
+            parent_descriptor.append(descriptor)
+            return descriptor
+
+        def record_open(name, flags, *arguments, **keywords):
+            descriptor = real_open(name, flags, *arguments, **keywords)
+            if name == "ci.yml":
+                file_descriptor.append(descriptor)
+            return descriptor
+
+        def inject_fstat(descriptor):
+            if file_descriptor and descriptor == file_descriptor[0]:
+                file_fstats.append(descriptor)
+                if primary_point == "fstat" and len(file_fstats) == 1:
+                    raise RuntimeError("test-only fstat primary")
+            return real_fstat(descriptor)
+
+        def inject_read(descriptor, size):
+            if (
+                primary_point == "read"
+                and file_descriptor
+                and descriptor == file_descriptor[0]
+            ):
+                raise RuntimeError("test-only read primary")
+            return real_read(descriptor, size)
+
+        def inject_stat(name, *arguments, **keywords):
+            if name == "ci.yml":
+                file_stats.append(name)
+                if primary_point == "stat" and len(file_stats) == 2:
+                    raise RuntimeError("test-only stat primary")
+            return real_stat(name, *arguments, **keywords)
+
+        def record_close(descriptor):
+            role = None
+            if file_descriptor and descriptor == file_descriptor[0]:
+                role = "file"
+            elif parent_descriptor and descriptor == parent_descriptor[0]:
+                role = "parent"
+            if role is not None:
+                close_attempts.append(role)
+            real_close(descriptor)
+            if role in failing_closes:
+                raise OSError("test-only %s close failure" % role)
+
+        try:
+            with mock.patch.object(
+                v064_public_ci_bundle,
+                "_retained_existing_parent",
+                side_effect=record_retained,
+            ), mock.patch.object(
+                v064_public_ci_bundle.os, "open", side_effect=record_open
+            ), mock.patch.object(
+                v064_public_ci_bundle.os, "fstat", side_effect=inject_fstat
+            ), mock.patch.object(
+                v064_public_ci_bundle.os, "read", side_effect=inject_read
+            ), mock.patch.object(
+                v064_public_ci_bundle.os, "stat", side_effect=inject_stat
+            ), mock.patch.object(
+                v064_public_ci_bundle.os, "close", side_effect=record_close
+            ):
+                with self.assertRaises(BaseException) as captured:
+                    v064_public_ci_bundle._read_public_file(
+                        public_root / ".github" / "workflows" / "ci.yml",
+                        root_descriptor,
+                        ".github/workflows/ci.yml",
+                    )
+            self.assertEqual(close_attempts.count("file"), 1)
+            self.assertEqual(close_attempts.count("parent"), 1)
+            return captured
+        finally:
+            real_close(root_descriptor)
+
     def test_verifier_replays_exact_root_and_rejects_an_extra_file(self):
         public_root = Path(self.temporary.name) / "verified"
         stage_v064_public_ci_bundle(self.repository, self.commit, public_root)
@@ -877,6 +1185,13 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
 
 
 class V064PublicCiWorkflowContractTests(unittest.TestCase):
+    def test_public_readme_names_both_fixed_r2_preflight_corrections(self):
+        body = (TEMPLATE_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("two fixed workflow preflight false positives", body)
+        self.assertIn("workflow self-scan", body)
+        self.assertIn("CRASH_CHILD", body)
+        self.assertIn("directory-fsync", body)
+
     def test_exact_f_preflight_reproduces_public_sensitive_self_match(self):
         with tempfile.TemporaryDirectory() as temporary:
             checkout = Path(temporary) / "old"
@@ -902,14 +1217,14 @@ class V064PublicCiWorkflowContractTests(unittest.TestCase):
 
     def test_exact_r2_preflight_rejects_resealed_sensitive_payloads(self):
         payloads = (
-            b"/" + b"Users/fixture\n",
-            b"BEGIN " + b"PRIVATE KEY\n",
-            b"gh" + b"p_" + b"A" * 40 + b"\n",
-            b"owner" + b"@" + b"example.invalid\n",
-            b"https" + b"://example.invalid/path\n",
-            b"bro" + b"kerclient\n",
+            (b"/" + b"Users/fixture\n", b"PUBLIC_SENSITIVE_BYTES_INVALID\n"),
+            (b"BEGIN " + b"PRIVATE KEY\n", b"PUBLIC_SENSITIVE_BYTES_INVALID\n"),
+            (b"gh" + b"p_" + b"A" * 40 + b"\n", b"PUBLIC_SENSITIVE_BYTES_INVALID\n"),
+            (b"owner" + b"@" + b"example.invalid\n", b"PUBLIC_EMAIL_INVALID\n"),
+            (b"https" + b"://example.invalid/path\n", b"PUBLIC_URL_INVALID\n"),
+            (b"bro" + b"kerclient\n", b"PUBLIC_FORBIDDEN_TERM\n"),
         )
-        for index, payload in enumerate(payloads):
+        for index, (payload, reason) in enumerate(payloads):
             with self.subTest(index=index), tempfile.TemporaryDirectory() as temporary:
                 checkout = Path(temporary) / "r2"
                 head = _git_bytes(ROOT, "rev-parse", "HEAD").decode("ascii").strip()
@@ -918,7 +1233,9 @@ class V064PublicCiWorkflowContractTests(unittest.TestCase):
                 result = _run_exact_preflight(
                     checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
                 )
-                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, b"")
+                self.assertEqual(result.stderr, reason)
 
     def test_exact_r2_preflight_rejects_any_other_literal_child_argument(self):
         mutations = (

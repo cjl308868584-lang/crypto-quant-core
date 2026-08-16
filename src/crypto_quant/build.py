@@ -237,10 +237,13 @@ _V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS = (
     "docs/superpowers/plans/"
     "2026-08-09-replacement-challenger-plan-v2-supersession.md",
     "docs/superpowers/plans/2026-08-13-v064-minimal-public-ci-mirror.md",
+    "docs/superpowers/plans/2026-08-16-v064-public-ci-r2-correction.md",
     "docs/superpowers/specs/"
     "2026-08-09-replacement-challenger-plan-v2-supersession-design.md",
     "docs/superpowers/specs/"
     "2026-08-12-v064-minimal-public-ci-mirror-design.md",
+    "docs/superpowers/specs/"
+    "2026-08-15-v064-public-ci-r2-correction-design.md",
     "public_ci/v064/.github/workflows/ci.yml",
     "public_ci/v064/.gitignore",
     "public_ci/v064/NOTICE.md",
