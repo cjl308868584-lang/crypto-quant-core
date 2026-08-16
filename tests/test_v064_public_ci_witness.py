@@ -1,12 +1,15 @@
 import copy
+import errno
 import hashlib
 import inspect
+import io
 import json
 import os
 import subprocess
 import sys
 import stat
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -722,7 +725,7 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
             return_value=completed,
         ) as bounded:
             capture = v064_public_ci_witness_cli._capture(31400000000)
-        self.assertEqual(capture["raw_stderr"]["run_api"], b"exact stderr\n")
+            self.assertEqual(capture["raw_stderr"]["run_api"], b"exact stderr\n")
         self.assertEqual(capture["transcript"]["commands"][0]["stderr_size"], 13)
         self.assertEqual(bounded.call_count, 3)
         for call in bounded.call_args_list:
@@ -768,6 +771,920 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
                 (sys.executable, "-c", "import sys; sys.stdout.write('12345')"),
                 timeout_seconds=2, max_bytes=4,
             )
+
+
+class V064PublicCiWitnessPublicationTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.repository = Path(self.temporary.name) / "repository"
+        self.repository.mkdir(mode=0o700)
+        self.artifacts = self.repository / "artifacts"
+        self.artifacts.mkdir(mode=0o755)
+        self.output = self.artifacts / "v064-public-ci-r2"
+        self.patches = (
+            mock.patch.object(v064_public_ci_witness_cli, "_PRIVATE_REPOSITORY", self.repository),
+            mock.patch.object(v064_public_ci_witness_cli, "_ARTIFACT_ROOT", self.output),
+            mock.patch.object(
+                v064_public_ci_witness_cli,
+                "_validate_repository_identity",
+                return_value=None,
+                create=True,
+            ),
+        )
+        for patcher in self.patches:
+            patcher.start()
+        self.prepared = {
+            "v064-public-ci-r2-run-api-v1.json": b'{"run":1}\n',
+            "v064-public-ci-r2-jobs-api-v1.json": b'{"jobs":2}\n',
+            "v064-public-ci-r2-run-log-v1.txt": b"exact log\n",
+            "v064-public-ci-r2-acquisition-transcript-v1.json": b'{"transcript":3}\n',
+            "v064-public-ci-r2-witness-v1.json": b'{"witness":4}\n',
+        }
+
+    def tearDown(self):
+        for patcher in reversed(self.patches):
+            patcher.stop()
+        self.temporary.cleanup()
+
+    @staticmethod
+    def _snapshot(path):
+        value = path.lstat()
+        return (
+            path.read_bytes() if stat.S_ISREG(value.st_mode) else None,
+            value.st_mode,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+            value.st_dev,
+            value.st_ino,
+            value.st_nlink,
+        )
+
+    def test_fixed_publisher_creates_exact_owner_only_files_and_replays(self):
+        first = v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(first["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(set(first["files"]), set(self.prepared))
+        snapshots = {}
+        for name, body in self.prepared.items():
+            path = self.output / name
+            value = path.lstat()
+            self.assertTrue(stat.S_ISREG(value.st_mode))
+            self.assertEqual(stat.S_IMODE(value.st_mode), 0o600)
+            self.assertEqual(value.st_uid, os.geteuid())
+            self.assertEqual(value.st_nlink, 1)
+            self.assertEqual(path.read_bytes(), body)
+            snapshots[name] = self._snapshot(path)
+        self.assertEqual(
+            [path for path in self.output.iterdir() if path.name.endswith(".staging")],
+            [],
+        )
+        second = v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(second["status"], "V064_PUBLIC_CI_R2_EVIDENCE_ALREADY_PUBLISHED")
+        self.assertEqual(
+            {name: self._snapshot(self.output / name) for name in self.prepared},
+            snapshots,
+        )
+
+    def test_all_files_are_staged_before_first_canonical_publish_and_retry_recovers(self):
+        calls = []
+
+        def crash_before_first(parent_fd, source, target):
+            calls.append((source, target))
+            raise RuntimeError("test-only crash before first publish")
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli,
+            "_atomic_no_replace",
+            side_effect=crash_before_first,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "test-only crash"):
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            [path for path in self.output.iterdir() if path.name in self.prepared],
+            [],
+        )
+        self.assertEqual(
+            len([path for path in self.output.iterdir() if path.name.endswith(".staging")]),
+            5,
+        )
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_write_all", wraps=v064_public_ci_witness_cli._write_all
+        ) as write:
+            result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(write.call_count, 0)
+
+    def test_partial_staging_write_is_completed_only_after_exact_prefix_replay(self):
+        real_write = v064_public_ci_witness_cli._write_all
+        calls = 0
+
+        def partial_then_crash(descriptor, body):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                os.write(descriptor, body[:2])
+                raise RuntimeError("test-only partial staging crash")
+            return real_write(descriptor, body)
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_write_all", side_effect=partial_then_crash
+        ):
+            with self.assertRaisesRegex(RuntimeError, "partial staging"):
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(
+            len([path for path in self.output.iterdir() if path.name.endswith(".staging")]),
+            1,
+        )
+        result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        for name, body in self.prepared.items():
+            self.assertEqual((self.output / name).read_bytes(), body)
+
+    def test_failed_staging_fsync_is_reconfirmed_before_publication(self):
+        real_fsync = v064_public_ci_witness_cli._fsync
+        calls = 0
+
+        def fail_first(descriptor):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_FSYNC_FAILED")
+            return real_fsync(descriptor)
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_fsync", side_effect=fail_first
+        ):
+            with self.assertRaisesRegex(ValueError, "FSYNC_FAILED"):
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        real_os_fsync = os.fsync
+        regular_fsyncs = 0
+
+        def count_regular(descriptor):
+            nonlocal regular_fsyncs
+            if stat.S_ISREG(os.fstat(descriptor).st_mode):
+                regular_fsyncs += 1
+            return real_os_fsync(descriptor)
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli.os, "fsync", side_effect=count_regular
+        ):
+            result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(regular_fsyncs, 5)
+
+    def test_retry_after_first_visible_final_preserves_inode_and_performs_zero_writes(self):
+        real = v064_public_ci_witness_cli._atomic_no_replace
+        calls = 0
+
+        def publish_first_then_crash(parent_fd, source, target):
+            nonlocal calls
+            calls += 1
+            real(parent_fd, source, target)
+            raise RuntimeError("test-only crash after first publish")
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli,
+            "_atomic_no_replace",
+            side_effect=publish_first_then_crash,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "after first publish"):
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        first_name = next(iter(self.prepared))
+        first = self.output / first_name
+        inode = first.lstat().st_ino
+        self.assertEqual(calls, 1)
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_write_all", wraps=v064_public_ci_witness_cli._write_all
+        ) as write:
+            result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(write.call_count, 0)
+        self.assertEqual(first.lstat().st_ino, inode)
+
+    def test_untrusted_existing_final_is_rejected_without_sentinel_side_effect(self):
+        self.output.mkdir(mode=0o700)
+        name = next(iter(self.prepared))
+        final = self.output / name
+        sentinel = Path(self.temporary.name) / "sentinel"
+        sentinel.write_bytes(self.prepared[name])
+        sentinel.chmod(0o600)
+        final.symlink_to(sentinel)
+        before = self._snapshot(sentinel)
+        with self.assertRaisesRegex(ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED"):
+            v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(self._snapshot(sentinel), before)
+        self.assertTrue(final.is_symlink())
+        self.assertEqual(
+            [path for path in self.output.iterdir() if path.name.endswith(".staging")],
+            [],
+        )
+
+    def test_hardlink_and_nonregular_wrong_mode_and_different_bytes_fail_without_mutation(self):
+        name = next(iter(self.prepared))
+        for case_name in (
+            "hardlink", "fifo", "directory", "wrong-mode",
+            "different-bytes",
+        ):
+            with self.subTest(case_name=case_name):
+                repository = Path(self.temporary.name) / case_name / "repository"
+                repository.mkdir(parents=True, mode=0o700)
+                artifacts = repository / "artifacts"
+                artifacts.mkdir(mode=0o755)
+                output = artifacts / "v064-public-ci-r2"
+                output.mkdir(mode=0o700)
+                final = output / name
+                sentinel = Path(self.temporary.name) / ("sentinel-" + case_name)
+                if case_name == "hardlink":
+                    sentinel.write_bytes(self.prepared[name])
+                    sentinel.chmod(0o600)
+                    os.link(sentinel, final)
+                elif case_name == "fifo":
+                    os.mkfifo(final, 0o600)
+                    sentinel = final
+                elif case_name == "directory":
+                    final.mkdir(mode=0o600)
+                    sentinel = final
+                elif case_name == "wrong-mode":
+                    final.write_bytes(self.prepared[name])
+                    final.chmod(0o644)
+                    sentinel = final
+                else:
+                    final.write_bytes(b"x" * len(self.prepared[name]))
+                    final.chmod(0o600)
+                    sentinel = final
+                before = self._snapshot(sentinel)
+                with mock.patch.object(
+                    v064_public_ci_witness_cli, "_ARTIFACT_ROOT", output
+                ), mock.patch.object(
+                    v064_public_ci_witness_cli,
+                    "_PRIVATE_REPOSITORY",
+                    repository,
+                ):
+                    with self.assertRaisesRegex(
+                        ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED"
+                    ):
+                        v064_public_ci_witness_cli._publish_evidence(self.prepared)
+                self.assertEqual(self._snapshot(sentinel), before)
+                self.assertEqual(
+                    [path for path in output.iterdir() if path.name.endswith(".staging")],
+                    [],
+                )
+
+    def test_prepared_key_or_size_failure_precedes_root_creation(self):
+        missing = dict(self.prepared)
+        missing.pop(next(iter(missing)))
+        with self.assertRaisesRegex(ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_INVALID"):
+            v064_public_ci_witness_cli._publish_evidence(missing)
+        self.assertFalse(self.output.exists())
+
+    def test_short_writes_are_completed_exactly(self):
+        real_write = os.write
+
+        def short_write(descriptor, body):
+            return real_write(descriptor, body[: max(1, len(body) // 2)])
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli.os, "write", side_effect=short_write
+        ):
+            result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        for name, body in self.prepared.items():
+            self.assertEqual((self.output / name).read_bytes(), body)
+
+    def test_ceremony_lock_failure_precedes_staging(self):
+        with mock.patch.object(
+            v064_public_ci_witness_cli.fcntl,
+            "flock",
+            side_effect=OSError(errno.ENOTSUP, "unsupported"),
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_LOCK_FAILED"
+            ):
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        if self.output.exists():
+            self.assertEqual(tuple(self.output.iterdir()), ())
+
+    def test_noncanonical_json_precedes_root_creation(self):
+        for name in (
+            "v064-public-ci-r2-run-api-v1.json",
+            "v064-public-ci-r2-jobs-api-v1.json",
+            "v064-public-ci-r2-acquisition-transcript-v1.json",
+            "v064-public-ci-r2-witness-v1.json",
+        ):
+            with self.subTest(name=name):
+                prepared = dict(self.prepared)
+                prepared[name] = b'{ "not":"canonical" }\n'
+                with self.assertRaisesRegex(
+                    ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_INVALID"
+                ):
+                    v064_public_ci_witness_cli._publish_evidence(prepared)
+                self.assertFalse(self.output.exists())
+        prepared = dict(self.prepared)
+        prepared["v064-public-ci-r2-run-api-v1.json"] = b'{"value":NaN}\n'
+        with self.assertRaisesRegex(
+            ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_INVALID"
+        ):
+            v064_public_ci_witness_cli._publish_evidence(prepared)
+        self.assertFalse(self.output.exists())
+
+    def test_wrong_owner_is_rejected_before_read(self):
+        self.output.mkdir(mode=0o700)
+        name = next(iter(self.prepared))
+        final = self.output / name
+        final.write_bytes(self.prepared[name])
+        final.chmod(0o600)
+        root_fd = os.open(self.output, os.O_RDONLY | os.O_DIRECTORY)
+        real_fstat = os.fstat
+
+        def wrong_owner(descriptor):
+            value = real_fstat(descriptor)
+            if descriptor == root_fd:
+                return value
+            fields = list(value)
+            fields[4] = value.st_uid + 1
+            return os.stat_result(fields)
+
+        try:
+            with mock.patch.object(
+                v064_public_ci_witness_cli.os, "fstat", side_effect=wrong_owner
+            ), mock.patch.object(
+                v064_public_ci_witness_cli.os, "read", wraps=os.read
+            ) as read:
+                with self.assertRaisesRegex(
+                    ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED"
+                ):
+                    v064_public_ci_witness_cli._read_named(
+                        root_fd, name, self.prepared[name]
+                    )
+            self.assertEqual(read.call_count, 0)
+        finally:
+            os.close(root_fd)
+
+    def test_post_file_fsync_attachment_swap_fails_before_publication(self):
+        real_fsync = v064_public_ci_witness_cli._fsync
+        swapped = False
+
+        def swap_after_file_fsync(descriptor):
+            nonlocal swapped
+            real_fsync(descriptor)
+            if not swapped and stat.S_ISREG(os.fstat(descriptor).st_mode):
+                swapped = True
+                staging = next(
+                    path for path in self.output.iterdir()
+                    if path.name.endswith(".staging")
+                )
+                replacement = self.output / "test-only-replacement"
+                replacement.write_bytes(next(iter(self.prepared.values())))
+                replacement.chmod(0o600)
+                os.replace(replacement, staging)
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_fsync", side_effect=swap_after_file_fsync
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED"
+            ):
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertFalse(any((self.output / name).exists() for name in self.prepared))
+
+    def test_fresh_process_concurrent_loser_creates_no_staging_and_winner_recovers(self):
+        marker = Path(self.temporary.name) / "winner-locked"
+        release = Path(self.temporary.name) / "release-winner"
+        child = r'''
+import json
+import sys
+import time
+from pathlib import Path
+from crypto_quant import v064_public_ci_witness_cli as module
+
+repository = Path(sys.argv[1])
+role = sys.argv[2]
+marker = Path(sys.argv[3])
+release = Path(sys.argv[4])
+module._PRIVATE_REPOSITORY = repository
+module._ARTIFACT_ROOT = repository / "artifacts" / "v064-public-ci-r2"
+module._validate_repository_identity = lambda: None
+prepared = {
+    "v064-public-ci-r2-run-api-v1.json": b'{"run":1}\n',
+    "v064-public-ci-r2-jobs-api-v1.json": b'{"jobs":2}\n',
+    "v064-public-ci-r2-run-log-v1.txt": b"exact log\n",
+    "v064-public-ci-r2-acquisition-transcript-v1.json": b'{"transcript":3}\n',
+    "v064-public-ci-r2-witness-v1.json": b'{"witness":4}\n',
+}
+if role == "winner":
+    original = module._staging_inventory
+    first = [True]
+    def hold(root_fd, value):
+        result = original(root_fd, value)
+        if first[0]:
+            first[0] = False
+            marker.write_text("locked")
+            deadline = time.monotonic() + 10
+            while not release.exists():
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("test-only release timeout")
+                time.sleep(0.01)
+        return result
+    module._staging_inventory = hold
+try:
+    print(json.dumps(module._publish_evidence(prepared), sort_keys=True))
+except BaseException as error:
+    print(type(error).__name__ + ":" + str(error))
+    raise SystemExit(3)
+'''
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = str(ROOT / "src")
+        winner = subprocess.Popen(
+            (sys.executable, "-c", child, str(self.repository), "winner", str(marker), str(release)),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment,
+        )
+        deadline = time.monotonic() + 10
+        while not marker.exists() and winner.poll() is None:
+            if time.monotonic() >= deadline:
+                winner.kill()
+                winner.wait()
+                self.fail("winner did not reach retained-directory boundary")
+            time.sleep(0.01)
+        loser = subprocess.run(
+            (sys.executable, "-c", child, str(self.repository), "loser", str(marker), str(release)),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment, timeout=10,
+        )
+        release.write_text("release")
+        winner_stdout, winner_stderr = winner.communicate(timeout=10)
+        self.assertEqual(winner.returncode, 0, winner_stderr.decode(errors="replace"))
+        self.assertEqual(loser.returncode, 3)
+        self.assertIn(b"V064_PUBLIC_CI_R2_EVIDENCE_CONCURRENT", loser.stdout)
+        self.assertIn(b"V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED", winner_stdout)
+        self.assertEqual(
+            tuple(sorted(path.name for path in self.output.iterdir())),
+            tuple(sorted(self.prepared)),
+        )
+
+    def test_no_replace_failure_and_exact_concurrent_loser_never_overwrite(self):
+        with mock.patch.object(
+            v064_public_ci_witness_cli,
+            "_atomic_no_replace",
+            side_effect=ValueError("test-only no-replace failure"),
+        ):
+            with self.assertRaisesRegex(ValueError, "no-replace failure"):
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertFalse(any((self.output / name).exists() for name in self.prepared))
+
+        for path in self.output.iterdir():
+            path.unlink()
+        real = v064_public_ci_witness_cli._atomic_no_replace
+        winner = {}
+
+        def lose_after_exact_winner(parent_fd, source, target):
+            real(parent_fd, source, target)
+            winner["inode"] = (self.output / target).lstat().st_ino
+            raise FileExistsError(target)
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli,
+            "_atomic_no_replace",
+            side_effect=lose_after_exact_winner,
+        ):
+            with self.assertRaises(FileExistsError):
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        first = self.output / next(iter(self.prepared))
+        self.assertEqual(first.lstat().st_ino, winner["inode"])
+        self.assertEqual(first.read_bytes(), next(iter(self.prepared.values())))
+
+    def test_missing_or_zero_required_flags_fail_before_root_creation(self):
+        for flag in ("O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK"):
+            for value in (None, 0):
+                with self.subTest(flag=flag, value=value):
+                    repository = Path(self.temporary.name) / (flag + str(value))
+                    repository.mkdir(mode=0o700)
+                    artifacts = repository / "artifacts"
+                    artifacts.mkdir(mode=0o755)
+                    output = artifacts / "v064-public-ci-r2"
+                    with mock.patch.object(
+                        v064_public_ci_witness_cli, "_PRIVATE_REPOSITORY", repository
+                    ), mock.patch.object(
+                        v064_public_ci_witness_cli, "_ARTIFACT_ROOT", output
+                    ), mock.patch.object(
+                        v064_public_ci_witness_cli.os, flag, value, create=True
+                    ):
+                        with self.assertRaisesRegex(
+                            ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNSUPPORTED"
+                        ):
+                            v064_public_ci_witness_cli._publish_evidence(self.prepared)
+                    self.assertFalse(output.exists())
+
+    def test_extra_directory_entry_blocks_without_mutation_or_staging(self):
+        self.output.mkdir(mode=0o700)
+        sentinel = self.output / "unrelated-sentinel"
+        sentinel.write_bytes(b"external\n")
+        sentinel.chmod(0o600)
+        before = self._snapshot(sentinel)
+        with self.assertRaisesRegex(
+            ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED"
+        ):
+            v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(self._snapshot(sentinel), before)
+        self.assertEqual(tuple(self.output.iterdir()), (sentinel,))
+
+    def test_parent_descriptor_close_failure_never_returns_success(self):
+        real_close = os.close
+        calls = 0
+
+        def close_then_fail_first(descriptor):
+            nonlocal calls
+            calls += 1
+            real_close(descriptor)
+            if calls == 1:
+                raise OSError("test-only parent close failure")
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli.os, "close", side_effect=close_then_fail_first
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED"
+            ):
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertGreaterEqual(calls, 2)
+        self.assertEqual(
+            [path for path in self.output.iterdir() if path.name in self.prepared],
+            [],
+        )
+
+    def test_open_root_failure_closes_each_successfully_opened_descriptor_once(self):
+        self.output.mkdir(mode=0o755)
+        real_open = os.open
+        real_close = os.close
+        opened = []
+        closed = []
+
+        def record_open(*args, **kwargs):
+            descriptor = real_open(*args, **kwargs)
+            opened.append(descriptor)
+            return descriptor
+
+        def record_close(descriptor):
+            closed.append(descriptor)
+            real_close(descriptor)
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli.os, "open", side_effect=record_open
+        ), mock.patch.object(
+            v064_public_ci_witness_cli.os, "close", side_effect=record_close
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID"
+            ):
+                v064_public_ci_witness_cli._open_artifact_root()
+        self.assertEqual(len(opened), 2)
+        self.assertCountEqual(closed, opened)
+        for descriptor in opened:
+            self.assertEqual(closed.count(descriptor), 1)
+
+    def test_read_primary_failure_is_preserved_when_descriptor_close_fails(self):
+        self.output.mkdir(mode=0o700)
+        name = next(iter(self.prepared))
+        final = self.output / name
+        final.write_bytes(self.prepared[name])
+        final.chmod(0o600)
+        root_fd = os.open(self.output, os.O_RDONLY | os.O_DIRECTORY)
+        real_close = os.close
+
+        def close_then_fail(descriptor):
+            real_close(descriptor)
+            raise OSError("test-only close failure")
+
+        try:
+            with mock.patch.object(
+                v064_public_ci_witness_cli.os,
+                "read",
+                side_effect=OSError("test-only read failure"),
+            ), mock.patch.object(
+                v064_public_ci_witness_cli.os,
+                "close",
+                side_effect=close_then_fail,
+            ):
+                with self.assertRaisesRegex(
+                    ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED"
+                ) as captured:
+                    v064_public_ci_witness_cli._read_named(
+                        root_fd, name, self.prepared[name]
+                    )
+            self.assertEqual(
+                captured.exception.close_error,
+                "V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED",
+            )
+        finally:
+            real_close(root_fd)
+
+    def test_staging_primary_failure_is_preserved_when_close_fails(self):
+        real_close = os.close
+        close_calls = 0
+
+        def close_staging_then_fail(descriptor):
+            nonlocal close_calls
+            close_calls += 1
+            real_close(descriptor)
+            if close_calls == 2:
+                raise OSError("test-only staging close failure")
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli,
+            "_write_all",
+            side_effect=ValueError("V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED"),
+        ), mock.patch.object(
+            v064_public_ci_witness_cli.os,
+            "close",
+            side_effect=close_staging_then_fail,
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED"
+            ) as captured:
+                v064_public_ci_witness_cli._publish_evidence(self.prepared)
+        self.assertEqual(
+            captured.exception.close_error,
+            "V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED",
+        )
+
+    def test_successful_cli_derives_and_publishes_only_five_fixed_files(self):
+        capture = {
+            "raw": {
+                "run_api": b'{"run":1}\n',
+                "jobs_api": b'{"jobs":2}\n',
+                "run_log": b"exact log\n",
+            },
+            "raw_stderr": {"run_api": b"", "jobs_api": b"", "run_log": b""},
+            "transcript": {"schema_version": "1.0.0", "commands": []},
+        }
+        bundle = {"bundle": "exact"}
+        witness = {"witness": "exact"}
+        output = io.StringIO()
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_capture", return_value=capture
+        ), mock.patch(
+            "crypto_quant.v064_public_ci_bundle.load_v064_public_ci_bundle_manifest",
+            return_value=bundle,
+        ) as load, mock.patch(
+            "crypto_quant.v064_public_ci_witness.derive_v064_public_ci_witness",
+            return_value=witness,
+        ) as derive, mock.patch.object(sys, "stdout", output):
+            result = v064_public_ci_witness_cli.main(("--run-id", "123"))
+        self.assertEqual(result, 0)
+        load.assert_called_once_with(
+            Path("/private/tmp/crypto-quant-v064-public-ci-r2-candidate/bundle-manifest-v1.json")
+        )
+        derive.assert_called_once_with(
+            bundle=bundle,
+            run_bytes=capture["raw"]["run_api"],
+            jobs_bytes=capture["raw"]["jobs_api"],
+            log_bytes=capture["raw"]["run_log"],
+            transcript=capture["transcript"],
+            private_repository=self.repository,
+        )
+        expected = dict(self.prepared)
+        expected["v064-public-ci-r2-acquisition-transcript-v1.json"] = _canonical(
+            capture["transcript"]
+        )
+        expected["v064-public-ci-r2-witness-v1.json"] = _canonical(witness)
+        for name, body in expected.items():
+            self.assertEqual((self.output / name).read_bytes(), body)
+        summary = json.loads(output.getvalue())
+        self.assertEqual(summary["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+
+    def test_cli_acquisition_validation_and_unsuccessful_run_create_zero_files(self):
+        with mock.patch.object(
+            v064_public_ci_witness_cli,
+            "_capture",
+            side_effect=ValueError("V064_PUBLIC_CI_GH_COMMAND_FAILED"),
+        ):
+            with self.assertRaisesRegex(ValueError, "GH_COMMAND_FAILED"):
+                v064_public_ci_witness_cli.main(("--run-id", "123"))
+        self.assertFalse(self.output.exists())
+
+        failed = {
+            "raw": {"run_api": b"{}\n", "jobs_api": b"{}\n", "run_log": b"x"},
+            "raw_stderr": {"run_api": b"", "jobs_api": b"", "run_log": b""},
+            "transcript": {
+                "schema_version": "1.0.0",
+                "commands": [{"exit_code": 1}],
+            },
+        }
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_capture", return_value=failed
+        ), mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertEqual(
+                v064_public_ci_witness_cli.main(("--run-id", "123")), 2
+            )
+        self.assertFalse(self.output.exists())
+
+        stderr_capture = copy.deepcopy(failed)
+        stderr_capture["transcript"]["commands"][0]["exit_code"] = 0
+        stderr_capture["raw_stderr"]["jobs_api"] = b"unexpected stderr\n"
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_capture", return_value=stderr_capture
+        ), mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertEqual(
+                v064_public_ci_witness_cli.main(("--run-id", "123")), 2
+            )
+        self.assertFalse(self.output.exists())
+
+        valid_capture = copy.deepcopy(failed)
+        valid_capture["transcript"]["commands"][0]["exit_code"] = 0
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_capture", return_value=valid_capture
+        ), mock.patch(
+            "crypto_quant.v064_public_ci_bundle.load_v064_public_ci_bundle_manifest",
+            side_effect=ValueError("V064_PUBLIC_CI_BUNDLE_INVALID"),
+        ):
+            with self.assertRaisesRegex(ValueError, "BUNDLE_INVALID"):
+                v064_public_ci_witness_cli.main(("--run-id", "123"))
+        self.assertFalse(self.output.exists())
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_capture", return_value=valid_capture
+        ), mock.patch(
+            "crypto_quant.v064_public_ci_bundle.load_v064_public_ci_bundle_manifest",
+            return_value={"bundle": "exact"},
+        ), mock.patch(
+            "crypto_quant.v064_public_ci_witness.derive_v064_public_ci_witness",
+            side_effect=ValueError("V064_PUBLIC_CI_WITNESS_INVALID"),
+        ):
+            with self.assertRaisesRegex(ValueError, "WITNESS_INVALID"):
+                v064_public_ci_witness_cli.main(("--run-id", "123"))
+        self.assertFalse(self.output.exists())
+
+        with mock.patch.object(
+            v064_public_ci_witness_cli, "_capture", return_value=valid_capture
+        ), mock.patch(
+            "crypto_quant.v064_public_ci_bundle.load_v064_public_ci_bundle_manifest",
+            return_value={"bundle": "exact"},
+        ), mock.patch(
+            "crypto_quant.v064_public_ci_witness.derive_v064_public_ci_witness",
+            return_value={"witness": "exact"},
+        ), mock.patch.object(
+            v064_public_ci_witness_cli,
+            "_validate_repository_identity",
+            side_effect=ValueError("V064_PUBLIC_CI_R2_REPOSITORY_INVALID"),
+        ):
+            with self.assertRaisesRegex(ValueError, "REPOSITORY_INVALID"):
+                v064_public_ci_witness_cli.main(("--run-id", "123"))
+        self.assertFalse(self.output.exists())
+
+
+class V064PublicCiR2CommittedArtifactTests(unittest.TestCase):
+    ROOT = ROOT / "artifacts" / "v064-public-ci-r2"
+    NAMES = (
+        "v064-public-ci-r2-run-api-v1.json",
+        "v064-public-ci-r2-jobs-api-v1.json",
+        "v064-public-ci-r2-run-log-v1.txt",
+        "v064-public-ci-r2-acquisition-transcript-v1.json",
+        "v064-public-ci-r2-witness-v1.json",
+    )
+
+    def _loaded_witness(self):
+        try:
+            entries = tuple(sorted(path.name for path in self.ROOT.iterdir()))
+        except FileNotFoundError:
+            entries = ()
+        if not entries:
+            self.skipTest("V064_PUBLIC_CI_R2_FORMAL_ARTIFACTS_NOT_YET_PUBLISHED")
+        self.assertEqual(entries, tuple(sorted(self.NAMES)), "R2 evidence set is not exact")
+        return load_v064_public_ci_witness(
+            self.ROOT / "v064-public-ci-r2-witness-v1.json"
+        )
+
+    def _read_formal(self, name):
+        path = self.ROOT / name
+        before = path.lstat()
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | v064_public_ci_witness_cli._required_flag("O_NOFOLLOW")
+            | v064_public_ci_witness_cli._required_flag("O_NONBLOCK"),
+        )
+        try:
+            opened = os.fstat(descriptor)
+            self.assertTrue(stat.S_ISREG(opened.st_mode))
+            self.assertEqual(opened.st_uid, os.geteuid())
+            self.assertEqual(opened.st_nlink, 1)
+            self.assertIn(stat.S_IMODE(opened.st_mode), (0o600, 0o644))
+            self.assertGreater(opened.st_size, 0)
+            self.assertLessEqual(opened.st_size, 64 * 1024 * 1024)
+            self.assertEqual(
+                (before.st_dev, before.st_ino), (opened.st_dev, opened.st_ino)
+            )
+            body = v064_public_ci_witness_cli._read_descriptor(
+                descriptor, opened.st_size
+            )
+            attached = path.lstat()
+            after = os.fstat(descriptor)
+            self.assertEqual(
+                (attached.st_dev, attached.st_ino),
+                (opened.st_dev, opened.st_ino),
+            )
+            self.assertEqual(
+                (after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+                (opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns),
+            )
+            return body
+        finally:
+            os.close(descriptor)
+
+    def _assert_raw(self, key, name, require_canonical):
+        witness = self._loaded_witness()
+        body = self._read_formal(name)
+        self.assertEqual(witness["raw_evidence"][key]["size"], len(body))
+        self.assertEqual(
+            witness["raw_evidence"][key]["sha256"],
+            hashlib.sha256(body).hexdigest(),
+        )
+        self.assertEqual(
+            witness["raw_evidence"][key]["path"],
+            "artifacts/v064-public-ci-r2/" + name,
+        )
+        if require_canonical:
+            self.assertEqual(_canonical(json.loads(body)), body)
+
+    def test_committed_run_api_replays_or_exact_set_is_absent(self):
+        self._assert_raw("run_api", self.NAMES[0], True)
+
+    def test_committed_jobs_api_replays_or_exact_set_is_absent(self):
+        self._assert_raw("jobs_api", self.NAMES[1], True)
+
+    def test_committed_run_log_replays_or_exact_set_is_absent(self):
+        self._assert_raw("run_log", self.NAMES[2], False)
+
+    def test_committed_transcript_replays_or_exact_set_is_absent(self):
+        self._assert_raw("acquisition_transcript", self.NAMES[3], True)
+
+    def test_committed_witness_replays_or_exact_set_is_absent(self):
+        witness = self._loaded_witness()
+        self._read_formal(self.NAMES[4])
+        self.assertEqual(witness["schema_version"], "1.1.0")
+        self.assertEqual(
+            witness["predecessor_failed_public_witness"],
+            PREDECESSOR_FAILED_PUBLIC_WITNESS,
+        )
+
+
+class V064PublicCiR2CommittedArtifactBoundaryTests(unittest.TestCase):
+    def test_extra_or_partial_inventory_is_never_an_all_absent_skip(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            gate = V064PublicCiR2CommittedArtifactTests(
+                "test_committed_witness_replays_or_exact_set_is_absent"
+            )
+            with mock.patch.object(gate, "ROOT", root):
+                extra = root / "unexpected"
+                extra.write_bytes(b"sentinel\n")
+                with self.assertRaisesRegex(AssertionError, "not exact"):
+                    gate._loaded_witness()
+                extra.unlink()
+                first = root / gate.NAMES[0]
+                first.write_bytes(b"{}\n")
+                first.chmod(0o600)
+                with self.assertRaisesRegex(AssertionError, "not exact"):
+                    gate._loaded_witness()
+
+    def test_formal_fifo_is_rejected_without_blocking(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            gate = V064PublicCiR2CommittedArtifactTests(
+                "test_committed_run_api_replays_or_exact_set_is_absent"
+            )
+            fifo = root / gate.NAMES[0]
+            os.mkfifo(fifo, 0o600)
+            with mock.patch.object(gate, "ROOT", root):
+                started = time.monotonic()
+                with self.assertRaises(AssertionError):
+                    gate._read_formal(gate.NAMES[0])
+                self.assertLess(time.monotonic() - started, 1.0)
+
+
+class V064PublicCiWitnessFixedIdentityTests(unittest.TestCase):
+    def test_repository_identity_uses_raw_module_ancestry_and_rejects_symlink(self):
+        self.assertEqual(
+            v064_public_ci_witness_cli._PRIVATE_REPOSITORY,
+            Path(v064_public_ci_witness_cli.__file__).absolute().parents[2],
+        )
+        self.assertEqual(
+            v064_public_ci_witness_cli._ARTIFACT_ROOT,
+            v064_public_ci_witness_cli._PRIVATE_REPOSITORY
+            / "artifacts"
+            / "v064-public-ci-r2",
+        )
+        v064_public_ci_witness_cli._validate_repository_identity()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "module.py"
+            target.write_bytes(b"module\n")
+            link = root / "linked.py"
+            link.symlink_to(target)
+            with mock.patch.object(v064_public_ci_witness_cli, "__file__", str(link)):
+                with self.assertRaisesRegex(
+                    ValueError, "V064_PUBLIC_CI_R2_REPOSITORY_INVALID"
+                ):
+                    v064_public_ci_witness_cli._validate_repository_identity()
 
 
 class V064PublicCiWitnessAncestryTests(unittest.TestCase):
