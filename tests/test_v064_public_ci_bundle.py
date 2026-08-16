@@ -50,6 +50,7 @@ EXACT_FILES = (
     ),
 )
 TEMPLATE_ROOT = ROOT / "public_ci" / "v064"
+PRIVATE_F = "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff"
 PREDECESSOR_FAILED_PUBLIC_WITNESS = {
     "repository": "cjl308868584-lang/crypto-quant-v064-public-ci",
     "private_candidate_f": "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff",
@@ -165,6 +166,130 @@ def _at_path(value, path):
     for part in path:
         value = value[part]
     return value
+
+
+def _canonical(value):
+    return canonical_json(value).encode("utf-8") + b"\n"
+
+
+def _git_bytes(repository, *arguments, input_bytes=None):
+    return subprocess.run(
+        ("/usr/bin/git", "-C", str(repository), *arguments),
+        input=input_bytes,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    ).stdout
+
+
+def _extract_exact_preflight(workflow_bytes):
+    if b"\0" in workflow_bytes or b"\r" in workflow_bytes:
+        raise AssertionError("workflow must be LF-only text")
+    lines = workflow_bytes.splitlines(keepends=True)
+    step = b"      - name: Verify closed bundle before repository imports\n"
+    if lines.count(step) != 1:
+        raise AssertionError("preflight step must be unique")
+    index = lines.index(step)
+    if lines[index + 1 : index + 3] != [
+        b"        shell: bash\n",
+        b"        run: |\n",
+    ]:
+        raise AssertionError("preflight header changed")
+    script = []
+    for line in lines[index + 3 :]:
+        if line.startswith(b"          "):
+            script.append(line[10:])
+            continue
+        break
+    if not script or script[-1] != b"PY\n":
+        raise AssertionError("preflight body is incomplete")
+    return b"".join(script)
+
+
+def _write_closed_checkout(destination, source_commit, use_worktree):
+    destination.mkdir(mode=0o700)
+    files = []
+    for relative, source_kind, source_relative in EXACT_FILES:
+        body = (
+            (ROOT / source_relative).read_bytes()
+            if use_worktree
+            else _git_bytes(ROOT, "show", "%s:%s" % (source_commit, source_relative))
+        )
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
+        oid = _git_bytes(ROOT, "hash-object", "--stdin", input_bytes=body).decode("ascii").strip()
+        files.append(
+            {
+                "path": relative,
+                "size": len(body),
+                "sha256": hashlib.sha256(body).hexdigest(),
+                "source_kind": source_kind,
+                "source_blob_oid": oid,
+            }
+        )
+    source_tree = _git_bytes(ROOT, "rev-parse", "%s^{tree}" % source_commit).decode("ascii").strip()
+    if use_worktree:
+        manifest = valid_bundle_manifest()
+        manifest["source"]["candidate_commit"] = source_commit
+        manifest["source"]["candidate_tree"] = source_tree
+    else:
+        manifest = valid_bundle_manifest()
+        manifest["schema_version"] = "1.0.0"
+        manifest["public_repository"] = "cjl308868584-lang/crypto-quant-v064-public-ci"
+        del manifest["predecessor_failed_public_witness"]
+        manifest["source"]["candidate_commit"] = source_commit
+        manifest["source"]["candidate_tree"] = source_tree
+    manifest["files"] = files
+    manifest["file_set_sha256"] = business_hash(files)
+    (destination / "bundle-manifest-v1.json").write_bytes(_canonical(manifest))
+    _git_bytes(destination, "init", "-q")
+    _git_bytes(destination, "config", "user.name", "V064 Preflight Fixture")
+    _git_bytes(destination, "config", "user.email", "fixture@example.invalid")
+    _git_bytes(destination, "add", "--all")
+    _git_bytes(destination, "commit", "-q", "-m", "fixture: closed checkout")
+    return manifest
+
+
+def _run_exact_preflight(checkout, repository_name):
+    workflow = (checkout / ".github/workflows/ci.yml").read_bytes()
+    head = _git_bytes(checkout, "rev-parse", "HEAD").decode("ascii").strip()
+    return subprocess.run(
+        ("/bin/bash", "-c", _extract_exact_preflight(workflow)),
+        cwd=checkout,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "LC_ALL": "C",
+            "LANG": "C",
+            "GITHUB_REPOSITORY": repository_name,
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_SHA": head,
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
+def _replace_file_and_reseal(checkout, relative, body):
+    path = checkout / relative
+    path.write_bytes(body)
+    manifest_path = checkout / "bundle-manifest-v1.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    entry = next(item for item in manifest["files"] if item["path"] == relative)
+    entry["size"] = len(body)
+    entry["sha256"] = hashlib.sha256(body).hexdigest()
+    entry["source_blob_oid"] = _git_bytes(
+        checkout, "hash-object", "--stdin", input_bytes=body
+    ).decode("ascii").strip()
+    manifest["file_set_sha256"] = business_hash(manifest["files"])
+    manifest_path.write_bytes(_canonical(manifest))
+    _git_bytes(checkout, "add", "--all")
+    _git_bytes(checkout, "commit", "-q", "-m", "fixture: reseal mutation")
+
+
+def _replace_readme_and_reseal(checkout, body):
+    _replace_file_and_reseal(checkout, "README.md", body)
 
 
 class V064PublicCiSchemaTests(unittest.TestCase):
@@ -752,6 +877,78 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
 
 
 class V064PublicCiWorkflowContractTests(unittest.TestCase):
+    def test_exact_f_preflight_reproduces_public_sensitive_self_match(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary) / "old"
+            _write_closed_checkout(checkout, PRIVATE_F, use_worktree=False)
+            result = _run_exact_preflight(
+                checkout, "cjl308868584-lang/crypto-quant-v064-public-ci"
+            )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(result.stderr, b"PUBLIC_SENSITIVE_BYTES_INVALID\n")
+
+    def test_exact_r2_preflight_accepts_closed_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary) / "r2"
+            head = _git_bytes(ROOT, "rev-parse", "HEAD").decode("ascii").strip()
+            _write_closed_checkout(checkout, head, use_worktree=True)
+            result = _run_exact_preflight(
+                checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+            )
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+        self.assertIn(b"source_candidate_f=", result.stdout)
+        self.assertEqual(result.stderr, b"")
+
+    def test_exact_r2_preflight_rejects_resealed_sensitive_payloads(self):
+        payloads = (
+            b"/" + b"Users/fixture\n",
+            b"BEGIN " + b"PRIVATE KEY\n",
+            b"gh" + b"p_" + b"A" * 40 + b"\n",
+            b"owner" + b"@" + b"example.invalid\n",
+            b"https" + b"://example.invalid/path\n",
+            b"bro" + b"kerclient\n",
+        )
+        for index, payload in enumerate(payloads):
+            with self.subTest(index=index), tempfile.TemporaryDirectory() as temporary:
+                checkout = Path(temporary) / "r2"
+                head = _git_bytes(ROOT, "rev-parse", "HEAD").decode("ascii").strip()
+                _write_closed_checkout(checkout, head, use_worktree=True)
+                _replace_readme_and_reseal(checkout, payload)
+                result = _run_exact_preflight(
+                    checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+                )
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_exact_r2_preflight_rejects_any_other_literal_child_argument(self):
+        mutations = (
+            (
+                b'[sys.executable, "-c", CRASH_CHILD, str(parent), "directory-fsync"]',
+                b'[sys.executable, "-c", CRASH_CHILD, str(parent), "other-fixed"]',
+            ),
+            (
+                b'[sys.executable, "-c", RETRY_CHILD, str(parent)]',
+                b'[sys.executable, "-c", RETRY_CHILD, str(parent), "directory-fsync"]',
+            ),
+        )
+        for before, after in mutations:
+            with self.subTest(after=after), tempfile.TemporaryDirectory() as temporary:
+                checkout = Path(temporary) / "r2"
+                head = _git_bytes(ROOT, "rev-parse", "HEAD").decode("ascii").strip()
+                _write_closed_checkout(checkout, head, use_worktree=True)
+                relative = "tests/test_v064_linux_supersession_publish.py"
+                body = (checkout / relative).read_bytes()
+                self.assertGreaterEqual(body.count(before), 1)
+                _replace_file_and_reseal(
+                    checkout, relative, body.replace(before, after, 1)
+                )
+                result = _run_exact_preflight(
+                    checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+                )
+                self.assertEqual(
+                    result.stderr, b"PUBLIC_SUBPROCESS_TARGET_INVALID\n"
+                )
+
     def test_workflow_has_only_bounded_events_permissions_and_pinned_actions(self):
         workflow = (TEMPLATE_ROOT / ".github/workflows/ci.yml").read_text(
             encoding="utf-8"

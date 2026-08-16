@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REPOSITORY" = "cjl308868584-lang/crypto-quant-v064-public-ci"
+          test "$GITHUB_REPOSITORY" = "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
           test "$GITHUB_REF" = "refs/heads/main"
           python3 - <<'PY'
           import ast, hashlib, json, pathlib, re, subprocess, sys
@@ -64,7 +64,7 @@ jobs:
               raise SystemExit("PUBLIC_TRACKED_SET_INVALID")
           forbidden = re.compile(
               rb"ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|/" +
-              rb"Users/|BEGIN PRIVATE KEY"
+              rb"Users/|BEGIN " + rb"PRIVATE KEY"
           )
           if any(forbidden.search((root / item).read_bytes()) for item in expected):
               raise SystemExit("PUBLIC_SENSITIVE_BYTES_INVALID")
@@ -120,9 +120,9 @@ jobs:
                           expected_lengths = {"RAW_RACE_CHILD": 6, "CRASH_CHILD": 5, "RETRY_CHILD": 4, "FIFO_READ_CHILD": 5}
                           if not isinstance(source, ast.Name) or source.id not in expected_lengths or len(elts) != expected_lengths[source.id]:
                               raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
-                          if not all(isinstance(item, (ast.Name, ast.Attribute, ast.Call)) for item in elts[3:]):
-                              raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
-                          if any(isinstance(item, ast.Call) and (not isinstance(item.func, ast.Name) or item.func.id != "str" or len(item.args) != 1) for item in elts[3:]):
+                          regular_tail = all(isinstance(item, (ast.Name, ast.Attribute, ast.Call)) for item in elts[3:]) and not any(isinstance(item, ast.Call) and (not isinstance(item.func, ast.Name) or item.func.id != "str" or len(item.args) != 1) for item in elts[3:])
+                          fixed_directory_fsync_tail = source.id == "CRASH_CHILD" and len(elts) == 5 and isinstance(elts[3], ast.Call) and isinstance(elts[3].func, ast.Name) and elts[3].func.id == "str" and len(elts[3].args) == 1 and isinstance(elts[4], ast.Constant) and elts[4].value == "directory-fsync"
+                          if not (regular_tail or fixed_directory_fsync_tail):
                               raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")
           manifest_sha = hashlib.sha256((root / "bundle-manifest-v1.json").read_bytes()).hexdigest()
           print("source_candidate_f=" + manifest["source"]["candidate_commit"])
