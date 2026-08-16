@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Produce a new, preregistered R2 public Linux portability candidate that fixes the exact workflow self-scan defect, preserves the first public failure, and can generate a success witness only after real Python 3.9/3.12 Linux execution.
+**Goal:** Produce a new, preregistered R2 public Linux portability candidate that fixes the two exact workflow-preflight false positives (self-scan and the frozen `CRASH_CHILD` literal), preserves the first public failure, and can generate a success witness only after real Python 3.9/3.12 Linux execution.
 
 **Architecture:** Keep the failed public repository and Run `31850146784` immutable. A strict descendant private candidate `F2` updates only R2 repository identity, versioned manifest/witness contracts, the embedded workflow preflight, private-only regression tests, and the build manifest; the publisher and exported Linux test remain byte-identical to `F`. A new parentless root commit is built for `cjl308868584-lang/crypto-quant-v064-public-ci-r2`; external creation and push remain behind a fresh exact approval package.
 
@@ -181,7 +181,7 @@ git commit -m "feat: bind v0.64 public CI R2 candidate"
 
 ---
 
-### Task 3: Execute the Exact Embedded Preflight and Fix Self-Matching
+### Task 3: Execute the Exact Embedded Preflight and Fix Both Proven False Positives
 
 **Files:**
 - Modify: `public_ci/v064/.github/workflows/ci.yml`
@@ -203,7 +203,7 @@ Build an old eight-file checkout from `git show F:path` bytes plus canonical old
 
 Execute exact R2 preflight on a staged R2 checkout; before fix it must fail. For private-key marker, token, `/Users/`, email, non-allowlisted URL, and broker marker, update file bytes, manifest size/SHA/blob OID/file-set hash, commit the mutation, then require the exact sensitive failure. Construct forbidden test markers from byte fragments.
 
-- [ ] **Step 4: Implement one semantic fix**
+- [ ] **Step 4: Implement the two bounded semantic fixes**
 
 Change the contiguous workflow marker to:
 
@@ -211,7 +211,7 @@ Change the contiguous workflow marker to:
 rb"Users/|BEGIN " + rb"PRIVATE KEY"
 ```
 
-and fixed repository to R2. Do not exclude workflow, delete rules, or widen an allowlist.
+and fixed repository to R2. Then change only the fixed-Python-child argument predicate so that the final argument may be the literal `"directory-fsync"` only when the source is exactly `CRASH_CHILD`, the total argument count remains five, and all other existing argument checks pass. Add negative tests for the same literal on every other child/position and for any other literal. Do not permit generic `Constant` arguments, exclude workflow, delete rules, widen an allowlist, or alter the exported Linux test.
 
 - [ ] **Step 5: Run GREEN**
 

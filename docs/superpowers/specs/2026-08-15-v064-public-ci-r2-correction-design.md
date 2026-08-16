@@ -13,7 +13,7 @@
 其仓库或把失败解释成 GitHub 基础设施问题。
 
 R2 是一个新的、预注册的工程纠错候选：使用新私有候选 `F2`、新公开仓库、新的无父根提交
-和一次新的 owner-push 运行。它只纠正公开 workflow 的自扫描缺陷，不改变 replacement
+和一次新的 owner-push 运行。它只纠正公开 workflow 的两个已实证预检 false-positive，不改变 replacement
 Challenger 的研究假设、Linux publisher、测试语义、阈值、v0.62 plan、owner ceremony、
 资金权限或版本路线。R2 成功也只能形成 Linux portability witness，不能形成盈利、AI 优势、
 Paper、Canary 或实盘结论。
@@ -99,6 +99,17 @@ GitHub runner、Python 版本、Linux primitive 或 publisher 缺陷。
 Linux primitive、错误码、UID 501、crash/race 测试、owner-only path 规则和 sentinel 快照合同
 均不得为了让 R2 变绿而修改。
 
+### 4.1 自扫描修正后暴露的第二个预检 false-positive
+
+私有 TDD 先精确复现首次公开失败，再拆分 marker 后，exact embedded preflight 继续运行并
+稳定返回 `PUBLIC_SUBPROCESS_TARGET_INVALID`。AST 诊断表明，冻结 Linux 测试中六个受审子进程调用
+有五个被原规则接受；唯一被误拒绝的是 `CRASH_CHILD` 的固定 `"directory-fsync"` crash-point
+参数。首次公开 Run 在更早的自扫描门已终止，因此当时不可能观测到这个后续缺陷。
+
+R2 允许的第二项修正只能是：在 fixed-Python-child 检查中，对 `CRASH_CHILD` 的最后一个参数
+精确允许字面量 `"directory-fsync"`。不得允许其他 `Constant`、其他 child、其他位置、任意 crash-point、
+动态命令或新 subprocess target。导出 Linux 测试 blob 仍必须与 `F` 字节相等。
+
 ### 4.2 全局禁止项
 
 R2 不得新增或执行 scheduler、deployment、Runner、Broker、订单、凭据、网络行情、production
@@ -135,8 +146,9 @@ closed-file verifier 不变。只允许以下语义变化：
 1. 固定 repository 改为 R2 名称；
 2. 敏感 marker 在 workflow source 中使用不会自匹配的字节片段构造，例如
    `b"BEGIN " + b"PRIVATE KEY"`；
-3. 运行时组合后的 marker 仍精确检测 `BEGIN PRIVATE KEY`；
-4. workflow 不得通过排除自身、忽略 workflow path、删除规则或扩大 allowlist 来变绿。
+3. fixed child 参数检查只额外接受 `CRASH_CHILD` 末位的精确 `"directory-fsync"`；
+4. 运行时组合后的 marker 仍精确检测 `BEGIN PRIVATE KEY`；
+5. workflow 不得通过排除自身、忽略 workflow path、删除规则、允许任意常量或扩大 allowlist 来变绿。
 
 `/Users/`、token prefix、email、URL 和业务禁词的运行时规则继续有效。任何 marker 的 source
 编码方式都必须由 private-only 测试证明“source 不自匹配、runtime 能命中真实 payload”。
