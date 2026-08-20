@@ -17,6 +17,10 @@ from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_json
 from .challenger_replacement_supersession_publish import _atomic_no_replace
+from .v064_public_ci_r2_failure import (
+    V064PublicCiR2FailureError,
+    load_v064_public_ci_r2_failure,
+)
 
 
 _SCHEMA = "v064-public-ci-bundle-manifest-v1.schema.json"
@@ -57,6 +61,13 @@ _PREDECESSOR_FAILED_PUBLIC_WITNESS = {
     "run_log_sha256": "e47462120131eadb3161a40ffe679f4f74889103d7b3a13bb563df705f9ef32c",
     "transcript_summary_sha256": "cd2072e246698bec6d8767d37da4a3dca82d09fc38466a8009aea9690a0c9790",
 }
+_R2_FAILURE_RECORD = (
+    Path(__file__).absolute().parents[2]
+    / "artifacts/v064-public-ci-r2-failure/v064-public-ci-r2-failure-record-v1.json"
+)
+_R2_FAILURE_RECORD_SHA256 = (
+    "857150ae490e54d5b6bdaa816efb96cf3f24a9778220f61973312426644dd264"
+)
 _FILES: Tuple[Tuple[str, str, str], ...] = (
     (".github/workflows/ci.yml", "PRIVATE_TEMPLATE_BLOB", "public_ci/v064/.github/workflows/ci.yml"),
     (".gitignore", "PRIVATE_TEMPLATE_BLOB", "public_ci/v064/.gitignore"),
@@ -147,6 +158,26 @@ def _blob(repository: Path, commit: str, relative: str) -> Tuple[str, bytes]:
     return oid, body
 
 
+def _r2_failed_public_witness() -> Dict[str, Any]:
+    """Load the frozen R2 semantic failure and bind its exact record bytes."""
+
+    try:
+        record = load_v064_public_ci_r2_failure(_R2_FAILURE_RECORD)
+        record_bytes = _R2_FAILURE_RECORD.read_bytes()
+    except (OSError, V064PublicCiR2FailureError) as error:
+        raise V064PublicCiBundleError("V064_PUBLIC_CI_R2_FAILURE_INVALID") from error
+    if hashlib.sha256(record_bytes).hexdigest() != _R2_FAILURE_RECORD_SHA256:
+        raise V064PublicCiBundleError("V064_PUBLIC_CI_R2_FAILURE_INVALID")
+    return {
+        "failure_record_path": (
+            "artifacts/v064-public-ci-r2-failure/"
+            "v064-public-ci-r2-failure-record-v1.json"
+        ),
+        "failure_record_sha256": _R2_FAILURE_RECORD_SHA256,
+        **record,
+    }
+
+
 def build_v064_public_ci_bundle_manifest(
     repository: Path, source_commit: str
 ) -> Dict[str, Any]:
@@ -174,7 +205,7 @@ def build_v064_public_ci_bundle_manifest(
         )
     manifest: Dict[str, Any] = {
         "$schema": "./v064-public-ci-bundle-manifest-v1.schema.json",
-        "schema_version": "1.1.0",
+        "schema_version": "1.2.0",
         "purpose": "V064_LINUX_PORTABILITY_WITNESS_ONLY",
         "source": {
             "private_repository": "cjl308868584-lang/crypto-quant-core",
@@ -188,10 +219,11 @@ def build_v064_public_ci_bundle_manifest(
                 "status": "PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED",
             },
         },
-        "public_repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
-        "predecessor_failed_public_witness": copy.deepcopy(
-            _PREDECESSOR_FAILED_PUBLIC_WITNESS
-        ),
+        "public_repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r3",
+        "predecessor_failed_public_witnesses": [
+            copy.deepcopy(_PREDECESSOR_FAILED_PUBLIC_WITNESS),
+            _r2_failed_public_witness(),
+        ],
         "files": entries,
         "file_set_sha256": business_hash(entries),
         "safety": copy.deepcopy(_SAFETY),

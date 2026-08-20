@@ -22,7 +22,7 @@ from .challenger_replacement_plan_supersession_cli import (
 
 
 _REPOSITORY = Path(__file__).absolute().parents[2]
-_CANDIDATE = Path("/private/tmp/crypto-quant-v064-public-ci-r2-candidate")
+_CANDIDATE = Path("/private/tmp/crypto-quant-v064-public-ci-r3-candidate")
 
 
 def _head() -> str:

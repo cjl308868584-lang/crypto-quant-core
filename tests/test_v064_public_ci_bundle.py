@@ -87,6 +87,17 @@ PREDECESSOR_FAILED_PUBLIC_WITNESS = {
     "run_log_sha256": "e47462120131eadb3161a40ffe679f4f74889103d7b3a13bb563df705f9ef32c",
     "transcript_summary_sha256": "cd2072e246698bec6d8767d37da4a3dca82d09fc38466a8009aea9690a0c9790",
 }
+R2_FAILURE_RECORD_PATH = (
+    "artifacts/v064-public-ci-r2-failure/v064-public-ci-r2-failure-record-v1.json"
+)
+R2_FAILURE_RECORD_SHA256 = (
+    "857150ae490e54d5b6bdaa816efb96cf3f24a9778220f61973312426644dd264"
+)
+PREDECESSOR_FAILED_PUBLIC_WITNESS_R2 = {
+    "failure_record_path": R2_FAILURE_RECORD_PATH,
+    "failure_record_sha256": R2_FAILURE_RECORD_SHA256,
+    **json.loads((ROOT / R2_FAILURE_RECORD_PATH).read_text(encoding="utf-8")),
+}
 
 
 def _file(path, source_kind):
@@ -102,7 +113,7 @@ def _file(path, source_kind):
 def valid_bundle_manifest():
     return {
         "$schema": "./v064-public-ci-bundle-manifest-v1.schema.json",
-        "schema_version": "1.1.0",
+        "schema_version": "1.2.0",
         "purpose": "V064_LINUX_PORTABILITY_WITNESS_ONLY",
         "source": {
             "private_repository": "cjl308868584-lang/crypto-quant-core",
@@ -116,10 +127,11 @@ def valid_bundle_manifest():
                 "status": "PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED",
             },
         },
-        "public_repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
-        "predecessor_failed_public_witness": copy.deepcopy(
-            PREDECESSOR_FAILED_PUBLIC_WITNESS
-        ),
+        "public_repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r3",
+        "predecessor_failed_public_witnesses": [
+            copy.deepcopy(PREDECESSOR_FAILED_PUBLIC_WITNESS),
+            copy.deepcopy(PREDECESSOR_FAILED_PUBLIC_WITNESS_R2),
+        ],
         "files": [
             _file(".github/workflows/ci.yml", "PRIVATE_TEMPLATE_BLOB"),
             _file(".gitignore", "PRIVATE_TEMPLATE_BLOB"),
@@ -238,7 +250,7 @@ def _write_closed_checkout(destination, source_commit, use_worktree):
         manifest = valid_bundle_manifest()
         manifest["schema_version"] = "1.0.0"
         manifest["public_repository"] = "cjl308868584-lang/crypto-quant-v064-public-ci"
-        del manifest["predecessor_failed_public_witness"]
+        del manifest["predecessor_failed_public_witnesses"]
         manifest["source"]["candidate_commit"] = source_commit
         manifest["source"]["candidate_tree"] = source_tree
     manifest["files"] = files
@@ -303,12 +315,12 @@ class V064PublicCiSchemaTests(unittest.TestCase):
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema).validate(valid_bundle_manifest())
 
-    def test_manifest_requires_exact_predecessor_failed_public_witness(self):
+    def test_manifest_requires_exact_ordered_r1_r2_failed_predecessors(self):
         schema = self.schema()
         validator = Draft202012Validator(schema)
 
         missing = copy.deepcopy(valid_bundle_manifest())
-        del missing["predecessor_failed_public_witness"]
+        del missing["predecessor_failed_public_witnesses"]
         with self.assertRaises(ValidationError):
             validator.validate(missing)
 
@@ -336,7 +348,7 @@ class V064PublicCiSchemaTests(unittest.TestCase):
         }
         for key, replacement in scalar_replacements.items():
             changed = copy.deepcopy(valid_bundle_manifest())
-            changed["predecessor_failed_public_witness"][key] = replacement
+            changed["predecessor_failed_public_witnesses"][0][key] = replacement
             with self.subTest(field=key), self.assertRaises(ValidationError):
                 validator.validate(changed)
 
@@ -344,30 +356,43 @@ class V064PublicCiSchemaTests(unittest.TestCase):
             for key, original in job.items():
                 changed = copy.deepcopy(valid_bundle_manifest())
                 replacement = original + 1 if isinstance(original, int) else "wrong"
-                changed["predecessor_failed_public_witness"]["jobs"][index][key] = replacement
+                changed["predecessor_failed_public_witnesses"][0]["jobs"][index][key] = replacement
                 with self.subTest(job=index, field=key), self.assertRaises(ValidationError):
                     validator.validate(changed)
 
         structural_mutations = []
+        wrong_version = copy.deepcopy(valid_bundle_manifest())
+        wrong_version["schema_version"] = "1.1.0"
+        structural_mutations.append(wrong_version)
+        old_repository = copy.deepcopy(valid_bundle_manifest())
+        old_repository["public_repository"] = (
+            "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+        )
+        structural_mutations.append(old_repository)
         extra = copy.deepcopy(valid_bundle_manifest())
-        extra["predecessor_failed_public_witness"]["unexpected"] = True
+        extra["predecessor_failed_public_witnesses"][0]["unexpected"] = True
         structural_mutations.append(extra)
+        extra_predecessor = copy.deepcopy(valid_bundle_manifest())
+        extra_predecessor["predecessor_failed_public_witnesses"].append(
+            copy.deepcopy(PREDECESSOR_FAILED_PUBLIC_WITNESS_R2)
+        )
+        structural_mutations.append(extra_predecessor)
         reordered = copy.deepcopy(valid_bundle_manifest())
-        reordered["predecessor_failed_public_witness"]["jobs"].reverse()
+        reordered["predecessor_failed_public_witnesses"].reverse()
         structural_mutations.append(reordered)
         duplicate = copy.deepcopy(valid_bundle_manifest())
-        duplicate["predecessor_failed_public_witness"]["jobs"][1] = copy.deepcopy(
-            duplicate["predecessor_failed_public_witness"]["jobs"][0]
+        duplicate["predecessor_failed_public_witnesses"][1] = copy.deepcopy(
+            duplicate["predecessor_failed_public_witnesses"][0]
         )
         structural_mutations.append(duplicate)
         unsafe = copy.deepcopy(valid_bundle_manifest())
-        unsafe["predecessor_failed_public_witness"]["run_id"] = 2**53
+        unsafe["predecessor_failed_public_witnesses"][1]["run"]["run_id"] = 2**53
         structural_mutations.append(unsafe)
         long_oid = copy.deepcopy(valid_bundle_manifest())
-        long_oid["predecessor_failed_public_witness"]["public_commit"] = "f" * 64
+        long_oid["predecessor_failed_public_witnesses"][1]["public_source"]["root_commit"] = "f" * 64
         structural_mutations.append(long_oid)
         uppercase_hash = copy.deepcopy(valid_bundle_manifest())
-        uppercase_hash["predecessor_failed_public_witness"]["run_log_sha256"] = "A" * 64
+        uppercase_hash["predecessor_failed_public_witnesses"][1]["raw_evidence"]["run_log"]["sha256"] = "A" * 64
         structural_mutations.append(uppercase_hash)
         for changed in structural_mutations:
             with self.assertRaises(ValidationError):
@@ -519,14 +544,17 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
             .strip(),
         )
         self.assertEqual(manifest["source"]["candidate_commit"], self.commit)
-        self.assertEqual(manifest["schema_version"], "1.1.0")
+        self.assertEqual(manifest["schema_version"], "1.2.0")
         self.assertEqual(
             manifest["public_repository"],
-            "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+            "cjl308868584-lang/crypto-quant-v064-public-ci-r3",
         )
         self.assertEqual(
-            manifest["predecessor_failed_public_witness"],
-            PREDECESSOR_FAILED_PUBLIC_WITNESS,
+            manifest["predecessor_failed_public_witnesses"],
+            [
+                PREDECESSOR_FAILED_PUBLIC_WITNESS,
+                PREDECESSOR_FAILED_PUBLIC_WITNESS_R2,
+            ],
         )
         self.assertEqual(manifest["safety"], valid_bundle_manifest()["safety"])
         self.assertEqual(manifest["non_claims"], valid_bundle_manifest()["non_claims"])
@@ -1185,12 +1213,12 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
 
 
 class V064PublicCiWorkflowContractTests(unittest.TestCase):
-    def test_public_readme_names_both_fixed_r2_preflight_corrections(self):
+    def test_public_readme_names_r3_engineering_purpose_and_failure_ancestry(self):
         body = (TEMPLATE_ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("two fixed workflow preflight false positives", body)
-        self.assertIn("workflow self-scan", body)
-        self.assertIn("CRASH_CHILD", body)
-        self.assertIn("directory-fsync", body)
+        self.assertIn("R3 is an engineering correction candidate", body)
+        self.assertIn("R1 Run 31850146784 failure", body)
+        self.assertIn("R2", body)
+        self.assertIn("immutable predecessor evidence", body)
 
     def test_exact_f_preflight_reproduces_public_sensitive_self_match(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1333,10 +1361,10 @@ class V064PublicCiWorkflowContractTests(unittest.TestCase):
 
 
 class V064PublicCiBundleCliTests(unittest.TestCase):
-    def test_cli_has_only_fixed_r2_candidate_and_no_repository_or_path_input(self):
+    def test_cli_has_only_fixed_r3_candidate_and_no_repository_or_path_input(self):
         self.assertEqual(
             v064_public_ci_bundle_cli._CANDIDATE,
-            Path("/private/tmp/crypto-quant-v064-public-ci-r2-candidate"),
+            Path("/private/tmp/crypto-quant-v064-public-ci-r3-candidate"),
         )
         self.assertEqual(
             tuple(inspect.signature(v064_public_ci_bundle_cli._build).parameters), ()
