@@ -17,6 +17,7 @@ from unittest import mock
 from jsonschema import Draft202012Validator, ValidationError
 
 from crypto_quant.canonical import canonical_json
+from crypto_quant.evidence import artifact_self_hash
 from crypto_quant.v064_public_ci_witness import (
     V064PublicCiWitnessError,
     derive_v064_public_ci_witness,
@@ -66,6 +67,21 @@ PREDECESSOR_FAILED_PUBLIC_WITNESS = {
     "run_log_sha256": "e47462120131eadb3161a40ffe679f4f74889103d7b3a13bb563df705f9ef32c",
     "transcript_summary_sha256": "cd2072e246698bec6d8767d37da4a3dca82d09fc38466a8009aea9690a0c9790",
 }
+R2_FAILURE_RECORD_PATH = (
+    "artifacts/v064-public-ci-r2-failure/v064-public-ci-r2-failure-record-v1.json"
+)
+R2_FAILURE_RECORD_SHA256 = (
+    "857150ae490e54d5b6bdaa816efb96cf3f24a9778220f61973312426644dd264"
+)
+PREDECESSOR_FAILED_PUBLIC_WITNESS_R2 = {
+    "failure_record_path": R2_FAILURE_RECORD_PATH,
+    "failure_record_sha256": R2_FAILURE_RECORD_SHA256,
+    **json.loads((ROOT / R2_FAILURE_RECORD_PATH).read_text(encoding="utf-8")),
+}
+PREDECESSOR_FAILED_PUBLIC_WITNESSES = [
+    PREDECESSOR_FAILED_PUBLIC_WITNESS,
+    PREDECESSOR_FAILED_PUBLIC_WITNESS_R2,
+]
 
 
 def _raw(path, fill):
@@ -75,6 +91,8 @@ def _raw(path, fill):
 def _job(python_version, job_id):
     return {
         "python_version": python_version,
+        "setup_python_version": python_version + ".25",
+        "fixed_owner_python_version": python_version + ".25",
         "job_id": job_id,
         "name": "linux-python-" + python_version,
         "status": "completed",
@@ -102,12 +120,12 @@ def _job(python_version, job_id):
 def valid_witness():
     return {
         "$schema": "./v064-public-ci-witness-v1.schema.json",
-        "schema_version": "1.1.0",
+        "schema_version": "1.2.0",
         "witness_id": "v064_public_ci_witness_" + "1" * 64,
         "witness_hash": "2" * 64,
         "status": "PUBLIC_LINUX_PORTABILITY_WITNESS_COMPLETED",
-        "predecessor_failed_public_witness": copy.deepcopy(
-            PREDECESSOR_FAILED_PUBLIC_WITNESS
+        "predecessor_failed_public_witnesses": copy.deepcopy(
+            PREDECESSOR_FAILED_PUBLIC_WITNESSES
         ),
         "private_source": {
             "repository": "cjl308868584-lang/crypto-quant-core",
@@ -121,7 +139,7 @@ def valid_witness():
             },
         },
         "public_source": {
-            "repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+            "repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r3",
             "commit": "5" * 40,
             "tree": "6" * 40,
             "branch": "main",
@@ -151,16 +169,16 @@ def valid_witness():
         "jobs": [_job("3.9", 111), _job("3.12", 222)],
         "raw_evidence": {
             "run_api": _raw(
-                "artifacts/v064-public-ci-r2/v064-public-ci-r2-run-api-v1.json", "b"
+                "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-api-v1.json", "b"
             ),
             "jobs_api": _raw(
-                "artifacts/v064-public-ci-r2/v064-public-ci-r2-jobs-api-v1.json", "c"
+                "artifacts/v064-public-ci-r3/v064-public-ci-r3-jobs-api-v1.json", "c"
             ),
             "run_log": _raw(
-                "artifacts/v064-public-ci-r2/v064-public-ci-r2-run-log-v1.txt", "d"
+                "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-log-v1.txt", "d"
             ),
             "acquisition_transcript": _raw(
-                "artifacts/v064-public-ci-r2/v064-public-ci-r2-acquisition-transcript-v1.json",
+                "artifacts/v064-public-ci-r3/v064-public-ci-r3-acquisition-transcript-v1.json",
                 "e",
             ),
         },
@@ -212,12 +230,12 @@ class V064PublicCiWitnessSchemaTests(unittest.TestCase):
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema).validate(valid_witness())
 
-    def test_witness_requires_exact_predecessor_failed_public_witness(self):
+    def test_witness_requires_exact_ordered_r1_r2_predecessors(self):
         schema = self.schema()
         validator = Draft202012Validator(schema)
 
         missing = copy.deepcopy(valid_witness())
-        del missing["predecessor_failed_public_witness"]
+        del missing["predecessor_failed_public_witnesses"]
         with self.assertRaises(ValidationError):
             validator.validate(missing)
 
@@ -245,7 +263,7 @@ class V064PublicCiWitnessSchemaTests(unittest.TestCase):
         }
         for key, replacement in scalar_replacements.items():
             changed = copy.deepcopy(valid_witness())
-            changed["predecessor_failed_public_witness"][key] = replacement
+            changed["predecessor_failed_public_witnesses"][0][key] = replacement
             with self.subTest(field=key), self.assertRaises(ValidationError):
                 validator.validate(changed)
 
@@ -253,34 +271,51 @@ class V064PublicCiWitnessSchemaTests(unittest.TestCase):
             for key, original in job.items():
                 changed = copy.deepcopy(valid_witness())
                 replacement = original + 1 if isinstance(original, int) else "wrong"
-                changed["predecessor_failed_public_witness"]["jobs"][index][key] = replacement
+                changed["predecessor_failed_public_witnesses"][0]["jobs"][index][key] = replacement
                 with self.subTest(job=index, field=key), self.assertRaises(ValidationError):
                     validator.validate(changed)
 
         structural_mutations = []
         extra = copy.deepcopy(valid_witness())
-        extra["predecessor_failed_public_witness"]["unexpected"] = True
+        extra["predecessor_failed_public_witnesses"][0]["unexpected"] = True
         structural_mutations.append(extra)
+        singular = copy.deepcopy(valid_witness())
+        singular["predecessor_failed_public_witnesses"].pop()
+        structural_mutations.append(singular)
         reordered = copy.deepcopy(valid_witness())
-        reordered["predecessor_failed_public_witness"]["jobs"].reverse()
+        reordered["predecessor_failed_public_witnesses"].reverse()
         structural_mutations.append(reordered)
         duplicate = copy.deepcopy(valid_witness())
-        duplicate["predecessor_failed_public_witness"]["jobs"][1] = copy.deepcopy(
-            duplicate["predecessor_failed_public_witness"]["jobs"][0]
+        duplicate["predecessor_failed_public_witnesses"][1] = copy.deepcopy(
+            duplicate["predecessor_failed_public_witnesses"][0]
         )
         structural_mutations.append(duplicate)
         unsafe = copy.deepcopy(valid_witness())
-        unsafe["predecessor_failed_public_witness"]["run_id"] = 2**53
+        unsafe["predecessor_failed_public_witnesses"][0]["run_id"] = 2**53
         structural_mutations.append(unsafe)
         long_oid = copy.deepcopy(valid_witness())
-        long_oid["predecessor_failed_public_witness"]["public_commit"] = "f" * 64
+        long_oid["predecessor_failed_public_witnesses"][0]["public_commit"] = "f" * 64
         structural_mutations.append(long_oid)
         uppercase_hash = copy.deepcopy(valid_witness())
-        uppercase_hash["predecessor_failed_public_witness"]["run_log_sha256"] = "A" * 64
+        uppercase_hash["predecessor_failed_public_witnesses"][0]["run_log_sha256"] = "A" * 64
         structural_mutations.append(uppercase_hash)
         for changed in structural_mutations:
             with self.assertRaises(ValidationError):
                 validator.validate(changed)
+
+        old_shape = copy.deepcopy(valid_witness())
+        old_shape["predecessor_failed_public_witness"] = old_shape.pop(
+            "predecessor_failed_public_witnesses"
+        )[0]
+        with self.assertRaises(ValidationError):
+            validator.validate(old_shape)
+
+        old_repository = copy.deepcopy(valid_witness())
+        old_repository["public_source"]["repository"] = (
+            "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+        )
+        with self.assertRaises(ValidationError):
+            validator.validate(old_repository)
 
     def test_witness_requires_exact_successful_python_jobs(self):
         schema = self.schema()
@@ -309,6 +344,17 @@ class V064PublicCiWitnessSchemaTests(unittest.TestCase):
         unsafe_integer["run"]["run_id"] = 2**53
         with self.assertRaises(ValidationError):
             Draft202012Validator(schema).validate(unsafe_integer)
+
+        dispatched = copy.deepcopy(valid_witness())
+        dispatched["run"]["event"] = "workflow_dispatch"
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema).validate(dispatched)
+
+        for field in ("setup_python_version", "fixed_owner_python_version"):
+            mismatched = copy.deepcopy(valid_witness())
+            mismatched["jobs"][0][field] = "3.12.14"
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                Draft202012Validator(schema).validate(mismatched)
 
     def test_witness_rejects_permissions_unknown_fields_and_candidate_g(self):
         schema = self.schema()
@@ -384,7 +430,7 @@ def _realistic_inputs():
         "created_at": "2026-08-13T00:59:00Z",
         "updated_at": "2026-08-13T01:06:00Z",
         "path": ".github/workflows/ci.yml",
-        "repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+        "repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r3",
     }
     jobs = {
         "total_count": 2,
@@ -428,6 +474,7 @@ def _realistic_inputs():
         "file_set_sha256=" + "8" * 64,
     )
     lines = []
+    actual_versions = {"3.9": "3.9.25", "3.12": "3.12.14"}
     for version in ("3.9", "3.12"):
         verify_prefix = (
             "portability (%s)\tVerify closed bundle before repository imports\t"
@@ -437,16 +484,22 @@ def _realistic_inputs():
             "portability (%s)\tRun fixed-owner public boundary\t"
             "2026-08-13T01:02:03.1234567Z "
         ) % version
+        setup_prefix = (
+            "portability (%s)\t"
+            "Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1\t"
+            "2026-08-13T01:01:30.1234567Z "
+        ) % version
         lines.extend(verify_prefix + marker for marker in markers)
         lines.extend((
-            run_prefix + "Python " + version + ".19",
+            setup_prefix + "Successfully set up CPython (" + actual_versions[version] + ")",
+            run_prefix + "Python " + actual_versions[version],
             run_prefix + "Ran 16 tests in 0.735s",
             run_prefix + "OK",
         ))
     log = ("\n".join(lines) + "\n").encode("utf-8")
     bundle = {
-        "predecessor_failed_public_witness": copy.deepcopy(
-            PREDECESSOR_FAILED_PUBLIC_WITNESS
+        "predecessor_failed_public_witnesses": copy.deepcopy(
+            PREDECESSOR_FAILED_PUBLIC_WITNESSES
         ),
         "source": {
             "private_repository": "cjl308868584-lang/crypto-quant-core",
@@ -533,14 +586,22 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
             private_repository=ROOT,
         )
         self.assertEqual([job["python_version"] for job in witness["jobs"]], ["3.9", "3.12"])
-        self.assertEqual(witness["schema_version"], "1.1.0")
+        self.assertEqual(witness["schema_version"], "1.2.0")
         self.assertEqual(
-            witness["predecessor_failed_public_witness"],
-            PREDECESSOR_FAILED_PUBLIC_WITNESS,
+            witness["predecessor_failed_public_witnesses"],
+            bundle["predecessor_failed_public_witnesses"],
+        )
+        self.assertEqual(
+            [job["setup_python_version"] for job in witness["jobs"]],
+            ["3.9.25", "3.12.14"],
+        )
+        self.assertEqual(
+            [job["fixed_owner_python_version"] for job in witness["jobs"]],
+            ["3.9.25", "3.12.14"],
         )
         self.assertEqual(
             witness["public_source"]["repository"],
-            "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+            "cjl308868584-lang/crypto-quant-v064-public-ci-r3",
         )
         replay.assert_called_once_with(ROOT, bundle)
 
@@ -624,6 +685,54 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
                     private_repository=ROOT,
                 )
 
+    @mock.patch("crypto_quant.v064_public_ci_witness._replay_public_candidate")
+    def test_distinct_fixed_owner_interpreters_are_required(self, replay):
+        bundle, run_bytes, jobs_bytes, log_bytes, transcript = _realistic_inputs()
+        replay.return_value = {
+            "commit": "5" * 40, "tree": "6" * 40, "parent_count": 0,
+            "manifest_sha256": "7" * 64,
+        }
+        changed_log = log_bytes.replace(b"Python 3.9.25", b"Python 3.12.14")
+        changed_transcript = copy.deepcopy(transcript)
+        changed_transcript["commands"][2]["stdout_size"] = len(changed_log)
+        changed_transcript["commands"][2]["stdout_sha256"] = hashlib.sha256(
+            changed_log
+        ).hexdigest()
+        with self.assertRaisesRegex(
+            V064PublicCiWitnessError, "^V064_PUBLIC_CI_LOG_INVALID$"
+        ):
+            derive_v064_public_ci_witness(
+                bundle=bundle, run_bytes=run_bytes, jobs_bytes=jobs_bytes,
+                log_bytes=changed_log, transcript=changed_transcript,
+                private_repository=ROOT,
+            )
+
+    @mock.patch("crypto_quant.v064_public_ci_witness._replay_public_candidate")
+    def test_raw_api_json_must_be_exact_canonical_bytes(self, replay):
+        bundle, run_bytes, jobs_bytes, log_bytes, transcript = _realistic_inputs()
+        replay.return_value = {
+            "commit": "5" * 40, "tree": "6" * 40, "parent_count": 0,
+            "manifest_sha256": "7" * 64,
+        }
+        for index, (run_body, jobs_body, reason) in enumerate((
+            (b" " + run_bytes, jobs_bytes, "RUN_INVALID"),
+            (run_bytes, b" " + jobs_bytes, "JOBS_INVALID"),
+        )):
+            changed_transcript = copy.deepcopy(transcript)
+            body = run_body if index == 0 else jobs_body
+            changed_transcript["commands"][index]["stdout_size"] = len(body)
+            changed_transcript["commands"][index]["stdout_sha256"] = hashlib.sha256(
+                body
+            ).hexdigest()
+            with self.subTest(reason=reason), self.assertRaisesRegex(
+                V064PublicCiWitnessError, reason
+            ):
+                derive_v064_public_ci_witness(
+                    bundle=bundle, run_bytes=run_body, jobs_bytes=jobs_body,
+                    log_bytes=log_bytes, transcript=changed_transcript,
+                    private_repository=ROOT,
+                )
+
     def test_cli_retains_exact_stdout_and_has_no_supplied_result_fields(self):
         source = inspect.getsource(v064_public_ci_witness_cli)
         for forbidden in ("--status", "--conclusion", "--verified", "--repository", "--filename", "--output", "--python-version", "--predecessor"):
@@ -701,6 +810,20 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
             path = raw_root / "witness.json"
             path.write_bytes(_canonical(witness)); path.chmod(0o600)
             self.assertEqual(load_v064_public_ci_witness(path), witness)
+
+            mismatched = copy.deepcopy(witness)
+            mismatched["jobs"][0]["setup_python_version"] = "3.9.24"
+            mismatched["witness_hash"] = artifact_self_hash(
+                mismatched, "witness_hash"
+            )
+            mismatched_path = raw_root / "mismatched.json"
+            mismatched_path.write_bytes(_canonical(mismatched))
+            mismatched_path.chmod(0o600)
+            with self.assertRaisesRegex(
+                V064PublicCiWitnessError, "WITNESS_SCHEMA_INVALID"
+            ):
+                load_v064_public_ci_witness(mismatched_path)
+
             target = raw_root / "target"; target.write_bytes(path.read_bytes()); target.chmod(0o600)
             path.unlink(); path.symlink_to(target)
             with self.assertRaises(V064PublicCiWitnessError):
@@ -773,6 +896,65 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
             )
 
 
+class V064PublicCiWitnessCliTests(unittest.TestCase):
+    def test_acquisition_is_fixed_to_r3_repository_root_names_and_three_reads(self):
+        run_id = 31400000000
+        repository = "cjl308868584-lang/crypto-quant-v064-public-ci-r3"
+        prefix = "repos/%s/actions/runs/%s" % (repository, run_id)
+        commands = v064_public_ci_witness_cli._commands(run_id)
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(commands[0][:3], (
+            "/Users/chenm4/.local/bin/gh", "api", prefix,
+        ))
+        self.assertEqual(commands[1][:3], (
+            "/Users/chenm4/.local/bin/gh", "api",
+            prefix + "/jobs?filter=all&per_page=100",
+        ))
+        self.assertEqual(commands[2], (
+            "/Users/chenm4/.local/bin/gh", "run", "view", str(run_id),
+            "--repo", repository, "--log",
+        ))
+        self.assertEqual(
+            v064_public_ci_witness_cli._ARTIFACT_ROOT,
+            v064_public_ci_witness_cli._PRIVATE_REPOSITORY
+            / "artifacts" / "v064-public-ci-r3",
+        )
+        self.assertEqual(
+            v064_public_ci_witness_cli._PUBLIC_CANDIDATE_MANIFEST,
+            Path(
+                "/private/tmp/crypto-quant-v064-public-ci-r3-candidate/"
+                "bundle-manifest-v1.json"
+            ),
+        )
+        self.assertEqual(
+            v064_public_ci_witness_cli._EVIDENCE_NAMES,
+            (
+                "v064-public-ci-r3-run-api-v1.json",
+                "v064-public-ci-r3-jobs-api-v1.json",
+                "v064-public-ci-r3-run-log-v1.txt",
+                "v064-public-ci-r3-acquisition-transcript-v1.json",
+                "v064-public-ci-r3-witness-v1.json",
+            ),
+        )
+
+    def test_run_id_is_only_caller_acquisition_selector(self):
+        source = inspect.getsource(v064_public_ci_witness_cli.main)
+        self.assertEqual(source.count("parser.add_argument"), 1)
+        self.assertIn('parser.add_argument("--run-id"', source)
+        for forbidden in (
+            "--status", "--success", "--conclusion", "--python-version",
+            "--repository", "--path", "--filename", "--output",
+        ):
+            self.assertNotIn(forbidden, source)
+        with self.assertRaises(TypeError):
+            bundle, run_bytes, jobs_bytes, log_bytes, transcript = _realistic_inputs()
+            derive_v064_public_ci_witness(
+                bundle=bundle, run_bytes=run_bytes, jobs_bytes=jobs_bytes,
+                log_bytes=log_bytes, transcript=transcript,
+                private_repository=ROOT, success=True,
+            )
+
+
 class V064PublicCiWitnessPublicationTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -780,7 +962,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
         self.repository.mkdir(mode=0o700)
         self.artifacts = self.repository / "artifacts"
         self.artifacts.mkdir(mode=0o755)
-        self.output = self.artifacts / "v064-public-ci-r2"
+        self.output = self.artifacts / "v064-public-ci-r3"
         self.patches = (
             mock.patch.object(v064_public_ci_witness_cli, "_PRIVATE_REPOSITORY", self.repository),
             mock.patch.object(v064_public_ci_witness_cli, "_ARTIFACT_ROOT", self.output),
@@ -794,11 +976,11 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
         for patcher in self.patches:
             patcher.start()
         self.prepared = {
-            "v064-public-ci-r2-run-api-v1.json": b'{"run":1}\n',
-            "v064-public-ci-r2-jobs-api-v1.json": b'{"jobs":2}\n',
-            "v064-public-ci-r2-run-log-v1.txt": b"exact log\n",
-            "v064-public-ci-r2-acquisition-transcript-v1.json": b'{"transcript":3}\n',
-            "v064-public-ci-r2-witness-v1.json": b'{"witness":4}\n',
+            "v064-public-ci-r3-run-api-v1.json": b'{"run":1}\n',
+            "v064-public-ci-r3-jobs-api-v1.json": b'{"jobs":2}\n',
+            "v064-public-ci-r3-run-log-v1.txt": b"exact log\n",
+            "v064-public-ci-r3-acquisition-transcript-v1.json": b'{"transcript":3}\n',
+            "v064-public-ci-r3-witness-v1.json": b'{"witness":4}\n',
         }
 
     def tearDown(self):
@@ -822,7 +1004,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
 
     def test_fixed_publisher_creates_exact_owner_only_files_and_replays(self):
         first = v064_public_ci_witness_cli._publish_evidence(self.prepared)
-        self.assertEqual(first["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(first["status"], "V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED")
         self.assertEqual(set(first["files"]), set(self.prepared))
         snapshots = {}
         for name, body in self.prepared.items():
@@ -839,7 +1021,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
             [],
         )
         second = v064_public_ci_witness_cli._publish_evidence(self.prepared)
-        self.assertEqual(second["status"], "V064_PUBLIC_CI_R2_EVIDENCE_ALREADY_PUBLISHED")
+        self.assertEqual(second["status"], "V064_PUBLIC_CI_R3_EVIDENCE_ALREADY_PUBLISHED")
         self.assertEqual(
             {name: self._snapshot(self.output / name) for name in self.prepared},
             snapshots,
@@ -872,7 +1054,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
             v064_public_ci_witness_cli, "_write_all", wraps=v064_public_ci_witness_cli._write_all
         ) as write:
             result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
-        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED")
         self.assertEqual(write.call_count, 0)
 
     def test_partial_staging_write_is_completed_only_after_exact_prefix_replay(self):
@@ -897,7 +1079,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
             1,
         )
         result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
-        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED")
         for name, body in self.prepared.items():
             self.assertEqual((self.output / name).read_bytes(), body)
 
@@ -909,7 +1091,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
             nonlocal calls
             calls += 1
             if calls == 1:
-                raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_FSYNC_FAILED")
+                raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_FSYNC_FAILED")
             return real_fsync(descriptor)
 
         with mock.patch.object(
@@ -930,7 +1112,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
             v064_public_ci_witness_cli.os, "fsync", side_effect=count_regular
         ):
             result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
-        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED")
         self.assertEqual(regular_fsyncs, 5)
 
     def test_retry_after_first_visible_final_preserves_inode_and_performs_zero_writes(self):
@@ -958,7 +1140,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
             v064_public_ci_witness_cli, "_write_all", wraps=v064_public_ci_witness_cli._write_all
         ) as write:
             result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
-        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED")
         self.assertEqual(write.call_count, 0)
         self.assertEqual(first.lstat().st_ino, inode)
 
@@ -971,7 +1153,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
         sentinel.chmod(0o600)
         final.symlink_to(sentinel)
         before = self._snapshot(sentinel)
-        with self.assertRaisesRegex(ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED"):
+        with self.assertRaisesRegex(ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_UNTRUSTED"):
             v064_public_ci_witness_cli._publish_evidence(self.prepared)
         self.assertEqual(self._snapshot(sentinel), before)
         self.assertTrue(final.is_symlink())
@@ -991,7 +1173,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
                 repository.mkdir(parents=True, mode=0o700)
                 artifacts = repository / "artifacts"
                 artifacts.mkdir(mode=0o755)
-                output = artifacts / "v064-public-ci-r2"
+                output = artifacts / "v064-public-ci-r3"
                 output.mkdir(mode=0o700)
                 final = output / name
                 sentinel = Path(self.temporary.name) / ("sentinel-" + case_name)
@@ -1022,7 +1204,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
                     repository,
                 ):
                     with self.assertRaisesRegex(
-                        ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED"
+                        ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_UNTRUSTED"
                     ):
                         v064_public_ci_witness_cli._publish_evidence(self.prepared)
                 self.assertEqual(self._snapshot(sentinel), before)
@@ -1034,7 +1216,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
     def test_prepared_key_or_size_failure_precedes_root_creation(self):
         missing = dict(self.prepared)
         missing.pop(next(iter(missing)))
-        with self.assertRaisesRegex(ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_INVALID"):
+        with self.assertRaisesRegex(ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_INVALID"):
             v064_public_ci_witness_cli._publish_evidence(missing)
         self.assertFalse(self.output.exists())
 
@@ -1048,7 +1230,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
             v064_public_ci_witness_cli.os, "write", side_effect=short_write
         ):
             result = v064_public_ci_witness_cli._publish_evidence(self.prepared)
-        self.assertEqual(result["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(result["status"], "V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED")
         for name, body in self.prepared.items():
             self.assertEqual((self.output / name).read_bytes(), body)
 
@@ -1059,7 +1241,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
             side_effect=OSError(errno.ENOTSUP, "unsupported"),
         ):
             with self.assertRaisesRegex(
-                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_LOCK_FAILED"
+                ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_LOCK_FAILED"
             ):
                 v064_public_ci_witness_cli._publish_evidence(self.prepared)
         if self.output.exists():
@@ -1067,23 +1249,23 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
 
     def test_noncanonical_json_precedes_root_creation(self):
         for name in (
-            "v064-public-ci-r2-run-api-v1.json",
-            "v064-public-ci-r2-jobs-api-v1.json",
-            "v064-public-ci-r2-acquisition-transcript-v1.json",
-            "v064-public-ci-r2-witness-v1.json",
+            "v064-public-ci-r3-run-api-v1.json",
+            "v064-public-ci-r3-jobs-api-v1.json",
+            "v064-public-ci-r3-acquisition-transcript-v1.json",
+            "v064-public-ci-r3-witness-v1.json",
         ):
             with self.subTest(name=name):
                 prepared = dict(self.prepared)
                 prepared[name] = b'{ "not":"canonical" }\n'
                 with self.assertRaisesRegex(
-                    ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_INVALID"
+                    ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_INVALID"
                 ):
                     v064_public_ci_witness_cli._publish_evidence(prepared)
                 self.assertFalse(self.output.exists())
         prepared = dict(self.prepared)
-        prepared["v064-public-ci-r2-run-api-v1.json"] = b'{"value":NaN}\n'
+        prepared["v064-public-ci-r3-run-api-v1.json"] = b'{"value":NaN}\n'
         with self.assertRaisesRegex(
-            ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_INVALID"
+            ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_INVALID"
         ):
             v064_public_ci_witness_cli._publish_evidence(prepared)
         self.assertFalse(self.output.exists())
@@ -1112,7 +1294,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
                 v064_public_ci_witness_cli.os, "read", wraps=os.read
             ) as read:
                 with self.assertRaisesRegex(
-                    ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED"
+                    ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_UNTRUSTED"
                 ):
                     v064_public_ci_witness_cli._read_named(
                         root_fd, name, self.prepared[name]
@@ -1143,7 +1325,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
             v064_public_ci_witness_cli, "_fsync", side_effect=swap_after_file_fsync
         ):
             with self.assertRaisesRegex(
-                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED"
+                ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_UNTRUSTED"
             ):
                 v064_public_ci_witness_cli._publish_evidence(self.prepared)
         self.assertFalse(any((self.output / name).exists() for name in self.prepared))
@@ -1163,14 +1345,14 @@ role = sys.argv[2]
 marker = Path(sys.argv[3])
 release = Path(sys.argv[4])
 module._PRIVATE_REPOSITORY = repository
-module._ARTIFACT_ROOT = repository / "artifacts" / "v064-public-ci-r2"
+module._ARTIFACT_ROOT = repository / "artifacts" / "v064-public-ci-r3"
 module._validate_repository_identity = lambda: None
 prepared = {
-    "v064-public-ci-r2-run-api-v1.json": b'{"run":1}\n',
-    "v064-public-ci-r2-jobs-api-v1.json": b'{"jobs":2}\n',
-    "v064-public-ci-r2-run-log-v1.txt": b"exact log\n",
-    "v064-public-ci-r2-acquisition-transcript-v1.json": b'{"transcript":3}\n',
-    "v064-public-ci-r2-witness-v1.json": b'{"witness":4}\n',
+    "v064-public-ci-r3-run-api-v1.json": b'{"run":1}\n',
+    "v064-public-ci-r3-jobs-api-v1.json": b'{"jobs":2}\n',
+    "v064-public-ci-r3-run-log-v1.txt": b"exact log\n",
+    "v064-public-ci-r3-acquisition-transcript-v1.json": b'{"transcript":3}\n',
+    "v064-public-ci-r3-witness-v1.json": b'{"witness":4}\n',
 }
 if role == "winner":
     original = module._staging_inventory
@@ -1214,8 +1396,8 @@ except BaseException as error:
         winner_stdout, winner_stderr = winner.communicate(timeout=10)
         self.assertEqual(winner.returncode, 0, winner_stderr.decode(errors="replace"))
         self.assertEqual(loser.returncode, 3)
-        self.assertIn(b"V064_PUBLIC_CI_R2_EVIDENCE_CONCURRENT", loser.stdout)
-        self.assertIn(b"V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED", winner_stdout)
+        self.assertIn(b"V064_PUBLIC_CI_R3_EVIDENCE_CONCURRENT", loser.stdout)
+        self.assertIn(b"V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED", winner_stdout)
         self.assertEqual(
             tuple(sorted(path.name for path in self.output.iterdir())),
             tuple(sorted(self.prepared)),
@@ -1260,7 +1442,7 @@ except BaseException as error:
                     repository.mkdir(mode=0o700)
                     artifacts = repository / "artifacts"
                     artifacts.mkdir(mode=0o755)
-                    output = artifacts / "v064-public-ci-r2"
+                    output = artifacts / "v064-public-ci-r3"
                     with mock.patch.object(
                         v064_public_ci_witness_cli, "_PRIVATE_REPOSITORY", repository
                     ), mock.patch.object(
@@ -1269,7 +1451,7 @@ except BaseException as error:
                         v064_public_ci_witness_cli.os, flag, value, create=True
                     ):
                         with self.assertRaisesRegex(
-                            ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_UNSUPPORTED"
+                            ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_UNSUPPORTED"
                         ):
                             v064_public_ci_witness_cli._publish_evidence(self.prepared)
                     self.assertFalse(output.exists())
@@ -1281,7 +1463,7 @@ except BaseException as error:
         sentinel.chmod(0o600)
         before = self._snapshot(sentinel)
         with self.assertRaisesRegex(
-            ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED"
+            ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED"
         ):
             v064_public_ci_witness_cli._publish_evidence(self.prepared)
         self.assertEqual(self._snapshot(sentinel), before)
@@ -1302,7 +1484,7 @@ except BaseException as error:
             v064_public_ci_witness_cli.os, "close", side_effect=close_then_fail_first
         ):
             with self.assertRaisesRegex(
-                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED"
+                ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_CLOSE_FAILED"
             ):
                 v064_public_ci_witness_cli._publish_evidence(self.prepared)
         self.assertGreaterEqual(calls, 2)
@@ -1333,7 +1515,7 @@ except BaseException as error:
             v064_public_ci_witness_cli.os, "close", side_effect=record_close
         ):
             with self.assertRaisesRegex(
-                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID"
+                ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID"
             ):
                 v064_public_ci_witness_cli._open_artifact_root()
         self.assertEqual(len(opened), 2)
@@ -1365,14 +1547,14 @@ except BaseException as error:
                 side_effect=close_then_fail,
             ):
                 with self.assertRaisesRegex(
-                    ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED"
+                    ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED"
                 ) as captured:
                     v064_public_ci_witness_cli._read_named(
                         root_fd, name, self.prepared[name]
                     )
             self.assertEqual(
                 captured.exception.close_error,
-                "V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED",
+                "V064_PUBLIC_CI_R3_EVIDENCE_CLOSE_FAILED",
             )
         finally:
             real_close(root_fd)
@@ -1391,19 +1573,19 @@ except BaseException as error:
         with mock.patch.object(
             v064_public_ci_witness_cli,
             "_write_all",
-            side_effect=ValueError("V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED"),
+            side_effect=ValueError("V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED"),
         ), mock.patch.object(
             v064_public_ci_witness_cli.os,
             "close",
             side_effect=close_staging_then_fail,
         ):
             with self.assertRaisesRegex(
-                ValueError, "V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED"
+                ValueError, "V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED"
             ) as captured:
                 v064_public_ci_witness_cli._publish_evidence(self.prepared)
         self.assertEqual(
             captured.exception.close_error,
-            "V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED",
+            "V064_PUBLIC_CI_R3_EVIDENCE_CLOSE_FAILED",
         )
 
     def test_successful_cli_derives_and_publishes_only_five_fixed_files(self):
@@ -1431,7 +1613,7 @@ except BaseException as error:
             result = v064_public_ci_witness_cli.main(("--run-id", "123"))
         self.assertEqual(result, 0)
         load.assert_called_once_with(
-            Path("/private/tmp/crypto-quant-v064-public-ci-r2-candidate/bundle-manifest-v1.json")
+            Path("/private/tmp/crypto-quant-v064-public-ci-r3-candidate/bundle-manifest-v1.json")
         )
         derive.assert_called_once_with(
             bundle=bundle,
@@ -1442,14 +1624,14 @@ except BaseException as error:
             private_repository=self.repository,
         )
         expected = dict(self.prepared)
-        expected["v064-public-ci-r2-acquisition-transcript-v1.json"] = _canonical(
+        expected["v064-public-ci-r3-acquisition-transcript-v1.json"] = _canonical(
             capture["transcript"]
         )
-        expected["v064-public-ci-r2-witness-v1.json"] = _canonical(witness)
+        expected["v064-public-ci-r3-witness-v1.json"] = _canonical(witness)
         for name, body in expected.items():
             self.assertEqual((self.output / name).read_bytes(), body)
         summary = json.loads(output.getvalue())
-        self.assertEqual(summary["status"], "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED")
+        self.assertEqual(summary["status"], "V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED")
 
     def test_cli_acquisition_validation_and_unsuccessful_run_create_zero_files(self):
         with mock.patch.object(
@@ -1524,7 +1706,7 @@ except BaseException as error:
         ), mock.patch.object(
             v064_public_ci_witness_cli,
             "_validate_repository_identity",
-            side_effect=ValueError("V064_PUBLIC_CI_R2_REPOSITORY_INVALID"),
+            side_effect=ValueError("V064_PUBLIC_CI_R3_REPOSITORY_INVALID"),
         ):
             with self.assertRaisesRegex(ValueError, "REPOSITORY_INVALID"):
                 v064_public_ci_witness_cli.main(("--run-id", "123"))
@@ -1671,7 +1853,7 @@ class V064PublicCiWitnessFixedIdentityTests(unittest.TestCase):
             v064_public_ci_witness_cli._ARTIFACT_ROOT,
             v064_public_ci_witness_cli._PRIVATE_REPOSITORY
             / "artifacts"
-            / "v064-public-ci-r2",
+            / "v064-public-ci-r3",
         )
         v064_public_ci_witness_cli._validate_repository_identity()
         with tempfile.TemporaryDirectory() as temporary:
@@ -1682,7 +1864,7 @@ class V064PublicCiWitnessFixedIdentityTests(unittest.TestCase):
             link.symlink_to(target)
             with mock.patch.object(v064_public_ci_witness_cli, "__file__", str(link)):
                 with self.assertRaisesRegex(
-                    ValueError, "V064_PUBLIC_CI_R2_REPOSITORY_INVALID"
+                    ValueError, "V064_PUBLIC_CI_R3_REPOSITORY_INVALID"
                 ):
                     v064_public_ci_witness_cli._validate_repository_identity()
 

@@ -26,8 +26,8 @@ from .v064_public_ci_witness_cli import _commands
 
 _SCHEMA = "v064-public-ci-witness-v1.schema.json"
 _MAX_BYTES = 64 * 1024 * 1024
-_PUBLIC_REPOSITORY = "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
-_PUBLIC_ROOT = Path("/private/tmp/crypto-quant-v064-public-ci-r2-candidate")
+_PUBLIC_REPOSITORY = "cjl308868584-lang/crypto-quant-v064-public-ci-r3"
+_PUBLIC_ROOT = Path("/private/tmp/crypto-quant-v064-public-ci-r3-candidate")
 
 
 class V064PublicCiWitnessError(ValueError):
@@ -182,6 +182,10 @@ def _validate_transcript(transcript: dict, run_id: int, bodies) -> bytes:
 def derive_v064_public_ci_witness(*, bundle: dict, run_bytes: bytes, jobs_bytes: bytes, log_bytes: bytes, transcript: dict, private_repository: Path) -> Dict[str, Any]:
     run = _json(run_bytes, "V064_PUBLIC_CI_RUN_INVALID")
     jobs_value = _json(jobs_bytes, "V064_PUBLIC_CI_JOBS_INVALID")
+    if run_bytes != canonical_json(run).encode("utf-8") + b"\n":
+        raise V064PublicCiWitnessError("V064_PUBLIC_CI_RUN_INVALID")
+    if jobs_bytes != canonical_json(jobs_value).encode("utf-8") + b"\n":
+        raise V064PublicCiWitnessError("V064_PUBLIC_CI_JOBS_INVALID")
     candidate = _replay_public_candidate(Path(private_repository), bundle)
     run_keys = ("id", "workflow_id", "run_attempt", "event", "head_branch", "head_sha", "status", "conclusion", "created_at", "updated_at", "path", "repository")
     _exact_keys(run, run_keys, "V064_PUBLIC_CI_RUN_INVALID")
@@ -226,14 +230,15 @@ def derive_v064_public_ci_witness(*, bundle: dict, run_bytes: bytes, jobs_bytes:
         "file_set_sha256=" + bundle["file_set_sha256"],
     )
     parsed_log = {
-        "3.9": {"verify": [], "run": []},
-        "3.12": {"verify": [], "run": []},
+        "3.9": {"verify": [], "setup": [], "run": []},
+        "3.12": {"verify": [], "setup": [], "run": []},
     }
     timestamp_pattern = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z (.*)$")
     for line in log.splitlines():
         parts = line.split("\t", 2)
         if len(parts) != 3 or parts[1] not in {
             "Verify closed bundle before repository imports",
+            "Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
             "Run fixed-owner public boundary",
         }:
             continue
@@ -243,31 +248,54 @@ def derive_v064_public_ci_witness(*, bundle: dict, run_bytes: bytes, jobs_bytes:
         if parts[0] == "portability (3.9)": version = "3.9"
         elif parts[0] == "portability (3.12)": version = "3.12"
         else: raise V064PublicCiWitnessError("V064_PUBLIC_CI_LOG_INVALID")
-        kind = "verify" if parts[1].startswith("Verify closed") else "run"
+        if parts[1].startswith("Verify closed"):
+            kind = "verify"
+        elif parts[1].startswith("Run actions/setup-python@"):
+            kind = "setup"
+        else:
+            kind = "run"
         parsed_log[version][kind].append(match.group(1))
-    for version in ("3.9", "3.12"):
+    for index, version in enumerate(("3.9", "3.12")):
         if any(parsed_log[version]["verify"].count(item) != 1 for item in markers):
             raise V064PublicCiWitnessError("V064_PUBLIC_CI_LOG_INVALID")
+        setup_pattern = re.compile(
+            r"^Successfully set up CPython \((" + re.escape(version)
+            + r"\.[0-9]+)\)$"
+        )
+        setup_versions = [
+            match.group(1) for item in parsed_log[version]["setup"]
+            for match in [setup_pattern.fullmatch(item)] if match is not None
+        ]
         run_lines = parsed_log[version]["run"]
-        python_pattern = re.compile(r"^Python " + re.escape(version) + r"(?:\.[0-9]+)+(?: .*)?$")
+        python_pattern = re.compile(
+            r"^Python (" + re.escape(version) + r"\.[0-9]+)$"
+        )
+        fixed_owner_versions = [
+            match.group(1) for item in run_lines
+            for match in [python_pattern.fullmatch(item)] if match is not None
+        ]
         tests_pattern = re.compile(r"^Ran 16 tests in [0-9]+(?:\.[0-9]+)?s$")
         if (
-            sum(bool(python_pattern.fullmatch(item)) for item in run_lines) != 1
+            len(setup_versions) != 1
+            or len(fixed_owner_versions) != 1
+            or setup_versions != fixed_owner_versions
             or sum(bool(tests_pattern.fullmatch(item)) for item in run_lines) != 1
             or run_lines.count("OK") != 1
         ):
             raise V064PublicCiWitnessError("V064_PUBLIC_CI_LOG_INVALID")
+        normalized[index]["setup_python_version"] = setup_versions[0]
+        normalized[index]["fixed_owner_python_version"] = fixed_owner_versions[0]
     transcript_bytes = _validate_transcript(transcript, run["id"], (run_bytes, jobs_bytes, log_bytes))
     workflow = next((item for item in bundle["files"] if item["path"] == ".github/workflows/ci.yml"), None)
     if workflow is None:
         raise V064PublicCiWitnessError("V064_PUBLIC_CI_BUNDLE_INVALID")
     identity = {"private_commit": bundle["source"]["candidate_commit"], "public_commit": candidate["commit"], "run_id": run["id"], "manifest_sha256": candidate["manifest_sha256"]}
     value: Dict[str, Any] = {
-        "$schema": "./v064-public-ci-witness-v1.schema.json", "schema_version": "1.1.0",
+        "$schema": "./v064-public-ci-witness-v1.schema.json", "schema_version": "1.2.0",
         "witness_id": stable_id("v064_public_ci_witness", identity), "witness_hash": "0" * 64,
         "status": "PUBLIC_LINUX_PORTABILITY_WITNESS_COMPLETED",
-        "predecessor_failed_public_witness": copy.deepcopy(
-            bundle["predecessor_failed_public_witness"]
+        "predecessor_failed_public_witnesses": copy.deepcopy(
+            bundle["predecessor_failed_public_witnesses"]
         ),
         "private_source": {
             "repository": bundle["source"]["private_repository"],
@@ -287,10 +315,10 @@ def derive_v064_public_ci_witness(*, bundle: dict, run_bytes: bytes, jobs_bytes:
         },
         "jobs": normalized,
         "raw_evidence": {
-            "run_api": _raw("artifacts/v064-public-ci-r2/v064-public-ci-r2-run-api-v1.json", run_bytes),
-            "jobs_api": _raw("artifacts/v064-public-ci-r2/v064-public-ci-r2-jobs-api-v1.json", jobs_bytes),
-            "run_log": _raw("artifacts/v064-public-ci-r2/v064-public-ci-r2-run-log-v1.txt", log_bytes),
-            "acquisition_transcript": _raw("artifacts/v064-public-ci-r2/v064-public-ci-r2-acquisition-transcript-v1.json", transcript_bytes),
+            "run_api": _raw("artifacts/v064-public-ci-r3/v064-public-ci-r3-run-api-v1.json", run_bytes),
+            "jobs_api": _raw("artifacts/v064-public-ci-r3/v064-public-ci-r3-jobs-api-v1.json", jobs_bytes),
+            "run_log": _raw("artifacts/v064-public-ci-r3/v064-public-ci-r3-run-log-v1.txt", log_bytes),
+            "acquisition_transcript": _raw("artifacts/v064-public-ci-r3/v064-public-ci-r3-acquisition-transcript-v1.json", transcript_bytes),
         },
         "ancestry": {"witness_binds_private_source_f": True, "public_commit_is_parentless": True, "candidate_g_not_yet_bound": True},
         "safety": {"production_activation": False, "credentials_present": False, "broker_allowed": False, "orders_allowed": False, "runtime_state_write_allowed": False},
@@ -360,6 +388,11 @@ def load_v064_public_ci_witness(path: Path) -> Dict[str, Any]:
     if body != canonical_json(value).encode("utf-8") + b"\n":
         raise V064PublicCiWitnessError("V064_PUBLIC_CI_WITNESS_CANONICAL_BYTES_REQUIRED")
     if tuple(_validator().iter_errors(value)):
+        raise V064PublicCiWitnessError("V064_PUBLIC_CI_WITNESS_SCHEMA_INVALID")
+    if any(
+        job["setup_python_version"] != job["fixed_owner_python_version"]
+        for job in value["jobs"]
+    ):
         raise V064PublicCiWitnessError("V064_PUBLIC_CI_WITNESS_SCHEMA_INVALID")
     identity = {"private_commit": value["private_source"]["candidate_commit"], "public_commit": value["public_source"]["commit"], "run_id": value["run"]["run_id"], "manifest_sha256": value["bundle"]["manifest_sha256"]}
     if value["witness_id"] != stable_id("v064_public_ci_witness", identity):

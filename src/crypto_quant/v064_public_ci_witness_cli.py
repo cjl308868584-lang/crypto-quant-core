@@ -21,23 +21,23 @@ from .challenger_replacement_supersession_publish import _atomic_no_replace
 
 
 _GH = "/Users/chenm4/.local/bin/gh"
-_REPOSITORY = "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+_REPOSITORY = "cjl308868584-lang/crypto-quant-v064-public-ci-r3"
 _PRIVATE_REPOSITORY = Path(__file__).absolute().parents[2]
-_ARTIFACT_ROOT = _PRIVATE_REPOSITORY / "artifacts" / "v064-public-ci-r2"
+_ARTIFACT_ROOT = _PRIVATE_REPOSITORY / "artifacts" / "v064-public-ci-r3"
 _PUBLIC_CANDIDATE_MANIFEST = Path(
-    "/private/tmp/crypto-quant-v064-public-ci-r2-candidate/bundle-manifest-v1.json"
+    "/private/tmp/crypto-quant-v064-public-ci-r3-candidate/bundle-manifest-v1.json"
 )
 _EVIDENCE_NAMES = (
-    "v064-public-ci-r2-run-api-v1.json",
-    "v064-public-ci-r2-jobs-api-v1.json",
-    "v064-public-ci-r2-run-log-v1.txt",
-    "v064-public-ci-r2-acquisition-transcript-v1.json",
-    "v064-public-ci-r2-witness-v1.json",
+    "v064-public-ci-r3-run-api-v1.json",
+    "v064-public-ci-r3-jobs-api-v1.json",
+    "v064-public-ci-r3-run-log-v1.txt",
+    "v064-public-ci-r3-acquisition-transcript-v1.json",
+    "v064-public-ci-r3-witness-v1.json",
 )
 _MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
-_STAGING_PREFIX = ".v064-public-ci-r2-"
+_STAGING_PREFIX = ".v064-public-ci-r3-"
 _STAGING_RE = re.compile(
-    r"\A\.v064-public-ci-r2-(?P<final>" +
+    r"\A\.v064-public-ci-r3-(?P<final>" +
     "|".join(re.escape(name) for name in _EVIDENCE_NAMES) +
     r")-(?P<digest>[0-9a-f]{64})-(?P<nonce>[0-9a-f]{32})\.staging\Z",
     re.ASCII,
@@ -58,7 +58,7 @@ _JOBS_PROJECTION = "{total_count,jobs:[.jobs[]|{id,name,status,conclusion,runner
 def _required_flag(name: str) -> int:
     value = getattr(os, name, None)
     if not isinstance(value, int) or not value:
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_UNSUPPORTED")
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_UNSUPPORTED")
     return value
 
 
@@ -76,8 +76,8 @@ def _acquire_ceremony_lock(root_fd: int) -> None:
         fcntl.flock(root_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError as error:
         if error.errno in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK}:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_CONCURRENT") from error
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_LOCK_FAILED") from error
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_CONCURRENT") from error
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_LOCK_FAILED") from error
 
 
 def _write_all(descriptor: int, body: bytes) -> None:
@@ -88,9 +88,9 @@ def _write_all(descriptor: int, body: bytes) -> None:
         except InterruptedError:
             continue
         except OSError as error:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED") from error
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED") from error
         if written <= 0:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED")
         offset += written
 
 
@@ -102,7 +102,7 @@ def _fsync(descriptor: int) -> None:
         except InterruptedError:
             continue
         except OSError as error:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_FSYNC_FAILED") from error
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_FSYNC_FAILED") from error
 
 
 def _close_preserving(descriptor: int, primary: BaseException = None) -> None:
@@ -111,11 +111,11 @@ def _close_preserving(descriptor: int, primary: BaseException = None) -> None:
     except OSError as error:
         if primary is not None:
             try:
-                setattr(primary, "close_error", "V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED")
+                setattr(primary, "close_error", "V064_PUBLIC_CI_R3_EVIDENCE_CLOSE_FAILED")
             except BaseException:
                 pass
             return
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED") from error
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_CLOSE_FAILED") from error
 
 
 def _read_descriptor(descriptor: int, size: int) -> bytes:
@@ -127,17 +127,17 @@ def _read_descriptor(descriptor: int, size: int) -> bytes:
         except InterruptedError:
             continue
         except OSError as error:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED") from error
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED") from error
         if not chunk:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED")
         chunks.append(chunk)
         remaining -= len(chunk)
     try:
         extra = os.read(descriptor, 1)
     except OSError as error:
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED") from error
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED") from error
     if extra:
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED")
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_UNTRUSTED")
     return b"".join(chunks)
 
 
@@ -156,17 +156,17 @@ def _validate_repository_identity() -> None:
         or raw_module.is_symlink()
         or raw_module.parents[2] != _PRIVATE_REPOSITORY
     ):
-        raise ValueError("V064_PUBLIC_CI_R2_REPOSITORY_INVALID")
+        raise ValueError("V064_PUBLIC_CI_R3_REPOSITORY_INVALID")
     current = Path(raw_module.anchor)
     try:
         for component in raw_module.parts[1:]:
             current = current / component
             if stat.S_ISLNK(current.lstat().st_mode):
-                raise ValueError("V064_PUBLIC_CI_R2_REPOSITORY_INVALID")
+                raise ValueError("V064_PUBLIC_CI_R3_REPOSITORY_INVALID")
     except ValueError:
         raise
     except OSError as error:
-        raise ValueError("V064_PUBLIC_CI_R2_REPOSITORY_INVALID") from error
+        raise ValueError("V064_PUBLIC_CI_R3_REPOSITORY_INVALID") from error
     try:
         from .challenger_replacement_plan_supersession_cli import (
             _validate_reviewed_repo_root,
@@ -174,7 +174,7 @@ def _validate_repository_identity() -> None:
 
         _validate_reviewed_repo_root(_PRIVATE_REPOSITORY)
     except BaseException as error:
-        raise ValueError("V064_PUBLIC_CI_R2_REPOSITORY_INVALID") from error
+        raise ValueError("V064_PUBLIC_CI_R3_REPOSITORY_INVALID") from error
 
 
 def _validate_root(descriptor: int, expected: os.stat_result) -> None:
@@ -182,20 +182,20 @@ def _validate_root(descriptor: int, expected: os.stat_result) -> None:
         opened = os.fstat(descriptor)
         attached = _ARTIFACT_ROOT.lstat()
     except OSError as error:
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID") from error
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID") from error
     if (
         not _trusted_directory(opened, 0o700)
         or not _trusted_directory(attached, 0o700)
         or (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino)
         or (attached.st_dev, attached.st_ino) != (expected.st_dev, expected.st_ino)
     ):
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID")
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID")
 
 
 def _open_artifact_root() -> Tuple[int, os.stat_result]:
     _validate_repository_identity()
-    if _ARTIFACT_ROOT != _PRIVATE_REPOSITORY / "artifacts" / "v064-public-ci-r2":
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID")
+    if _ARTIFACT_ROOT != _PRIVATE_REPOSITORY / "artifacts" / "v064-public-ci-r3":
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID")
     nofollow = _required_flag("O_NOFOLLOW")
     directory = _required_flag("O_DIRECTORY")
     flags = os.O_RDONLY | nofollow | directory
@@ -211,22 +211,22 @@ def _open_artifact_root() -> Tuple[int, os.stat_result]:
             or parent_stat.st_uid != os.geteuid() == 501
             or stat.S_IMODE(parent_stat.st_mode) != 0o755
         ):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID")
         parent_fd = os.open(parent, flags)
         opened_parent = os.fstat(parent_fd)
         if (opened_parent.st_dev, opened_parent.st_ino) != (
             parent_stat.st_dev, parent_stat.st_ino
         ):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID")
         try:
-            os.mkdir("v064-public-ci-r2", 0o700, dir_fd=parent_fd)
+            os.mkdir("v064-public-ci-r3", 0o700, dir_fd=parent_fd)
             _fsync(parent_fd)
         except FileExistsError:
             pass
-        root_fd = os.open("v064-public-ci-r2", flags, dir_fd=parent_fd)
+        root_fd = os.open("v064-public-ci-r3", flags, dir_fd=parent_fd)
         opened_root = os.fstat(root_fd)
         if not _trusted_directory(opened_root, 0o700):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID")
         _validate_root(root_fd, opened_root)
         completed = True
         return root_fd, opened_root
@@ -234,7 +234,7 @@ def _open_artifact_root() -> Tuple[int, os.stat_result]:
         primary = error
         raise
     except OSError as error:
-        mapped = ValueError("V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID")
+        mapped = ValueError("V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID")
         primary = mapped
         raise mapped from error
     except BaseException as error:
@@ -267,7 +267,7 @@ def _read_named(root_fd: int, name: str, expected: bytes) -> bytes:
             or opened.st_nlink != 1
             or opened.st_size != len(expected)
         ):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_UNTRUSTED")
         body = _read_descriptor(descriptor, opened.st_size)
         attached = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
         after = os.fstat(descriptor)
@@ -277,13 +277,13 @@ def _read_named(root_fd: int, name: str, expected: bytes) -> bytes:
             (opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns)
             or body != expected
         ):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_UNTRUSTED")
         return body
     except ValueError as error:
         primary = error
         raise
     except OSError as error:
-        mapped = ValueError("V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED")
+        mapped = ValueError("V064_PUBLIC_CI_R3_EVIDENCE_UNTRUSTED")
         primary = mapped
         raise mapped from error
     except BaseException as error:
@@ -311,7 +311,7 @@ def _create_staging(root_fd: int, final_name: str, body: bytes) -> str:
         _write_all(descriptor, body)
         os.lseek(descriptor, 0, os.SEEK_SET)
         if _read_descriptor(descriptor, len(body)) != body:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED")
         _fsync(descriptor)
         opened = os.fstat(descriptor)
         attached = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
@@ -323,13 +323,13 @@ def _create_staging(root_fd: int, final_name: str, body: bytes) -> str:
             or opened.st_size != len(body)
             or (opened.st_dev, opened.st_ino) != (attached.st_dev, attached.st_ino)
         ):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_UNTRUSTED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_UNTRUSTED")
         return name
     except ValueError as error:
         primary = error
         raise
     except OSError as error:
-        mapped = ValueError("V064_PUBLIC_CI_R2_EVIDENCE_IO_FAILED")
+        mapped = ValueError("V064_PUBLIC_CI_R3_EVIDENCE_IO_FAILED")
         primary = mapped
         raise mapped from error
     except BaseException as error:
@@ -357,16 +357,16 @@ def _recover_staging(root_fd: int, name: str, body: bytes) -> None:
             or opened.st_nlink != 1
             or opened.st_size > len(body)
         ):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         prefix = _read_descriptor(descriptor, opened.st_size)
         if prefix != body[: opened.st_size]:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         if opened.st_size < len(body):
             os.lseek(descriptor, 0, os.SEEK_END)
             _write_all(descriptor, body[opened.st_size :])
         os.lseek(descriptor, 0, os.SEEK_SET)
         if _read_descriptor(descriptor, len(body)) != body:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         _fsync(descriptor)
         after = os.fstat(descriptor)
         attached = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
@@ -379,12 +379,12 @@ def _recover_staging(root_fd: int, name: str, body: bytes) -> None:
             or (after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino)
             or (attached.st_dev, attached.st_ino) != (opened.st_dev, opened.st_ino)
         ):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
     except ValueError as error:
         primary = error
         raise
     except OSError as error:
-        mapped = ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+        mapped = ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         primary = mapped
         raise mapped from error
     except BaseException as error:
@@ -400,21 +400,21 @@ def _staging_inventory(root_fd: int, prepared: Mapping[str, bytes]) -> Dict[str,
     try:
         names = os.listdir(root_fd)
     except OSError as error:
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_ROOT_INVALID") from error
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID") from error
     for name in names:
         if name in _EVIDENCE_NAMES:
             continue
         if not name.startswith(_STAGING_PREFIX):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         match = _STAGING_RE.fullmatch(name)
         if match is None:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         final_name = match.group("final")
         body = prepared[final_name]
         if match.group("digest") != hashlib.sha256(body).hexdigest():
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         if final_name in result:
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         _recover_staging(root_fd, name, body)
         result[final_name] = name
     return result
@@ -430,17 +430,17 @@ def _publish_evidence(prepared: Mapping[str, bytes]) -> Dict[str, Any]:
             for name in _EVIDENCE_NAMES
         )
     ):
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_INVALID")
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_INVALID")
     if any(
         not _canonical_json_bytes(prepared[name])
         for name in (
-            "v064-public-ci-r2-run-api-v1.json",
-            "v064-public-ci-r2-jobs-api-v1.json",
-            "v064-public-ci-r2-acquisition-transcript-v1.json",
-            "v064-public-ci-r2-witness-v1.json",
+            "v064-public-ci-r3-run-api-v1.json",
+            "v064-public-ci-r3-jobs-api-v1.json",
+            "v064-public-ci-r3-acquisition-transcript-v1.json",
+            "v064-public-ci-r3-witness-v1.json",
         )
     ):
-        raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_INVALID")
+        raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_INVALID")
     for flag in ("O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK"):
         _required_flag(flag)
     root_fd = None
@@ -460,7 +460,7 @@ def _publish_evidence(prepared: Mapping[str, bytes]) -> Dict[str, Any]:
             _read_named(root_fd, name, prepared[name])
             existing.append(name)
             if name in staging:
-                raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+                raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         for name in missing:
             if name not in staging:
                 staging[name] = _create_staging(root_fd, name, prepared[name])
@@ -471,16 +471,16 @@ def _publish_evidence(prepared: Mapping[str, bytes]) -> Dict[str, Any]:
             _read_named(root_fd, name, prepared[name])
             _validate_root(root_fd, identity)
         if _staging_inventory(root_fd, prepared):
-            raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_RECOVERY_BLOCKED")
+            raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_RECOVERY_BLOCKED")
         _fsync(root_fd)
         for name in _EVIDENCE_NAMES:
             _read_named(root_fd, name, prepared[name])
         _validate_root(root_fd, identity)
         return {
             "status": (
-                "V064_PUBLIC_CI_R2_EVIDENCE_ALREADY_PUBLISHED"
+                "V064_PUBLIC_CI_R3_EVIDENCE_ALREADY_PUBLISHED"
                 if len(existing) == len(_EVIDENCE_NAMES)
-                else "V064_PUBLIC_CI_R2_EVIDENCE_PUBLISHED"
+                else "V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED"
             ),
             "files": {
                 name: {
@@ -499,9 +499,9 @@ def _publish_evidence(prepared: Mapping[str, bytes]) -> Dict[str, Any]:
                 os.close(root_fd)
             except OSError as error:
                 if primary is None:
-                    raise ValueError("V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED") from error
+                    raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_CLOSE_FAILED") from error
                 try:
-                    setattr(primary, "close_error", "V064_PUBLIC_CI_R2_EVIDENCE_CLOSE_FAILED")
+                    setattr(primary, "close_error", "V064_PUBLIC_CI_R3_EVIDENCE_CLOSE_FAILED")
                 except BaseException:
                     pass
 
@@ -696,13 +696,13 @@ def main(argv: Sequence[str] = ()) -> int:
         private_repository=_PRIVATE_REPOSITORY,
     )
     prepared = {
-        "v064-public-ci-r2-run-api-v1.json": result["raw"]["run_api"],
-        "v064-public-ci-r2-jobs-api-v1.json": result["raw"]["jobs_api"],
-        "v064-public-ci-r2-run-log-v1.txt": result["raw"]["run_log"],
-        "v064-public-ci-r2-acquisition-transcript-v1.json": (
+        "v064-public-ci-r3-run-api-v1.json": result["raw"]["run_api"],
+        "v064-public-ci-r3-jobs-api-v1.json": result["raw"]["jobs_api"],
+        "v064-public-ci-r3-run-log-v1.txt": result["raw"]["run_log"],
+        "v064-public-ci-r3-acquisition-transcript-v1.json": (
             canonical_json(result["transcript"]).encode("utf-8") + b"\n"
         ),
-        "v064-public-ci-r2-witness-v1.json": (
+        "v064-public-ci-r3-witness-v1.json": (
             canonical_json(witness).encode("utf-8") + b"\n"
         ),
     }
