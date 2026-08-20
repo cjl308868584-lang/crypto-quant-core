@@ -708,6 +708,41 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
             )
 
     @mock.patch("crypto_quant.v064_public_ci_witness._replay_public_candidate")
+    def test_extra_conflicting_setup_or_fixed_owner_identity_is_rejected(self, replay):
+        bundle, run_bytes, jobs_bytes, log_bytes, transcript = _realistic_inputs()
+        replay.return_value = {
+            "commit": "5" * 40, "tree": "6" * 40, "parent_count": 0,
+            "manifest_sha256": "7" * 64,
+        }
+        setup_prefix = (
+            b"portability (3.9)\t"
+            b"Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1\t"
+            b"2026-08-13T01:01:31.1234567Z "
+        )
+        fixed_prefix = (
+            b"portability (3.9)\tRun fixed-owner public boundary\t"
+            b"2026-08-13T01:02:04.1234567Z "
+        )
+        for source, extra in (
+            ("setup", setup_prefix + b"Successfully set up CPython (3.12.14)\n"),
+            ("fixed_owner", fixed_prefix + b"Python 3.12.14\n"),
+        ):
+            changed_log = log_bytes + extra
+            changed_transcript = copy.deepcopy(transcript)
+            changed_transcript["commands"][2]["stdout_size"] = len(changed_log)
+            changed_transcript["commands"][2]["stdout_sha256"] = hashlib.sha256(
+                changed_log
+            ).hexdigest()
+            with self.subTest(source=source), self.assertRaisesRegex(
+                V064PublicCiWitnessError, "^V064_PUBLIC_CI_LOG_INVALID$"
+            ):
+                derive_v064_public_ci_witness(
+                    bundle=bundle, run_bytes=run_bytes, jobs_bytes=jobs_bytes,
+                    log_bytes=changed_log, transcript=changed_transcript,
+                    private_repository=ROOT,
+                )
+
+    @mock.patch("crypto_quant.v064_public_ci_witness._replay_public_candidate")
     def test_raw_api_json_must_be_exact_canonical_bytes(self, replay):
         bundle, run_bytes, jobs_bytes, log_bytes, transcript = _realistic_inputs()
         replay.return_value = {
@@ -1870,6 +1905,21 @@ class V064PublicCiWitnessFixedIdentityTests(unittest.TestCase):
 
 
 class V064PublicCiWitnessAncestryTests(unittest.TestCase):
+    R3_EVIDENCE_PATHS = (
+        "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-api-v1.json",
+        "artifacts/v064-public-ci-r3/v064-public-ci-r3-jobs-api-v1.json",
+        "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-log-v1.txt",
+        "artifacts/v064-public-ci-r3/v064-public-ci-r3-acquisition-transcript-v1.json",
+        "artifacts/v064-public-ci-r3/v064-public-ci-r3-witness-v1.json",
+    )
+    OBSOLETE_EVIDENCE_PATHS = (
+        "artifacts/v064-public-ci/v064-public-ci-run-api-v1.json",
+        "artifacts/v064-public-ci/v064-public-ci-jobs-api-v1.json",
+        "artifacts/v064-public-ci/v064-public-ci-run-log-v1.txt",
+        "artifacts/v064-public-ci/v064-public-ci-acquisition-transcript-v1.json",
+        "artifacts/v064-public-ci/v064-public-ci-witness-v1.json",
+    )
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.repository = Path(self.temporary.name) / "repository"
@@ -1928,6 +1978,15 @@ class V064PublicCiWitnessAncestryTests(unittest.TestCase):
         self._git("commit", "-q", "-m", "G")
         return self._git("rev-parse", "HEAD").decode().strip()
 
+    def _commit_paths(self, paths, message):
+        for index, relative in enumerate(paths):
+            path = self.repository / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(("evidence-%d\n" % index).encode("ascii"))
+        self._git("add", "--", *paths)
+        self._git("commit", "-q", "-m", message)
+        return self._git("rev-parse", "HEAD").decode().strip()
+
     def test_strict_descendant_with_exact_allowed_delta_and_unchanged_sources_passes(self):
         candidate_g = self._commit_allowed_g()
         result = verify_v064_public_source_unchanged(
@@ -1935,6 +1994,27 @@ class V064PublicCiWitnessAncestryTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "V064_PUBLIC_SOURCE_UNCHANGED")
         self.assertEqual(result["verified_blob_count"], 7)
+
+    def test_exact_five_r3_evidence_paths_are_accepted_by_real_git_delta(self):
+        candidate_g = self._commit_paths(self.R3_EVIDENCE_PATHS, "R3 evidence")
+        result = verify_v064_public_source_unchanged(
+            self.repository, self.source_f, candidate_g, self.manifest
+        )
+        self.assertEqual(
+            result["allowed_delta_paths"], sorted(self.R3_EVIDENCE_PATHS)
+        )
+
+    def test_each_obsolete_evidence_path_is_rejected_by_real_git_delta(self):
+        for obsolete in self.OBSOLETE_EVIDENCE_PATHS:
+            with self.subTest(path=obsolete):
+                self._git("reset", "--hard", self.source_f)
+                candidate_g = self._commit_paths((obsolete,), "obsolete evidence")
+                with self.assertRaisesRegex(
+                    V064PublicCiWitnessError, "PUBLIC_SOURCE_DELTA_INVALID"
+                ):
+                    verify_v064_public_source_unchanged(
+                        self.repository, self.source_f, candidate_g, self.manifest
+                    )
 
     def test_equal_nondescendant_source_change_and_unexpected_delta_fail_closed(self):
         with self.assertRaisesRegex(V064PublicCiWitnessError, "SOURCE_F_INVALID"):

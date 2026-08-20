@@ -259,17 +259,14 @@ def derive_v064_public_ci_witness(*, bundle: dict, run_bytes: bytes, jobs_bytes:
         if any(parsed_log[version]["verify"].count(item) != 1 for item in markers):
             raise V064PublicCiWitnessError("V064_PUBLIC_CI_LOG_INVALID")
         setup_pattern = re.compile(
-            r"^Successfully set up CPython \((" + re.escape(version)
-            + r"\.[0-9]+)\)$"
+            r"^Successfully set up CPython \(([0-9]+\.[0-9]+\.[0-9]+)\)$"
         )
         setup_versions = [
             match.group(1) for item in parsed_log[version]["setup"]
             for match in [setup_pattern.fullmatch(item)] if match is not None
         ]
         run_lines = parsed_log[version]["run"]
-        python_pattern = re.compile(
-            r"^Python (" + re.escape(version) + r"\.[0-9]+)$"
-        )
+        python_pattern = re.compile(r"^Python ([0-9]+\.[0-9]+\.[0-9]+)$")
         fixed_owner_versions = [
             match.group(1) for item in run_lines
             for match in [python_pattern.fullmatch(item)] if match is not None
@@ -278,6 +275,8 @@ def derive_v064_public_ci_witness(*, bundle: dict, run_bytes: bytes, jobs_bytes:
         if (
             len(setup_versions) != 1
             or len(fixed_owner_versions) != 1
+            or setup_versions[0].rsplit(".", 1)[0] != version
+            or fixed_owner_versions[0].rsplit(".", 1)[0] != version
             or setup_versions != fixed_owner_versions
             or sum(bool(tests_pattern.fullmatch(item)) for item in run_lines) != 1
             or run_lines.count("OK") != 1
@@ -412,11 +411,11 @@ _SOURCE_PATHS = {
     "tests/test_v064_linux_supersession_publish.py": "tests/test_v064_linux_supersession_publish.py",
 }
 _ALLOWED_G_DELTA = {
-    "artifacts/v064-public-ci/v064-public-ci-run-api-v1.json",
-    "artifacts/v064-public-ci/v064-public-ci-jobs-api-v1.json",
-    "artifacts/v064-public-ci/v064-public-ci-run-log-v1.txt",
-    "artifacts/v064-public-ci/v064-public-ci-acquisition-transcript-v1.json",
-    "artifacts/v064-public-ci/v064-public-ci-witness-v1.json",
+    "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-api-v1.json",
+    "artifacts/v064-public-ci-r3/v064-public-ci-r3-jobs-api-v1.json",
+    "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-log-v1.txt",
+    "artifacts/v064-public-ci-r3/v064-public-ci-r3-acquisition-transcript-v1.json",
+    "artifacts/v064-public-ci-r3/v064-public-ci-r3-witness-v1.json",
     "tests/test_v064_public_ci_witness.py",
     "config/evaluator-build-manifest-v1.json",
 }
