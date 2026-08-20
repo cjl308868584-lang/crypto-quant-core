@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REPOSITORY" = "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+          test "$GITHUB_REPOSITORY" = "cjl308868584-lang/crypto-quant-v064-public-ci-r3"
           test "$GITHUB_REF" = "refs/heads/main"
           python3 - <<'PY'
           import ast, hashlib, json, pathlib, re, subprocess, sys

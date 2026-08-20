@@ -244,6 +244,44 @@ def _extract_workflow_step(workflow_bytes, name):
     return b"".join(script)
 
 
+def _assert_setup_python_precedes_interpreter_capture(workflow_bytes):
+    expected_step_headers = (
+        b"      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09\n",
+        b"      - name: Verify closed bundle before repository imports\n",
+        b"      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1\n",
+        b"      - name: Run fixed-owner public boundary\n",
+    )
+    step_headers = tuple(
+        line
+        for line in workflow_bytes.splitlines(keepends=True)
+        if line.startswith(b"      - ")
+    )
+    if step_headers != expected_step_headers:
+        raise AssertionError("workflow step order changed")
+    ordered_markers = (
+        expected_step_headers[0],
+        expected_step_headers[1],
+        b"      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1\n"
+        b"        with:\n"
+        b"          python-version: ${{ matrix.python-version }}\n",
+        expected_step_headers[3],
+    )
+    for marker in ordered_markers:
+        if workflow_bytes.count(marker) != 1:
+            raise AssertionError("ordered workflow marker must be unique")
+    offsets = [workflow_bytes.index(marker) for marker in ordered_markers]
+    if offsets != sorted(offsets):
+        raise AssertionError("workflow step order changed")
+    capture = b'python_bin="$(command -v python)"\n'
+    if workflow_bytes.count(capture) != 1:
+        raise AssertionError("interpreter capture must be unique")
+    fixed_owner = _extract_workflow_step(
+        workflow_bytes, "Run fixed-owner public boundary"
+    )
+    if fixed_owner.count(capture) != 1:
+        raise AssertionError("interpreter capture must follow setup-python")
+
+
 def _write_executable(path, body):
     path.write_text(body, encoding="utf-8")
     path.chmod(0o755)
@@ -1460,6 +1498,21 @@ sudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home
         self.assertNotIn("python", child.replace('"$1"', ""))
         self.assertEqual(arguments[-2:], ["v064-fixed-owner", "$python_bin"])
 
+    def test_setup_python_with_matrix_input_precedes_interpreter_capture(self):
+        workflow = (TEMPLATE_ROOT / ".github/workflows/ci.yml").read_bytes()
+        _assert_setup_python_precedes_interpreter_capture(workflow)
+        capture = b'          python_bin="$(command -v python)"\n'
+        setup = (
+            b"      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1\n"
+        )
+        moved = workflow.replace(capture, b"", 1).replace(
+            setup, capture + setup, 1
+        )
+        with self.assertRaisesRegex(
+            AssertionError, "workflow step order changed|interpreter capture"
+        ):
+            _assert_setup_python_precedes_interpreter_capture(moved)
+
     def test_missing_child_path_uses_exact_fixed_39_binary_once_for_tests(self):
         workflow = (TEMPLATE_ROOT / ".github/workflows/ci.yml").read_bytes()
         with tempfile.TemporaryDirectory() as temporary:
@@ -1556,19 +1609,27 @@ sudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home
         self.assertEqual(result.stdout, b"")
         self.assertEqual(result.stderr, b"PUBLIC_SENSITIVE_BYTES_INVALID\n")
 
-    def test_exact_r2_preflight_accepts_closed_checkout(self):
+    def test_exact_r3_preflight_accepts_closed_checkout_and_rejects_r2(self):
         with tempfile.TemporaryDirectory() as temporary:
-            checkout = Path(temporary) / "r2"
+            checkout = Path(temporary) / "r3"
             head = _git_bytes(ROOT, "rev-parse", "HEAD").decode("ascii").strip()
             _write_closed_checkout(checkout, head, use_worktree=True)
-            result = _run_exact_preflight(
+            accepted = _run_exact_preflight(
+                checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r3"
+            )
+            rejected = _run_exact_preflight(
                 checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
             )
-        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
-        self.assertIn(b"source_candidate_f=", result.stdout)
-        self.assertEqual(result.stderr, b"")
+        self.assertEqual(
+            accepted.returncode, 0, accepted.stderr.decode("utf-8", "replace")
+        )
+        self.assertIn(b"source_candidate_f=", accepted.stdout)
+        self.assertEqual(accepted.stderr, b"")
+        self.assertEqual(rejected.returncode, 1)
+        self.assertEqual(rejected.stdout, b"")
+        self.assertEqual(rejected.stderr, b"")
 
-    def test_exact_r2_preflight_rejects_resealed_sensitive_payloads(self):
+    def test_exact_r3_preflight_rejects_resealed_sensitive_payloads(self):
         payloads = (
             (b"/" + b"Users/fixture\n", b"PUBLIC_SENSITIVE_BYTES_INVALID\n"),
             (b"BEGIN " + b"PRIVATE KEY\n", b"PUBLIC_SENSITIVE_BYTES_INVALID\n"),
@@ -1579,18 +1640,18 @@ sudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home
         )
         for index, (payload, reason) in enumerate(payloads):
             with self.subTest(index=index), tempfile.TemporaryDirectory() as temporary:
-                checkout = Path(temporary) / "r2"
+                checkout = Path(temporary) / "r3"
                 head = _git_bytes(ROOT, "rev-parse", "HEAD").decode("ascii").strip()
                 _write_closed_checkout(checkout, head, use_worktree=True)
                 _replace_readme_and_reseal(checkout, payload)
                 result = _run_exact_preflight(
-                    checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+                    checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r3"
                 )
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(result.stdout, b"")
                 self.assertEqual(result.stderr, reason)
 
-    def test_exact_r2_preflight_rejects_any_other_literal_child_argument(self):
+    def test_exact_r3_preflight_rejects_any_other_literal_child_argument(self):
         mutations = (
             (
                 b'[sys.executable, "-c", CRASH_CHILD, str(parent), "directory-fsync"]',
@@ -1603,7 +1664,7 @@ sudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home
         )
         for before, after in mutations:
             with self.subTest(after=after), tempfile.TemporaryDirectory() as temporary:
-                checkout = Path(temporary) / "r2"
+                checkout = Path(temporary) / "r3"
                 head = _git_bytes(ROOT, "rev-parse", "HEAD").decode("ascii").strip()
                 _write_closed_checkout(checkout, head, use_worktree=True)
                 relative = "tests/test_v064_linux_supersession_publish.py"
@@ -1613,7 +1674,7 @@ sudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home
                     checkout, relative, body.replace(before, after, 1)
                 )
                 result = _run_exact_preflight(
-                    checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r2"
+                    checkout, "cjl308868584-lang/crypto-quant-v064-public-ci-r3"
                 )
                 self.assertEqual(
                     result.stderr, b"PUBLIC_SUBPROCESS_TARGET_INVALID\n"
