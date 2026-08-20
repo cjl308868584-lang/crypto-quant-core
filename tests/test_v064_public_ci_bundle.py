@@ -13,7 +13,9 @@ from unittest import mock
 
 from jsonschema import Draft202012Validator, ValidationError
 
+from crypto_quant.build import EvaluatorBuild
 from crypto_quant.canonical import business_hash, canonical_json
+from crypto_quant.evidence import artifact_self_hash
 from crypto_quant.v064_public_ci_bundle import (
     V064PublicCiBundleError,
     build_v064_public_root_commit,
@@ -21,6 +23,9 @@ from crypto_quant.v064_public_ci_bundle import (
     load_v064_public_ci_bundle_manifest,
     stage_v064_public_ci_bundle,
     verify_v064_public_ci_bundle,
+)
+from crypto_quant.v064_public_ci_r2_failure import (
+    load_v064_public_ci_r2_failure_root,
 )
 from crypto_quant import v064_public_ci_bundle, v064_public_ci_bundle_cli
 
@@ -53,6 +58,22 @@ EXACT_FILES = (
 )
 TEMPLATE_ROOT = ROOT / "public_ci" / "v064"
 PRIVATE_F = "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff"
+PRIVATE_F2 = "5bc01c9b9b9d9a21846dd8c6ba1d81b0183dd219"
+PRIVATE_F2_TREE = "53d3baf7d7c84e5bc8fcafa2561bbb959477ac4d"
+PUBLIC_INVENTORY = tuple(
+    sorted(
+        [relative for relative, _kind, _source in EXACT_FILES]
+        + ["bundle-manifest-v1.json"]
+    )
+)
+PROTECTED_PUBLIC_BLOBS = {
+    "src/crypto_quant/challenger_replacement_supersession_publish.py": (
+        "8a67fffdfd17bdf26cc74ee23e14a7c8fe91b7a8"
+    ),
+    "tests/test_v064_linux_supersession_publish.py": (
+        "4fc14ffd73ce09803afb6cda724b51c919f1d8ba"
+    ),
+}
 PREDECESSOR_FAILED_PUBLIC_WITNESS = {
     "repository": "cjl308868584-lang/crypto-quant-v064-public-ci",
     "private_candidate_f": "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff",
@@ -190,6 +211,15 @@ def _git_bytes(repository, *arguments, input_bytes=None):
     return subprocess.run(
         ("/usr/bin/git", "-C", str(repository), *arguments),
         input=input_bytes,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    ).stdout
+
+
+def _bare_git_bytes(git_directory, *arguments):
+    return subprocess.run(
+        ("/usr/bin/git", "--git-dir", str(git_directory), *arguments),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=True,
@@ -1416,6 +1446,154 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
             V064PublicCiBundleError, "V064_PUBLIC_CI_PUBLIC_ROOT_INVALID"
         ):
             verify_v064_public_ci_bundle(self.repository, self.commit, public_root)
+
+
+class V064PublicCiFinalFreezeTests(unittest.TestCase):
+    def head(self):
+        return _git_bytes(ROOT, "rev-parse", "HEAD^{commit}").decode("ascii").strip()
+
+    def test_final_private_ancestry_failures_and_public_inventory_remain_closed(self):
+        head = self.head()
+        self.assertNotEqual(head, PRIVATE_F2)
+        self.assertEqual(
+            _git_bytes(ROOT, "rev-parse", PRIVATE_F2 + "^{tree}")
+            .decode("ascii")
+            .strip(),
+            PRIVATE_F2_TREE,
+        )
+        _git_bytes(ROOT, "merge-base", "--is-ancestor", PRIVATE_F2, head)
+
+        failure = load_v064_public_ci_r2_failure_root(
+            ROOT / "artifacts" / "v064-public-ci-r2-failure"
+        )
+        self.assertEqual(
+            failure["private_source"],
+            {"candidate_commit": PRIVATE_F2, "candidate_tree": PRIVATE_F2_TREE},
+        )
+        self.assertEqual(
+            failure["public_source"],
+            {
+                "repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+                "root_commit": "5541aba00e4e93e6389c2c61a81e69c2dd228947",
+                "root_tree": "3d732e8e1fbb9cf94541f6e26e778d5eb21ca8f3",
+            },
+        )
+        self.assertEqual(
+            failure["workflow"]["blob_oid"],
+            "ba5b6851ed53ad79100409b92c78c09c07608ed2",
+        )
+        self.assertFalse((ROOT / "artifacts" / "v064-public-ci-r2").exists())
+
+        manifest = build_v064_public_ci_bundle_manifest(ROOT, head)
+        self.assertEqual(
+            manifest["public_repository"],
+            "cjl308868584-lang/crypto-quant-v064-public-ci-r3",
+        )
+        self.assertEqual(
+            [
+                item.get("repository", item.get("public_source", {}).get("repository"))
+                for item in manifest["predecessor_failed_public_witnesses"]
+            ],
+            [
+                "cjl308868584-lang/crypto-quant-v064-public-ci",
+                "cjl308868584-lang/crypto-quant-v064-public-ci-r2",
+            ],
+        )
+        self.assertEqual(
+            tuple(
+                sorted(
+                    [item["path"] for item in manifest["files"]]
+                    + ["bundle-manifest-v1.json"]
+                )
+            ),
+            PUBLIC_INVENTORY,
+        )
+        entries = {item["path"]: item for item in manifest["files"]}
+        for relative, expected_oid in PROTECTED_PUBLIC_BLOBS.items():
+            with self.subTest(relative=relative):
+                self.assertEqual(entries[relative]["source_blob_oid"], expected_oid)
+
+    def test_evaluator_build_manifest_exactly_replays_final_inputs(self):
+        manifest = json.loads(
+            (ROOT / "config" / "evaluator-build-manifest-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            {
+                "manifest_version": manifest["manifest_version"],
+                "package_version": manifest["package_version"],
+                "metric_catalog_version": manifest["metric_catalog_version"],
+                "schema_version": manifest["schema_version"],
+            },
+            {
+                "manifest_version": "1.57.0",
+                "package_version": "0.63.0",
+                "metric_catalog_version": "1.1.6",
+                "schema_version": "1.0.0",
+            },
+        )
+        expected_paths = EvaluatorBuild.expected_file_paths(ROOT)
+        expected_hashes = EvaluatorBuild.file_hashes(ROOT, expected_paths)
+        self.assertEqual(tuple(manifest["file_hashes"]), expected_paths)
+        self.assertEqual(manifest["file_hashes"], expected_hashes)
+        self.assertEqual(
+            manifest["build_input_tree_hash"], business_hash(expected_hashes)
+        )
+        self.assertEqual(
+            manifest["manifest_hash"], artifact_self_hash(manifest, "manifest_hash")
+        )
+
+    def test_final_candidate_rebuild_is_exact_parentless_and_ref_closed(self):
+        head = self.head()
+        candidates = []
+        candidate_bytes = []
+        with tempfile.TemporaryDirectory(
+            prefix="v064-r3-final-replay-", dir="/private/tmp"
+        ) as temporary:
+            temporary_root = Path(temporary)
+            for name in ("first", "second"):
+                public_root = temporary_root / name
+                stage_v064_public_ci_bundle(ROOT, head, public_root)
+                candidate = build_v064_public_root_commit(ROOT, head, public_root)
+                replayed = build_v064_public_root_commit(ROOT, head, public_root)
+                verified = verify_v064_public_ci_bundle(ROOT, head, public_root)
+                self.assertEqual(replayed, candidate)
+                self.assertEqual(verified["commit"], candidate["commit"])
+                self.assertEqual(verified["tree"], candidate["tree"])
+                self.assertEqual(candidate["parent_count"], 0)
+                self.assertEqual(tuple(candidate["paths"]), PUBLIC_INVENTORY)
+
+                git_directory = Path(candidate["git_directory"])
+                self.assertEqual(
+                    _bare_git_bytes(
+                        git_directory,
+                        "for-each-ref",
+                        "--format=%(refname) %(objectname)",
+                    ),
+                    ("refs/heads/main %s\n" % candidate["commit"]).encode("ascii"),
+                )
+                self.assertEqual(
+                    _bare_git_bytes(git_directory, "rev-list", "--count", "--all"),
+                    b"1\n",
+                )
+                self.assertNotIn(
+                    b"\nparent ",
+                    b"\n"
+                    + _bare_git_bytes(
+                        git_directory, "cat-file", "commit", candidate["commit"]
+                    ),
+                )
+                candidates.append(candidate)
+                candidate_bytes.append(
+                    {
+                        relative: (public_root / relative).read_bytes()
+                        for relative in PUBLIC_INVENTORY
+                    }
+                )
+        self.assertEqual(candidates[0]["commit"], candidates[1]["commit"])
+        self.assertEqual(candidates[0]["tree"], candidates[1]["tree"])
+        self.assertEqual(candidate_bytes[0], candidate_bytes[1])
 
 
 class V064PublicCiWorkflowContractTests(unittest.TestCase):
