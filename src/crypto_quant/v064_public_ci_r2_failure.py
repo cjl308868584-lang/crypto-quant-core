@@ -255,13 +255,33 @@ def _read_final(parent_fd: int, name: str, reason: str) -> bytes:
     except OSError as error:
         primary = V064PublicCiR2FailureError(reason)
         raise primary from error
+    except BaseException as error:
+        primary = error
+        raise
     finally:
         if descriptor is not None:
             try:
                 os.close(descriptor)
-            except OSError as error:
-                if primary is None:
+            except BaseException as error:
+                if primary is not None:
+                    try:
+                        primary.close_error = error
+                    except BaseException:
+                        pass
+                elif isinstance(error, OSError):
                     raise V064PublicCiR2FailureError(reason) from error
+                else:
+                    raise
+
+
+def _success_root_present(parent_fd: int) -> bool:
+    try:
+        os.stat("v064-public-ci-r2", dir_fd=parent_fd, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID") from error
 
 
 def load_v064_public_ci_r2_failure_root(root: Path) -> Dict[str, Any]:
@@ -269,11 +289,18 @@ def load_v064_public_ci_r2_failure_root(root: Path) -> Dict[str, Any]:
     directory = Path(root)
     if not directory.is_absolute() or not directory.is_dir():
         raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID")
-    if os.path.lexists(directory.parent / "v064-public-ci-r2"):
-        raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_SUCCESS_ROOT_PRESENT")
     root_fd = None
+    parent_fd = None
     primary = None
     try:
+        parent = directory.parent
+        parent_before = parent.lstat()
+        parent_fd = os.open(parent, os.O_RDONLY | _required_flag("O_DIRECTORY") | _required_flag("O_NOFOLLOW") | _required_flag("O_NONBLOCK"))
+        parent_opened = os.fstat(parent_fd)
+        if not stat.S_ISDIR(parent_opened.st_mode) or parent_opened.st_uid != os.getuid() or stat.S_IMODE(parent_opened.st_mode) & 0o022 or (parent_before.st_dev, parent_before.st_ino) != (parent_opened.st_dev, parent_opened.st_ino):
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID")
+        if _success_root_present(parent_fd):
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_SUCCESS_ROOT_PRESENT")
         root_before = directory.lstat()
         root_fd = os.open(directory, os.O_RDONLY | _required_flag("O_DIRECTORY") | _required_flag("O_NOFOLLOW") | _required_flag("O_NONBLOCK"))
         root_opened = os.fstat(root_fd)
@@ -294,6 +321,11 @@ def load_v064_public_ci_r2_failure_root(root: Path) -> Dict[str, Any]:
         root_after = directory.lstat()
         if (root_after.st_dev, root_after.st_ino, root_after.st_mtime_ns, root_after.st_ctime_ns) != (root_opened.st_dev, root_opened.st_ino, root_opened.st_mtime_ns, root_opened.st_ctime_ns):
             raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID")
+        if _success_root_present(parent_fd):
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_SUCCESS_ROOT_PRESENT")
+        parent_after = parent.lstat()
+        if (parent_after.st_dev, parent_after.st_ino, parent_after.st_mtime_ns, parent_after.st_ctime_ns) != (parent_opened.st_dev, parent_opened.st_ino, parent_opened.st_mtime_ns, parent_opened.st_ctime_ns):
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID")
         return copy.deepcopy(dict(record))
     except V064PublicCiR2FailureError as error:
         primary = error
@@ -301,13 +333,28 @@ def load_v064_public_ci_r2_failure_root(root: Path) -> Dict[str, Any]:
     except OSError as error:
         primary = V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID")
         raise primary from error
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        if root_fd is not None:
+        close_error = None
+        for descriptor in (root_fd, parent_fd):
+            if descriptor is None:
+                continue
             try:
-                os.close(root_fd)
-            except OSError as error:
-                if primary is None:
-                    raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID") from error
+                os.close(descriptor)
+            except BaseException as error:
+                if primary is not None:
+                    try:
+                        primary.close_error = error
+                    except BaseException:
+                        pass
+                else:
+                    close_error = error
+        if primary is None and close_error is not None:
+            if isinstance(close_error, OSError):
+                raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID") from close_error
+            raise close_error
 
 
 def load_v064_public_ci_r2_failure(path: Path) -> Dict[str, Any]:

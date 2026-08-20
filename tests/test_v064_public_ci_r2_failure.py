@@ -18,6 +18,7 @@ from crypto_quant.v064_public_ci_r2_failure import (
     load_v064_public_ci_r2_failure,
     load_v064_public_ci_r2_failure_root,
 )
+from crypto_quant import v064_public_ci_r2_failure
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +55,26 @@ def _write_all(descriptor, body):
         offset += written
 
 
+def _read_exact(descriptor, size):
+    body = bytearray()
+    while len(body) < size:
+        try:
+            chunk = os.read(descriptor, size - len(body))
+        except InterruptedError:
+            continue
+        if not chunk:
+            raise AssertionError("short fixture read")
+        body.extend(chunk)
+    while True:
+        try:
+            extra = os.read(descriptor, 1)
+        except InterruptedError:
+            continue
+        if extra:
+            raise AssertionError("fixture read has trailing bytes")
+        return bytes(body)
+
+
 def _publish_once(root, name, body):
     """Test-only ceremony for final R2 evidence names."""
     flags = os.O_NOFOLLOW | os.O_NONBLOCK
@@ -70,20 +91,18 @@ def _publish_once(root, name, body):
         except FileExistsError:
             before = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
             descriptor = os.open(name, os.O_RDONLY | flags, dir_fd=parent_fd)
-            existing = bytearray()
-            while len(existing) < len(body) + 1:
-                chunk = os.read(descriptor, len(body) + 1 - len(existing))
-                if not chunk:
-                    break
-                existing.extend(chunk)
+            try:
+                existing = _read_exact(descriptor, len(body))
+            except AssertionError:
+                existing = b""
             self_stat = os.fstat(descriptor)
             after = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-            if bytes(existing) != body or not stat.S_ISREG(self_stat.st_mode) or self_stat.st_uid != os.getuid() or self_stat.st_nlink != 1 or stat.S_IMODE(self_stat.st_mode) != 0o644 or (before.st_dev, before.st_ino) != (self_stat.st_dev, self_stat.st_ino) or (after.st_dev, after.st_ino) != (self_stat.st_dev, self_stat.st_ino):
+            if existing != body or not stat.S_ISREG(self_stat.st_mode) or self_stat.st_uid != os.getuid() or self_stat.st_nlink != 1 or stat.S_IMODE(self_stat.st_mode) != 0o644 or (before.st_dev, before.st_ino) != (self_stat.st_dev, self_stat.st_ino) or (after.st_dev, after.st_ino) != (self_stat.st_dev, self_stat.st_ino):
                 raise AssertionError("pre-existing final is not exact and trusted")
             return
         _write_all(descriptor, body)
         os.lseek(descriptor, 0, os.SEEK_SET)
-        if os.read(descriptor, len(body) + 1) != body:
+        if _read_exact(descriptor, len(body)) != body:
             raise AssertionError("same-fd readback mismatch")
         os.fsync(descriptor)
         os.fchmod(descriptor, 0o644)
@@ -265,6 +284,92 @@ class V064PublicCiR2FailureTests(unittest.TestCase):
             with mock.patch("tests.test_v064_public_ci_r2_failure.os.open", wraps=os.open) as opened:
                 _publish_once(root, "fixture.json", body)
             self.assertTrue(any(call.args[1] & expected == expected for call in opened.call_args_list))
+
+    def test_file_replay_preserves_unexpected_primary_through_close_failure(self):
+        real_close = os.close
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _publish_once(root, "fixture.json", b"fixture\n")
+            parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                with mock.patch("crypto_quant.v064_public_ci_r2_failure.os.read", side_effect=KeyboardInterrupt), mock.patch("crypto_quant.v064_public_ci_r2_failure.os.close", side_effect=OSError("close")):
+                    with self.assertRaises(KeyboardInterrupt):
+                        v064_public_ci_r2_failure._read_final(parent_fd, "fixture.json", "TEST")
+            finally:
+                real_close(parent_fd)
+
+    def test_root_replay_preserves_unexpected_primary_through_close_failure(self):
+        with mock.patch("crypto_quant.v064_public_ci_r2_failure.os.listdir", side_effect=KeyboardInterrupt), mock.patch("crypto_quant.v064_public_ci_r2_failure.os.close", side_effect=OSError("close")):
+            with self.assertRaises(KeyboardInterrupt):
+                load_v064_public_ci_r2_failure_root(ARTIFACT_ROOT)
+
+    def test_root_replay_closes_both_descriptors_after_first_close_failure(self):
+        real_close = os.close
+        closed = []
+
+        def close_once_then_fail(descriptor):
+            closed.append(descriptor)
+            if len(closed) == 5:
+                raise OSError("close")
+            return real_close(descriptor)
+
+        with mock.patch("crypto_quant.v064_public_ci_r2_failure.os.close", side_effect=close_once_then_fail):
+            with self.assertRaisesRegex(V064PublicCiR2FailureError, "^V064_PUBLIC_CI_R2_ROOT_INVALID$"):
+                load_v064_public_ci_r2_failure_root(ARTIFACT_ROOT)
+        self.assertEqual(len(closed), 6)
+
+    def test_loader_rechecks_success_root_after_private_stat_boundary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            artifacts = Path(temporary) / "artifacts"
+            root = artifacts / "v064-public-ci-r2-failure"
+            shutil.copytree(ARTIFACT_ROOT, root)
+            real_fstat = os.fstat
+            injected = False
+
+            def fstat_and_publish(descriptor):
+                nonlocal injected
+                value = real_fstat(descriptor)
+                if not injected:
+                    injected = True
+                    (artifacts / "v064-public-ci-r2").mkdir()
+                return value
+
+            with mock.patch("crypto_quant.v064_public_ci_r2_failure.os.fstat", side_effect=fstat_and_publish):
+                with self.assertRaisesRegex(V064PublicCiR2FailureError, "^V064_PUBLIC_CI_R2_SUCCESS_ROOT_PRESENT$"):
+                    load_v064_public_ci_r2_failure_root(root)
+
+    def test_test_only_publisher_new_final_retries_short_reads_and_eintr(self):
+        real_read = os.read
+        interrupted = False
+
+        def short_read(descriptor, count):
+            nonlocal interrupted
+            if not interrupted:
+                interrupted = True
+                raise InterruptedError()
+            return real_read(descriptor, min(1, count))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch("tests.test_v064_public_ci_r2_failure.os.read", side_effect=short_read):
+                _publish_once(root, "fixture.json", b"fixture\n")
+            self.assertEqual((root / "fixture.json").read_bytes(), b"fixture\n")
+
+    def test_test_only_publisher_rejects_special_or_untrusted_existing_final(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sentinel = root / "sentinel"
+            sentinel.write_bytes(b"unchanged")
+            cases = []
+            fifo = root / "fifo.json"; os.mkfifo(fifo); cases.append(fifo)
+            link = root / "link.json"; link.symlink_to(sentinel); cases.append(link)
+            hard = root / "hard.json"; os.link(sentinel, hard); cases.append(hard)
+            mode = root / "mode.json"; mode.write_bytes(b"fixture\n"); mode.chmod(0o600); cases.append(mode)
+            for path in cases:
+                with self.subTest(path=path.name):
+                    with self.assertRaises(Exception):
+                        _publish_once(root, path.name, b"fixture\n")
+                    self.assertEqual(sentinel.read_bytes(), b"unchanged")
 
 
 if __name__ == "__main__":
