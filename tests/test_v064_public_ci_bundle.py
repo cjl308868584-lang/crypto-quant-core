@@ -3,6 +3,7 @@ import hashlib
 import inspect
 import json
 import os
+import shlex
 import stat
 import subprocess
 import tempfile
@@ -217,6 +218,173 @@ def _extract_exact_preflight(workflow_bytes):
     if not script or script[-1] != b"PY\n":
         raise AssertionError("preflight body is incomplete")
     return b"".join(script)
+
+
+def _extract_workflow_step(workflow_bytes, name):
+    if b"\0" in workflow_bytes or b"\r" in workflow_bytes:
+        raise AssertionError("workflow must be LF-only text")
+    lines = workflow_bytes.splitlines(keepends=True)
+    step = ("      - name: %s\n" % name).encode("utf-8")
+    if lines.count(step) != 1:
+        raise AssertionError("workflow step must be unique")
+    index = lines.index(step)
+    if lines[index + 1 : index + 3] != [
+        b"        shell: bash\n",
+        b"        run: |\n",
+    ]:
+        raise AssertionError("workflow step header changed")
+    script = []
+    for line in lines[index + 3 :]:
+        if line.startswith(b"          "):
+            script.append(line[10:])
+            continue
+        break
+    if not script:
+        raise AssertionError("workflow step body is empty")
+    return b"".join(script)
+
+
+def _write_executable(path, body):
+    path.write_text(body, encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _write_fake_python(path, version, identity, log):
+    _write_executable(
+        path,
+        """#!/bin/bash
+set -euo pipefail
+case "${1-}" in
+  -c) printf '%%s\\n' '%s'; phase=precheck ;;
+  --version) printf 'Python %s.0\\n'; phase=version ;;
+  -m) phase=test ;;
+  *) phase=other ;;
+esac
+printf '%%s|%%s|%%s\\n' '%s' "$phase" "$*" >> '%s'
+"""
+        % (version, version, identity, log),
+    )
+
+
+def _fixed_owner_fixture(temporary, setup_version, child_path_mode):
+    root = Path(temporary)
+    runner_bin = root / "runner-bin"
+    harness_bin = root / "harness-bin"
+    system_bin = root / "system-bin"
+    poison_bin = root / "poison-bin"
+    workspace = root / "workspace"
+    for directory in (runner_bin, harness_bin, system_bin, poison_bin, workspace):
+        directory.mkdir()
+    invocation_log = root / "interpreter.log"
+    sudo_log = root / "sudo.log"
+    bash_env = root / "bash-env"
+    bash_env.write_text(
+        'cd() { builtin cd "$FIXTURE_WORKSPACE"; }\n', encoding="utf-8"
+    )
+    _write_fake_python(
+        runner_bin / "python", setup_version, "setup-%s" % setup_version, invocation_log
+    )
+    _write_fake_python(system_bin / "python", "3.12", "system", invocation_log)
+    _write_fake_python(poison_bin / "python", "9.9", "poison", invocation_log)
+    for name in ("uname", "ldd", "head"):
+        _write_executable(
+            system_bin / name,
+            "#!/bin/bash\nprintf '%s fixture\\n'\n" % name,
+        )
+    _write_executable(
+        harness_bin / "sudo",
+        """#!/usr/bin/python3
+import json
+import os
+import subprocess
+import sys
+
+arguments = sys.argv[1:]
+with open(os.environ["FIXTURE_SUDO_LOG"], "a", encoding="utf-8") as stream:
+    stream.write(json.dumps(arguments, separators=(",", ":")) + "\\n")
+if arguments[:3] != ["-u", "#501", "env"]:
+    raise SystemExit(90)
+arguments = arguments[3:]
+assignments = {}
+while arguments and arguments[0] != "/bin/bash":
+    key, separator, value = arguments.pop(0).partition("=")
+    if not separator or key == "PATH":
+        raise SystemExit(91)
+    assignments[key] = value
+if arguments[:2] != ["/bin/bash", "-c"]:
+    raise SystemExit(92)
+mode = os.environ["FIXTURE_MODE"]
+if mode == "current":
+    if len(arguments) != 5:
+        raise SystemExit(92)
+    _, _, child_script, child_argv0, child_python = arguments
+    marker = '\"$1\" --version;'
+    if child_script.count(marker) != 1:
+        raise SystemExit(93)
+    child_script = "set -euo pipefail; " + marker + child_script.split(marker, 1)[1]
+elif mode == "historical":
+    if len(arguments) != 3:
+        raise SystemExit(92)
+    _, _, child_script = arguments
+    child_argv0 = "v064-r2-fixed-owner"
+    child_python = ""
+else:
+    raise SystemExit(94)
+child_environment = dict(assignments)
+child_environment.update({
+    "BASH_ENV": os.environ["FIXTURE_BASH_ENV"],
+    "FIXTURE_WORKSPACE": os.environ["FIXTURE_WORKSPACE"],
+})
+child_path = os.environ["FIXTURE_CHILD_PATH"]
+if child_path:
+    child_environment["PATH"] = child_path
+result = subprocess.run(
+    ["/bin/bash", "-c", child_script, child_argv0, child_python],
+    env=child_environment,
+)
+raise SystemExit(result.returncode)
+""",
+    )
+    child_path = {
+        "missing": "",
+        "poisoned": str(poison_bin),
+        "system": str(system_bin),
+    }[child_path_mode]
+    environment = {
+        "PATH": "%s:%s:%s" % (runner_bin, harness_bin, system_bin),
+        "LC_ALL": "C",
+        "LANG": "C",
+        "FIXTURE_BASH_ENV": str(bash_env),
+        "FIXTURE_CHILD_PATH": child_path,
+        "FIXTURE_SUDO_LOG": str(sudo_log),
+        "FIXTURE_WORKSPACE": str(workspace),
+    }
+    return environment, invocation_log, sudo_log
+
+
+def _run_current_interpreter_handoff(workflow_bytes, matrix_version, environment, cwd):
+    fixed_owner = _extract_workflow_step(
+        workflow_bytes, "Run fixed-owner public boundary"
+    )
+    marker = b'python_bin="$(command -v python)"\n'
+    if fixed_owner.count(marker) != 1:
+        raise AssertionError("interpreter capture must be unique")
+    handoff = fixed_owner[fixed_owner.index(marker) :]
+    expression = b"${{ matrix.python-version }}"
+    if handoff.count(expression) != 1:
+        raise AssertionError("matrix version expression must be unique")
+    rendered = b"set -euo pipefail\n" + handoff.replace(
+        expression, matrix_version.encode("ascii")
+    )
+    current_environment = dict(environment, FIXTURE_MODE="current")
+    return subprocess.run(
+        ("/bin/bash", "-c", rendered),
+        cwd=cwd,
+        env=current_environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
 
 
 def _write_closed_checkout(destination, source_commit, use_worktree):
@@ -1213,6 +1381,163 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
 
 
 class V064PublicCiWorkflowContractTests(unittest.TestCase):
+    def test_historical_r2_child_resolves_system_python_after_path_is_dropped(self):
+        workflow = _git_bytes(
+            ROOT,
+            "show",
+            "5bc01c9:public_ci/v064/.github/workflows/ci.yml",
+        )
+        self.assertEqual(
+            _git_bytes(ROOT, "hash-object", "--stdin", input_bytes=workflow)
+            .decode("ascii")
+            .strip(),
+            "ba5b6851ed53ad79100409b92c78c09c07608ed2",
+        )
+        fixed_owner = _extract_workflow_step(
+            workflow, "Run fixed-owner public boundary"
+        )
+        sudo_lines = [line for line in fixed_owner.splitlines() if line.startswith(b"sudo -u ")]
+        self.assertEqual(len(sudo_lines), 1)
+        self.assertIn(b"python --version", sudo_lines[0])
+        self.assertIn(b"exec python -m unittest", sudo_lines[0])
+        with tempfile.TemporaryDirectory() as temporary:
+            environment, invocation_log, sudo_log = _fixed_owner_fixture(
+                temporary, "3.9", "system"
+            )
+            environment["FIXTURE_MODE"] = "historical"
+            runner_python = str(Path(temporary) / "runner-bin" / "python")
+            command = (
+                b'test "$(command -v python)" = "$EXPECTED_SETUP_PYTHON"\n'
+                + sudo_lines[0]
+                + b"\n"
+            )
+            result = subprocess.run(
+                ("/bin/bash", "-c", command),
+                cwd=temporary,
+                env=dict(environment, EXPECTED_SETUP_PYTHON=runner_python),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            invocations = invocation_log.read_text(encoding="utf-8").splitlines()
+            sudo_invocations = sudo_log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+        self.assertEqual(
+            invocations,
+            [
+                "system|version|--version",
+                "system|test|-m unittest -v tests/test_v064_linux_supersession_publish.py",
+            ],
+        )
+        self.assertEqual(len(sudo_invocations), 1)
+
+    def test_workflow_carries_one_absolute_matrix_interpreter_as_fixed_argument(self):
+        workflow = (TEMPLATE_ROOT / ".github/workflows/ci.yml").read_bytes()
+        fixed_owner = _extract_workflow_step(
+            workflow, "Run fixed-owner public boundary"
+        )
+        expected_handoff = b"""python_bin="$(command -v python)"
+test -n "$python_bin"
+case "$python_bin" in /*) ;; *) exit 1 ;; esac
+test -x "$python_bin"
+test "$("$python_bin" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" = "${{ matrix.python-version }}"
+sudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home \\
+  V064_PUBLIC_LINUX_REQUIRED=1 PYTHONPATH=/opt/v064-public-ci-workspace/src:/opt/v064-public-ci-workspace/tests \\
+  /bin/bash -c 'set -euo pipefail; /usr/bin/uname -sr; /usr/bin/ldd --version | /usr/bin/head -1; "$1" --version; cd /opt/v064-public-ci-workspace; exec "$1" -m unittest -v tests/test_v064_linux_supersession_publish.py' \\
+  v064-fixed-owner "$python_bin"
+"""
+        self.assertTrue(fixed_owner.endswith(expected_handoff))
+        handoff = fixed_owner[fixed_owner.index(b'python_bin="$(command -v python)"') :]
+        self.assertEqual(handoff.count(b'python_bin="$(command -v python)"'), 1)
+        self.assertNotIn(b" PATH=", handoff)
+        self.assertNotIn(b"/usr/bin/env python", handoff)
+        sudo_command = b" ".join(
+            line.rstrip(b" \\") for line in handoff.splitlines() if line
+        )
+        arguments = shlex.split(sudo_command.decode("utf-8"))
+        child_index = arguments.index("/bin/bash")
+        child = arguments[child_index + 2]
+        self.assertNotIn("python", child.replace('"$1"', ""))
+        self.assertEqual(arguments[-2:], ["v064-fixed-owner", "$python_bin"])
+
+    def test_missing_child_path_uses_exact_fixed_39_binary_once_for_tests(self):
+        workflow = (TEMPLATE_ROOT / ".github/workflows/ci.yml").read_bytes()
+        with tempfile.TemporaryDirectory() as temporary:
+            environment, invocation_log, sudo_log = _fixed_owner_fixture(
+                temporary, "3.9", "missing"
+            )
+            result = _run_current_interpreter_handoff(
+                workflow, "3.9", environment, temporary
+            )
+            invocations = invocation_log.read_text(encoding="utf-8").splitlines()
+            sudo_invocations = sudo_log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+        self.assertEqual([line.split("|", 2)[:2] for line in invocations], [
+            ["setup-3.9", "precheck"],
+            ["setup-3.9", "version"],
+            ["setup-3.9", "test"],
+        ])
+        self.assertEqual(sum("|test|" in line for line in invocations), 1)
+        self.assertEqual(len(sudo_invocations), 1)
+
+    def test_poisoned_child_path_uses_exact_fixed_312_binary_once_for_tests(self):
+        workflow = (TEMPLATE_ROOT / ".github/workflows/ci.yml").read_bytes()
+        with tempfile.TemporaryDirectory() as temporary:
+            environment, invocation_log, sudo_log = _fixed_owner_fixture(
+                temporary, "3.12", "poisoned"
+            )
+            result = _run_current_interpreter_handoff(
+                workflow, "3.12", environment, temporary
+            )
+            invocations = invocation_log.read_text(encoding="utf-8").splitlines()
+            sudo_invocations = sudo_log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+        self.assertEqual([line.split("|", 2)[:2] for line in invocations], [
+            ["setup-3.12", "precheck"],
+            ["setup-3.12", "version"],
+            ["setup-3.12", "test"],
+        ])
+        self.assertNotIn("poison|", "\n".join(invocations))
+        self.assertEqual(sum("|test|" in line for line in invocations), 1)
+        self.assertEqual(len(sudo_invocations), 1)
+
+    def test_relative_and_non_executable_interpreter_candidates_fail_before_sudo(self):
+        workflow = (TEMPLATE_ROOT / ".github/workflows/ci.yml").read_bytes()
+        for candidate_kind in ("relative", "non-executable"):
+            with self.subTest(candidate_kind=candidate_kind), tempfile.TemporaryDirectory() as temporary:
+                environment, invocation_log, sudo_log = _fixed_owner_fixture(
+                    temporary, "3.9", "missing"
+                )
+                runner_python = Path(temporary) / "runner-bin" / "python"
+                if candidate_kind == "relative":
+                    environment["PATH"] = "runner-bin"
+                else:
+                    runner_python.chmod(0o644)
+                    environment["PATH"] = str(runner_python.parent)
+                result = _run_current_interpreter_handoff(
+                    workflow, "3.9", environment, temporary
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(sudo_log.exists())
+                self.assertFalse(invocation_log.exists())
+
+    def test_reported_312_for_39_matrix_fails_before_sudo(self):
+        workflow = (TEMPLATE_ROOT / ".github/workflows/ci.yml").read_bytes()
+        with tempfile.TemporaryDirectory() as temporary:
+            environment, invocation_log, sudo_log = _fixed_owner_fixture(
+                temporary, "3.12", "missing"
+            )
+            result = _run_current_interpreter_handoff(
+                workflow, "3.9", environment, temporary
+            )
+            invocations = invocation_log.read_text(encoding="utf-8").splitlines()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(
+            [line.split("|", 2)[:2] for line in invocations],
+            [["setup-3.12", "precheck"]],
+        )
+        self.assertFalse(sudo_log.exists())
+
     def test_public_readme_names_r3_engineering_purpose_and_failure_ancestry(self):
         body = (TEMPLATE_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("R3 is an engineering correction candidate", body)
@@ -1331,10 +1656,6 @@ class V064PublicCiWorkflowContractTests(unittest.TestCase):
         self.assertIn("! getent passwd 501", workflow)
         self.assertIn("! getent group 501", workflow)
         self.assertIn("V064_PUBLIC_LINUX_REQUIRED=1", workflow)
-        self.assertIn(
-            "cd /opt/v064-public-ci-workspace && python --version && uname -sr && ldd --version | head -1 && exec python -m unittest -v tests/test_v064_linux_supersession_publish.py",
-            workflow,
-        )
         for required in (
             '"hash-object", "--", item["path"]',
             "PUBLIC_BLOB_IDENTITY_INVALID",
@@ -1354,7 +1675,7 @@ class V064PublicCiWorkflowContractTests(unittest.TestCase):
             self.assertIn(required, workflow)
         self.assertEqual(
             workflow.count(
-                "python -m unittest -v tests/test_v064_linux_supersession_publish.py"
+                '"$1" -m unittest -v tests/test_v064_linux_supersession_publish.py'
             ),
             1,
         )

@@ -147,4 +147,12 @@ jobs:
           sudo chown -R 501:501 /opt/v064-public-ci-workspace
           sudo chmod 700 /opt/v064-public-ci-workspace
           sudo install -d -o 501 -g 501 -m 755 /opt/v064-public-ci-home/artifacts/challenger-replacement
-          sudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home V064_PUBLIC_LINUX_REQUIRED=1 PYTHONPATH=/opt/v064-public-ci-workspace/src:/opt/v064-public-ci-workspace/tests /bin/bash -c 'cd /opt/v064-public-ci-workspace && python --version && uname -sr && ldd --version | head -1 && exec python -m unittest -v tests/test_v064_linux_supersession_publish.py'
+          python_bin="$(command -v python)"
+          test -n "$python_bin"
+          case "$python_bin" in /*) ;; *) exit 1 ;; esac
+          test -x "$python_bin"
+          test "$("$python_bin" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" = "${{ matrix.python-version }}"
+          sudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home \
+            V064_PUBLIC_LINUX_REQUIRED=1 PYTHONPATH=/opt/v064-public-ci-workspace/src:/opt/v064-public-ci-workspace/tests \
+            /bin/bash -c 'set -euo pipefail; /usr/bin/uname -sr; /usr/bin/ldd --version | /usr/bin/head -1; "$1" --version; cd /opt/v064-public-ci-workspace; exec "$1" -m unittest -v tests/test_v064_linux_supersession_publish.py' \
+            v064-fixed-owner "$python_bin"
