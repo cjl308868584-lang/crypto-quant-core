@@ -2,9 +2,12 @@ import hashlib
 import inspect
 import json
 import os
+import shutil
 import stat
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from jsonschema import Draft202012Validator
 
@@ -18,11 +21,6 @@ from crypto_quant.v064_public_ci_r2_failure import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURES = {
-    "run": Path("/private/tmp/v064-r2-failure-32328770160-run-api.json"),
-    "jobs": Path("/private/tmp/v064-r2-failure-32328770160-jobs-api.json"),
-    "log": Path("/private/tmp/v064-r2-run-32328770160.log"),
-}
 RAW = {
     "run": (363, "310d2cad6840dc80d4cbcd6cc229d32704fd3c8854b44b6bbd893b708d4f9986"),
     "jobs": (2312, "3078337f2f8e5aa9add1b099391e19125d5dcdeaef803e1f50d9666716ad773c"),
@@ -35,6 +33,11 @@ ARTIFACT_NAMES = {
     "record": "v064-public-ci-r2-failure-record-v1.json",
 }
 ARTIFACT_ROOT = ROOT / "artifacts" / "v064-public-ci-r2-failure"
+PRIVATE_TMP_FIXTURES = {
+    "run": Path("/private/tmp/v064-r2-failure-32328770160-run-api.json"),
+    "jobs": Path("/private/tmp/v064-r2-failure-32328770160-jobs-api.json"),
+    "log": Path("/private/tmp/v064-r2-run-32328770160.log"),
+}
 
 
 def _canonical(value):
@@ -53,21 +56,29 @@ def _write_all(descriptor, body):
 
 def _publish_once(root, name, body):
     """Test-only ceremony for final R2 evidence names."""
-    parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    flags = os.O_NOFOLLOW | os.O_NONBLOCK
+    parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | flags)
     descriptor = None
     try:
         try:
             descriptor = os.open(
                 name,
-                os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                os.O_RDWR | os.O_CREAT | os.O_EXCL | flags,
                 0o600,
                 dir_fd=parent_fd,
             )
         except FileExistsError:
-            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
-            existing = os.read(descriptor, len(body) + 1)
+            before = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            descriptor = os.open(name, os.O_RDONLY | flags, dir_fd=parent_fd)
+            existing = bytearray()
+            while len(existing) < len(body) + 1:
+                chunk = os.read(descriptor, len(body) + 1 - len(existing))
+                if not chunk:
+                    break
+                existing.extend(chunk)
             self_stat = os.fstat(descriptor)
-            if existing != body or not stat.S_ISREG(self_stat.st_mode) or self_stat.st_uid != os.getuid() or self_stat.st_nlink != 1 or stat.S_IMODE(self_stat.st_mode) != 0o644:
+            after = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            if bytes(existing) != body or not stat.S_ISREG(self_stat.st_mode) or self_stat.st_uid != os.getuid() or self_stat.st_nlink != 1 or stat.S_IMODE(self_stat.st_mode) != 0o644 or (before.st_dev, before.st_ino) != (self_stat.st_dev, self_stat.st_ino) or (after.st_dev, after.st_ino) != (self_stat.st_dev, self_stat.st_ino):
                 raise AssertionError("pre-existing final is not exact and trusted")
             return
         _write_all(descriptor, body)
@@ -91,7 +102,11 @@ def _publish_once(root, name, body):
 class V064PublicCiR2FailureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.bodies = {name: path.read_bytes() for name, path in FIXTURES.items()}
+        cls.bodies = {
+            "run": (ARTIFACT_ROOT / ARTIFACT_NAMES["run"]).read_bytes(),
+            "jobs": (ARTIFACT_ROOT / ARTIFACT_NAMES["jobs"]).read_bytes(),
+            "log": (ARTIFACT_ROOT / ARTIFACT_NAMES["log"]).read_bytes(),
+        }
         for name, body in cls.bodies.items():
             if len(body) != RAW[name][0]:
                 raise AssertionError("unexpected %s fixture size" % name)
@@ -102,6 +117,10 @@ class V064PublicCiR2FailureTests(unittest.TestCase):
                 raise AssertionError("%s fixture must end in LF" % name)
             if cls.bodies[name] != _canonical(json.loads(cls.bodies[name])):
                 raise AssertionError("%s fixture must be canonical JSON" % name)
+        if all(path.is_file() for path in PRIVATE_TMP_FIXTURES.values()):
+            for name, path in PRIVATE_TMP_FIXTURES.items():
+                if path.read_bytes() != cls.bodies[name]:
+                    raise AssertionError("private temporary %s fixture drifted" % name)
 
     def derive(self, **changes):
         bodies = dict(self.bodies)
@@ -160,6 +179,22 @@ class V064PublicCiR2FailureTests(unittest.TestCase):
         with self.assertRaisesRegex(V064PublicCiR2FailureError, "^V064_PUBLIC_CI_R2_RUN_INVALID$"):
             self.derive(run=noncanonical)
 
+    def test_rejects_well_formed_raw_hash_only_drift_after_semantic_parsing(self):
+        drifted = self.bodies["log"].replace(b"03:35:31", b"03:35:32", 1)
+        with self.assertRaisesRegex(V064PublicCiR2FailureError, "^V064_PUBLIC_CI_R2_RAW_EVIDENCE_INVALID$"):
+            self.derive(log=drifted)
+
+    def test_requires_setup_python_and_fixed_owner_test_completion_markers(self):
+        cases = (
+            (b"Successfully set up CPython (3.9.25)", b"Successfully set up CPython (3.9.24)"),
+            (b"Ran 16 tests in", b"Ran 15 tests in"),
+            (b"Z OK\n", b"Z NO\n"),
+        )
+        for old, new in cases:
+            with self.subTest(old=old):
+                with self.assertRaisesRegex(V064PublicCiR2FailureError, "^V064_PUBLIC_CI_R2_LOG_INVALID$"):
+                    self.derive(log=self.bodies["log"].replace(old, new, 1))
+
     def test_derivation_api_accepts_only_the_three_raw_byte_inputs(self):
         signature = inspect.signature(derive_v064_public_ci_r2_failure)
         self.assertEqual(tuple(signature.parameters), ("run_bytes", "jobs_bytes", "log_bytes"))
@@ -171,18 +206,65 @@ class V064PublicCiR2FailureTests(unittest.TestCase):
         self.assertEqual(config, package)
         Draft202012Validator(json.loads(config)).validate(self.derive())
 
+    def test_schema_rejects_reordered_jobs_and_nonfrozen_raw_identity(self):
+        schema = Draft202012Validator(json.loads((ROOT / "config/v064-public-ci-r2-failure-record-v1.schema.json").read_bytes()))
+        reordered = self.derive()
+        reordered["jobs"].reverse()
+        with self.assertRaises(Exception):
+            schema.validate(reordered)
+        altered = self.derive()
+        altered["raw_evidence"]["run_api"]["path"] = "other.json"
+        with self.assertRaises(Exception):
+            schema.validate(altered)
+
     def test_test_only_publication_then_production_loader_replays_exact_files(self):
         record = self.derive()
-        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
-        for key in ("run", "jobs", "log"):
-            _publish_once(ARTIFACT_ROOT, ARTIFACT_NAMES[key], self.bodies[key])
-        _publish_once(ARTIFACT_ROOT, ARTIFACT_NAMES["record"], _canonical(record))
-        for key in ("run", "jobs", "log"):
-            path = ARTIFACT_ROOT / ARTIFACT_NAMES[key]
-            self.assertEqual(path.read_bytes(), self.bodies[key])
-            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
-        self.assertEqual(load_v064_public_ci_r2_failure_root(ARTIFACT_ROOT), record)
-        self.assertEqual(load_v064_public_ci_r2_failure(ARTIFACT_ROOT / ARTIFACT_NAMES["record"]), record)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts" / "v064-public-ci-r2-failure"
+            root.mkdir(parents=True)
+            for key in ("run", "jobs", "log"):
+                _publish_once(root, ARTIFACT_NAMES[key], self.bodies[key])
+            _publish_once(root, ARTIFACT_NAMES["record"], _canonical(record))
+            for key in ("run", "jobs", "log"):
+                path = root / ARTIFACT_NAMES[key]
+                self.assertEqual(path.read_bytes(), self.bodies[key])
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
+            self.assertEqual(load_v064_public_ci_r2_failure_root(root), record)
+            self.assertEqual(load_v064_public_ci_r2_failure(root / ARTIFACT_NAMES["record"]), record)
+
+    def test_loader_requires_exact_inventory_and_absent_formal_success_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            artifacts = Path(temporary) / "artifacts"
+            root = artifacts / "v064-public-ci-r2-failure"
+            shutil.copytree(ARTIFACT_ROOT, root)
+            self.assertEqual(load_v064_public_ci_r2_failure_root(root)["reason_code"], "PUBLIC_MATRIX_INTERPRETER_IDENTITY_MISMATCH")
+            (root / "unexpected.json").write_text("{}\n", encoding="utf-8")
+            with self.assertRaisesRegex(V064PublicCiR2FailureError, "^V064_PUBLIC_CI_R2_ROOT_INVENTORY_INVALID$"):
+                load_v064_public_ci_r2_failure_root(root)
+            (root / "unexpected.json").unlink()
+            (artifacts / "v064-public-ci-r2").mkdir()
+            with self.assertRaisesRegex(V064PublicCiR2FailureError, "^V064_PUBLIC_CI_R2_SUCCESS_ROOT_PRESENT$"):
+                load_v064_public_ci_r2_failure_root(root)
+            (artifacts / "v064-public-ci-r2").rmdir()
+            (artifacts / "v064-public-ci-r2").symlink_to("missing-success-root")
+            with self.assertRaisesRegex(V064PublicCiR2FailureError, "^V064_PUBLIC_CI_R2_SUCCESS_ROOT_PRESENT$"):
+                load_v064_public_ci_r2_failure_root(root)
+
+    def test_final_replay_requires_no_follow_and_nonblocking_open(self):
+        expected = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        with mock.patch("crypto_quant.v064_public_ci_r2_failure.os.open", wraps=os.open) as opened:
+            self.assertEqual(load_v064_public_ci_r2_failure_root(ARTIFACT_ROOT)["status"], "PUBLIC_LINUX_PORTABILITY_WITNESS_DID_NOT_PASS")
+        self.assertTrue(any(call.args[1] & expected == expected for call in opened.call_args_list))
+
+    def test_test_only_publisher_replays_existing_final_without_blocking(self):
+        body = b"fixture\n"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _publish_once(root, "fixture.json", body)
+            expected = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+            with mock.patch("tests.test_v064_public_ci_r2_failure.os.open", wraps=os.open) as opened:
+                _publish_once(root, "fixture.json", body)
+            self.assertTrue(any(call.args[1] & expected == expected for call in opened.call_args_list))
 
 
 if __name__ == "__main__":

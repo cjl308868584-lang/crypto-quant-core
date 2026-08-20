@@ -152,7 +152,11 @@ def _parse_log(body: bytes) -> list:
     timestamp = re.compile(r"^\ufeff?[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z (.*)$")
     for line in text.splitlines():
         parts = line.split("\t", 2)
-        if len(parts) != 3 or parts[1] not in {"Verify closed bundle before repository imports", "Run fixed-owner public boundary"}:
+        if len(parts) != 3 or parts[1] not in {
+            "Verify closed bundle before repository imports",
+            "Run fixed-owner public boundary",
+            "Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+        }:
             continue
         version = parts[0].removeprefix("portability (").removesuffix(")")
         match = timestamp.fullmatch(parts[2])
@@ -169,9 +173,17 @@ def _parse_log(body: bytes) -> list:
     for version, _job_id in _JOBS:
         preflight = [message for step, message in captured[version] if step == "Verify closed bundle before repository imports"]
         boundary = [message for step, message in captured[version] if step == "Run fixed-owner public boundary"]
-        if any(preflight.count(marker) != 1 for marker in markers) or boundary.count("Python 3.12.3") != 1:
+        if (
+            any(preflight.count(marker) != 1 for marker in markers)
+            or boundary.count("Python 3.12.3") != 1
+            or sum(bool(re.fullmatch(r"Ran 16 tests in [0-9]+(?:\.[0-9]+)?s", item)) for item in boundary) != 1
+            or boundary.count("OK") != 1
+        ):
             raise V064PublicCiR2FailureError(reason)
         observed.append("3.12.3")
+    setup = [message for step, message in captured["3.9"] if step == "Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"]
+    if setup.count("Successfully set up CPython (3.9.25)") != 1:
+        raise V064PublicCiR2FailureError(reason)
     return observed
 
 
@@ -180,6 +192,9 @@ def derive_v064_public_ci_r2_failure(*, run_bytes: bytes, jobs_bytes: bytes, log
     run = _parse_run(run_bytes)
     jobs = _parse_jobs(jobs_bytes)
     observed = _parse_log(log_bytes)
+    for name, body in (("run_api", run_bytes), ("jobs_api", jobs_bytes), ("run_log", log_bytes)):
+        if (len(body), hashlib.sha256(body).hexdigest()) != _RAW[name]:
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_RAW_EVIDENCE_INVALID")
     value: Dict[str, Any] = {
         "$schema": "./v064-public-ci-r2-failure-record-v1.schema.json",
         "schema_version": "1.0.0",
@@ -195,6 +210,8 @@ def derive_v064_public_ci_r2_failure(*, run_bytes: bytes, jobs_bytes: bytes, log
         "observed_fixed_owner_versions": observed,
         "jobs": [{"python_version": version, "job_id": job["id"], "github_conclusion": job["conclusion"], "observed_fixed_owner_version": observed[index]} for index, ((version, _job_id), job) in enumerate(zip(_JOBS, jobs))],
         "raw_evidence": {"run_api": _raw("run_api", run_bytes), "jobs_api": _raw("jobs_api", jobs_bytes), "run_log": _raw("run_log", log_bytes)},
+        "acquisition": {"stderr": {"size": 0, "sha256": hashlib.sha256(b"").hexdigest()}},
+        "setup_python": {"python_version": "3.9", "installed_version": "3.9.25"},
         "success_witness_published": False,
         "safety": {"production_activation": False, "credentials_present": False, "broker_allowed": False, "orders_allowed": False, "runtime_state_write_allowed": False},
     }
@@ -203,16 +220,21 @@ def derive_v064_public_ci_r2_failure(*, run_bytes: bytes, jobs_bytes: bytes, log
     return value
 
 
-def _read_final(path: Path, reason: str) -> bytes:
-    requested = Path(path)
-    if not requested.is_absolute():
-        raise V064PublicCiR2FailureError(reason)
+def _required_flag(name: str) -> int:
+    value = getattr(os, name, None)
+    if not isinstance(value, int) or not value:
+        raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_UNSUPPORTED")
+    return value
+
+
+def _read_final(parent_fd: int, name: str, reason: str) -> bytes:
     descriptor = None
+    primary = None
     try:
-        before = requested.lstat()
+        before = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
         if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_nlink != 1 or stat.S_IMODE(before.st_mode) != 0o644 or not 0 < before.st_size <= _MAX_BYTES:
             raise V064PublicCiR2FailureError(reason)
-        descriptor = os.open(requested, os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = os.open(name, os.O_RDONLY | _required_flag("O_NOFOLLOW") | _required_flag("O_NONBLOCK"), dir_fd=parent_fd)
         opened = os.fstat(descriptor)
         if (opened.st_dev, opened.st_ino, opened.st_size) != (before.st_dev, before.st_ino, before.st_size) or not stat.S_ISREG(opened.st_mode) or opened.st_uid != os.getuid() or opened.st_nlink != 1 or stat.S_IMODE(opened.st_mode) != 0o644:
             raise V064PublicCiR2FailureError(reason)
@@ -223,17 +245,23 @@ def _read_final(path: Path, reason: str) -> bytes:
                 raise V064PublicCiR2FailureError(reason)
             body.extend(chunk)
         after = os.fstat(descriptor)
-        attached = requested.lstat()
+        attached = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
         if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns) != (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns) or (attached.st_dev, attached.st_ino) != (opened.st_dev, opened.st_ino):
             raise V064PublicCiR2FailureError(reason)
         return bytes(body)
-    except V064PublicCiR2FailureError:
+    except V064PublicCiR2FailureError as error:
+        primary = error
         raise
     except OSError as error:
-        raise V064PublicCiR2FailureError(reason) from error
+        primary = V064PublicCiR2FailureError(reason)
+        raise primary from error
     finally:
         if descriptor is not None:
-            os.close(descriptor)
+            try:
+                os.close(descriptor)
+            except OSError as error:
+                if primary is None:
+                    raise V064PublicCiR2FailureError(reason) from error
 
 
 def load_v064_public_ci_r2_failure_root(root: Path) -> Dict[str, Any]:
@@ -241,20 +269,45 @@ def load_v064_public_ci_r2_failure_root(root: Path) -> Dict[str, Any]:
     directory = Path(root)
     if not directory.is_absolute() or not directory.is_dir():
         raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID")
-    record_body = _read_final(directory / _ROOT_NAMES["record"], "V064_PUBLIC_CI_R2_RECORD_PATH_INVALID")
-    record = _json(record_body, "V064_PUBLIC_CI_R2_RECORD_INVALID")
-    if tuple(_validator().iter_errors(record)):
-        raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_RECORD_SCHEMA_INVALID")
-    run = _read_final(directory / _ROOT_NAMES["run_api"], "V064_PUBLIC_CI_R2_RAW_PATH_INVALID")
-    jobs = _read_final(directory / _ROOT_NAMES["jobs_api"], "V064_PUBLIC_CI_R2_RAW_PATH_INVALID")
-    log = _read_final(directory / _ROOT_NAMES["run_log"], "V064_PUBLIC_CI_R2_RAW_PATH_INVALID")
-    for name, body in (("run_api", run), ("jobs_api", jobs), ("run_log", log)):
-        if (len(body), hashlib.sha256(body).hexdigest()) != _RAW[name]:
-            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_RAW_EVIDENCE_INVALID")
-    derived = derive_v064_public_ci_r2_failure(run_bytes=run, jobs_bytes=jobs, log_bytes=log)
-    if record != derived:
-        raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_RECORD_MISMATCH")
-    return copy.deepcopy(dict(record))
+    if os.path.lexists(directory.parent / "v064-public-ci-r2"):
+        raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_SUCCESS_ROOT_PRESENT")
+    root_fd = None
+    primary = None
+    try:
+        root_before = directory.lstat()
+        root_fd = os.open(directory, os.O_RDONLY | _required_flag("O_DIRECTORY") | _required_flag("O_NOFOLLOW") | _required_flag("O_NONBLOCK"))
+        root_opened = os.fstat(root_fd)
+        if not stat.S_ISDIR(root_opened.st_mode) or root_opened.st_uid != os.getuid() or stat.S_IMODE(root_opened.st_mode) & 0o022 or (root_before.st_dev, root_before.st_ino) != (root_opened.st_dev, root_opened.st_ino):
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID")
+        if set(os.listdir(root_fd)) != set(_ROOT_NAMES.values()):
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVENTORY_INVALID")
+        record_body = _read_final(root_fd, _ROOT_NAMES["record"], "V064_PUBLIC_CI_R2_RECORD_PATH_INVALID")
+        record = _json(record_body, "V064_PUBLIC_CI_R2_RECORD_INVALID")
+        if tuple(_validator().iter_errors(record)):
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_RECORD_SCHEMA_INVALID")
+        run = _read_final(root_fd, _ROOT_NAMES["run_api"], "V064_PUBLIC_CI_R2_RAW_PATH_INVALID")
+        jobs = _read_final(root_fd, _ROOT_NAMES["jobs_api"], "V064_PUBLIC_CI_R2_RAW_PATH_INVALID")
+        log = _read_final(root_fd, _ROOT_NAMES["run_log"], "V064_PUBLIC_CI_R2_RAW_PATH_INVALID")
+        derived = derive_v064_public_ci_r2_failure(run_bytes=run, jobs_bytes=jobs, log_bytes=log)
+        if record != derived:
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_RECORD_MISMATCH")
+        root_after = directory.lstat()
+        if (root_after.st_dev, root_after.st_ino, root_after.st_mtime_ns, root_after.st_ctime_ns) != (root_opened.st_dev, root_opened.st_ino, root_opened.st_mtime_ns, root_opened.st_ctime_ns):
+            raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID")
+        return copy.deepcopy(dict(record))
+    except V064PublicCiR2FailureError as error:
+        primary = error
+        raise
+    except OSError as error:
+        primary = V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID")
+        raise primary from error
+    finally:
+        if root_fd is not None:
+            try:
+                os.close(root_fd)
+            except OSError as error:
+                if primary is None:
+                    raise V064PublicCiR2FailureError("V064_PUBLIC_CI_R2_ROOT_INVALID") from error
 
 
 def load_v064_public_ci_r2_failure(path: Path) -> Dict[str, Any]:
