@@ -389,7 +389,7 @@
     "src/crypto_quant/v064_public_ci_bundle.py": "f1795b23fed81e896eff1191a8ca195b48adf50025a074ef95644de5c87932a6",
     "src/crypto_quant/v064_public_ci_bundle_cli.py": "9a3dc9059f3d0cf69f8d8f9642a00cc9e0b6fa8bec64415d1feaa4c1622c0cf1",
     "src/crypto_quant/v064_public_ci_r2_failure.py": "01362e51a6075753fa67299f88988e54cf4c356d660227e6bc75b051b77367dd",
-    "src/crypto_quant/v064_public_ci_witness.py": "dc1cecacdb87019f212626a5b18200182b208c3dfd54902dc0099e0e64244b33",
+    "src/crypto_quant/v064_public_ci_witness.py": "eb48f6592a8e7f17e0177bc43337266694919e8e99cc78695b82bf7e2d0b9641",
     "src/crypto_quant/v064_public_ci_witness_cli.py": "c7ddf5b8e93d314ffc75479369d5d51624bd41e8a5c4b2499f429f023a68594b",
     "tests/fixtures/launchctl/system-paper-first-success.txt": "3df7a2608eb9cd76e91c37fe15c28a125855095ba3006258462c69ddbe285c7a",
     "tests/fixtures/launchctl/system-paper-not-running.txt": "56f82073682a9838de2eb56133e652d84620aaf5c98a64825fb913476c91f30c",
@@ -420,9 +420,9 @@
     "tests/test_system_paper_start_receipt.py": "1c8b06335e2e426e59ba4c67873517e5492f2fb31bb79937670172181e6ede20",
     "tests/test_v064_linux_supersession_publish.py": "b1b899075cf0d3c568f18d850f9707c6160074d49b94d11df75548b897eb3e70",
     "tests/test_v064_public_ci_bundle.py": "bb2a138ecfda389f62822d2d61dbdfdc41df7343d9381ef987dc5ccdc918c33f",
-    "tests/test_v064_public_ci_witness.py": "49dd86c5378afc183a06b86f8f4299624834d4457565d28260430ca4b1be89ee"
+    "tests/test_v064_public_ci_witness.py": "3c969e3b9e41c2019fc2bfb30128a66f8d21e73ef183caaf448b39e0c2110e50"
   },
-  "build_input_tree_hash": "c4346cbca6216440bf80a8612b3d006785dd39f9271256100dead23b02d86346",
+  "build_input_tree_hash": "0d9026e255d828e61e84db6399f014b87550f027cfa119ec138b4611280a867c",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -430,5 +430,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "778086d70641ae6a41dc9c4ba7206436c6c7581e23b51be2bfbecb11dd6d66da"
+  "manifest_hash": "f588d3e965d7c944aa364a684361d4bc2b2ea8ec07e032f613d3e97ff93f0482"
 }

@@ -233,7 +233,7 @@ def derive_v064_public_ci_witness(*, bundle: dict, run_bytes: bytes, jobs_bytes:
         "3.9": {"verify": [], "setup": [], "run": []},
         "3.12": {"verify": [], "setup": [], "run": []},
     }
-    timestamp_pattern = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z (.*)$")
+    timestamp_pattern = re.compile(r"^\ufeff?[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z (.*)$")
     for line in log.splitlines():
         parts = line.split("\t", 2)
         if len(parts) != 3 or parts[1] not in {

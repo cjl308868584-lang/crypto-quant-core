@@ -538,6 +538,15 @@ def _realistic_inputs():
     return bundle, _canonical(run), _canonical(jobs), log, transcript
 
 
+def _transcript_with_log(transcript, log_bytes):
+    changed = copy.deepcopy(transcript)
+    changed["commands"][2]["stdout_size"] = len(log_bytes)
+    changed["commands"][2]["stdout_sha256"] = hashlib.sha256(
+        log_bytes
+    ).hexdigest()
+    return changed
+
+
 class V064PublicCiWitnessDerivationTests(unittest.TestCase):
     @mock.patch("crypto_quant.v064_public_ci_witness.verify_v064_public_ci_bundle")
     @mock.patch("crypto_quant.v064_public_ci_witness.build_v064_public_ci_bundle_manifest")
@@ -604,6 +613,76 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
             "cjl308868584-lang/crypto-quant-v064-public-ci-r3",
         )
         replay.assert_called_once_with(ROOT, bundle)
+
+    @mock.patch("crypto_quant.v064_public_ci_witness._replay_public_candidate")
+    def test_one_bom_before_selected_timestamp_preserves_semantic_witness(self, replay):
+        bundle, run_bytes, jobs_bytes, log_bytes, transcript = _realistic_inputs()
+        replay.return_value = {
+            "commit": "5" * 40, "tree": "6" * 40, "parent_count": 0,
+            "manifest_sha256": "7" * 64,
+        }
+        baseline = derive_v064_public_ci_witness(
+            bundle=bundle, run_bytes=run_bytes, jobs_bytes=jobs_bytes,
+            log_bytes=log_bytes, transcript=transcript,
+            private_repository=ROOT,
+        )
+        bom_log = log_bytes.replace(
+            b"\t2026-08-13T01:01:02.1234567Z ",
+            b"\t\xef\xbb\xbf2026-08-13T01:01:02.1234567Z ",
+            1,
+        )
+        self.assertEqual(bom_log.count(b"\xef\xbb\xbf"), 1)
+        try:
+            with_bom = derive_v064_public_ci_witness(
+                bundle=bundle, run_bytes=run_bytes, jobs_bytes=jobs_bytes,
+                log_bytes=bom_log,
+                transcript=_transcript_with_log(transcript, bom_log),
+                private_repository=ROOT,
+            )
+        except V064PublicCiWitnessError as error:
+            self.fail("single leading timestamp BOM was rejected: %s" % error)
+        self.assertEqual(
+            {key: value for key, value in with_bom.items()
+             if key not in {"raw_evidence", "witness_hash"}},
+            {key: value for key, value in baseline.items()
+             if key not in {"raw_evidence", "witness_hash"}},
+        )
+
+    @mock.patch("crypto_quant.v064_public_ci_witness._replay_public_candidate")
+    def test_bom_elsewhere_repeated_or_before_malformed_timestamp_is_rejected(self, replay):
+        bundle, run_bytes, jobs_bytes, log_bytes, transcript = _realistic_inputs()
+        replay.return_value = {
+            "commit": "5" * 40, "tree": "6" * 40, "parent_count": 0,
+            "manifest_sha256": "7" * 64,
+        }
+        selected = b"\t2026-08-13T01:01:02.1234567Z "
+        mutations = {
+            "elsewhere": log_bytes.replace(
+                selected,
+                b"\t2026-\xef\xbb\xbf08-13T01:01:02.1234567Z ",
+                1,
+            ),
+            "repeated": log_bytes.replace(
+                selected,
+                b"\t\xef\xbb\xbf\xef\xbb\xbf2026-08-13T01:01:02.1234567Z ",
+                1,
+            ),
+            "malformed_timestamp": log_bytes.replace(
+                selected,
+                b"\t\xef\xbb\xbf2026-08-13T01:01:02.1234567X ",
+                1,
+            ),
+        }
+        for name, changed_log in mutations.items():
+            with self.subTest(name=name), self.assertRaisesRegex(
+                V064PublicCiWitnessError, "^V064_PUBLIC_CI_LOG_INVALID$"
+            ):
+                derive_v064_public_ci_witness(
+                    bundle=bundle, run_bytes=run_bytes, jobs_bytes=jobs_bytes,
+                    log_bytes=changed_log,
+                    transcript=_transcript_with_log(transcript, changed_log),
+                    private_repository=ROOT,
+                )
 
     @mock.patch("crypto_quant.v064_public_ci_witness._replay_public_candidate")
     def test_job_api_order_is_irrelevant_but_run_must_contain_job_times(self, replay):
