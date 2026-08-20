@@ -348,20 +348,35 @@ class V064PublicCiR2FailureTests(unittest.TestCase):
         self.assertEqual(len(closed), 2)
         self.assertIsInstance(caught.exception.close_error, OSError)
 
-    def test_root_replay_closes_both_descriptors_after_first_close_failure(self):
+    def test_root_replay_closes_owned_descriptors_after_first_close_failure(self):
         real_close = os.close
-        closed = []
+        real_open = os.open
+        roles_by_descriptor = {}
+        close_attempts = []
+        injected_close_error = OSError("close")
 
-        def close_once_then_fail(descriptor):
-            closed.append(descriptor)
-            if len(closed) == 5:
-                raise OSError("close")
-            return real_close(descriptor)
+        def open_and_track_role(*arguments, **kwargs):
+            descriptor = real_open(*arguments, **kwargs)
+            if arguments[0] == ARTIFACT_ROOT.parent:
+                roles_by_descriptor[descriptor] = "artifacts-parent"
+            elif arguments[0] == ARTIFACT_ROOT:
+                roles_by_descriptor[descriptor] = "failure-root"
+            return descriptor
 
-        with mock.patch("crypto_quant.v064_public_ci_r2_failure.os.close", side_effect=close_once_then_fail):
-            with self.assertRaisesRegex(V064PublicCiR2FailureError, "^V064_PUBLIC_CI_R2_ROOT_INVALID$"):
+        def close_after_real_cleanup(descriptor):
+            role = roles_by_descriptor.get(descriptor)
+            if role is not None:
+                close_attempts.append(role)
+            real_close(descriptor)
+            if role == "failure-root":
+                raise injected_close_error
+
+        with mock.patch("crypto_quant.v064_public_ci_r2_failure.os.open", side_effect=open_and_track_role), mock.patch("crypto_quant.v064_public_ci_r2_failure.os.listdir", side_effect=KeyboardInterrupt), mock.patch("crypto_quant.v064_public_ci_r2_failure.os.close", side_effect=close_after_real_cleanup):
+            with self.assertRaises(KeyboardInterrupt) as caught:
                 load_v064_public_ci_r2_failure_root(ARTIFACT_ROOT)
-        self.assertEqual(len(closed), 6)
+        self.assertEqual(close_attempts, ["failure-root", "artifacts-parent"])
+        self.assertEqual({role: close_attempts.count(role) for role in roles_by_descriptor.values()}, {"failure-root": 1, "artifacts-parent": 1})
+        self.assertIs(caught.exception.close_error, injected_close_error)
 
     def test_loader_rechecks_success_root_after_private_stat_boundary(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -417,7 +432,6 @@ class V064PublicCiR2FailureTests(unittest.TestCase):
             sentinel = root / "sentinel"
             sentinel.write_bytes(b"unchanged")
             cases = []
-            fifo = root / "fifo.json"; os.mkfifo(fifo); cases.append(fifo)
             link = root / "link.json"; link.symlink_to(sentinel); cases.append(link)
             hard = root / "hard.json"; os.link(sentinel, hard); cases.append(hard)
             mode = root / "mode.json"; mode.write_bytes(b"fixture\n"); mode.chmod(0o600); cases.append(mode)
@@ -436,14 +450,26 @@ class V064PublicCiR2FailureTests(unittest.TestCase):
             sentinel = root / "sentinel"; sentinel.write_bytes(b"unchanged")
             fifo = root / "fifo.json"; os.mkfifo(fifo)
             before = _snapshot(fifo); sentinel_before = _snapshot(sentinel)
-            code = "from pathlib import Path; from tests.test_v064_public_ci_r2_failure import _publish_once; import sys;\ntry: _publish_once(Path(sys.argv[1]), 'fifo.json', b'fixture\\n')\nexcept BaseException: raise SystemExit(0)\nraise SystemExit(1)"
+            code = (
+                "from pathlib import Path\n"
+                "from tests.test_v064_public_ci_r2_failure import _publish_once\n"
+                "import sys\n"
+                "try:\n"
+                "    _publish_once(Path(sys.argv[1]), 'fifo.json', b'fixture\\n')\n"
+                "except AssertionError as error:\n"
+                "    if str(error) == 'pre-existing final is not exact and trusted':\n"
+                "        raise SystemExit(0)\n"
+                "    raise\n"
+                "raise SystemExit(1)\n"
+            )
             environment = dict(os.environ, PYTHONPATH="src:.")
             child = subprocess.Popen((sys.executable, "-c", code, str(root)), cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             try:
                 stdout, stderr = child.communicate(timeout=5)
             except subprocess.TimeoutExpired:
-                child.kill(); child.wait()
-                self.fail("FIFO publisher child exceeded bounded timeout")
+                child.kill()
+                stdout, stderr = child.communicate()
+                self.fail("FIFO publisher child exceeded bounded timeout: stdout=%r stderr=%r" % (stdout, stderr))
             self.assertEqual((child.returncode, stdout, stderr), (0, b"", b""))
             self.assertEqual(_snapshot(fifo), before)
             self.assertEqual(_snapshot(sentinel), sentinel_before)
