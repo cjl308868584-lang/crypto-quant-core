@@ -1740,7 +1740,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
     def test_linux_ci_runs_full_suite_and_fixed_owner_boundary_separately(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         self.assertIn(
-            "      - uses: actions/checkout@v5\n"
+            "      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09\n"
             "        with:\n"
             "          fetch-depth: 0\n",
             workflow,

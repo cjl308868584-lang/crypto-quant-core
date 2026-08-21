@@ -297,6 +297,40 @@ _V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS = (
     "tests/test_v064_public_ci_witness.py",
 )
 
+_V065_RELEASE_PATHS = (
+    "config/nautilus-e2e-spike-plan-v1.schema.json",
+    "config/nautilus-supply-chain-receipt-v2.schema.json",
+    "config/nautilus-sandbox-request-v2.schema.json",
+    "config/nautilus-sandbox-result-v2.schema.json",
+    "config/nautilus-sandbox-comparison-v2.schema.json",
+    "config/nautilus-formal-completion-v1.schema.json",
+    "artifacts/nautilus-sandbox/nautilus-e2e-spike-plan-v0.65.0.json",
+    "artifacts/nautilus-sandbox/v0.65.0/nautilus-supply-chain-receipt-v0.65.0.json",
+    "artifacts/nautilus-sandbox/v0.65.0/nautilus-sandbox-comparison-v0.65.0.json",
+    "artifacts/nautilus-sandbox/v0.65.0/nautilus-sandbox-complete-v0.65.0.json",
+    "sandboxes/nautilus-v065/pyproject.toml",
+    "sandboxes/nautilus-v065/uv.lock",
+    "sandboxes/nautilus-v065/src/crypto_quant_nautilus_v065/__init__.py",
+    "sandboxes/nautilus-v065/src/crypto_quant_nautilus_v065/runner.py",
+    "sandboxes/nautilus-v065/tests/test_dependency_boundary.py",
+    "sandboxes/nautilus-v065/tests/test_runner_failures.py",
+    "sandboxes/nautilus-v065/tests/test_runner_golden.py",
+    "tests/fixtures/nautilus-v065/LICENSE-1.230.0.txt",
+    "tests/fixtures/nautilus-v065/current-reference-v2.json",
+    "tests/fixtures/nautilus-v065/ethusdt-4h-input-v2.json",
+    "tests/test_nautilus_v065_plan.py",
+    "tests/test_nautilus_v065_supply_chain.py",
+    "tests/test_nautilus_v065_acquisition.py",
+    "tests/test_nautilus_v065_contract.py",
+    "tests/test_nautilus_v065_evidence.py",
+    "tests/test_nautilus_v065_artifacts.py",
+    "tests/test_nautilus_v065_release.py",
+    "docs/superpowers/specs/2026-08-22-nautilus-end-to-end-spike-design.md",
+    "docs/superpowers/plans/2026-08-22-nautilus-end-to-end-spike.md",
+    "docs/adr/0065-nautilus-end-to-end-spike.md",
+    "docs/implementation-status-v0.65.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -328,6 +362,7 @@ class EvaluatorBuild:
                 + list(_FROZEN_ARTIFACT_PATHS)
                 + list(_FROZEN_RELEASE_PATHS)
                 + list(_V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS)
+                + list(_V065_RELEASE_PATHS)
             )
         )
 
