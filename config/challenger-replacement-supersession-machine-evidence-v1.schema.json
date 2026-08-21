@@ -195,7 +195,8 @@
         },
         "transcripts": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 12,
+          "maxItems": 12,
           "items": {
             "$ref": "#/$defs/transcript"
           }

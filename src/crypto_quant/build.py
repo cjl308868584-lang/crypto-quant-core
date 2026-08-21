@@ -233,6 +233,7 @@ _FROZEN_RELEASE_PATHS = (
 
 _V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS = (
     ".github/workflows/ci.yml",
+    ".gitattributes",
     ".gitignore",
     "artifacts/challenger-replacement/"
     "challenger-replacement-owner-attestation-v0.64.0.json",

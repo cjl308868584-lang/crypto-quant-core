@@ -44,6 +44,63 @@ _RUNTIME_ROOT = (
     "/Users/chenm4/Library/Application Support/CryptoQuant/"
     "challenger-replacement-v1"
 )
+_V062_TAG_OBJECT = "b33c0cf58a954f548f76792f0b7cf989dcf0900c"
+_V063_TAG_OBJECT = "a142927d96c4e6d52df22f79e929e679a219e82e"
+_V063_PEELED = "df91e19240df14839125608422489adf3b902e76"
+_GIT_TRANSCRIPT_NAMES_AND_SUFFIXES = (
+    ("v0_62_tag_object", ("rev-parse", "v0.62.0")),
+    ("v0_62_tag_type", ("cat-file", "-t", "v0.62.0")),
+    ("v0_62_peeled_commit", ("rev-parse", "v0.62.0^{}")),
+    ("v0_63_tag_object", ("rev-parse", "v0.63.0")),
+    ("v0_63_tag_type", ("cat-file", "-t", "v0.63.0")),
+    ("v0_63_peeled_commit", ("rev-parse", "v0.63.0^{}")),
+    ("candidate_head", ("rev-parse", "HEAD")),
+    (
+        "v0_63_ancestor_of_candidate",
+        ("merge-base", "--is-ancestor", "v0.63.0", "HEAD"),
+    ),
+    (
+        "candidate_status",
+        ("status", "--porcelain=v1", "--untracked-files=all"),
+    ),
+    (
+        "artifact_namespace_status",
+        (
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignored=matching",
+            "--",
+            "artifacts/challenger-replacement/",
+        ),
+    ),
+    (
+        "v0_62_plan_bytes",
+        (
+            "show",
+            "v0.62.0:artifacts/challenger-replacement/"
+            "challenger-replacement-plan-v0.62.0.json",
+        ),
+    ),
+    (
+        "relevant_git_history",
+        (
+            "log",
+            "--all",
+            "--full-history",
+            "--format=%H",
+            "--",
+            "artifacts/challenger-replacement/",
+            "docs/adr/0062-replacement-challenger-preregistration-isolation.md",
+            "docs/implementation-status-v0.62.0.md",
+        ),
+    ),
+)
+_EXPECTED_LAUNCHCTL_STDERR = (
+    'Bad request.\nCould not find service "'
+    'local.crypto-quant.challenger-replacement-v1" '
+    'in domain for user gui: 501\n'
+).encode("utf-8")
 
 _PREVIOUS_PLAN = {
     "release_tag": "v0.62.0",
@@ -178,19 +235,114 @@ def _load_canonical_mapping(path: Path) -> Dict[str, Any]:
     return value
 
 
-def _decode_transcript_stream(value: str, claimed_hash: str) -> bool:
+def _decode_transcript_bytes(value: str, claimed_hash: str) -> Any:
     try:
         decoded = base64.b64decode(value.encode("ascii"), validate=True)
     except (UnicodeEncodeError, ValueError):
-        return False
-    return hashlib.sha256(decoded).hexdigest() == claimed_hash
+        return None
+    if hashlib.sha256(decoded).hexdigest() != claimed_hash:
+        return None
+    return decoded
 
 
 def _transcript_valid(transcript: Mapping[str, Any]) -> bool:
-    return _decode_transcript_stream(
+    return _decode_transcript_bytes(
         transcript["stdout_base64"], transcript["stdout_sha256"]
-    ) and _decode_transcript_stream(
+    ) is not None and _decode_transcript_bytes(
         transcript["stderr_base64"], transcript["stderr_sha256"]
+    ) is not None
+
+
+def _machine_transcript_contract_valid(machine: Mapping[str, Any]) -> bool:
+    launch = machine["launchctl_transcript"]
+    if (
+        launch["name"] != "replacement_service_state"
+        or tuple(launch["argv"])
+        != ("/bin/launchctl", "print", _SERVICE_IDENTITY)
+        or launch["exit_code"] != 113
+        or _decode_transcript_bytes(
+            launch["stdout_base64"], launch["stdout_sha256"]
+        )
+        != b""
+        or _decode_transcript_bytes(
+            launch["stderr_base64"], launch["stderr_sha256"]
+        )
+        != _EXPECTED_LAUNCHCTL_STDERR
+    ):
+        return False
+
+    git_history = machine["git_history"]
+    transcripts = git_history["transcripts"]
+    if len(transcripts) != len(_GIT_TRANSCRIPT_NAMES_AND_SUFFIXES):
+        return False
+    roots = []
+    stdout = []
+    for transcript, (expected_name, expected_suffix) in zip(
+        transcripts, _GIT_TRANSCRIPT_NAMES_AND_SUFFIXES
+    ):
+        argv = tuple(transcript["argv"])
+        if (
+            transcript["name"] != expected_name
+            or transcript["exit_code"] != 0
+            or len(argv) != len(expected_suffix) + 3
+            or argv[:2] != ("/usr/bin/git", "-C")
+            or argv[3:] != expected_suffix
+            or not Path(argv[2]).is_absolute()
+            or ".." in Path(argv[2]).parts
+            or _decode_transcript_bytes(
+                transcript["stderr_base64"], transcript["stderr_sha256"]
+            )
+            != b""
+        ):
+            return False
+        body = _decode_transcript_bytes(
+            transcript["stdout_base64"], transcript["stdout_sha256"]
+        )
+        if body is None:
+            return False
+        roots.append(argv[2])
+        stdout.append(body)
+    if len(set(roots)) != 1:
+        return False
+
+    candidate_head = git_history["candidate_head"]
+    candidate_status = _decode_transcript_bytes(
+        git_history["candidate_status_porcelain_base64"],
+        git_history["candidate_status_porcelain_sha256"],
+    )
+    fixed_stdout = {
+        0: (_V062_TAG_OBJECT + "\n").encode("ascii"),
+        1: b"tag\n",
+        2: (_PREVIOUS_PLAN["peeled_commit"] + "\n").encode("ascii"),
+        3: (_V063_TAG_OBJECT + "\n").encode("ascii"),
+        4: b"tag\n",
+        5: (_V063_PEELED + "\n").encode("ascii"),
+        6: (candidate_head + "\n").encode("ascii"),
+        7: b"",
+        8: candidate_status,
+        9: candidate_status,
+    }
+    if candidate_status is None or any(
+        stdout[index] != expected
+        for index, expected in fixed_stdout.items()
+    ):
+        return False
+    if hashlib.sha256(stdout[10]).hexdigest() != _PREVIOUS_PLAN["file_sha256"]:
+        return False
+    try:
+        history = stdout[11].decode("ascii").splitlines()
+    except UnicodeDecodeError:
+        return False
+    return (
+        bool(history)
+        and candidate_head in history
+        and _PREVIOUS_PLAN["peeled_commit"] in history
+        and len(history) == len(set(history))
+        and all(
+            len(commit) == 40
+            and all(character in "0123456789abcdef" for character in commit)
+            for commit in history
+        )
     )
 
 
@@ -225,6 +377,10 @@ def _machine_reasons(machine: Mapping[str, Any]) -> Tuple[str, ...]:
         if not all(_transcript_valid(item) for item in transcripts):
             reasons.append(
                 "CHALLENGER_REPLACEMENT_SUPERSESSION_TRANSCRIPT_HASH_MISMATCH"
+            )
+        if not _machine_transcript_contract_valid(machine):
+            reasons.append(
+                "CHALLENGER_REPLACEMENT_SUPERSESSION_TRANSCRIPT_CONTRACT_INVALID"
             )
         names = [item["name"] for item in machine["git_history"]["transcripts"]]
         if len(names) != len(set(names)):

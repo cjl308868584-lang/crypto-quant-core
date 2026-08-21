@@ -205,23 +205,39 @@ def _finalize(value, *, id_field, hash_field, prefix):
     return value
 
 
-def _transcript(name, argv, stdout=b""):
+def _transcript(name, argv, stdout=b"", *, exit_code=0, stderr=b""):
     return {
         "name": name,
         "argv": list(argv),
-        "exit_code": 0,
+        "exit_code": exit_code,
         "stdout_base64": base64.b64encode(stdout).decode("ascii"),
         "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
-        "stderr_base64": "",
-        "stderr_sha256": EMPTY_SHA256,
+        "stderr_base64": base64.b64encode(stderr).decode("ascii"),
+        "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
     }
 
 
 def _machine_evidence(qualification=REAL_EVIDENCE_QUALIFICATION):
+    candidate_head = "1" * 40
+    repository = "/reviewed/repository"
+    plan_bytes = (
+        ROOT
+        / "artifacts/challenger-replacement/"
+        "challenger-replacement-plan-v0.62.0.json"
+    ).read_bytes()
     transcripts = [
-        _transcript("v0_62_tag_type", ("/usr/bin/git", "cat-file", "-t", "v0.62.0"), b"tag\n"),
-        _transcript("v0_63_tag_type", ("/usr/bin/git", "cat-file", "-t", "v0.63.0"), b"tag\n"),
-        _transcript("candidate_status", ("/usr/bin/git", "status", "--porcelain=v1")),
+        _transcript("v0_62_tag_object", ("/usr/bin/git", "-C", repository, "rev-parse", "v0.62.0"), b"b33c0cf58a954f548f76792f0b7cf989dcf0900c\n"),
+        _transcript("v0_62_tag_type", ("/usr/bin/git", "-C", repository, "cat-file", "-t", "v0.62.0"), b"tag\n"),
+        _transcript("v0_62_peeled_commit", ("/usr/bin/git", "-C", repository, "rev-parse", "v0.62.0^{}"), (PREVIOUS_PLAN["peeled_commit"] + "\n").encode("ascii")),
+        _transcript("v0_63_tag_object", ("/usr/bin/git", "-C", repository, "rev-parse", "v0.63.0"), b"a142927d96c4e6d52df22f79e929e679a219e82e\n"),
+        _transcript("v0_63_tag_type", ("/usr/bin/git", "-C", repository, "cat-file", "-t", "v0.63.0"), b"tag\n"),
+        _transcript("v0_63_peeled_commit", ("/usr/bin/git", "-C", repository, "rev-parse", "v0.63.0^{}"), b"df91e19240df14839125608422489adf3b902e76\n"),
+        _transcript("candidate_head", ("/usr/bin/git", "-C", repository, "rev-parse", "HEAD"), (candidate_head + "\n").encode("ascii")),
+        _transcript("v0_63_ancestor_of_candidate", ("/usr/bin/git", "-C", repository, "merge-base", "--is-ancestor", "v0.63.0", "HEAD")),
+        _transcript("candidate_status", ("/usr/bin/git", "-C", repository, "status", "--porcelain=v1", "--untracked-files=all")),
+        _transcript("artifact_namespace_status", ("/usr/bin/git", "-C", repository, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching", "--", "artifacts/challenger-replacement/")),
+        _transcript("v0_62_plan_bytes", ("/usr/bin/git", "-C", repository, "show", "v0.62.0:artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json"), plan_bytes),
+        _transcript("relevant_git_history", ("/usr/bin/git", "-C", repository, "log", "--all", "--full-history", "--format=%H", "--", "artifacts/challenger-replacement/", "docs/adr/0062-replacement-challenger-preregistration-isolation.md", "docs/implementation-status-v0.62.0.md"), (candidate_head + "\n" + PREVIOUS_PLAN["peeled_commit"] + "\n").encode("ascii")),
     ]
     git_history = {
         "v0_62_tag_type": "tag",
@@ -232,7 +248,7 @@ def _machine_evidence(qualification=REAL_EVIDENCE_QUALIFICATION):
         "v0_62_plan_hash": PREVIOUS_PLAN["plan_hash"],
         "v0_63_tag_type": "tag",
         "v0_63_peeled_commit": "df91e19240df14839125608422489adf3b902e76",
-        "candidate_head": "1" * 40,
+        "candidate_head": candidate_head,
         "v0_63_ancestor_of_candidate": True,
         "candidate_status_porcelain_base64": "",
         "candidate_status_porcelain_sha256": EMPTY_SHA256,
@@ -281,6 +297,12 @@ def _machine_evidence(qualification=REAL_EVIDENCE_QUALIFICATION):
                 "/bin/launchctl",
                 "print",
                 "gui/501/local.crypto-quant.challenger-replacement-v1",
+            ),
+            exit_code=113,
+            stderr=(
+                b'Bad request.\nCould not find service "'
+                b'local.crypto-quant.challenger-replacement-v1" '
+                b'in domain for user gui: 501\n'
             ),
         ),
         "git_history": git_history,
@@ -437,6 +459,92 @@ class SupersessionContractTests(unittest.TestCase):
         self.assertEqual(loaded["current_observations"]["canonical_event_count"], 0)
         self.assertEqual(set(loaded["collector_actions"].values()), {0})
         self.assertNotIn("historical_state_write_count", canonical_json(loaded))
+
+    def test_machine_loader_requires_complete_ordered_git_transcript_contract(self):
+        def finalize_machine(value):
+            value["git_history"]["git_history_evidence_hash"] = (
+                supersession_artifact_hash(
+                    value["git_history"], "git_history_evidence_hash"
+                )
+            )
+            return _finalize(
+                value,
+                id_field="evidence_id",
+                hash_field="evidence_hash",
+                prefix="challenger_replacement_supersession_machine_evidence",
+            )
+
+        mutations = {}
+        missing = copy.deepcopy(self.machine)
+        del missing["git_history"]["transcripts"][0]
+        mutations["missing"] = missing
+        reordered = copy.deepcopy(self.machine)
+        reordered["git_history"]["transcripts"][0:2] = reversed(
+            reordered["git_history"]["transcripts"][0:2]
+        )
+        mutations["reordered"] = reordered
+        substituted = copy.deepcopy(self.machine)
+        substituted["git_history"]["transcripts"][0] = copy.deepcopy(
+            substituted["git_history"]["transcripts"][-1]
+        )
+        mutations["substituted"] = substituted
+
+        for name, changed in mutations.items():
+            with self.subTest(name=name):
+                path = _canonical_file(
+                    self.root / f"machine-{name}.json",
+                    finalize_machine(changed),
+                )
+                with self.assertRaises(
+                    ChallengerReplacementPlanSupersessionError
+                ):
+                    load_challenger_replacement_supersession_machine_evidence(
+                        path
+                    )
+
+    def test_machine_loader_binds_launchctl_and_git_results_to_claims(self):
+        def finalize_machine(value):
+            value["git_history"]["git_history_evidence_hash"] = (
+                supersession_artifact_hash(
+                    value["git_history"], "git_history_evidence_hash"
+                )
+            )
+            return _finalize(
+                value,
+                id_field="evidence_id",
+                hash_field="evidence_hash",
+                prefix="challenger_replacement_supersession_machine_evidence",
+            )
+
+        changed_launchctl = copy.deepcopy(self.machine)
+        changed_launchctl["launchctl_transcript"] = copy.deepcopy(
+            changed_launchctl["git_history"]["transcripts"][-1]
+        )
+        changed_head = copy.deepcopy(self.machine)
+        head_transcript = changed_head["git_history"]["transcripts"][6]
+        changed_head_bytes = ("2" * 40 + "\n").encode("ascii")
+        head_transcript["stdout_base64"] = base64.b64encode(
+            changed_head_bytes
+        ).decode("ascii")
+        head_transcript["stdout_sha256"] = hashlib.sha256(
+            changed_head_bytes
+        ).hexdigest()
+
+        for name, changed in (
+            ("launchctl", changed_launchctl),
+            ("candidate-head", changed_head),
+        ):
+            with self.subTest(name=name):
+                path = _canonical_file(
+                    self.root / f"machine-binding-{name}.json",
+                    finalize_machine(changed),
+                )
+                with self.assertRaises(
+                    ChallengerReplacementPlanSupersessionError
+                ):
+                    load_challenger_replacement_supersession_machine_evidence(
+                        path
+                    )
 
     def test_schema_mirrors_are_strict_closed_objects(self):
         names = (

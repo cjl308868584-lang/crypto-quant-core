@@ -282,6 +282,7 @@ class EvaluatorBuildTests(unittest.TestCase):
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {
             ".github/workflows/ci.yml",
+            ".gitattributes",
             ".gitignore",
             "artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json",
             "artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json",

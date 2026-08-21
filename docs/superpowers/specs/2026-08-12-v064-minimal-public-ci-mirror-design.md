@@ -1,8 +1,8 @@
 # v0.64 最小公开 CI 镜像设计
 
-**状态：** 设计候选，未创建公开仓库，未上传任何文件  
-**私有候选基线：** `1809bd5e913ee8ac208ad5c267c391fa33983ff5`  
-**当前私有 Draft PR：** `cjl308868584-lang/crypto-quant-core#32`  
+**状态：** 设计候选，未创建公开仓库，未上传任何文件
+**私有候选基线：** `1809bd5e913ee8ac208ad5c267c391fa33983ff5`
+**当前私有 Draft PR：** `cjl308868584-lang/crypto-quant-core#32`
 **公开仓库候选名：** `cjl308868584-lang/crypto-quant-v064-public-ci`
 
 ## 0. 治理身份

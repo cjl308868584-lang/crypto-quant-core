@@ -14,7 +14,9 @@
   canonical event log 权威和非权威、可重建 exports；
 - 保持 v0.62 原文件 SHA-256
   `d450d1e9f8dc422eb5a93beb8a5ffbb1746a4a6d1facb3c5a20a76f4bd527734`、annotated tag
-  和 peeled commit `e0a9b3eb6a3f385ea259722e6613df8708e8fe5a` 不变；
+  和 peeled commit `e0a9b3eb6a3f385ea259722e6613df8708e8fe5a` 不变；原 plan ID
+  `challenger_replacement_plan_d4a542c1566f7a90466ca4d5301b81847f5b5eba93c7a00903d2d95331bc23a2`，
+  plan hash `95f395b17d9c09d325c58391542ce5f3d9df5ce6a706b1bba8ffcb62dc6c883c`；
 - 冻结参数无关 machine collector、安全 no-replace publisher、严格 Schema/loader、
   accountable owner attestation 和 supersession record；
 - 用公开、只含 8 文件的 parentless R3 仓库实证 Linux Python 3.9/3.12
@@ -51,6 +53,9 @@ Snapshot、Git history、Schema 和 loader 都不证明该历史声明为真；�
 - 构建清单单向绑定本版本 code/Schema/artifact/docs/tests 与 R3 witness；最终
   `build_input_tree_hash` 和 `manifest_hash` 以
   `config/evaluator-build-manifest-v1.json` 的 strict loader 验证值为权威；
+- `.gitattributes` 仅对 R2/R3 两份 sealed raw Actions log 关闭 whitespace
+  解释，保留 exact evidence bytes；其余 v0.63..v0.64 范围仍受
+  `git diff --check` 约束；
 - v0.64 没有 replacement runtime、deployment、installer、observer、exporter、evaluator、
   production root/plist/service 或 start receipt；
 - 没有迁移、回填、补槽、重置起点、市场请求、凭据、Broker、资金或真实订单。
