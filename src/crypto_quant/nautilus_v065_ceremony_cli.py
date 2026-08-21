@@ -773,10 +773,13 @@ def _load_frozen_current_reference(
 ) -> Dict[str, Any]:
     try:
         commit = plan["code_lock_candidate"]["commit"]
-        body = _read_candidate_blob(
-            commit,
-            "tests/fixtures/nautilus-v065/current-reference-v2.json",
-        )
+        relative_path = plan["fixture"]["current_reference_path"]
+        expected_file_hash = plan["fixture"]["current_reference_file_sha256"]
+        body = _read_candidate_blob(commit, relative_path)
+        if hashlib.sha256(body).hexdigest() != expected_file_hash:
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_CURRENT_REFERENCE_INVALID"
+            )
         frozen = dict(_strict_json_bytes(body))
         if body != canonical_json(frozen).encode("utf-8") + b"\n":
             raise NautilusV065SupplyChainError(

@@ -107,6 +107,17 @@ class NautilusV065PlanTests(unittest.TestCase):
 
     def test_builder_freezes_code_tree_scenarios_classifications_and_authority(self):
         plan = self.build()
+        self.assertEqual(
+            plan["fixture"],
+            {
+                "request_path": "tests/fixtures/nautilus-v065/ethusdt-4h-input-v2.json",
+                "request_file_sha256": "a8a077830048bc642983ac440de9a47b334322cc8dbecbfc80aa595525f1cd5d",
+                "fixture_id": "ethusdt_4h_v2",
+                "fixture_hash": "8f9047ebd6271d2dc9f043aedacb065355cd24e507e29c4a11aa747f1531109c",
+                "current_reference_path": "tests/fixtures/nautilus-v065/current-reference-v2.json",
+                "current_reference_file_sha256": "b772366395e6c170c65ee10cb4729d255f62d8129ada911a77e015e161468d68",
+            },
+        )
         self.assertEqual(plan["code_lock_candidate"]["commit"], self.commit)
         self.assertEqual(
             plan["code_lock_candidate"]["tree"],

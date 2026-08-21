@@ -23,6 +23,15 @@ _MAX_BYTES = 4 * 1024 * 1024
 _ZERO = "0" * 64
 _FIXTURE_HASH = "8f9047ebd6271d2dc9f043aedacb065355cd24e507e29c4a11aa747f1531109c"
 _ENGINE_CLAIMED = False
+_SAFETY_COUNTERS = {
+    "credential_reads": 0,
+    "network_requests": 0,
+    "live_adapter_imports": 0,
+    "broker_requests": 0,
+    "real_orders": 0,
+    "production_state_writes": 0,
+    "second_engine_creations": 0,
+}
 _SCENARIOS = (
     "IMMEDIATE_FULL",
     "PARTIAL_THEN_FULL",
@@ -151,6 +160,7 @@ def _validate_environment() -> None:
     for key in os.environ:
         upper = key.upper()
         if any(part in upper for part in _FORBIDDEN_ENV_PARTS):
+            _SAFETY_COUNTERS["credential_reads"] += 1
             raise RuntimeError("CREDENTIAL_ENV_FORBIDDEN")
 
 
@@ -195,9 +205,11 @@ def _install_network_guard() -> None:
 
     class ForbiddenSocket(original_socket):
         def __new__(cls, *_args: Any, **_kwargs: Any) -> Any:
+            _SAFETY_COUNTERS["network_requests"] += 1
             raise RuntimeError("NETWORK_FORBIDDEN")
 
     def forbidden(*_args: Any, **_kwargs: Any) -> Any:
+        _SAFETY_COUNTERS["network_requests"] += 1
         raise RuntimeError("NETWORK_FORBIDDEN")
 
     socket.socket = ForbiddenSocket
@@ -208,6 +220,7 @@ def _install_network_guard() -> None:
 def _claim_engine() -> None:
     global _ENGINE_CLAIMED
     if _ENGINE_CLAIMED:
+        _SAFETY_COUNTERS["second_engine_creations"] += 1
         raise RuntimeError("SECOND_ENGINE_FORBIDDEN")
     _ENGINE_CLAIMED = True
 
@@ -534,15 +547,7 @@ def _parent_main(request_path: Path, receipt_path: Path, result_path: Path) -> i
             "engine": "NAUTILUS_TRADER_1.230.0",
             "scenario_results": results,
             "fresh_process_replay_verified": True,
-            "safety_counters": {
-                "credential_reads": 0,
-                "network_requests": 0,
-                "live_adapter_imports": 0,
-                "broker_requests": 0,
-                "real_orders": 0,
-                "production_state_writes": 0,
-                "second_engine_creations": 0,
-            },
+            "safety_counters": copy.deepcopy(_SAFETY_COUNTERS),
         }
         digest = _hash(result, "result_id", "result_hash")
         result["result_id"] = "nautilus_v065_result_" + digest

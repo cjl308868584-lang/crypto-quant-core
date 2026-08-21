@@ -12,6 +12,7 @@
     "foundation",
     "predecessor",
     "candidate",
+    "fixture",
     "code_lock_candidate",
     "scenarios",
     "difference_classes",
@@ -77,6 +78,38 @@
         "machine": {"const": "arm64"},
         "python_implementation": {"const": "CPython"},
         "python_minor": {"const": "3.12"}
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_path",
+        "request_file_sha256",
+        "fixture_id",
+        "fixture_hash",
+        "current_reference_path",
+        "current_reference_file_sha256"
+      ],
+      "properties": {
+        "request_path": {
+          "const": "tests/fixtures/nautilus-v065/ethusdt-4h-input-v2.json"
+        },
+        "request_file_sha256": {
+          "const": "a8a077830048bc642983ac440de9a47b334322cc8dbecbfc80aa595525f1cd5d"
+        },
+        "fixture_id": {
+          "const": "ethusdt_4h_v2"
+        },
+        "fixture_hash": {
+          "const": "8f9047ebd6271d2dc9f043aedacb065355cd24e507e29c4a11aa747f1531109c"
+        },
+        "current_reference_path": {
+          "const": "tests/fixtures/nautilus-v065/current-reference-v2.json"
+        },
+        "current_reference_file_sha256": {
+          "const": "b772366395e6c170c65ee10cb4729d255f62d8129ada911a77e015e161468d68"
+        }
       }
     },
     "code_lock_candidate": {

@@ -9,9 +9,11 @@ from jsonschema import Draft202012Validator
 
 from crypto_quant.canonical import canonical_json
 from crypto_quant.nautilus_v065_contract import (
+    _self_hash,
     NautilusV065ContractError,
     build_nautilus_v065_current_reference,
     build_nautilus_v065_request,
+    verify_nautilus_v065_result,
     load_nautilus_v065_request,
     load_nautilus_v065_result,
 )
@@ -140,6 +142,19 @@ class NautilusV065ContractTests(unittest.TestCase):
         self.assertEqual(
             list(result_validator.iter_errors(build_nautilus_v065_current_reference(request=self.request()))), []
         )
+        unsafe = build_nautilus_v065_current_reference(request=self.request())
+        unsafe["safety_counters"]["network_requests"] = 1
+        unsafe["result_id"] = "nautilus_v065_result_" + "0" * 64
+        unsafe["result_hash"] = "0" * 64
+        digest = _self_hash(unsafe, "result_id", "result_hash")
+        unsafe["result_id"] = "nautilus_v065_result_" + digest
+        unsafe["result_hash"] = digest
+        self.assertEqual(list(result_validator.iter_errors(unsafe)), [])
+        self.assertEqual(verify_nautilus_v065_result(unsafe), unsafe)
+
+        invalid_counter = copy.deepcopy(unsafe)
+        invalid_counter["safety_counters"]["network_requests"] = -1
+        self.assertNotEqual(list(result_validator.iter_errors(invalid_counter)), [])
         extra = self.request()
         extra["live_venue_client"] = "BINANCE"
         self.assertNotEqual(list(request_validator.iter_errors(extra)), [])

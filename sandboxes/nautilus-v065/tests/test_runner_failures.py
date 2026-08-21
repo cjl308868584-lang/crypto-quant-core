@@ -120,12 +120,16 @@ class RunnerFailureTests(unittest.TestCase):
     def test_network_guard_second_engine_and_static_live_adapter_boundary(self):
         from crypto_quant_nautilus_v065 import runner
 
+        runner._SAFETY_COUNTERS["network_requests"] = 0
+        runner._SAFETY_COUNTERS["second_engine_creations"] = 0
         runner._install_network_guard()
         with self.assertRaisesRegex(RuntimeError, "NETWORK_FORBIDDEN"):
             socket.socket()
+        self.assertEqual(runner._SAFETY_COUNTERS["network_requests"], 1)
         runner._claim_engine()
         with self.assertRaisesRegex(RuntimeError, "SECOND_ENGINE_FORBIDDEN"):
             runner._claim_engine()
+        self.assertEqual(runner._SAFETY_COUNTERS["second_engine_creations"], 1)
         source = inspect.getsource(runner)
         self.assertNotIn("nautilus_trader.adapters", source)
         self.assertNotIn("requests.", source)

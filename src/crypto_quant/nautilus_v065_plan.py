@@ -87,6 +87,15 @@ _CANDIDATE = {
     "python_minor": "3.12",
 }
 
+_FIXTURE = {
+    "request_path": "tests/fixtures/nautilus-v065/ethusdt-4h-input-v2.json",
+    "request_file_sha256": "a8a077830048bc642983ac440de9a47b334322cc8dbecbfc80aa595525f1cd5d",
+    "fixture_id": "ethusdt_4h_v2",
+    "fixture_hash": "8f9047ebd6271d2dc9f043aedacb065355cd24e507e29c4a11aa747f1531109c",
+    "current_reference_path": "tests/fixtures/nautilus-v065/current-reference-v2.json",
+    "current_reference_file_sha256": "b772366395e6c170c65ee10cb4729d255f62d8129ada911a77e015e161468d68",
+}
+
 _SCENARIOS = [
     "IMMEDIATE_FULL",
     "PARTIAL_THEN_FULL",
@@ -182,6 +191,7 @@ def _plan_identity(plan: Mapping[str, Any]) -> Dict[str, Any]:
         "foundation": plan["foundation"],
         "predecessor": plan["predecessor"],
         "candidate": plan["candidate"],
+        "fixture": plan["fixture"],
         "code_lock_candidate": plan["code_lock_candidate"],
         "scenarios": plan["scenarios"],
         "difference_classes": plan["difference_classes"],
@@ -262,6 +272,19 @@ def _verify_frozen_files(root: Path) -> None:
         raise NautilusV065PlanError("NAUTILUS_V065_FOUNDATION_IDENTITY_INVALID")
 
 
+def _verify_candidate_fixture(root: Path, candidate_commit: str) -> None:
+    for path_key, hash_key in (
+        ("request_path", "request_file_sha256"),
+        ("current_reference_path", "current_reference_file_sha256"),
+    ):
+        result = _git(root, "show", f"{candidate_commit}:{_FIXTURE[path_key]}")
+        if (
+            result.returncode != 0
+            or hashlib.sha256(result.stdout).hexdigest() != _FIXTURE[hash_key]
+        ):
+            raise NautilusV065PlanError("NAUTILUS_V065_FIXTURE_IDENTITY_INVALID")
+
+
 def build_nautilus_v065_plan(
     *, repository_root: Path, candidate_commit: str
 ) -> Dict[str, Any]:
@@ -288,6 +311,7 @@ def build_nautilus_v065_plan(
     if _git_text(root, "rev-parse", "v0.63.0^{}") != _PREDECESSOR["peeled_commit"]:
         raise NautilusV065PlanError("NAUTILUS_V065_PREDECESSOR_IDENTITY_INVALID")
     _verify_frozen_files(root)
+    _verify_candidate_fixture(root, candidate_commit)
 
     plan: Dict[str, Any] = {
         "$schema": "./nautilus-e2e-spike-plan-v1.schema.json",
@@ -297,6 +321,7 @@ def build_nautilus_v065_plan(
         "foundation": copy.deepcopy(_FOUNDATION),
         "predecessor": copy.deepcopy(_PREDECESSOR),
         "candidate": copy.deepcopy(_CANDIDATE),
+        "fixture": copy.deepcopy(_FIXTURE),
         "code_lock_candidate": {
             "commit": candidate_commit,
             "tree": tree,
