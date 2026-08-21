@@ -24,10 +24,17 @@ from .challenger_replacement_supersession_publish import (
     SupersessionPublishError,
     _atomic_no_replace,
 )
+from .challenger_replacement_plan import (
+    ChallengerReplacementPlanError,
+    _strict_json_bytes,
+)
+from .errors import CanonicalizationError
 from .nautilus_v065_contract import (
+    NautilusV065ContractError,
     build_nautilus_v065_current_reference,
     build_nautilus_v065_request,
     load_nautilus_v065_result,
+    verify_nautilus_v065_result,
 )
 from .nautilus_v065_evidence import (
     build_nautilus_v065_execution_failure_comparison,
@@ -621,6 +628,57 @@ def _clean_head() -> str:
     return result.stdout.decode("ascii").strip()
 
 
+def _verify_formal_candidate(plan: Mapping[str, Any], current_head: str) -> None:
+    plan_path = "artifacts/nautilus-sandbox/nautilus-e2e-spike-plan-v0.65.0.json"
+    artifact_test_path = "tests/test_nautilus_v065_artifacts.py"
+    try:
+        candidate = plan["code_lock_candidate"]["commit"]
+        if not re.fullmatch(r"[0-9a-f]{40}", candidate) or not re.fullmatch(
+            r"[0-9a-f]{40}", current_head
+        ):
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_FORMAL_CANDIDATE_INVALID"
+            )
+        commands = (
+            ["rev-list", "--count", f"{candidate}..{current_head}"],
+            ["diff", "--name-status", f"{candidate}..{current_head}"],
+            ["show", f"{current_head}:{plan_path}"],
+        )
+        results = []
+        for arguments in commands:
+            result = subprocess.run(
+                ["/usr/bin/git", *arguments],
+                cwd=_ROOT,
+                env={
+                    "GIT_CONFIG_GLOBAL": "/dev/null",
+                    "GIT_CONFIG_NOSYSTEM": "1",
+                    "LANG": "C",
+                    "LC_ALL": "C",
+                },
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=10,
+                check=False,
+            )
+            if result.returncode != 0 or len(result.stdout) > _MAX_ARTIFACT:
+                raise NautilusV065SupplyChainError(
+                    "NAUTILUS_V065_FORMAL_CANDIDATE_INVALID"
+                )
+            results.append(result.stdout)
+        expected_delta = f"A\t{plan_path}\nA\t{artifact_test_path}\n".encode("ascii")
+        expected_plan = canonical_json(plan).encode("utf-8") + b"\n"
+        if results != [b"1\n", expected_delta, expected_plan]:
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_FORMAL_CANDIDATE_INVALID"
+            )
+    except NautilusV065SupplyChainError:
+        raise
+    except (KeyError, TypeError, CanonicalizationError, subprocess.SubprocessError, OSError) as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_FORMAL_CANDIDATE_INVALID"
+        ) from error
+
+
 def _invoke_fixed_runner(
     *,
     python: Path,
@@ -693,6 +751,64 @@ def _publish_canonical(root: Path, final_name: str, value: Mapping[str, Any]) ->
     )
 
 
+def _read_candidate_blob(commit: str, relative_path: str) -> bytes:
+    if not re.fullmatch(r"[0-9a-f]{40}", commit) or relative_path != "tests/fixtures/nautilus-v065/current-reference-v2.json":
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_CURRENT_REFERENCE_INVALID")
+    result = subprocess.run(
+        ["/usr/bin/git", "show", f"{commit}:{relative_path}"],
+        cwd=_ROOT,
+        env={"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "LANG": "C", "LC_ALL": "C"},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=10,
+        check=False,
+    )
+    if result.returncode != 0 or not 0 < len(result.stdout) <= _MAX_ARTIFACT:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_CURRENT_REFERENCE_INVALID")
+    return result.stdout
+
+
+def _load_frozen_current_reference(
+    plan: Mapping[str, Any], request: Mapping[str, Any]
+) -> Dict[str, Any]:
+    try:
+        commit = plan["code_lock_candidate"]["commit"]
+        body = _read_candidate_blob(
+            commit,
+            "tests/fixtures/nautilus-v065/current-reference-v2.json",
+        )
+        frozen = dict(_strict_json_bytes(body))
+        if body != canonical_json(frozen).encode("utf-8") + b"\n":
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_CURRENT_REFERENCE_INVALID"
+            )
+        frozen = verify_nautilus_v065_result(frozen)
+        rebound = build_nautilus_v065_current_reference(request=request)
+        evidence_keys = (
+            "engine",
+            "scenario_results",
+            "fresh_process_replay_verified",
+            "safety_counters",
+        )
+        if any(frozen[key] != rebound[key] for key in evidence_keys):
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_CURRENT_REFERENCE_INVALID")
+        return rebound
+    except NautilusV065SupplyChainError:
+        raise
+    except (
+        KeyError,
+        TypeError,
+        ChallengerReplacementPlanError,
+        CanonicalizationError,
+        NautilusV065ContractError,
+        OSError,
+        subprocess.SubprocessError,
+    ) as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_CURRENT_REFERENCE_INVALID"
+        ) from error
+
+
 def _acquire_and_run(*, plan: Mapping[str, Any], artifact_root: Path) -> Dict[str, Any]:
     """Execute the fixed two-stage ceremony without accepting override inputs."""
 
@@ -714,7 +830,7 @@ def _acquire_and_run(*, plan: Mapping[str, Any], artifact_root: Path) -> Dict[st
             supply_chain_receipt_id=receipt["receipt_id"],
             supply_chain_receipt_hash=receipt["receipt_hash"],
         )
-        current = build_nautilus_v065_current_reference(request=request)
+        current = _load_frozen_current_reference(plan, request)
         first = None
         invocation_count = 1
         try:
@@ -780,8 +896,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0
     if args.command == "acquire-and-run":
-        _clean_head()
+        current_head = _clean_head()
         plan = load_nautilus_v065_plan((_ARTIFACT_ROOT / _PLAN_NAME).resolve())
+        _verify_formal_candidate(plan, current_head)
         if not _FORMAL_ROOT.exists():
             _FORMAL_ROOT.mkdir(mode=0o700)
         result = _acquire_and_run(plan=plan, artifact_root=_FORMAL_ROOT)

@@ -28,7 +28,9 @@ from crypto_quant.nautilus_v065_ceremony_cli import (
     _acquire_and_run,
     _capture_fixed_command,
     _invoke_fixed_runner,
+    _load_frozen_current_reference,
     _publish_fixed_artifact,
+    _verify_formal_candidate,
     _verified_acquisition_workspace,
     acquire_nautilus_v065_supply_chain,
     build_parser,
@@ -83,12 +85,59 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             "crypto_quant.nautilus_v065_ceremony_cli.load_nautilus_v065_plan",
             return_value=plan,
         ) as load, mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli._verify_formal_candidate",
+        ) as verify, mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._acquire_and_run",
             return_value={"conclusion": "INCONCLUSIVE_KEEP_CURRENT_CORE"},
         ):
             self.assertEqual(main(["acquire-and-run"]), 0)
         clean.assert_called_once_with()
         load.assert_called_once()
+        verify.assert_called_once_with(plan, "1" * 40)
+
+    def test_formal_candidate_allows_exactly_one_plan_only_commit(self):
+        plan = self.plan()
+        current = "2" * 40
+        plan_bytes = canonical_json(plan).encode("utf-8") + b"\n"
+
+        def exact_git(argv, **_kwargs):
+            arguments = argv[1:]
+            if arguments == ["rev-list", "--count", f"{plan['code_lock_candidate']['commit']}..{current}"]:
+                return mock.Mock(returncode=0, stdout=b"1\n", stderr=b"")
+            if arguments == ["diff", "--name-status", f"{plan['code_lock_candidate']['commit']}..{current}"]:
+                return mock.Mock(
+                    returncode=0,
+                    stdout=(
+                        b"A\tartifacts/nautilus-sandbox/nautilus-e2e-spike-plan-v0.65.0.json\n"
+                        b"A\ttests/test_nautilus_v065_artifacts.py\n"
+                    ),
+                    stderr=b"",
+                )
+            if arguments == ["show", f"{current}:artifacts/nautilus-sandbox/nautilus-e2e-spike-plan-v0.65.0.json"]:
+                return mock.Mock(returncode=0, stdout=plan_bytes, stderr=b"")
+            self.fail(f"unexpected git command: {arguments}")
+
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli.subprocess.run",
+            side_effect=exact_git,
+        ):
+            _verify_formal_candidate(plan, current)
+
+        def changed_source(argv, **kwargs):
+            value = exact_git(argv, **kwargs)
+            if argv[1:3] == ["diff", "--name-status"]:
+                value.stdout += b"M\tsrc/crypto_quant/nautilus_v065_ceremony_cli.py\n"
+            return value
+
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli.subprocess.run",
+            side_effect=changed_source,
+        ):
+            with self.assertRaisesRegex(
+                NautilusV065SupplyChainError,
+                "NAUTILUS_V065_FORMAL_CANDIDATE_INVALID",
+            ):
+                _verify_formal_candidate(plan, current)
 
     def test_success_ceremony_runs_twice_inside_verified_session_and_publishes_fixed_set(self):
         plan = self.plan()
@@ -151,6 +200,42 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             ],
         )
         self.assertEqual(summary["conclusion"], "ADOPT_FOR_PREREGISTERED_SHADOW")
+
+    def test_formal_current_reference_requires_exact_committed_fixture_semantics(self):
+        plan = self.plan()
+        receipt = __import__("test_nautilus_v065_supply_chain").NautilusV065SupplyChainTests().receipt()
+        request = build_nautilus_v065_request(
+            plan_id=receipt["plan_id"],
+            plan_hash=receipt["plan_hash"],
+            supply_chain_receipt_id=receipt["receipt_id"],
+            supply_chain_receipt_hash=receipt["receipt_hash"],
+        )
+        expected = build_nautilus_v065_current_reference(request=request)
+        fixture = json.loads(
+            (ROOT / "tests/fixtures/nautilus-v065/current-reference-v2.json").read_text()
+        )
+        fixture_bytes = canonical_json(fixture).encode("utf-8") + b"\n"
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli._read_candidate_blob",
+            return_value=fixture_bytes,
+        ) as read:
+            self.assertEqual(_load_frozen_current_reference(plan, request), expected)
+        read.assert_called_once_with(
+            plan["code_lock_candidate"]["commit"],
+            "tests/fixtures/nautilus-v065/current-reference-v2.json",
+        )
+
+        changed = copy.deepcopy(fixture)
+        changed["scenario_results"][0]["net_pnl_usdt"] = "999"
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli._read_candidate_blob",
+            return_value=canonical_json(changed).encode("utf-8") + b"\n",
+        ):
+            with self.assertRaisesRegex(
+                NautilusV065SupplyChainError,
+                "NAUTILUS_V065_CURRENT_REFERENCE_INVALID",
+            ):
+                _load_frozen_current_reference(plan, request)
 
     def test_runner_revalidates_verified_python_identity_before_and_after(self):
         plan = self.plan()
