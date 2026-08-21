@@ -251,6 +251,8 @@ Python socket sentinel；只 import low-level backtest/model modules；禁用 li
 descriptor、regular/uid/mode/nlink/size/attachment 门和 bounded
 read。publisher 使用 noncanonical nonce staging、same-fd readback/fsync、atomic no-replace 和 directory
 fsync；任何 partial final、symlink、hardlink、FIFO、wrong mode、different bytes 或 fsync failure 都失败关闭。
+ceremony publication 固定创建 `0600` 文件；Git committed-artifact replay 额外接受 checkout 的 `0644`，但仍
+要求 owner-owned、single-link、regular、group/world 不可写，并保留 no-follow、attachment、size 与 hash 门。
 
 单个 formal ceremony 先以 no-replace 创建固定 owner-only 正式容器并保持其 descriptor；receipt、request、
 result 和 comparison 分别通过 nonce staging + atomic no-replace 发布。随后从 retained descriptor 完成整套

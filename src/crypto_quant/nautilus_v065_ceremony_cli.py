@@ -75,6 +75,8 @@ _FINAL_NAMES = frozenset(
 )
 _MAX_OUTPUT = 4 * 1024 * 1024
 _MAX_ARTIFACT = 4 * 1024 * 1024
+_CEREMONY_FILE_MODES = frozenset({0o600})
+_COMMITTED_FILE_MODES = frozenset({0o600, 0o644})
 _TAG = "v1.230.0"
 _TAG_OBJECT = "112d335088ec11cdd1d60038b16c8fe56406aead"
 _TAG_COMMIT = "8160730c7c550480b0a439fb11086a4c4de15f0b"
@@ -636,7 +638,12 @@ def acquire_nautilus_v065_supply_chain(*, plan: Mapping[str, Any]) -> Dict[str, 
         return copy.deepcopy(session["receipt"])
 
 
-def _read_final(parent_fd: int, name: str) -> tuple[bytes, os.stat_result]:
+def _read_final(
+    parent_fd: int,
+    name: str,
+    *,
+    allowed_modes: frozenset[int] = _CEREMONY_FILE_MODES,
+) -> tuple[bytes, os.stat_result]:
     flags = os.O_RDONLY | _required_flag("O_NOFOLLOW") | _required_flag("O_NONBLOCK")
     try:
         descriptor = os.open(name, flags, dir_fd=parent_fd)
@@ -646,7 +653,7 @@ def _read_final(parent_fd: int, name: str) -> tuple[bytes, os.stat_result]:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_UNTRUSTED") from error
     try:
         before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid() or before.st_nlink != 1 or stat.S_IMODE(before.st_mode) != 0o600 or not 0 < before.st_size <= _MAX_ARTIFACT:
+        if not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid() or before.st_nlink != 1 or stat.S_IMODE(before.st_mode) not in allowed_modes or not 0 < before.st_size <= _MAX_ARTIFACT:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_UNTRUSTED")
         body = bytearray()
         while len(body) < before.st_size:
@@ -1140,11 +1147,17 @@ def _verify_staged_artifact_set(
     *,
     expected_plan: Mapping[str, Any],
     completion_marker_present: bool = False,
+    committed_checkout: bool = False,
 ) -> Dict[str, Any]:
     try:
+        allowed_modes = (
+            _COMMITTED_FILE_MODES if committed_checkout else _CEREMONY_FILE_MODES
+        )
         if set(summary) != {"conclusion", "runner_invocation_count"}:
             raise ValueError
-        raw_comparison, _identity = _read_final(staging_fd, _COMPARISON_NAME)
+        raw_comparison, _identity = _read_final(
+            staging_fd, _COMPARISON_NAME, allowed_modes=allowed_modes
+        )
         comparison_value = dict(_strict_json_bytes(raw_comparison))
         if raw_comparison != canonical_json(comparison_value).encode("utf-8") + b"\n":
             raise ValueError
@@ -1176,7 +1189,9 @@ def _verify_staged_artifact_set(
         if listed != expected:
             raise ValueError
         for name in expected:
-            body, _value = _read_final(staging_fd, name)
+            body, _value = _read_final(
+                staging_fd, name, allowed_modes=allowed_modes
+            )
             parsed = dict(_strict_json_bytes(body))
             if body != canonical_json(parsed).encode("utf-8") + b"\n":
                 raise ValueError
@@ -1238,7 +1253,9 @@ def _verify_staged_artifact_set(
         bodies = {}
         identities = {}
         for name in sorted(expected):
-            body, identity = _read_final(staging_fd, name)
+            body, identity = _read_final(
+                staging_fd, name, allowed_modes=allowed_modes
+            )
             bodies[name] = body
             files.append({
                 "name": name,
@@ -1345,7 +1362,11 @@ def load_nautilus_v065_formal_completion(
             opened = os.fstat(formal_fd)
             if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
                 raise ValueError
-            raw_comparison, _identity = _read_final(formal_fd, _COMPARISON_NAME)
+            raw_comparison, _identity = _read_final(
+                formal_fd,
+                _COMPARISON_NAME,
+                allowed_modes=_COMMITTED_FILE_MODES,
+            )
             comparison = verify_nautilus_v065_comparison(
                 dict(_strict_json_bytes(raw_comparison))
             )
@@ -1361,8 +1382,11 @@ def load_nautilus_v065_formal_completion(
                 summary,
                 expected_plan=expected_plan,
                 completion_marker_present=True,
+                committed_checkout=True,
             )
-            raw_marker, _marker_identity = _read_final(formal_fd, _COMPLETE_NAME)
+            raw_marker, _marker_identity = _read_final(
+                formal_fd, _COMPLETE_NAME, allowed_modes=_COMMITTED_FILE_MODES
+            )
             marker_value = dict(_strict_json_bytes(raw_marker))
             if raw_marker != canonical_json(marker_value).encode("utf-8") + b"\n":
                 raise ValueError

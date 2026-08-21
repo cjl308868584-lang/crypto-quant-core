@@ -482,6 +482,8 @@ bindings in the marker. The strict production formal-set loader independently en
 files before recomputing the marker self hash and bindings; it accepts no caller-supplied manifest. Never rename a
 verified directory by pathname. Any existing formal directory blocks all reruns and is retained for evidence;
 a crash before the completion marker therefore freezes a partial failure, not a false completed result.
+Ceremony publication files remain exact `0600`; committed Git replay must also accept owner-owned, single-link,
+non-group/world-writable `0644` checkout files without weakening no-follow, attachment, size or hash validation.
 Before reporting success, replay the exact formal filename set with production schemas/loaders and verify all
 receipt/request/result/comparison identities and hashes, mode, bindings and summary. Empty, incomplete, extra or
 semantically invalid sets fail closed.

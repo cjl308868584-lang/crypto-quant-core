@@ -288,7 +288,7 @@ def _read_owner_exact(path: Path) -> bytes:
     requested = Path(path)
     try:
         value = requested.lstat()
-        if not stat.S_ISREG(value.st_mode) or value.st_uid != os.geteuid() or value.st_nlink != 1 or stat.S_IMODE(value.st_mode) != 0o600:
+        if not stat.S_ISREG(value.st_mode) or value.st_uid != os.geteuid() or value.st_nlink != 1 or stat.S_IMODE(value.st_mode) not in {0o600, 0o644}:
             raise NautilusV065ContractError("NAUTILUS_V065_CONTRACT_PATH_INVALID")
         return _read_plan_bytes(requested)
     except NautilusV065ContractError:

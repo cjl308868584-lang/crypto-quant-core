@@ -452,7 +452,7 @@ def load_nautilus_v065_supply_chain_receipt(path: Path) -> Dict[str, Any]:
             not stat.S_ISREG(before.st_mode)
             or before.st_uid != os.geteuid()
             or before.st_nlink != 1
-            or stat.S_IMODE(before.st_mode) != 0o600
+            or stat.S_IMODE(before.st_mode) not in {0o600, 0o644}
         ):
             raise NautilusV065SupplyChainError("NAUTILUS_V065_RECEIPT_PATH_INVALID")
         body = _read_plan_bytes(requested)

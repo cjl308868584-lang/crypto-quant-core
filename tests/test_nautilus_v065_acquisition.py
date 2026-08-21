@@ -479,6 +479,23 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                     )["marker"],
                     marker,
                 )
+                root.chmod(0o755)
+                for child in root.iterdir():
+                    child.chmod(0o644)
+                self.assertEqual(
+                    load_nautilus_v065_formal_completion(
+                        root.resolve(), expected_plan=plan
+                    )["marker"],
+                    marker,
+                )
+                (root / "nautilus-sandbox-comparison-v0.65.0.json").chmod(0o664)
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError,
+                    "NAUTILUS_V065_FORMAL_ARTIFACT_SET_INVALID",
+                ):
+                    load_nautilus_v065_formal_completion(
+                        root.resolve(), expected_plan=plan
+                    )
                 changed_marker = dict(marker, marker_hash="0" * 64)
                 with self.assertRaisesRegex(
                     ValueError, "NAUTILUS_V065_COMPLETION_MARKER_INVALID"

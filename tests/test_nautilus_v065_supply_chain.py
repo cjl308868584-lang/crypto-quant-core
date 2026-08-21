@@ -250,6 +250,10 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
                 load_nautilus_v065_supply_chain_receipt(path.resolve())
             path.write_bytes(canonical_json(payload).encode("utf-8") + b"\n")
             path.chmod(0o644)
+            self.assertEqual(
+                load_nautilus_v065_supply_chain_receipt(path.resolve()), payload
+            )
+            path.chmod(0o664)
             with self.assertRaisesRegex(
                 NautilusV065SupplyChainError, "NAUTILUS_V065_RECEIPT_PATH_INVALID"
             ):
