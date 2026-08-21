@@ -34,7 +34,7 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
         lock = self.lock()
         command_names = [
             "uv_version", "python_version", "git_version", "gh_version",
-            "official_tag", "license", "pypi_version",
+            "pypi_version", "official_tag", "license",
             *["download:" + item["filename"] for item in lock["distributions"]],
             "slsa", "offline_venv",
             "offline_sync", "offline_import",

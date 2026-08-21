@@ -164,6 +164,11 @@ byte count 和 SHA-256。任一 timeout、redirect drift、hash/size/tag/license
 unsupported platform 或 transcript 缺失都结束为 INCONCLUSIVE。禁止改变源、版本、hash 或重试寻找更好
 结果；只允许每个已预注册命令内部的固定网络 retry policy。
 
+正式顺序先记录 uv/Python/git/gh identity，然后执行 PyPI version JSON、tag、license、按 lock 排序的
+14 个 wheel 下载、SLSA、offline venv/sync/import，共 25 条 transcript。PyPI/license/wheel curl 都不
+跟随 redirect；每个 wheel transcript 必须同时绑定 HTTP 200、exact effective URL、filename、size 和
+SHA-256。下载不得再通过未记录的 urllib/浏览器路径完成。
+
 wheel 和大体积传递依赖不进入 Git。Git 只封存 plan、lock、精确小型 transcript/metadata、hash、
 license bytes/record 和 supply-chain receipt。Actions cache 不是事实源，cache miss 必须重新按 hash 验证。
 
@@ -240,6 +245,11 @@ Python socket sentinel；只 import low-level backtest/model modules；禁用 li
 descriptor、regular/uid/mode/nlink/size/attachment 门和 bounded
 read。publisher 使用 noncanonical nonce staging、same-fd readback/fsync、atomic no-replace 和 directory
 fsync；任何 partial final、symlink、hardlink、FIFO、wrong mode、different bytes 或 fsync failure 都失败关闭。
+
+单个 formal ceremony 的完整文件集先写入固定 owner-only 非规范 staging directory；只有 acquisition、
+两次 sandbox invocation 和 comparison 全部结束后，才对整个目录执行一次 atomic no-replace 并 fsync
+父目录。正式目录或 staging 任一已存在都禁止重跑，因此崩溃不会把部分 artifact 集误当作完整结果，
+也不会自动再次请求网络以寻找不同结论。
 
 正式 artifacts：
 

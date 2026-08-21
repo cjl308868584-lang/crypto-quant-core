@@ -180,7 +180,7 @@ def supply_chain_receipt_hash(payload: Mapping[str, Any]) -> str:
 def _expected_transcript_names(lock: Mapping[str, Any]) -> list[str]:
     return [
         "uv_version", "python_version", "git_version", "gh_version",
-        "official_tag", "license", "pypi_version",
+        "pypi_version", "official_tag", "license",
         *["download:" + item["filename"] for item in lock["distributions"]],
         "slsa", "offline_venv", "offline_sync", "offline_import",
     ]

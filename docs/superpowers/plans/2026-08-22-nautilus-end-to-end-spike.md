@@ -189,9 +189,10 @@ git commit -m "feat: lock v0.65 Nautilus supply chain"
 
 - [ ] **Step 1: Write CLI/acquisition RED tests**
 
-Tests inspect parser/source and patch private `_run_fixed_command`/`_download_fixed_artifact`. They require only the
+Tests inspect parser/source and patch private fixed command/result-verification boundaries. They require only the
 parameterless `publish-plan` command at this intermediate task, no public override, clean reviewed commit, owner-only temp root, fixed command order, sanitized env,
-bounded stdout/stderr, fixed retry policy, wheel verification before install/import, SLSA verification, offline sync,
+bounded stdout/stderr, exact PyPI JSON plus 14 individually transcribed nonredirecting wheel downloads, wheel
+verification before install/import, SLSA verification, offline sync,
 and fixed reason codes for timeout/hash/license/tag/attestation/platform failures.
 
 ```python
@@ -211,7 +212,9 @@ Expected: import failure because CLI does not exist.
 For each successful process, record executable dev/ino/mode/size/SHA before and after, exact argv, sanitized env
 keys, start/end, exit code, stdout/stderr exact bytes (base64 only when non-UTF8), sizes and hashes. Reject output
 over the fixed limit before allocating. No shell, redirects, inherited Git/Python/proxy/credential environment or
-caller-provided executable.
+caller-provided executable. Do not use an unrecorded urllib download path. The receipt must contain exactly 25
+ordered transcripts: four tool identities, PyPI JSON, tag, license, 14 wheels, SLSA and three offline environment
+commands.
 
 - [ ] **Step 4: Implement safe receipt publication**
 
@@ -463,6 +466,9 @@ PYTHONPATH=src python3 -m crypto_quant.nautilus_v065_ceremony_cli acquire-and-ru
 
 If acquisition fails, the CLI publishes receipt + `INCONCLUSIVE_KEEP_CURRENT_CORE` only and never invokes runner.
 If it succeeds, the CLI runs first and replay fresh processes offline, then publishes request/results/comparison.
+All ceremony outputs first live only in fixed owner-only `.v0.65.0.in-progress`; after the complete truthful set is
+durable, one atomic no-replace directory rename publishes `v0.65.0`. Any existing staging/final directory blocks
+all reruns and is retained for evidence.
 
 - [ ] **Step 3: Replay exact artifacts and prove no production mutation**
 

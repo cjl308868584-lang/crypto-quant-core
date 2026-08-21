@@ -454,17 +454,19 @@ def _verified_acquisition_workspace_success(plan: Mapping[str, Any]) -> Iterator
             transcripts.append(record)
             return record
 
-        for name in ("uv_version", "python_version", "git_version", "gh_version", "official_tag", "license"):
+        for name in (
+            "uv_version", "python_version", "git_version", "gh_version",
+            "pypi_version", "official_tag", "license",
+        ):
             capture(name)
-        tag_output = transcripts[4]["stdout_bytes"]
+        tag_output = transcripts[5]["stdout_bytes"]
         if _TAG_OBJECT not in tag_output or _TAG_COMMIT not in tag_output:
             error = NautilusV065SupplyChainError("NAUTILUS_V065_TAG_IDENTITY_MISMATCH")
             error.completed_transcripts = copy.deepcopy(transcripts)
             raise error
         try:
-            _verify_license_transcript(transcripts[5])
-            pypi = capture("pypi_version")
-            _verify_pypi_version_transcript(pypi, lock)
+            _verify_pypi_version_transcript(transcripts[4], lock)
+            _verify_license_transcript(transcripts[6])
             verified = []
             for item in lock["distributions"]:
                 record = capture("download:" + item["filename"])
