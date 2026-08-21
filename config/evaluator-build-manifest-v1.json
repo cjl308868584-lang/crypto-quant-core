@@ -448,9 +448,9 @@
     "tests/test_v064_linux_supersession_publish.py": "b1b899075cf0d3c568f18d850f9707c6160074d49b94d11df75548b897eb3e70",
     "tests/test_v064_public_ci_bundle.py": "8947045995b9284b3cc74c1325f4b1280f2ec0c968f7422153d13a964bd8a032",
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
-    "tests/test_v064_public_ci_witness.py": "72c2cc4be36076064ca4917f909e28a840b9b0892f408fd0be60b0c5f59f3f48"
+    "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "9469b9b2f5679d8ddde172e9385db924c0b587112b2f5164e78e812d854778e8",
+  "build_input_tree_hash": "d9cde3e61627593b630b98cf4c34db9f11167c7ae20e87ea0f165935b58c9598",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -458,5 +458,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "5b91774edd80c717434ca3a27386609a98dd0a4645472721e73c64a993c7a0e8"
+  "manifest_hash": "536efc50a47358f5785258799698186d24e7ea2350ffab67eae2469c3f2e9e00"
 }

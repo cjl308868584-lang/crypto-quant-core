@@ -1452,6 +1452,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
         release = Path(self.temporary.name) / "release-winner"
         child = r'''
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -1463,6 +1464,7 @@ marker = Path(sys.argv[3])
 release = Path(sys.argv[4])
 module._PRIVATE_REPOSITORY = repository
 module._ARTIFACT_ROOT = repository / "artifacts" / "v064-public-ci-r3"
+module._OWNER_UID = os.geteuid()
 module._validate_repository_identity = lambda: None
 prepared = {
     "v064-public-ci-r3-run-api-v1.json": b'{"run":1}\n',
@@ -1511,7 +1513,11 @@ except BaseException as error:
         )
         release.write_text("release")
         winner_stdout, winner_stderr = winner.communicate(timeout=10)
-        self.assertEqual(winner.returncode, 0, winner_stderr.decode(errors="replace"))
+        self.assertEqual(
+            winner.returncode,
+            0,
+            (winner_stdout + winner_stderr).decode(errors="replace"),
+        )
         self.assertEqual(loser.returncode, 3)
         self.assertIn(b"V064_PUBLIC_CI_R3_EVIDENCE_CONCURRENT", loser.stdout)
         self.assertIn(b"V064_PUBLIC_CI_R3_EVIDENCE_PUBLISHED", winner_stdout)
