@@ -70,6 +70,7 @@ class RunnerGoldenTests(unittest.TestCase):
             root.chmod(0o700)
             completed, result = _run(root)
             self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertEqual(completed.stderr, b"")
             payload = json.loads(result.read_text(encoding="utf-8"))
             self.assertEqual(payload["engine"], "NAUTILUS_TRADER_1.230.0")
             self.assertEqual(

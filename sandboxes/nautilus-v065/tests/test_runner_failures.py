@@ -11,6 +11,36 @@ from test_runner_golden import REQUEST_FIXTURE, _prepare, _run
 
 
 class RunnerFailureTests(unittest.TestCase):
+    def test_each_runner_process_uses_exactly_one_engine_without_child_fanout(self):
+        from crypto_quant_nautilus_v065 import runner
+
+        source = inspect.getsource(runner)
+        self.assertEqual(source.count("BacktestEngine("), 1)
+        self.assertNotIn("subprocess.run", source)
+        self.assertNotIn("_run_child", source)
+        self.assertNotIn("_CHILD_ENV", source)
+
+    def test_account_position_and_pnl_are_read_from_nautilus(self):
+        from crypto_quant_nautilus_v065 import runner
+
+        source = inspect.getsource(runner)
+        for required in (
+            "account_for_venue",
+            "balance_total",
+            "portfolio.net_position",
+            "portfolio.realized_pnl",
+            "portfolio.unrealized_pnl",
+            "portfolio.total_pnl",
+        ):
+            self.assertIn(required, source)
+        for forbidden in (
+            "ending_cash =",
+            "unrealized = (",
+            "net = unrealized",
+            '"realized_pnl_usdt": "0"',
+        ):
+            self.assertNotIn(forbidden, source)
+
     def test_canonical_but_changed_fixture_is_rejected_before_engine(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -33,9 +63,9 @@ class RunnerFailureTests(unittest.TestCase):
             request, receipt, result = _prepare(root)
             clean_environment = {"HOME": str(root), "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"}
             with mock.patch.dict(os.environ, clean_environment, clear=True), mock.patch.object(
-                runner, "_run_child", side_effect=RuntimeError("TEST_ONLY_CHILD_CRASH")
+                runner, "_run_engine", side_effect=RuntimeError("TEST_ONLY_ENGINE_CRASH")
             ):
-                with self.assertRaisesRegex(RuntimeError, "TEST_ONLY_CHILD_CRASH"):
+                with self.assertRaisesRegex(RuntimeError, "TEST_ONLY_ENGINE_CRASH"):
                     runner._parent_main(request, receipt, result)
             self.assertFalse(result.exists())
 

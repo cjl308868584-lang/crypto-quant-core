@@ -1,4 +1,4 @@
-"""Run the frozen v0.65 fixture in isolated one-engine child processes."""
+"""Run the frozen v0.65 fixture in one isolated one-engine process."""
 
 from __future__ import annotations
 
@@ -12,14 +12,13 @@ import os
 import secrets
 import socket
 import stat
-import subprocess
 import sys
+import warnings
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping
 
 
-_CHILD_ENV = "CRYPTO_QUANT_NAUTILUS_V065_FIXED_CHILD"
 _MAX_BYTES = 4 * 1024 * 1024
 _ZERO = "0" * 64
 _FIXTURE_HASH = "8f9047ebd6271d2dc9f043aedacb065355cd24e507e29c4a11aa747f1531109c"
@@ -151,7 +150,7 @@ def _read_owner_file(root_fd: int, name: str) -> bytes:
 def _validate_environment() -> None:
     for key in os.environ:
         upper = key.upper()
-        if key != _CHILD_ENV and any(part in upper for part in _FORBIDDEN_ENV_PARTS):
+        if any(part in upper for part in _FORBIDDEN_ENV_PARTS):
             raise RuntimeError("CREDENTIAL_ENV_FORBIDDEN")
 
 
@@ -219,7 +218,7 @@ def _timestamp_ns(value: str) -> int:
     return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1_000_000_000)
 
 
-def _run_engine(request: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, Any]:
+def _run_engine(request: Mapping[str, Any]) -> list[dict[str, Any]]:
     _claim_engine()
     from nautilus_trader.backtest.engine import BacktestEngine
     from nautilus_trader.config import BacktestEngineConfig, LoggingConfig
@@ -231,49 +230,6 @@ def _run_engine(request: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict
     from nautilus_trader.model.objects import Money, Price, Quantity
     from nautilus_trader.trading.strategy import Strategy
 
-    instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
-    instrument = CurrencyPair(
-        instrument_id=instrument_id,
-        raw_symbol=Symbol("ETHUSDT"),
-        base_currency=ETH,
-        quote_currency=USDT,
-        price_precision=2,
-        size_precision=4,
-        price_increment=Price.from_str("0.01"),
-        size_increment=Quantity.from_str("0.0001"),
-        ts_event=0,
-        ts_init=0,
-        max_quantity=Quantity.from_str("1000.0000"),
-        min_quantity=Quantity.from_str("0.0001"),
-        max_notional=Money.from_str("100000000.00 USDT"),
-        min_notional=Money.from_str("5.00 USDT"),
-        max_price=Price.from_str("1000000.00"),
-        min_price=Price.from_str("0.01"),
-        maker_fee=Decimal("0.001"),
-        taker_fee=Decimal("0.001"),
-    )
-
-    quantity_text = f"{Decimal(str(scenario['order_intent']['quantity'])):.4f}"
-
-    class FixtureStrategy(Strategy):
-        def __init__(self) -> None:
-            super().__init__()
-            self.submitted = False
-
-        def on_start(self) -> None:
-            self.subscribe_quote_ticks(instrument_id)
-
-        def on_quote_tick(self, _tick: QuoteTick) -> None:
-            if self.submitted:
-                return
-            self.submitted = True
-            order = self.order_factory.market(
-                instrument_id=instrument_id,
-                order_side=OrderSide.BUY,
-                quantity=Quantity.from_str(quantity_text),
-            )
-            self.submit_order(order)
-
     engine = BacktestEngine(
         BacktestEngineConfig(
             trader_id=TraderId("V065-001"),
@@ -282,120 +238,195 @@ def _run_engine(request: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict
         )
     )
     try:
-        engine.add_venue(
-            venue=Venue("BINANCE"),
-            oms_type=OmsType.NETTING,
-            account_type=AccountType.CASH,
-            starting_balances=[Money.from_str("1000.00 USDT"), Money.from_str("0.00000000 ETH")],
-            use_market_order_acks=True,
-            liquidity_consumption=scenario["scenario"] == "PARTIAL_THEN_FULL",
-        )
-        engine.add_instrument(instrument)
-        ticks = []
-        for market_event in scenario["events"]:
-            if market_event["kind"] != "BBO":
-                continue
-            timestamp = _timestamp_ns(str(market_event["occurred_at"]))
-            ticks.append(
-                QuoteTick(
-                    instrument_id=instrument_id,
-                    bid_price=Price.from_str(f"{Decimal(str(market_event['bid'])):.2f}"),
-                    ask_price=Price.from_str(f"{Decimal(str(market_event['ask'])):.2f}"),
-                    bid_size=Quantity.from_str(f"{Decimal(str(market_event['bid_size'])):.4f}"),
-                    ask_size=Quantity.from_str(f"{Decimal(str(market_event['ask_size'])):.4f}"),
-                    ts_event=timestamp,
-                    ts_init=timestamp,
-                )
+        contexts = []
+        for index, scenario in enumerate(request["scenarios"], 1):
+            venue = Venue(f"V065{index}")
+            instrument_id = InstrumentId.from_str(f"ETHUSDT.{venue}")
+            instrument = CurrencyPair(
+                instrument_id=instrument_id,
+                raw_symbol=Symbol("ETHUSDT"),
+                base_currency=ETH,
+                quote_currency=USDT,
+                price_precision=2,
+                size_precision=4,
+                price_increment=Price.from_str("0.01"),
+                size_increment=Quantity.from_str("0.0001"),
+                ts_event=0,
+                ts_init=0,
+                max_quantity=Quantity.from_str("1000.0000"),
+                min_quantity=Quantity.from_str("0.0001"),
+                max_notional=Money.from_str("100000000.00 USDT"),
+                min_notional=Money.from_str("5.00 USDT"),
+                max_price=Price.from_str("1000000.00"),
+                min_price=Price.from_str("0.01"),
+                maker_fee=Decimal("0.001"),
+                taker_fee=Decimal("0.001"),
             )
-        engine.add_data(ticks)
-        engine.add_strategy(FixtureStrategy())
-        engine.run()
+            quantity_text = f"{Decimal(str(scenario['order_intent']['quantity'])):.4f}"
 
-        orders = engine.cache.orders()
-        if len(orders) != 1:
-            raise RuntimeError("ENGINE_ORDER_COUNT_INVALID")
-        order = orders[0]
-        fills = [item for item in order.events if item.__class__.__name__ == "OrderFilled"]
-        rejected = any(item.__class__.__name__ in ("OrderDenied", "OrderRejected") for item in order.events)
-        requested = Decimal(quantity_text)
-        filled = sum((Decimal(str(item.last_qty)) for item in fills), Decimal(0))
-        fees = sum((Decimal(str(item.commission).split()[0]) for item in fills), Decimal(0))
-        cost = sum((Decimal(str(item.last_px)) * Decimal(str(item.last_qty)) for item in fills), Decimal(0))
-        average = cost / filled if filled else Decimal(0)
-        last_bid = Decimal(str([item for item in scenario["events"] if item["kind"] == "BBO"][-1]["bid"]))
-        ending_cash = Decimal(str(request["starting_state"]["cash_usdt"])) - cost - fees
-        unrealized = (last_bid - average) * filled if filled else Decimal(0)
-        net = unrealized - fees
-        status = "FILLED" if filled == requested else "REJECTED_MIN_NOTIONAL" if rejected and filled == 0 else "ENGINE_RESULT_INVALID"
-        if status == "ENGINE_RESULT_INVALID":
-            raise RuntimeError(status)
-        events = [_event(1, "ORDER_ACCEPTED" if filled else "ORDER_REJECTED", status=status)]
-        for sequence, fill in enumerate(fills, 2):
-            events.append(
-                _event(
-                    sequence,
-                    "FILL",
-                    price=_decimal(str(fill.last_px)),
-                    quantity=_decimal(str(fill.last_qty)),
-                    fee_usdt=_decimal(str(fill.commission).split()[0]),
-                )
+            class FixtureStrategy(Strategy):
+                def __init__(self, fixed_instrument_id: Any, fixed_quantity: str) -> None:
+                    super().__init__()
+                    self.fixed_instrument_id = fixed_instrument_id
+                    self.fixed_quantity = fixed_quantity
+                    self.submitted = False
+
+                def on_start(self) -> None:
+                    self.subscribe_quote_ticks(self.fixed_instrument_id)
+
+                def on_quote_tick(self, _tick: QuoteTick) -> None:
+                    if self.submitted:
+                        return
+                    self.submitted = True
+                    order = self.order_factory.market(
+                        instrument_id=self.fixed_instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_str(self.fixed_quantity),
+                    )
+                    self.submit_order(order)
+
+            engine.add_venue(
+                venue=venue,
+                oms_type=OmsType.NETTING,
+                account_type=AccountType.CASH,
+                starting_balances=[
+                    Money.from_str("1000.00 USDT"),
+                    Money.from_str("0.00000000 ETH"),
+                ],
+                use_market_order_acks=True,
+                liquidity_consumption=scenario["scenario"] == "PARTIAL_THEN_FULL",
             )
-        return {
-            "scenario": scenario["scenario"],
-            "scenario_hash": scenario["scenario_hash"],
-            "status": status,
-            "requested_quantity": _decimal(requested),
-            "filled_quantity": _decimal(filled),
-            "average_price": _decimal(average),
-            "fee_usdt": _decimal(fees),
-            "ending_cash_usdt": _decimal(ending_cash),
-            "ending_position_eth": _decimal(filled),
-            "realized_pnl_usdt": "0",
-            "unrealized_pnl_usdt": _decimal(unrealized),
-            "net_pnl_usdt": _decimal(net),
-            "events": events,
-        }
+            engine.add_instrument(instrument)
+            ticks = []
+            for market_event in scenario["events"]:
+                if market_event["kind"] != "BBO":
+                    continue
+                timestamp = _timestamp_ns(str(market_event["occurred_at"]))
+                ticks.append(
+                    QuoteTick(
+                        instrument_id=instrument_id,
+                        bid_price=Price.from_str(
+                            f"{Decimal(str(market_event['bid'])):.2f}"
+                        ),
+                        ask_price=Price.from_str(
+                            f"{Decimal(str(market_event['ask'])):.2f}"
+                        ),
+                        bid_size=Quantity.from_str(
+                            f"{Decimal(str(market_event['bid_size'])):.4f}"
+                        ),
+                        ask_size=Quantity.from_str(
+                            f"{Decimal(str(market_event['ask_size'])):.4f}"
+                        ),
+                        ts_event=timestamp,
+                        ts_init=timestamp,
+                    )
+                )
+            engine.add_data(ticks)
+            engine.add_strategy(FixtureStrategy(instrument_id, quantity_text))
+            last_bid = Price.from_str(
+                f"{Decimal(str([item for item in scenario['events'] if item['kind'] == 'BBO'][-1]['bid'])):.2f}"
+            )
+            contexts.append((scenario, venue, instrument_id, quantity_text, last_bid))
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"Timestamp\.utcnow is deprecated and will be removed in a future version\..*",
+            )
+            engine.run()
+
+        results = []
+        for scenario, venue, instrument_id, quantity_text, last_bid in contexts:
+            orders = engine.cache.orders(instrument_id=instrument_id)
+            account = engine.cache.account_for_venue(venue=venue)
+            if len(orders) != 1 or account is None:
+                raise RuntimeError("ENGINE_ACCOUNT_OR_ORDER_INVALID")
+            order = orders[0]
+            fills = [
+                item
+                for item in order.events
+                if item.__class__.__name__ == "OrderFilled"
+            ]
+            rejected = any(
+                item.__class__.__name__ in ("OrderDenied", "OrderRejected")
+                for item in order.events
+            )
+            requested = Decimal(quantity_text)
+            filled = order.filled_qty.as_decimal()
+            fees = sum(
+                (item.commission.as_decimal() for item in fills), Decimal(0)
+            )
+            average = Decimal(0) if order.avg_px is None else order.avg_px
+            ending_cash_money = account.balance_total(USDT)
+            realized_money = engine.portfolio.realized_pnl(
+                instrument_id,
+                account_id=account.id,
+                target_currency=USDT,
+            )
+            unrealized_money = engine.portfolio.unrealized_pnl(
+                instrument_id,
+                price=last_bid,
+                account_id=account.id,
+                target_currency=USDT,
+            )
+            total_money = engine.portfolio.total_pnl(
+                instrument_id,
+                price=last_bid,
+                account_id=account.id,
+                target_currency=USDT,
+            )
+            if ending_cash_money is None or unrealized_money is None or total_money is None:
+                raise RuntimeError("ENGINE_ACCOUNTING_UNAVAILABLE")
+            ending_position = engine.portfolio.net_position(
+                instrument_id,
+                account_id=account.id,
+            )
+            realized_value = Decimal(0) if realized_money is None else realized_money.as_decimal()
+            status = (
+                "FILLED"
+                if filled == requested
+                else "REJECTED_MIN_NOTIONAL"
+                if rejected and filled == 0
+                else "ENGINE_RESULT_INVALID"
+            )
+            if status == "ENGINE_RESULT_INVALID":
+                raise RuntimeError(status)
+            events = [
+                _event(
+                    1,
+                    "ORDER_ACCEPTED" if filled else "ORDER_REJECTED",
+                    status=status,
+                )
+            ]
+            for sequence, fill in enumerate(fills, 2):
+                events.append(
+                    _event(
+                        sequence,
+                        "FILL",
+                        price=_decimal(fill.last_px.as_decimal()),
+                        quantity=_decimal(fill.last_qty.as_decimal()),
+                        fee_usdt=_decimal(fill.commission.as_decimal()),
+                    )
+                )
+            results.append(
+                {
+                    "scenario": scenario["scenario"],
+                    "scenario_hash": scenario["scenario_hash"],
+                    "status": status,
+                    "requested_quantity": _decimal(requested),
+                    "filled_quantity": _decimal(filled),
+                    "average_price": _decimal(average),
+                    "fee_usdt": _decimal(fees),
+                    "ending_cash_usdt": _decimal(ending_cash_money.as_decimal()),
+                    "ending_position_eth": _decimal(ending_position),
+                    "realized_pnl_usdt": _decimal(realized_value),
+                    "unrealized_pnl_usdt": _decimal(unrealized_money.as_decimal()),
+                    "net_pnl_usdt": _decimal(total_money.as_decimal()),
+                    "events": events,
+                }
+            )
+        return results
     finally:
         engine.dispose()
-
-
-def _child_main() -> int:
-    _validate_environment()
-    _install_network_guard()
-    body = sys.stdin.buffer.read(_MAX_BYTES + 1)
-    if not 1 <= len(body) <= _MAX_BYTES:
-        raise RuntimeError("CHILD_INPUT_INVALID")
-    payload = json.loads(body)
-    if not isinstance(payload, dict) or set(payload) != {"request", "scenario"}:
-        raise RuntimeError("CHILD_INPUT_INVALID")
-    result = _run_engine(payload["request"], payload["scenario"])
-    sys.stdout.buffer.write(_canonical(result) + b"\n")
-    sys.stdout.buffer.flush()
-    return 0
-
-
-def _run_child(request: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, Any]:
-    environment = {
-        "HOME": os.environ["HOME"],
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "PYTHONPATH": os.environ.get("PYTHONPATH", ""),
-        "LANG": "C",
-        "LC_ALL": "C",
-        _CHILD_ENV: "1",
-    }
-    completed = subprocess.run(
-        [sys.executable, "-P", "-m", "crypto_quant_nautilus_v065.runner"],
-        input=_canonical({"request": request, "scenario": scenario}),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=environment,
-        timeout=20,
-        check=False,
-    )
-    if completed.returncode != 0:
-        raise RuntimeError("CHILD_ENGINE_FAILED:" + completed.stderr.decode("utf-8", "replace")[-1000:])
-    result = _strict_json(completed.stdout)
-    return result
 
 
 def _rename_noreplace(root_fd: int, source: str, destination: str) -> None:
@@ -484,7 +515,8 @@ def _parent_main(request_path: Path, receipt_path: Path, result_path: Path) -> i
             pass
         else:
             raise RuntimeError("RESULT_EXISTS")
-        results = [_run_child(request, scenario) for scenario in request["scenarios"]]
+        _install_network_guard()
+        results = _run_engine(request)
         first, replay = results[0], results[3]
         semantic_keys = (
             "status", "requested_quantity", "filled_quantity", "average_price", "fee_usdt",
@@ -531,8 +563,6 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     try:
-        if os.environ.get(_CHILD_ENV) == "1":
-            return _child_main()
         arguments = _parser().parse_args()
         return _parent_main(arguments.request, arguments.receipt, arguments.result)
     except BaseException as error:

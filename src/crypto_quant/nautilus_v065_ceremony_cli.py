@@ -738,7 +738,7 @@ def _invoke_fixed_runner(
     )
     if _venv_python_identity(python, workspace) != expected:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID")
-    if result.returncode != 0 or result.stdout or len(result.stderr) > _MAX_OUTPUT:
+    if result.returncode != 0 or result.stdout or result.stderr:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_FAILED")
     return load_nautilus_v065_result(result_path.resolve())
 

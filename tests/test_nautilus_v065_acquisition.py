@@ -252,7 +252,7 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as raw, mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._venv_python_identity",
-            side_effect=[expected, expected],
+            side_effect=[expected, expected, expected, expected],
         ) as identity, mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli.subprocess.run",
             return_value=mock.Mock(returncode=0, stdout=b"", stderr=b""),
@@ -269,7 +269,19 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 ),
                 {"verified": True},
             )
-        self.assertEqual(identity.call_count, 2)
+            run.return_value = mock.Mock(returncode=0, stdout=b"", stderr=b"unexpected-warning")
+            with self.assertRaisesRegex(
+                NautilusV065SupplyChainError,
+                "NAUTILUS_V065_RUNNER_FAILED",
+            ):
+                _invoke_fixed_runner(
+                    python=python,
+                    workspace=workspace,
+                    request=request,
+                    receipt=receipt,
+                    invocation="replay",
+                )
+        self.assertEqual(identity.call_count, 4)
         self.assertEqual(run.call_args.args[0][0:4], [str(python), "-P", "-m", "crypto_quant_nautilus_v065.runner"])
         self.assertEqual(set(run.call_args.kwargs["env"]), {"HOME", "PATH", "PYTHONPATH", "LANG", "LC_ALL"})
 
