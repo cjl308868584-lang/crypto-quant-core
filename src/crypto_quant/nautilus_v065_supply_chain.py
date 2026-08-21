@@ -257,7 +257,9 @@ def _fixed_executable_matches(name: str, executable: str, workspace: Path) -> bo
         return bool(re.fullmatch(
             r"/(?:opt/homebrew|usr/local)/bin/python3\.12|"
             r"/Library/Frameworks/Python\.framework/Versions/3\.12/bin/python3\.12|"
-            r"/(?:Users|home)/[^/]+/\.local/bin/python3\.12",
+            r"/(?:Users|home)/[^/]+/\.local/bin/python3\.12|"
+            r"/(?:Users|home)/[^/]+/\.local/share/uv/python/"
+            r"cpython-3\.12\.[0-9]+-macos-aarch64-none/bin/python3\.12",
             executable,
         ))
     elif name == "offline_import":

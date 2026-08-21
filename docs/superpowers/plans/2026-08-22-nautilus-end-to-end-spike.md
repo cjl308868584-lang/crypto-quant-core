@@ -472,10 +472,12 @@ PYTHONPATH=src python3 -m crypto_quant.nautilus_v065_ceremony_cli acquire-and-ru
 
 If acquisition fails, the CLI publishes receipt + `INCONCLUSIVE_KEEP_CURRENT_CORE` only and never invokes runner.
 If it succeeds, the CLI runs first and replay fresh processes offline, then publishes request/results/comparison.
-The CLI creates fixed owner-only `v0.65.0` once and retains its descriptor. Receipt/request/results use safe
-individual-file publication; comparison is always the final file and the only completion marker. Never rename a
+The CLI creates fixed owner-only `v0.65.0` once and retains its descriptor. Receipt/request/results/comparison use safe
+individual-file publication. After production replay verifies their exact set, cross-document bindings and the
+committed plan identity, publish `nautilus-sandbox-complete-v0.65.0.json` as the distinct final completion marker.
+Never rename a
 verified directory by pathname. Any existing formal directory blocks all reruns and is retained for evidence;
-a crash before comparison therefore freezes a partial failure, not a false completed result.
+a crash before the completion marker therefore freezes a partial failure, not a false completed result.
 Before reporting success, replay the exact formal filename set with production schemas/loaders and verify all
 receipt/request/result/comparison identities and hashes, mode, bindings and summary. Empty, incomplete, extra or
 semantically invalid sets fail closed.

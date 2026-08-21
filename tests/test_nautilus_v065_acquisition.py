@@ -33,6 +33,7 @@ from crypto_quant.nautilus_v065_ceremony_cli import (
     _invoke_fixed_runner,
     _load_frozen_current_reference,
     _publish_fixed_artifact,
+    _publish_formal_completion_marker,
     _run_bounded_command,
     _verify_staged_artifact_set,
     _verify_formal_candidate,
@@ -138,13 +139,16 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             ) as acquire, mock.patch.object(
                 module,
                 "_verify_staged_artifact_set",
-            ) as verify_set:
+            ) as verify_set, mock.patch.object(
+                module, "_publish_formal_completion_marker"
+            ) as marker:
                 result = _commit_formal_ceremony(plan)
             self.assertEqual(result["conclusion"], "REJECT_KEEP_CURRENT_CORE")
             self.assertTrue(formal.is_dir())
             self.assertFalse((parent / ".v0.65.0.in-progress").exists())
             acquire.assert_called_once_with(plan=plan, artifact_root=formal)
             verify_set.assert_called_once()
+            marker.assert_called_once()
 
         with tempfile.TemporaryDirectory() as raw:
             parent = Path(raw)
@@ -226,10 +230,39 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             ), mock.patch.object(
                 module, "_verify_staged_artifact_set"
             ), mock.patch.object(
+                module, "_publish_formal_completion_marker"
+            ), mock.patch.object(
                 module, "_atomic_no_replace", side_effect=inspect_source
             ):
                 _commit_formal_ceremony(plan)
         self.assertNotIn(True, source_is_directory)
+
+    def test_formal_completion_marker_is_published_only_after_set_replay(self):
+        plan = self.plan()
+        from crypto_quant import nautilus_v065_ceremony_cli as module
+
+        order = []
+        with tempfile.TemporaryDirectory() as raw:
+            parent = Path(raw)
+            parent.chmod(0o755)
+            with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
+                module, "_FORMAL_ROOT", parent / "v0.65.0"
+            ), mock.patch.object(
+                module,
+                "_acquire_and_run",
+                return_value={"conclusion": "REJECT_KEEP_CURRENT_CORE"},
+            ), mock.patch.object(
+                module,
+                "_verify_staged_artifact_set",
+                side_effect=lambda *_args, **_kwargs: order.append("replay"),
+            ), mock.patch.object(
+                module,
+                "_publish_formal_completion_marker",
+                create=True,
+                side_effect=lambda *_args, **_kwargs: order.append("marker"),
+            ):
+                _commit_formal_ceremony(plan)
+        self.assertEqual(order, ["replay", "marker"])
 
     def test_staged_set_verifier_rejects_individually_valid_unbound_documents(self):
         from crypto_quant.nautilus_v065_evidence import compare_nautilus_v065
@@ -304,7 +337,54 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                             "conclusion": comparison["conclusion"],
                             "runner_invocation_count": 2,
                         },
+                        expected_plan=plan,
                     )
+                receipt_path = root / "nautilus-supply-chain-receipt-v0.65.0.json"
+                receipt_path.write_text(
+                    canonical_json(receipt) + "\n", encoding="utf-8"
+                )
+                wrong_plan = dict(
+                    plan,
+                    plan_id="nautilus_v065_plan_" + "a" * 64,
+                    plan_hash="b" * 64,
+                )
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError,
+                    "NAUTILUS_V065_FORMAL_ARTIFACT_SET_INVALID",
+                ):
+                    _verify_staged_artifact_set(
+                        root,
+                        descriptor,
+                        {
+                            "conclusion": comparison["conclusion"],
+                            "runner_invocation_count": 2,
+                        },
+                        expected_plan=wrong_plan,
+                    )
+                _verify_staged_artifact_set(
+                    root,
+                    descriptor,
+                    {
+                        "conclusion": comparison["conclusion"],
+                        "runner_invocation_count": 2,
+                    },
+                    expected_plan=plan,
+                )
+                _publish_formal_completion_marker(
+                    root,
+                    descriptor,
+                    {
+                        "conclusion": comparison["conclusion"],
+                        "runner_invocation_count": 2,
+                    },
+                    expected_plan=plan,
+                )
+                marker = json.loads(
+                    (root / "nautilus-sandbox-complete-v0.65.0.json").read_text()
+                )
+                self.assertEqual(marker["plan_id"], plan["plan_id"])
+                self.assertEqual(marker["comparison_hash"], comparison["comparison_hash"])
+                self.assertEqual(len(marker["files"]), 5)
             finally:
                 os.close(descriptor)
 

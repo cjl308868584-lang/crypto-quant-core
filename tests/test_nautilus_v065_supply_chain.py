@@ -11,6 +11,7 @@ from jsonschema import Draft202012Validator
 from crypto_quant.canonical import canonical_json
 from crypto_quant.nautilus_v065_supply_chain import (
     _OFFLINE_IMPORT_CODE,
+    _fixed_executable_matches,
     NautilusV065SupplyChainError,
     build_nautilus_v065_dependency_lock,
     load_nautilus_v065_supply_chain_receipt,
@@ -311,6 +312,17 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
                 "NAUTILUS_V065_TRANSCRIPT_SEMANTIC_INVALID",
             ):
                 load_nautilus_v065_supply_chain_receipt(path)
+
+    def test_fixed_python_mapping_accepts_the_resolved_uv_managed_312_identity(self):
+        workspace = Path("/private/tmp/nautilus-v065-test")
+        self.assertTrue(
+            _fixed_executable_matches(
+                "python_version",
+                "/Users/chenm4/.local/share/uv/python/"
+                "cpython-3.12.13-macos-aarch64-none/bin/python3.12",
+                workspace,
+            )
+        )
 
     def test_receipt_rejects_missing_output_and_nonzero_authority(self):
         payload = self.receipt()

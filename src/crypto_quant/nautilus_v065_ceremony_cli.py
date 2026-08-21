@@ -64,8 +64,12 @@ _REQUEST_NAME = "nautilus-sandbox-request-v0.65.0.json"
 _FIRST_RESULT_NAME = "nautilus-sandbox-result-first-v0.65.0.json"
 _REPLAY_RESULT_NAME = "nautilus-sandbox-result-replay-v0.65.0.json"
 _COMPARISON_NAME = "nautilus-sandbox-comparison-v0.65.0.json"
+_COMPLETE_NAME = "nautilus-sandbox-complete-v0.65.0.json"
 _FINAL_NAMES = frozenset(
-    {_PLAN_NAME, _RECEIPT_NAME, _REQUEST_NAME, _FIRST_RESULT_NAME, _REPLAY_RESULT_NAME, _COMPARISON_NAME}
+    {
+        _PLAN_NAME, _RECEIPT_NAME, _REQUEST_NAME, _FIRST_RESULT_NAME,
+        _REPLAY_RESULT_NAME, _COMPARISON_NAME, _COMPLETE_NAME,
+    }
 )
 _MAX_OUTPUT = 4 * 1024 * 1024
 _MAX_ARTIFACT = 4 * 1024 * 1024
@@ -1092,7 +1096,12 @@ def _commit_formal_ceremony(plan: Mapping[str, Any]) -> Dict[str, Any]:
                     "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
                 )
             result = _acquire_and_run(plan=plan, artifact_root=formal)
-            _verify_staged_artifact_set(formal, formal_fd, result)
+            _verify_staged_artifact_set(
+                formal, formal_fd, result, expected_plan=plan
+            )
+            _publish_formal_completion_marker(
+                formal, formal_fd, result, expected_plan=plan
+            )
             os.fsync(formal_fd)
             attached = os.stat(formal.name, dir_fd=parent_fd, follow_symlinks=False)
             if (value.st_dev, value.st_ino) != (attached.st_dev, attached.st_ino):
@@ -1109,7 +1118,11 @@ def _commit_formal_ceremony(plan: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def _verify_staged_artifact_set(
-    staging: Path, staging_fd: int, summary: Mapping[str, Any]
+    staging: Path,
+    staging_fd: int,
+    summary: Mapping[str, Any],
+    *,
+    expected_plan: Mapping[str, Any],
 ) -> None:
     try:
         if set(summary) != {"conclusion", "runner_invocation_count"}:
@@ -1148,6 +1161,11 @@ def _verify_staged_artifact_set(
         receipt = load_nautilus_v065_supply_chain_receipt(
             (staging / _RECEIPT_NAME).resolve()
         )
+        if (
+            receipt["plan_id"] != expected_plan["plan_id"]
+            or receipt["plan_hash"] != expected_plan["plan_hash"]
+        ):
+            raise ValueError
         request = None
         first = None
         replay = None
@@ -1199,6 +1217,56 @@ def _verify_staged_artifact_set(
     except (KeyError, TypeError, ValueError, OSError, CanonicalizationError) as error:
         raise NautilusV065SupplyChainError(
             "NAUTILUS_V065_FORMAL_ARTIFACT_SET_INVALID"
+        ) from error
+
+
+def _publish_formal_completion_marker(
+    formal: Path,
+    formal_fd: int,
+    summary: Mapping[str, Any],
+    *,
+    expected_plan: Mapping[str, Any],
+) -> None:
+    try:
+        comparison_raw, _identity = _read_final(formal_fd, _COMPARISON_NAME)
+        comparison = verify_nautilus_v065_comparison(
+            dict(_strict_json_bytes(comparison_raw))
+        )
+        names = sorted(os.listdir(formal_fd))
+        if _COMPLETE_NAME in names:
+            raise ValueError
+        files = []
+        for name in names:
+            body, _value = _read_final(formal_fd, name)
+            files.append({
+                "name": name,
+                "size": len(body),
+                "sha256": hashlib.sha256(body).hexdigest(),
+            })
+        marker = {
+            "format": "NAUTILUS_V065_FORMAL_COMPLETION_V1",
+            "plan_id": expected_plan["plan_id"],
+            "plan_hash": expected_plan["plan_hash"],
+            "comparison_id": comparison["comparison_id"],
+            "comparison_hash": comparison["comparison_hash"],
+            "conclusion": summary["conclusion"],
+            "runner_invocation_count": summary["runner_invocation_count"],
+            "files": files,
+            "marker_hash": "0" * 64,
+        }
+        marker["marker_hash"] = hashlib.sha256(
+            canonical_json(marker).encode("utf-8")
+        ).hexdigest()
+        body = canonical_json(marker).encode("utf-8") + b"\n"
+        _publish_fixed_artifact(root=formal, final_name=_COMPLETE_NAME, data=body)
+        replayed, _value = _read_final(formal_fd, _COMPLETE_NAME)
+        if replayed != body:
+            raise ValueError
+    except (NautilusV065SupplyChainError, NautilusV065ContractError):
+        raise
+    except (KeyError, TypeError, ValueError, OSError, CanonicalizationError) as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_FORMAL_COMMIT_FAILED"
         ) from error
 
 
