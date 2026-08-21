@@ -5,6 +5,8 @@ import hashlib
 import inspect
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -739,6 +741,76 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 ):
                     _publish_fixed_artifact(root=root, final_name=name, data=data)
             self.assertFalse((root / name).exists())
+
+    def test_existing_final_eof_fails_closed_without_hanging(self):
+        script = r'''
+from pathlib import Path
+from unittest import mock
+from crypto_quant.nautilus_v065_ceremony_cli import _publish_fixed_artifact
+from crypto_quant.nautilus_v065_supply_chain import NautilusV065SupplyChainError
+root = Path(__import__("sys").argv[1])
+calls = 0
+def truncated(_fd, _size):
+    global calls
+    calls += 1
+    return b"{" if calls == 1 else b""
+try:
+    with mock.patch("crypto_quant.nautilus_v065_ceremony_cli.os.read", side_effect=truncated):
+        _publish_fixed_artifact(root=root, final_name="nautilus-supply-chain-receipt-v0.65.0.json", data=b'{"fixed":true}\n')
+except NautilusV065SupplyChainError as error:
+    if error.reason_code == "NAUTILUS_V065_FINAL_UNTRUSTED":
+        raise SystemExit(0)
+raise SystemExit(3)
+'''
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            root.chmod(0o700)
+            target = root / "nautilus-supply-chain-receipt-v0.65.0.json"
+            target.write_bytes(b'{"fixed":true}\n')
+            target.chmod(0o600)
+            completed = subprocess.run(
+                [sys.executable, "-c", script, str(root)],
+                cwd=ROOT,
+                env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(ROOT / "src")},
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=1,
+                check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr.decode("utf-8", "replace"))
+
+    def test_existing_final_same_bytes_new_inode_is_rejected(self):
+        from crypto_quant import nautilus_v065_ceremony_cli as module
+
+        data = b'{"fixed":true}\n'
+        name = "nautilus-supply-chain-receipt-v0.65.0.json"
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            root.chmod(0o700)
+            target = root / name
+            target.write_bytes(data)
+            target.chmod(0o600)
+            original_inode = target.stat().st_ino
+            original_read = module.os.read
+            replaced = False
+
+            def replace_then_read(descriptor, size):
+                nonlocal replaced
+                if not replaced:
+                    replaced = True
+                    target.unlink()
+                    target.write_bytes(data)
+                    target.chmod(0o600)
+                return original_read(descriptor, size)
+
+            with mock.patch.object(module.os, "read", side_effect=replace_then_read):
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError,
+                    "NAUTILUS_V065_FINAL_UNTRUSTED",
+                ):
+                    _publish_fixed_artifact(root=root, final_name=name, data=data)
+            self.assertNotEqual(target.stat().st_ino, original_inode)
+            self.assertEqual(target.read_bytes(), data)
 
     def test_source_contains_no_public_override_or_arbitrary_injection_seam(self):
         source = inspect.getsource(__import__("crypto_quant.nautilus_v065_ceremony_cli", fromlist=["*"]))

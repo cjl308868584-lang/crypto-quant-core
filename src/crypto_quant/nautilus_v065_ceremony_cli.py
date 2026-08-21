@@ -490,13 +490,35 @@ def _read_final(parent_fd: int, name: str) -> tuple[bytes, os.stat_result]:
     except OSError as error:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_UNTRUSTED") from error
     try:
-        value = os.fstat(descriptor)
-        if not stat.S_ISREG(value.st_mode) or value.st_uid != os.geteuid() or value.st_nlink != 1 or stat.S_IMODE(value.st_mode) != 0o600 or not 0 < value.st_size <= _MAX_ARTIFACT:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid() or before.st_nlink != 1 or stat.S_IMODE(before.st_mode) != 0o600 or not 0 < before.st_size <= _MAX_ARTIFACT:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_UNTRUSTED")
-        body = b""
-        while len(body) < value.st_size:
-            body += os.read(descriptor, value.st_size - len(body))
-        return body, value
+        body = bytearray()
+        while len(body) < before.st_size:
+            try:
+                chunk = os.read(descriptor, before.st_size - len(body))
+            except InterruptedError:
+                continue
+            if not chunk:
+                raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_UNTRUSTED")
+            body.extend(chunk)
+        after = os.fstat(descriptor)
+        attached = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        identity = lambda value: (
+            value.st_dev,
+            value.st_ino,
+            value.st_uid,
+            value.st_nlink,
+            stat.S_IMODE(value.st_mode),
+            value.st_size,
+        )
+        if identity(before) != identity(after) or identity(after) != identity(attached):
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_UNTRUSTED")
+        return bytes(body), after
+    except NautilusV065SupplyChainError:
+        raise
+    except OSError as error:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_UNTRUSTED") from error
     finally:
         os.close(descriptor)
 
