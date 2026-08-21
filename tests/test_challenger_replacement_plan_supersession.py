@@ -98,6 +98,90 @@ def _git_fixture(repository, *arguments):
     )
 
 
+def _normalize_reviewed_checkout_plan(repository, artifact_root):
+    if artifact_root != repository / "artifacts" / "challenger-replacement":
+        raise AssertionError("reviewed checkout artifact root is not fixed")
+    private_parent = repository.parent.lstat()
+    if (
+        not stat.S_ISDIR(private_parent.st_mode)
+        or private_parent.st_uid != os.geteuid()
+        or stat.S_IMODE(private_parent.st_mode) != 0o700
+    ):
+        raise AssertionError("reviewed checkout private parent is untrusted")
+    if _git_fixture(repository, "status", "--porcelain=v1").stdout != b"":
+        raise AssertionError("reviewed checkout repository is not clean")
+
+    plan_path = artifact_root / "challenger-replacement-plan-v0.64.0.json"
+    relative_path = plan_path.relative_to(repository).as_posix()
+    head_entry = _git_fixture(
+        repository, "ls-tree", "-z", "HEAD", "--", relative_path
+    ).stdout
+    try:
+        metadata, entry_path = head_entry[:-1].split(b"\t", 1)
+        entry_mode, entry_kind, object_id = metadata.split(b" ", 2)
+    except ValueError as exc:
+        raise AssertionError("reviewed checkout HEAD plan is untrusted") from exc
+    if (
+        not head_entry.endswith(b"\0")
+        or entry_mode != b"100644"
+        or entry_kind != b"blob"
+        or len(object_id) not in (40, 64)
+        or any(byte not in b"0123456789abcdef" for byte in object_id)
+        or entry_path != relative_path.encode("utf-8")
+    ):
+        raise AssertionError("reviewed checkout HEAD plan is untrusted")
+    expected = canonical_json(build_challenger_replacement_plan_v2()).encode("utf-8") + b"\n"
+    if _git_fixture(repository, "show", "HEAD:" + relative_path).stdout != expected:
+        raise AssertionError("reviewed checkout HEAD plan bytes are not canonical")
+
+    required_flags = ("O_NOFOLLOW", "O_NONBLOCK")
+    if any(not hasattr(os, name) or not getattr(os, name) for name in required_flags):
+        raise AssertionError("reviewed checkout platform flags are unsupported")
+    fd = os.open(plan_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        before = os.fstat(fd)
+        before_mode = stat.S_IMODE(before.st_mode)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.geteuid()
+            or before.st_nlink != 1
+            or before.st_size != len(expected)
+            or not before_mode & stat.S_IRUSR
+            or before_mode & ~0o666
+        ):
+            raise AssertionError("reviewed checkout plan descriptor is untrusted")
+        body = bytearray()
+        while len(body) < len(expected):
+            try:
+                chunk = os.pread(fd, len(expected) - len(body), len(body))
+            except InterruptedError:
+                continue
+            if not chunk:
+                break
+            body.extend(chunk)
+        if bytes(body) != expected or os.pread(fd, 1, len(expected)) != b"":
+            raise AssertionError("reviewed checkout plan descriptor bytes drifted")
+        os.fchmod(fd, 0o644)
+        after = os.fstat(fd)
+        if (
+            (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino)
+            or not stat.S_ISREG(after.st_mode)
+            or after.st_uid != os.geteuid()
+            or after.st_nlink != 1
+            or after.st_size != len(expected)
+            or stat.S_IMODE(after.st_mode) != 0o644
+        ):
+            raise AssertionError("reviewed checkout plan normalization failed")
+    finally:
+        os.close(fd)
+    attached = plan_path.lstat()
+    if (
+        (attached.st_dev, attached.st_ino) != (after.st_dev, after.st_ino)
+        or stat.S_IMODE(attached.st_mode) != 0o644
+    ):
+        raise AssertionError("reviewed checkout plan attachment changed")
+
+
 def _prepare_ceremony_plan_fixture(repository, artifact_root):
     status = _git_fixture(repository, "status", "--porcelain=v1").stdout
     if status != b"":
@@ -1638,6 +1722,21 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
                         b"",
                     )
 
+    def test_reviewed_checkout_normalization_handles_world_writable_default_acl(self):
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
+            _, repository, artifact_root, plan_path = _clone_committed_plan_fixture(
+                temporary
+            )
+            plan_path.chmod(0o666)
+
+            _normalize_reviewed_checkout_plan(repository, artifact_root)
+
+            self.assertEqual(stat.S_IMODE(plan_path.stat().st_mode), 0o644)
+            self.assertEqual(
+                _git_fixture(repository, "status", "--porcelain=v1").stdout,
+                b"",
+            )
+
     def test_linux_ci_runs_full_suite_and_fixed_owner_boundary_separately(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         self.assertIn(
@@ -2077,6 +2176,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             artifact_root = clone / "artifacts" / "challenger-replacement"
             artifact_root.chmod(0o755)
             self.assertEqual(stat.S_IMODE(artifact_root.stat().st_mode), 0o755)
+            _normalize_reviewed_checkout_plan(clone, artifact_root)
             _prepare_ceremony_plan_fixture(clone, artifact_root)
             self.assertEqual(
                 subprocess.run(
