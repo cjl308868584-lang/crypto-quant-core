@@ -18,6 +18,8 @@ from jsonschema import Draft202012Validator, ValidationError
 
 from crypto_quant.canonical import canonical_json
 from crypto_quant.evidence import artifact_self_hash
+from crypto_quant import v064_public_ci_witness
+from crypto_quant.v064_public_ci_bundle import stage_v064_public_ci_bundle
 from crypto_quant.v064_public_ci_witness import (
     V064PublicCiWitnessError,
     derive_v064_public_ci_witness,
@@ -1955,6 +1957,365 @@ class V064PublicCiR2CommittedArtifactBoundaryTests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     gate._read_formal(gate.NAMES[0])
                 self.assertLess(time.monotonic() - started, 1.0)
+
+
+class V064PublicCiR3CommittedArtifactTests(unittest.TestCase):
+    ROOT = ROOT / "artifacts" / "v064-public-ci-r3"
+    SOURCE_F3 = "f9705fa2151ab98a5b9efe63be05979e4bc5bfa6"
+    NAMES = (
+        "v064-public-ci-r3-run-api-v1.json",
+        "v064-public-ci-r3-jobs-api-v1.json",
+        "v064-public-ci-r3-run-log-v1.txt",
+        "v064-public-ci-r3-acquisition-transcript-v1.json",
+        "v064-public-ci-r3-witness-v1.json",
+    )
+    EXACT_FILES = {
+        NAMES[0]: (
+            363,
+            "e617d41ea4e09215ef917160f1ac39c94224040582a2029c339481a05535a70b",
+        ),
+        NAMES[1]: (
+            2312,
+            "6b752ccefd77281542ba603eded94f0d459a7d4f86bfe2a623893dbb200bc7fa",
+        ),
+        NAMES[2]: (
+            106671,
+            "6b8fd0fb32f7c060b06805151e63417bbac66cb253ed647b2be11fc66313d1ef",
+        ),
+        NAMES[3]: (
+            1698,
+            "1dd8cd4a5920bdade465c655f6f8a59c6b62adae1b62f7f93b09c1a385e790da",
+        ),
+        NAMES[4]: (
+            8860,
+            "2b6d8639baab5d637605f62e92f0ab217681d25b29c7b90e4f754fd42f52c1d2",
+        ),
+    }
+
+    def _read_formal(self, name):
+        path = self.ROOT / name
+        descriptor = None
+        try:
+            before = path.lstat()
+            descriptor = os.open(
+                path,
+                os.O_RDONLY
+                | v064_public_ci_witness_cli._required_flag("O_NOFOLLOW")
+                | v064_public_ci_witness_cli._required_flag("O_NONBLOCK"),
+            )
+            opened = os.fstat(descriptor)
+            self.assertTrue(stat.S_ISREG(opened.st_mode))
+            self.assertEqual(opened.st_uid, os.geteuid())
+            self.assertEqual(opened.st_nlink, 1)
+            self.assertIn(stat.S_IMODE(opened.st_mode), (0o600, 0o644))
+            self.assertGreater(opened.st_size, 0)
+            self.assertLessEqual(opened.st_size, 64 * 1024 * 1024)
+            self.assertEqual(
+                (before.st_dev, before.st_ino), (opened.st_dev, opened.st_ino)
+            )
+            body = v064_public_ci_witness_cli._read_descriptor(
+                descriptor, opened.st_size
+            )
+            attached = path.lstat()
+            after = os.fstat(descriptor)
+            self.assertEqual(
+                (attached.st_dev, attached.st_ino),
+                (opened.st_dev, opened.st_ino),
+            )
+            self.assertEqual(
+                (after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+                (opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns),
+            )
+            return body
+        except OSError as error:
+            raise AssertionError("R3 formal artifact is not trusted") from error
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+
+    def _archive(self):
+        try:
+            root_stat = self.ROOT.lstat()
+            entries = tuple(sorted(path.name for path in self.ROOT.iterdir()))
+        except FileNotFoundError as error:
+            raise AssertionError("R3 evidence set is required") from error
+        self.assertTrue(stat.S_ISDIR(root_stat.st_mode))
+        self.assertEqual(root_stat.st_uid, os.geteuid())
+        self.assertFalse(stat.S_IMODE(root_stat.st_mode) & 0o022)
+        self.assertEqual(
+            entries, tuple(sorted(self.NAMES)), "R3 evidence set is not exact"
+        )
+        bodies = {name: self._read_formal(name) for name in self.NAMES}
+        for name, (size, sha256) in self.EXACT_FILES.items():
+            with self.subTest(name=name):
+                self.assertEqual(len(bodies[name]), size)
+                self.assertEqual(hashlib.sha256(bodies[name]).hexdigest(), sha256)
+        return bodies
+
+    def _witness(self):
+        self._archive()
+        return load_v064_public_ci_witness(self.ROOT / self.NAMES[4])
+
+    def test_exact_five_entry_inventory_and_literal_file_identities(self):
+        self._archive()
+
+    def test_production_loader_replays_canonical_witness(self):
+        witness_body = self._archive()[self.NAMES[4]]
+        witness = self._witness()
+        self.assertEqual(_canonical(witness), witness_body)
+        self.assertEqual(
+            witness["witness_id"],
+            "v064_public_ci_witness_73d6a8bbd96a3705613924f34e464204a138320211f4f206160accf487f715da",
+        )
+        self.assertEqual(
+            witness["witness_hash"],
+            "f90c46551bf08b4b22509c0946576359cfa9186494c7925ef292639629c1a32a",
+        )
+
+    def test_raw_paths_sizes_hashes_and_canonical_json_are_bound(self):
+        bodies = self._archive()
+        witness = self._witness()
+        raw_names = {
+            "run_api": self.NAMES[0],
+            "jobs_api": self.NAMES[1],
+            "run_log": self.NAMES[2],
+            "acquisition_transcript": self.NAMES[3],
+        }
+        for key, name in raw_names.items():
+            with self.subTest(key=key):
+                size, sha256 = self.EXACT_FILES[name]
+                self.assertEqual(
+                    witness["raw_evidence"][key],
+                    {
+                        "path": "artifacts/v064-public-ci-r3/" + name,
+                        "size": size,
+                        "sha256": sha256,
+                    },
+                )
+        for name in (self.NAMES[0], self.NAMES[1], self.NAMES[3], self.NAMES[4]):
+            with self.subTest(canonical=name):
+                self.assertEqual(_canonical(json.loads(bodies[name])), bodies[name])
+
+    def test_transcript_is_canonical_and_binds_exact_raw_outputs(self):
+        bodies = self._archive()
+        transcript = json.loads(bodies[self.NAMES[3]])
+        self.assertEqual(_canonical(transcript), bodies[self.NAMES[3]])
+        self.assertEqual(
+            tuple(tuple(record["argv"]) for record in transcript["commands"]),
+            v064_public_ci_witness_cli._commands(32435172937),
+        )
+        for record, name in zip(transcript["commands"], self.NAMES[:3]):
+            with self.subTest(command=record["name"]):
+                size, sha256 = self.EXACT_FILES[name]
+                self.assertEqual(record["exit_code"], 0)
+                self.assertEqual(record["stdout_size"], size)
+                self.assertEqual(record["stdout_sha256"], sha256)
+                self.assertEqual(record["stderr_size"], 0)
+                self.assertEqual(
+                    record["stderr_sha256"], hashlib.sha256(b"").hexdigest()
+                )
+
+    def test_exact_private_public_run_and_job_identities_are_frozen(self):
+        witness = self._witness()
+        self.assertEqual(
+            witness["private_source"],
+            {
+                "repository": "cjl308868584-lang/crypto-quant-core",
+                "candidate_commit": self.SOURCE_F3,
+                "candidate_tree": "c3ed7d9a506d2a3c1531b0cb979a564f52991145",
+                "object_format": "sha1",
+                "historical_billing_blocked_private_pr": {
+                    "number": 32,
+                    "run_id": 31436609135,
+                    "status": "PRIVATE_PR_CI_NOT_EXECUTED_BILLING_BLOCKED",
+                },
+            },
+        )
+        self.assertEqual(
+            witness["public_source"],
+            {
+                "repository": "cjl308868584-lang/crypto-quant-v064-public-ci-r3",
+                "commit": "460ec57568e863b2e39e7572193f2545542d586b",
+                "tree": "2ab63c4fdecb06d0a4498365b9debd53a122a2ba",
+                "branch": "main",
+                "parent_count": 0,
+            },
+        )
+        self.assertEqual(
+            witness["run"],
+            {
+                "run_id": 32435172937,
+                "workflow_id": 339016620,
+                "run_attempt": 1,
+                "event": "push",
+                "head_branch": "main",
+                "head_sha": "460ec57568e863b2e39e7572193f2545542d586b",
+                "status": "completed",
+                "conclusion": "success",
+                "created_at": "2026-08-21T01:07:15Z",
+                "updated_at": "2026-08-21T01:07:32Z",
+            },
+        )
+        self.assertEqual(
+            [(job["python_version"], job["job_id"]) for job in witness["jobs"]],
+            [("3.9", 96634805095), ("3.12", 96634805278)],
+        )
+
+    def test_distinct_setup_and_fixed_owner_interpreters_are_exact(self):
+        jobs = self._witness()["jobs"]
+        self.assertEqual(
+            [
+                (
+                    job["python_version"],
+                    job["setup_python_version"],
+                    job["fixed_owner_python_version"],
+                )
+                for job in jobs
+            ],
+            [("3.9", "3.9.25", "3.9.25"), ("3.12", "3.12.14", "3.12.14")],
+        )
+        self.assertEqual(len({job["fixed_owner_python_version"] for job in jobs}), 2)
+
+    def test_all_safety_authorities_are_false_and_nonclaims_are_exact(self):
+        witness = self._witness()
+        self.assertEqual(
+            witness["safety"],
+            {
+                "production_activation": False,
+                "credentials_present": False,
+                "broker_allowed": False,
+                "orders_allowed": False,
+                "runtime_state_write_allowed": False,
+            },
+        )
+        self.assertEqual(
+            witness["non_claims"],
+            [
+                "NOT_FULL_PROJECT_CI",
+                "NOT_PRIVATE_PR_CHECK",
+                "NOT_STRATEGY_CORRECTNESS_EVIDENCE",
+                "NOT_PROFITABILITY_OR_AI_ADVANTAGE_EVIDENCE",
+                "NOT_PAPER_CANARY_OR_LIVE_TRADING_AUTHORIZATION",
+            ],
+        )
+
+    def test_production_derivation_replays_all_exact_evidence_from_f3(self):
+        bodies = self._archive()
+        witness = self._witness()
+        transcript = json.loads(bodies[self.NAMES[3]])
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary).resolve()
+            source = temporary_root / "source-f3"
+            subprocess.run(
+                (
+                    "/usr/bin/git", "clone", "--no-hardlinks", "-q",
+                    str(ROOT), str(source),
+                ),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+            subprocess.run(
+                ("/usr/bin/git", "-C", str(source), "checkout", "-q", self.SOURCE_F3),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+            public_root = temporary_root / "public-candidate"
+            bundle = stage_v064_public_ci_bundle(source, self.SOURCE_F3, public_root)
+            with mock.patch.object(v064_public_ci_witness, "_PUBLIC_ROOT", public_root):
+                replayed = derive_v064_public_ci_witness(
+                    bundle=bundle,
+                    run_bytes=bodies[self.NAMES[0]],
+                    jobs_bytes=bodies[self.NAMES[1]],
+                    log_bytes=bodies[self.NAMES[2]],
+                    transcript=transcript,
+                    private_repository=source,
+                )
+        self.assertEqual(replayed, witness)
+
+
+class V064PublicCiR3CommittedArtifactBoundaryTests(unittest.TestCase):
+    def _gate(self, root):
+        gate = V064PublicCiR3CommittedArtifactTests(
+            "test_exact_five_entry_inventory_and_literal_file_identities"
+        )
+        gate.ROOT = root
+        return gate
+
+    def test_missing_partial_extra_and_tampered_archives_fail_closed(self):
+        source_gate = self._gate(V064PublicCiR3CommittedArtifactTests.ROOT)
+        exact_bodies = {
+            name: source_gate._read_formal(name) for name in source_gate.NAMES
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve() / "archive"
+            gate = self._gate(root)
+            with self.assertRaisesRegex(AssertionError, "required"):
+                gate._archive()
+            root.mkdir(mode=0o700)
+            first = root / gate.NAMES[0]
+            first.write_bytes(exact_bodies[gate.NAMES[0]])
+            first.chmod(0o600)
+            with self.assertRaisesRegex(AssertionError, "not exact"):
+                gate._archive()
+            for name, body in exact_bodies.items():
+                path = root / name
+                if not path.exists():
+                    path.write_bytes(body)
+                    path.chmod(0o600)
+            extra = root / "unexpected"
+            extra.write_bytes(b"sentinel\n")
+            extra.chmod(0o600)
+            with self.assertRaisesRegex(AssertionError, "not exact"):
+                gate._archive()
+            extra.unlink()
+            first.write_bytes(exact_bodies[gate.NAMES[0]] + b" ")
+            with self.assertRaises(AssertionError):
+                gate._archive()
+
+    def test_symlink_hardlink_fifo_and_directory_entries_fail_closed(self):
+        source_gate = self._gate(V064PublicCiR3CommittedArtifactTests.ROOT)
+        target_body = source_gate._read_formal(source_gate.NAMES[0])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            target = root / "target"
+            target.write_bytes(target_body)
+            target.chmod(0o600)
+            for kind in ("symlink", "hardlink", "fifo", "directory"):
+                with self.subTest(kind=kind):
+                    formal = root / source_gate.NAMES[0]
+                    if kind == "symlink":
+                        formal.symlink_to(target)
+                    elif kind == "hardlink":
+                        os.link(target, formal)
+                    elif kind == "fifo":
+                        os.mkfifo(formal, 0o600)
+                    else:
+                        formal.mkdir(mode=0o700)
+                    started = time.monotonic()
+                    gate = self._gate(root)
+                    with self.assertRaises(AssertionError):
+                        gate._read_formal(gate.NAMES[0])
+                    self.assertLess(time.monotonic() - started, 1.0)
+                    if formal.is_dir() and not formal.is_symlink():
+                        formal.rmdir()
+                    else:
+                        formal.unlink()
+
+    def test_canonical_witness_tamper_is_rejected_by_production_loader(self):
+        source = (
+            V064PublicCiR3CommittedArtifactTests.ROOT
+            / V064PublicCiR3CommittedArtifactTests.NAMES[4]
+        )
+        changed = json.loads(source.read_text(encoding="utf-8"))
+        changed["safety"]["orders_allowed"] = True
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / "tampered-witness.json"
+            path.write_bytes(_canonical(changed))
+            path.chmod(0o600)
+            with self.assertRaises(V064PublicCiWitnessError):
+                load_v064_public_ci_witness(path)
 
 
 class V064PublicCiWitnessFixedIdentityTests(unittest.TestCase):
