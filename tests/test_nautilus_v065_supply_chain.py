@@ -32,6 +32,37 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
 
     def receipt(self):
         lock = self.lock()
+        command_names = [
+            "uv_version", "python_version", "git_version", "gh_version",
+            "official_tag", "license", "slsa", "offline_venv",
+            "offline_sync", "offline_import",
+        ]
+        def transcript(name):
+            raw = (name + "\n").encode()
+            return {
+                "name": name,
+                "argv": [name],
+                "exit_code": 0,
+                "executable_path": "/usr/bin/true",
+                "executable_device_before": 1,
+                "executable_inode_before": 1,
+                "executable_mode_before": 493,
+                "executable_size_before": 1,
+                "executable_sha256_before": "3" * 64,
+                "executable_device_after": 1,
+                "executable_inode_after": 1,
+                "executable_mode_after": 493,
+                "executable_size_after": 1,
+                "executable_sha256_after": "3" * 64,
+                "stdout_encoding": "utf-8",
+                "stdout_bytes": raw.decode(),
+                "stdout_size": len(raw),
+                "stdout_sha256": hashlib.sha256(raw).hexdigest(),
+                "stderr_encoding": "utf-8",
+                "stderr_bytes": "",
+                "stderr_size": 0,
+                "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+            }
         payload = {
             "$schema": "./nautilus-supply-chain-receipt-v2.schema.json",
             "schema_version": "2.0.0",
@@ -55,21 +86,7 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
                     "executable_sha256_after": "3" * 64,
                 }
             ],
-            "transcripts": [
-                {
-                    "name": "download_locked",
-                    "argv": ["uv", "export", "--frozen"],
-                    "exit_code": 0,
-                    "stdout_encoding": "utf-8",
-                    "stdout_bytes": "locked\n",
-                    "stdout_size": 7,
-                    "stdout_sha256": hashlib.sha256(b"locked\n").hexdigest(),
-                    "stderr_encoding": "utf-8",
-                    "stderr_bytes": "",
-                    "stderr_size": 0,
-                    "stderr_sha256": hashlib.sha256(b"").hexdigest(),
-                }
-            ],
+            "transcripts": [transcript(name) for name in command_names],
             "verified_files": lock["distributions"],
             "license": {
                 "expression": "LGPL-3.0-or-later",

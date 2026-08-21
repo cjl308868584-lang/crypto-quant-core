@@ -194,9 +194,26 @@ def _validate_receipt(payload: Mapping[str, Any]) -> Dict[str, Any]:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_LOCK_SEMANTIC_MISMATCH")
         if payload["verified_files"] != expected_lock["distributions"]:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_VERIFIED_FILES_MISMATCH")
+        expected_commands = [
+            "uv_version",
+            "python_version",
+            "git_version",
+            "gh_version",
+            "official_tag",
+            "license",
+            "slsa",
+            "offline_venv",
+            "offline_sync",
+            "offline_import",
+        ]
+        if [item["name"] for item in payload["transcripts"]] != expected_commands:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_TRANSCRIPT_ORDER_INVALID")
         for transcript in payload["transcripts"]:
             _decode_transcript(transcript, "stdout")
             _decode_transcript(transcript, "stderr")
+            for field in ("device", "inode", "mode", "size", "sha256"):
+                if transcript[f"executable_{field}_before"] != transcript[f"executable_{field}_after"]:
+                    raise NautilusV065SupplyChainError("NAUTILUS_V065_EXECUTABLE_CHANGED")
         for tool in payload["tools"]:
             if tool["executable_sha256_before"] != tool["executable_sha256_after"]:
                 raise NautilusV065SupplyChainError("NAUTILUS_V065_TOOL_IDENTITY_CHANGED")
