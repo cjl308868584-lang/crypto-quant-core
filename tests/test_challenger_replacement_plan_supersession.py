@@ -132,7 +132,7 @@ def _prepare_ceremony_plan_fixture(repository, artifact_root):
             not stat.S_ISREG(pre_normalization.st_mode)
             or pre_normalization.st_uid != os.geteuid()
             or pre_normalization.st_nlink != 1
-            or stat.S_IMODE(pre_normalization.st_mode) not in (0o644, 0o664)
+            or stat.S_IMODE(pre_normalization.st_mode) not in (0o600, 0o644, 0o664)
         ):
             raise AssertionError("tracked ceremony plan file is untrusted")
         if head_bytes != expected or plan_path.read_bytes() != expected:
@@ -1599,6 +1599,21 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             _git_fixture(repository, "add", str(unrelated))
             with self.assertRaisesRegex(AssertionError, "repository is not clean"):
                 _prepare_ceremony_plan_fixture(repository, artifact_root)
+
+    def test_ceremony_fixture_accepts_stricter_owner_only_tracked_plan(self):
+        with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
+            _, repository, artifact_root, plan_path = _clone_committed_plan_fixture(
+                temporary
+            )
+            plan_path.chmod(0o600)
+
+            _prepare_ceremony_plan_fixture(repository, artifact_root)
+
+            self.assertEqual(stat.S_IMODE(plan_path.stat().st_mode), 0o644)
+            self.assertEqual(
+                _git_fixture(repository, "status", "--porcelain=v1").stdout,
+                b"",
+            )
 
     def test_linux_ci_runs_full_suite_and_fixed_owner_boundary_separately(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
