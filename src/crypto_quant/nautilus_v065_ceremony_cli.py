@@ -881,6 +881,83 @@ def _acquire_and_run(*, plan: Mapping[str, Any], artifact_root: Path) -> Dict[st
         return {"conclusion": comparison["conclusion"], "runner_invocation_count": 2}
 
 
+def _commit_formal_ceremony(plan: Mapping[str, Any]) -> Dict[str, Any]:
+    parent = _ARTIFACT_ROOT
+    formal = _FORMAL_ROOT
+    staging_name = ".v0.65.0.in-progress"
+    if formal.parent != parent or formal.name != "v0.65.0":
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_FORMAL_STATE_CONFLICT")
+    try:
+        before = parent.lstat()
+    except OSError as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
+        ) from error
+    if not parent.is_absolute() or not _trusted_artifact_root_stat(before):
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_FORMAL_STATE_CONFLICT")
+    flags = os.O_RDONLY | _required_flag("O_DIRECTORY") | _required_flag("O_NOFOLLOW")
+    try:
+        parent_fd = os.open(parent, flags)
+    except OSError as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
+        ) from error
+    try:
+        _validate_artifact_root(parent, parent_fd, before)
+        for name in (staging_name, formal.name):
+            try:
+                os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise NautilusV065SupplyChainError(
+                    "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
+                ) from error
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
+            )
+        try:
+            os.mkdir(staging_name, 0o700, dir_fd=parent_fd)
+        except OSError as error:
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
+            ) from error
+        staging = parent / staging_name
+        result = _acquire_and_run(plan=plan, artifact_root=staging)
+        staging_fd = os.open(staging_name, flags, dir_fd=parent_fd)
+        try:
+            value = os.fstat(staging_fd)
+            attached = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
+            if (
+                not stat.S_ISDIR(value.st_mode)
+                or value.st_uid != os.geteuid()
+                or stat.S_IMODE(value.st_mode) != 0o700
+                or (value.st_dev, value.st_ino) != (attached.st_dev, attached.st_ino)
+            ):
+                raise NautilusV065SupplyChainError(
+                    "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
+                )
+            os.fsync(staging_fd)
+        finally:
+            os.close(staging_fd)
+        try:
+            _atomic_no_replace(parent_fd, staging_name, formal.name)
+        except (FileExistsError, SupersessionPublishError, OSError) as error:
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_FORMAL_COMMIT_FAILED"
+            ) from error
+        os.fsync(parent_fd)
+        committed = os.stat(formal.name, dir_fd=parent_fd, follow_symlinks=False)
+        if (committed.st_dev, committed.st_ino) != (value.st_dev, value.st_ino):
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_FORMAL_COMMIT_FAILED"
+            )
+        _validate_artifact_root(parent, parent_fd, before)
+        return result
+    finally:
+        os.close(parent_fd)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nautilus-v065-ceremony")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -902,9 +979,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         current_head = _clean_head()
         plan = load_nautilus_v065_plan((_ARTIFACT_ROOT / _PLAN_NAME).resolve())
         _verify_formal_candidate(plan, current_head)
-        if not _FORMAL_ROOT.exists():
-            _FORMAL_ROOT.mkdir(mode=0o700)
-        result = _acquire_and_run(plan=plan, artifact_root=_FORMAL_ROOT)
+        result = _commit_formal_ceremony(plan)
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0
     raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_UNKNOWN")

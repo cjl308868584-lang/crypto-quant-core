@@ -27,6 +27,7 @@ from crypto_quant.nautilus_v065_supply_chain import (
 from crypto_quant.nautilus_v065_ceremony_cli import (
     _acquire_and_run,
     _capture_fixed_command,
+    _commit_formal_ceremony,
     _invoke_fixed_runner,
     _load_frozen_current_reference,
     _publish_fixed_artifact,
@@ -79,21 +80,68 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             "crypto_quant.nautilus_v065_ceremony_cli._ARTIFACT_ROOT",
             Path(raw),
         ), mock.patch(
-            "crypto_quant.nautilus_v065_ceremony_cli._FORMAL_ROOT",
-            Path(raw) / "v0.65.0",
-        ), mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli.load_nautilus_v065_plan",
             return_value=plan,
         ) as load, mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._verify_formal_candidate",
         ) as verify, mock.patch(
-            "crypto_quant.nautilus_v065_ceremony_cli._acquire_and_run",
+            "crypto_quant.nautilus_v065_ceremony_cli._commit_formal_ceremony",
             return_value={"conclusion": "INCONCLUSIVE_KEEP_CURRENT_CORE"},
-        ):
+        ) as commit:
             self.assertEqual(main(["acquire-and-run"]), 0)
         clean.assert_called_once_with()
         load.assert_called_once()
         verify.assert_called_once_with(plan, "1" * 40)
+        commit.assert_called_once_with(plan)
+
+    def test_formal_ceremony_publishes_one_directory_and_never_reruns_partial(self):
+        plan = self.plan()
+        from crypto_quant import nautilus_v065_ceremony_cli as module
+
+        with tempfile.TemporaryDirectory() as raw:
+            parent = Path(raw)
+            parent.chmod(0o755)
+            formal = parent / "v0.65.0"
+            staging = parent / ".v0.65.0.in-progress"
+            with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
+                module, "_FORMAL_ROOT", formal
+            ), mock.patch.object(
+                module,
+                "_acquire_and_run",
+                return_value={"conclusion": "REJECT_KEEP_CURRENT_CORE"},
+            ) as acquire:
+                result = _commit_formal_ceremony(plan)
+            self.assertEqual(result["conclusion"], "REJECT_KEEP_CURRENT_CORE")
+            self.assertTrue(formal.is_dir())
+            self.assertFalse(staging.exists())
+            acquire.assert_called_once_with(plan=plan, artifact_root=staging)
+
+        with tempfile.TemporaryDirectory() as raw:
+            parent = Path(raw)
+            parent.chmod(0o755)
+            formal = parent / "v0.65.0"
+            staging = parent / ".v0.65.0.in-progress"
+            with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
+                module, "_FORMAL_ROOT", formal
+            ), mock.patch.object(
+                module,
+                "_acquire_and_run",
+                side_effect=RuntimeError("TEST_ONLY_CRASH_AFTER_OBSERVATION"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "TEST_ONLY_CRASH_AFTER_OBSERVATION"):
+                    _commit_formal_ceremony(plan)
+            self.assertTrue(staging.is_dir())
+            self.assertFalse(formal.exists())
+
+            with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
+                module, "_FORMAL_ROOT", formal
+            ), mock.patch.object(module, "_acquire_and_run") as rerun:
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError,
+                    "NAUTILUS_V065_FORMAL_STATE_CONFLICT",
+                ):
+                    _commit_formal_ceremony(plan)
+            rerun.assert_not_called()
 
     def test_formal_candidate_allows_exactly_one_plan_only_commit(self):
         plan = self.plan()
