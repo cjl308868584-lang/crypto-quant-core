@@ -90,7 +90,7 @@
       "properties": {
         "reason_code": {"type": "string", "minLength": 1},
         "failed_stage": {"type": "string", "minLength": 1},
-        "completed_transcript_count": {"type": "integer", "minimum": 0, "maximum": 10},
+        "completed_transcript_count": {"type": "integer", "minimum": 0, "maximum": 25},
         "failed_command": {"type": ["object", "null"]}
       }
     },
@@ -102,7 +102,7 @@
       "then": {
         "required": ["platform", "tools", "verified_files", "license", "official_source", "slsa"],
         "not": {"required": ["failure"]},
-        "properties": {"transcripts": {"minItems": 10}}
+        "properties": {"transcripts": {"minItems": 25, "maxItems": 25}}
       }
     },
     {
@@ -142,11 +142,26 @@
     },
     "transcript": {
       "type": "object", "additionalProperties": false,
-      "required": ["name", "argv", "exit_code", "executable_path", "executable_device_before", "executable_inode_before", "executable_mode_before", "executable_size_before", "executable_sha256_before", "executable_device_after", "executable_inode_after", "executable_mode_after", "executable_size_after", "executable_sha256_after", "stdout_encoding", "stdout_bytes", "stdout_size", "stdout_sha256", "stderr_encoding", "stderr_bytes", "stderr_size", "stderr_sha256"],
+      "required": ["name", "argv", "exit_code", "environment", "started_at", "completed_at", "executable_path", "executable_device_before", "executable_inode_before", "executable_mode_before", "executable_size_before", "executable_sha256_before", "executable_device_after", "executable_inode_after", "executable_mode_after", "executable_size_after", "executable_sha256_after", "stdout_encoding", "stdout_bytes", "stdout_size", "stdout_sha256", "stderr_encoding", "stderr_bytes", "stderr_size", "stderr_sha256"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
         "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}},
         "exit_code": {"const": 0},
+        "environment": {
+          "type": "object", "additionalProperties": false,
+          "required": ["HOME", "LANG", "LC_ALL", "PATH", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"],
+          "properties": {
+            "HOME": {"type": "string", "pattern": "^/"},
+            "LANG": {"const": "C"},
+            "LC_ALL": {"const": "C"},
+            "PATH": {"const": "/usr/bin:/bin:/usr/sbin:/sbin"},
+            "GIT_CONFIG_GLOBAL": {"const": "/dev/null"},
+            "GIT_CONFIG_NOSYSTEM": {"const": "1"},
+            "GIT_TERMINAL_PROMPT": {"const": "0"}
+          }
+        },
+        "started_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"},
+        "completed_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"},
         "executable_path": {"type": "string", "pattern": "^/"},
         "executable_device_before": {"type": "integer", "minimum": 1},
         "executable_inode_before": {"type": "integer", "minimum": 1},

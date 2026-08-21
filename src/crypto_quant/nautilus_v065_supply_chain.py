@@ -47,7 +47,7 @@ _SELECTED_FILENAMES = frozenset(
 )
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _TRANSCRIPT_FIELDS = frozenset(
-    {"name", "argv", "exit_code", "executable_path"}
+    {"name", "argv", "exit_code", "environment", "started_at", "completed_at", "executable_path"}
     | {f"executable_{field}_{side}" for side in ("before", "after") for field in ("device", "inode", "mode", "size", "sha256")}
     | {f"{stream}_{field}" for stream in ("stdout", "stderr") for field in ("encoding", "bytes", "size", "sha256")}
 )
@@ -177,6 +177,15 @@ def supply_chain_receipt_hash(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest()
 
 
+def _expected_transcript_names(lock: Mapping[str, Any]) -> list[str]:
+    return [
+        "uv_version", "python_version", "git_version", "gh_version",
+        "official_tag", "license", "pypi_version",
+        *["download:" + item["filename"] for item in lock["distributions"]],
+        "slsa", "offline_venv", "offline_sync", "offline_import",
+    ]
+
+
 def _decode_transcript(value: Mapping[str, Any], prefix: str) -> bytes:
     encoding = value[prefix + "_encoding"]
     content = value[prefix + "_bytes"]
@@ -197,6 +206,13 @@ def _decode_transcript(value: Mapping[str, Any], prefix: str) -> bytes:
     return raw
 
 
+def _validate_transcript_record(value: Mapping[str, Any]) -> None:
+    if set(value) != _TRANSCRIPT_FIELDS or value["started_at"] > value["completed_at"]:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_TRANSCRIPT_INVALID")
+    _decode_transcript(value, "stdout")
+    _decode_transcript(value, "stderr")
+
+
 def _validate_receipt(payload: Mapping[str, Any]) -> Dict[str, Any]:
     try:
         if tuple(_validator().iter_errors(payload)):
@@ -205,28 +221,22 @@ def _validate_receipt(payload: Mapping[str, Any]) -> Dict[str, Any]:
         if payload["dependency_lock"] != expected_lock:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_LOCK_SEMANTIC_MISMATCH")
         if payload["status"] == "SUPPLY_CHAIN_ACQUISITION_FAILED":
-            expected_commands = [
-                "uv_version", "python_version", "git_version", "gh_version",
-                "official_tag", "license", "slsa", "offline_venv",
-                "offline_sync", "offline_import",
-            ]
+            expected_commands = _expected_transcript_names(expected_lock)
             if payload["failure"]["completed_transcript_count"] != len(payload["transcripts"]):
                 raise NautilusV065SupplyChainError("NAUTILUS_V065_FAILURE_RECEIPT_INVALID")
             if [item.get("name") for item in payload["transcripts"]] != expected_commands[:len(payload["transcripts"])]:
                 raise NautilusV065SupplyChainError("NAUTILUS_V065_FAILURE_RECEIPT_INVALID")
             for transcript in payload["transcripts"]:
-                if set(transcript) != _TRANSCRIPT_FIELDS or transcript["exit_code"] != 0:
+                if transcript["exit_code"] != 0:
                     raise NautilusV065SupplyChainError("NAUTILUS_V065_FAILURE_RECEIPT_INVALID")
-                _decode_transcript(transcript, "stdout")
-                _decode_transcript(transcript, "stderr")
+                _validate_transcript_record(transcript)
             failed = payload["failure"]["failed_command"]
             if failed is not None:
-                if set(failed) != _TRANSCRIPT_FIELDS or not isinstance(failed["exit_code"], int) or failed["exit_code"] == 0:
+                if not isinstance(failed["exit_code"], int) or failed["exit_code"] == 0:
                     raise NautilusV065SupplyChainError("NAUTILUS_V065_FAILURE_RECEIPT_INVALID")
                 if len(payload["transcripts"]) >= len(expected_commands) or failed["name"] != expected_commands[len(payload["transcripts"])]:
                     raise NautilusV065SupplyChainError("NAUTILUS_V065_FAILURE_RECEIPT_INVALID")
-                _decode_transcript(failed, "stdout")
-                _decode_transcript(failed, "stderr")
+                _validate_transcript_record(failed)
             if any(payload["authority_counters"].values()):
                 raise NautilusV065SupplyChainError("NAUTILUS_V065_FAILURE_RECEIPT_INVALID")
             digest = supply_chain_receipt_hash(payload)
@@ -235,23 +245,11 @@ def _validate_receipt(payload: Mapping[str, Any]) -> Dict[str, Any]:
             return copy.deepcopy(dict(payload))
         if payload["verified_files"] != expected_lock["distributions"]:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_VERIFIED_FILES_MISMATCH")
-        expected_commands = [
-            "uv_version",
-            "python_version",
-            "git_version",
-            "gh_version",
-            "official_tag",
-            "license",
-            "slsa",
-            "offline_venv",
-            "offline_sync",
-            "offline_import",
-        ]
+        expected_commands = _expected_transcript_names(expected_lock)
         if [item["name"] for item in payload["transcripts"]] != expected_commands:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_TRANSCRIPT_ORDER_INVALID")
         for transcript in payload["transcripts"]:
-            _decode_transcript(transcript, "stdout")
-            _decode_transcript(transcript, "stderr")
+            _validate_transcript_record(transcript)
             for field in ("device", "inode", "mode", "size", "sha256"):
                 if transcript[f"executable_{field}_before"] != transcript[f"executable_{field}_after"]:
                     raise NautilusV065SupplyChainError("NAUTILUS_V065_EXECUTABLE_CHANGED")

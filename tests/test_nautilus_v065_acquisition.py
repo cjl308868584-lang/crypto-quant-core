@@ -25,6 +25,7 @@ from crypto_quant.nautilus_v065_supply_chain import (
     load_nautilus_v065_supply_chain_receipt,
 )
 from crypto_quant.nautilus_v065_ceremony_cli import (
+    _command,
     _acquire_and_run,
     _capture_fixed_command,
     _commit_formal_ceremony,
@@ -40,6 +41,20 @@ from crypto_quant.nautilus_v065_ceremony_cli import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _transcript_provenance():
+    return {
+        "environment": {
+            "HOME": "/private/tmp/nautilus-v065-test/home",
+            "LANG": "C", "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+        },
+        "started_at": "2026-08-22T00:00:00.000000Z",
+        "completed_at": "2026-08-22T00:00:01.000000Z",
+    }
 
 
 def _subcommands(parser):
@@ -70,6 +85,8 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             parser.parse_args(["publish-plan", "--url", "https://example.invalid"])
         with self.assertRaises(SystemExit):
             parser.parse_args(["acquire-and-run", "--result", "chosen.json"])
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["acquire-and-run", "--output", "chosen.json"])
 
     def test_acquire_and_run_requires_clean_head_before_loading_formal_plan(self):
         plan = self.plan()
@@ -502,6 +519,7 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             raw = (name + "\n").encode()
             return {
                 "name": name, "argv": [name], "exit_code": 0,
+                **_transcript_provenance(),
                 "executable_path": "/usr/bin/true",
                 "executable_device_before": 1, "executable_inode_before": 1,
                 "executable_mode_before": 0o755, "executable_size_before": 1,
@@ -563,8 +581,9 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             raw = (name + "\n").encode()
             if name == "official_tag":
                 raw = b"112d335088ec11cdd1d60038b16c8fe56406aead refs/tags/v1.230.0\n8160730c7c550480b0a439fb11086a4c4de15f0b refs/tags/v1.230.0^{}\n"
-            return {
+            record = {
                 "name": name, "argv": [name], "exit_code": 0,
+                **_transcript_provenance(),
                 "executable_path": "/usr/bin/true",
                 "executable_device_before": 1, "executable_inode_before": 1,
                 "executable_mode_before": 0o755, "executable_size_before": 1,
@@ -577,6 +596,12 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 "stderr_encoding": "utf-8", "stderr_bytes": "", "stderr_size": 0,
                 "stderr_sha256": hashlib.sha256(b"").hexdigest(),
             }
+            if name.startswith("download:"):
+                record["exit_code"] = 22
+                raise NautilusV065SupplyChainError(
+                    "NAUTILUS_V065_DOWNLOAD_FAILED", evidence=record
+                )
+            return record
 
         with mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._platform_identity",
@@ -591,14 +616,13 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         ), mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._verify_license_transcript"
         ), mock.patch(
-            "crypto_quant.nautilus_v065_ceremony_cli._download_fixed_artifact",
-            side_effect=NautilusV065SupplyChainError("NAUTILUS_V065_DOWNLOAD_FAILED"),
+            "crypto_quant.nautilus_v065_ceremony_cli._verify_pypi_version_transcript",
         ):
             with _verified_acquisition_workspace(plan) as session:
                 receipt = session["receipt"]
-        self.assertEqual(receipt["failure"]["completed_transcript_count"], 6)
-        self.assertEqual([item["name"] for item in receipt["transcripts"]], calls)
-        self.assertIsNone(receipt["failure"]["failed_command"])
+        self.assertEqual(receipt["failure"]["completed_transcript_count"], 7)
+        self.assertEqual([item["name"] for item in receipt["transcripts"]], calls[:-1])
+        self.assertEqual(receipt["failure"]["failed_command"]["name"], calls[-1])
 
     def test_command_capture_uses_fixed_executable_sanitized_env_and_exact_bytes(self):
         def execute(*_args, **kwargs):
@@ -616,11 +640,99 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             {"HOME", "LANG", "LC_ALL", "PATH", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"},
         )
         self.assertNotIn("GITHUB_TOKEN", environment)
+        self.assertEqual(record["environment"], environment)
+        self.assertRegex(record["started_at"], r"^\d{4}-\d{2}-\d{2}T.*Z$")
+        self.assertRegex(record["completed_at"], r"^\d{4}-\d{2}-\d{2}T.*Z$")
+        self.assertLessEqual(record["started_at"], record["completed_at"])
         self.assertEqual(record["stdout_bytes"], "ok\n")
         self.assertEqual(record["stdout_size"], 3)
         self.assertEqual(record["stdout_sha256"], hashlib.sha256(b"ok\n").hexdigest())
         self.assertEqual(record["stderr_sha256"], hashlib.sha256(b"").hexdigest())
         self.assertEqual(record["executable_sha256_before"], record["executable_sha256_after"])
+
+    def test_supply_commands_freeze_pypi_metadata_and_each_nonredirecting_download(self):
+        lock = build_nautilus_v065_dependency_lock(repository_root=ROOT)
+        with tempfile.TemporaryDirectory() as raw:
+            workspace = Path(raw)
+            (workspace / "wheelhouse").mkdir()
+            metadata = list(_command("pypi_version", workspace))
+            self.assertEqual(
+                metadata[-1],
+                "https://pypi.org/pypi/nautilus_trader/1.230.0/json",
+            )
+            self.assertNotIn("--location", metadata)
+            self.assertNotIn("--location", _command("license", workspace))
+            urls = __import__(
+                "crypto_quant.nautilus_v065_ceremony_cli",
+                fromlist=["_download_urls"],
+            )._download_urls()
+            for item in lock["distributions"]:
+                name = "download:" + item["filename"]
+                argv = list(_command(name, workspace))
+                self.assertNotIn("--location", argv)
+                self.assertEqual(argv[-1], urls[item["filename"]])
+                self.assertIn(str(workspace / "wheelhouse" / item["filename"]), argv)
+                self.assertIn("%{http_code} %{url_effective}\n", argv)
+
+    def test_pypi_version_and_download_transcripts_bind_exact_official_files(self):
+        module = __import__(
+            "crypto_quant.nautilus_v065_ceremony_cli",
+            fromlist=["_verify_pypi_version_transcript"],
+        )
+        lock = build_nautilus_v065_dependency_lock(repository_root=ROOT)
+        candidate = next(
+            item for item in lock["distributions"]
+            if item["filename"].startswith("nautilus_trader-")
+        )
+        url = module._download_urls()[candidate["filename"]]
+        metadata = {
+            "info": {"version": "1.230.0"},
+            "urls": [{
+                "filename": candidate["filename"],
+                "size": candidate["size"],
+                "url": url,
+                "digests": {"sha256": candidate["sha256"]},
+            }],
+        }
+        record = {
+            "stdout_encoding": "utf-8",
+            "stdout_bytes": json.dumps(metadata),
+        }
+        module._verify_pypi_version_transcript(record, lock)
+        changed = copy.deepcopy(record)
+        changed["stdout_bytes"] = changed["stdout_bytes"].replace(
+            "files.pythonhosted.org", "example.invalid"
+        )
+        with self.assertRaisesRegex(
+            NautilusV065SupplyChainError, "NAUTILUS_V065_PYPI_METADATA_MISMATCH"
+        ):
+            module._verify_pypi_version_transcript(changed, lock)
+
+        with tempfile.TemporaryDirectory() as raw:
+            wheelhouse = Path(raw)
+            item = {
+                "name": "fixture", "version": "1", "filename": "fixture.whl",
+                "size": 3, "sha256": hashlib.sha256(b"abc").hexdigest(),
+                "source_origin": "https://files.pythonhosted.org",
+            }
+            fixture_url = "https://files.pythonhosted.org/fixed/fixture.whl"
+            target = wheelhouse / item["filename"]
+            target.write_bytes(b"abc")
+            download = {
+                "stdout_encoding": "utf-8",
+                "stdout_bytes": "200 " + fixture_url + "\n",
+                "stderr_size": 0,
+            }
+            with mock.patch.object(module, "_download_urls", return_value={"fixture.whl": fixture_url}):
+                self.assertEqual(
+                    module._verify_download_transcript(download, item, wheelhouse),
+                    item,
+                )
+                redirected = dict(download, stdout_bytes="200 https://example.invalid/fixture.whl\n")
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError, "NAUTILUS_V065_DOWNLOAD_IDENTITY_MISMATCH"
+                ):
+                    module._verify_download_transcript(redirected, item, wheelhouse)
 
     def test_command_capture_fails_closed_on_timeout_output_and_executable_change(self):
         with mock.patch("subprocess.run", side_effect=__import__("subprocess").TimeoutExpired("git", 10)):
@@ -711,6 +823,7 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 "name": name,
                 "argv": [name],
                 "exit_code": 0,
+                **_transcript_provenance(),
                 "executable_path": "/usr/bin/true",
                 "executable_device_before": 1,
                 "executable_inode_before": 1,
@@ -732,16 +845,17 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 "executable_sha256_after": "3" * 64,
             }
 
-        def download(item, _wheelhouse):
-            calls.append(("download", item["filename"]))
+        def verify_download(_record, item, _wheelhouse):
             return dict(item)
 
         with mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._capture_fixed_command",
             side_effect=command,
         ), mock.patch(
-            "crypto_quant.nautilus_v065_ceremony_cli._download_fixed_artifact",
-            side_effect=download,
+            "crypto_quant.nautilus_v065_ceremony_cli._verify_pypi_version_transcript",
+        ), mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli._verify_download_transcript",
+            side_effect=verify_download,
         ), mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._platform_identity",
             return_value={
@@ -763,11 +877,14 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         command_names = [value for kind, value in calls if kind == "command"]
         self.assertEqual(
             command_names,
-            ["uv_version", "python_version", "git_version", "gh_version", "official_tag", "license", "slsa", "offline_venv", "offline_sync", "offline_import"],
+            [
+                "uv_version", "python_version", "git_version", "gh_version",
+                "official_tag", "license", "pypi_version",
+                *["download:" + item["filename"] for item in lock["distributions"]],
+                "slsa", "offline_venv", "offline_sync", "offline_import",
+            ],
         )
-        first_download = next(index for index, value in enumerate(calls) if value[0] == "download")
-        self.assertLess(command_names.index("gh_version"), first_download)
-        self.assertLess(max(index for index, value in enumerate(calls) if value[0] == "download"), calls.index(("command", "offline_sync")))
+        self.assertFalse(any(kind == "download" for kind, _value in calls))
         self.assertEqual(receipt["verified_files"], lock["distributions"])
         self.assertEqual(set(receipt["authority_counters"].values()), {0})
         with tempfile.TemporaryDirectory() as raw:
@@ -963,7 +1080,6 @@ raise SystemExit(3)
         self.assertNotIn("shell=True", source)
         self.assertNotIn("os.environ.copy", source)
         self.assertNotIn("--url", source)
-        self.assertNotIn("--output", source)
 
 
 if __name__ == "__main__":

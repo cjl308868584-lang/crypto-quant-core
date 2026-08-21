@@ -13,9 +13,8 @@ import stat
 import subprocess
 import sys
 import tempfile
-import urllib.error
-import urllib.request
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, Mapping, Optional, Sequence
 
@@ -181,11 +180,26 @@ def _command(name: str, workspace: Optional[Path]) -> Sequence[str]:
     if name == "official_tag":
         return [str(_find_executable("git")), "ls-remote", "https://github.com/nautechsystems/nautilus_trader.git", "refs/tags/v1.230.0", "refs/tags/v1.230.0^{}"]
     if name == "license":
-        return [str(_find_executable("curl")), "--fail", "--silent", "--show-error", "--location", "https://raw.githubusercontent.com/nautechsystems/nautilus_trader/8160730c7c550480b0a439fb11086a4c4de15f0b/LICENSE"]
+        return [str(_find_executable("curl")), "--fail", "--silent", "--show-error", "--proto", "=https", "https://raw.githubusercontent.com/nautechsystems/nautilus_trader/8160730c7c550480b0a439fb11086a4c4de15f0b/LICENSE"]
+    if name == "pypi_version":
+        return [
+            str(_find_executable("curl")), "--fail", "--silent", "--show-error",
+            "--proto", "=https", "https://pypi.org/pypi/nautilus_trader/1.230.0/json",
+        ]
     if workspace is None:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_WORKSPACE_REQUIRED")
     wheelhouse = workspace / "wheelhouse"
     venv = workspace / "venv"
+    if name.startswith("download:"):
+        filename = name.removeprefix("download:")
+        url = _download_urls().get(filename)
+        if url is None:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_DOWNLOAD_URL_MISSING")
+        return [
+            str(_find_executable("curl")), "--fail", "--silent", "--show-error",
+            "--proto", "=https", "--output", str(wheelhouse / filename),
+            "--write-out", "%{http_code} %{url_effective}\n", url,
+        ]
     if name == "slsa":
         return [str(_find_executable("gh")), "attestation", "verify", str(wheelhouse / _WHEEL), "--repo", "nautechsystems/nautilus_trader"]
     if name == "offline_venv":
@@ -220,6 +234,7 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
     }
     timeout_error = None
     returncode = -1
+    started_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
     try:
         with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
             try:
@@ -251,6 +266,7 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
                 raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_OUTPUT_INVALID")
     except OSError as error:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_FAILED") from error
+    completed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
     after = _command_executable_identity(name, executable, workspace)
     if before != after:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_EXECUTABLE_CHANGED")
@@ -260,6 +276,9 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
         "name": name,
         "argv": argv,
         "exit_code": returncode,
+        "environment": environment,
+        "started_at": started_at,
+        "completed_at": completed_at,
         "executable_path": str(executable),
         "stdout_encoding": stdout_encoding,
         "stdout_bytes": stdout_text,
@@ -279,11 +298,17 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
         reason = {
             "official_tag": "NAUTILUS_V065_TAG_FETCH_FAILED",
             "license": "NAUTILUS_V065_LICENSE_FETCH_FAILED",
+            "pypi_version": "NAUTILUS_V065_PYPI_METADATA_FETCH_FAILED",
             "slsa": "NAUTILUS_V065_SLSA_VERIFICATION_FAILED",
             "offline_venv": "NAUTILUS_V065_OFFLINE_ENV_FAILED",
             "offline_sync": "NAUTILUS_V065_OFFLINE_SYNC_FAILED",
             "offline_import": "NAUTILUS_V065_OFFLINE_IMPORT_FAILED",
-        }.get(name, "NAUTILUS_V065_COMMAND_NONZERO")
+        }.get(
+            name,
+            "NAUTILUS_V065_DOWNLOAD_FAILED"
+            if name.startswith("download:")
+            else "NAUTILUS_V065_COMMAND_NONZERO",
+        )
         raise NautilusV065SupplyChainError(reason, evidence=record)
     return record
 
@@ -296,41 +321,6 @@ def _download_urls() -> Dict[str, str]:
     }
 
 
-def _download_fixed_artifact(item: Mapping[str, Any], wheelhouse: Path) -> Dict[str, Any]:
-    filename = item["filename"]
-    url = _download_urls().get(filename)
-    if url is None:
-        raise NautilusV065SupplyChainError("NAUTILUS_V065_DOWNLOAD_URL_MISSING")
-    target = wheelhouse / filename
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    last_error: Optional[BaseException] = None
-    for _attempt in range(3):
-        try:
-            with opener.open(url, timeout=60) as response, target.open("xb") as stream:
-                digest = hashlib.sha256()
-                size = 0
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    size += len(chunk)
-                    if size > item["size"]:
-                        raise NautilusV065SupplyChainError("NAUTILUS_V065_DOWNLOAD_SIZE_MISMATCH")
-                    stream.write(chunk)
-                    digest.update(chunk)
-                stream.flush()
-                os.fchmod(stream.fileno(), 0o400)
-                os.fsync(stream.fileno())
-            if size != item["size"] or digest.hexdigest() != item["sha256"]:
-                raise NautilusV065SupplyChainError("NAUTILUS_V065_DOWNLOAD_HASH_MISMATCH")
-            return dict(item)
-        except (OSError, urllib.error.URLError) as error:
-            last_error = error
-            if target.exists() and target.is_file():
-                target.unlink()
-    raise NautilusV065SupplyChainError("NAUTILUS_V065_DOWNLOAD_FAILED") from last_error
-
-
 def _platform_identity() -> Dict[str, Any]:
     version = platform.mac_ver()[0]
     if platform.system() != "Darwin" or platform.machine() != "arm64" or not version.startswith("15.") or sys.version_info[:2] != (3, 12):
@@ -341,6 +331,90 @@ def _platform_identity() -> Dict[str, Any]:
 def _verify_license_transcript(record: Mapping[str, Any]) -> None:
     if record["stdout_encoding"] != "utf-8":
         raise NautilusV065SupplyChainError("NAUTILUS_V065_LICENSE_MISMATCH")
+
+
+def _verify_pypi_version_transcript(
+    record: Mapping[str, Any], lock: Mapping[str, Any]
+) -> None:
+    try:
+        if record["stdout_encoding"] != "utf-8":
+            raise ValueError
+        payload = json.loads(record["stdout_bytes"])
+        candidate = next(
+            item for item in lock["distributions"]
+            if item["filename"] == _WHEEL
+        )
+        expected_url = _download_urls()[_WHEEL]
+        matches = [
+            item for item in payload["urls"]
+            if item.get("filename") == _WHEEL
+        ]
+        if (
+            payload["info"]["version"] != "1.230.0"
+            or len(matches) != 1
+            or matches[0].get("size") != candidate["size"]
+            or matches[0].get("url") != expected_url
+            or matches[0].get("digests", {}).get("sha256") != candidate["sha256"]
+        ):
+            raise ValueError
+    except (KeyError, StopIteration, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_PYPI_METADATA_MISMATCH"
+        ) from error
+
+
+def _verify_download_transcript(
+    record: Mapping[str, Any], item: Mapping[str, Any], wheelhouse: Path
+) -> Dict[str, Any]:
+    filename = item["filename"]
+    expected_url = _download_urls().get(filename)
+    if (
+        expected_url is None
+        or record.get("stdout_encoding") != "utf-8"
+        or record.get("stdout_bytes") != "200 " + expected_url + "\n"
+        or record.get("stderr_size") != 0
+    ):
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_DOWNLOAD_IDENTITY_MISMATCH"
+        )
+    target = wheelhouse / filename
+    try:
+        before = target.lstat()
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.geteuid()
+            or before.st_nlink != 1
+            or before.st_size != item["size"]
+        ):
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_DOWNLOAD_IDENTITY_MISMATCH"
+            )
+        flags = os.O_RDONLY | _required_flag("O_NOFOLLOW") | _required_flag("O_NONBLOCK")
+        descriptor = os.open(target, flags)
+    except NautilusV065SupplyChainError:
+        raise
+    except OSError as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_DOWNLOAD_IDENTITY_MISMATCH"
+        ) from error
+    try:
+        opened = os.fstat(descriptor)
+        attached = target.lstat()
+        if (
+            (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+            or (attached.st_dev, attached.st_ino) != (before.st_dev, before.st_ino)
+            or _hash_descriptor(descriptor, opened.st_size) != item["sha256"]
+        ):
+            raise NautilusV065SupplyChainError(
+                "NAUTILUS_V065_DOWNLOAD_HASH_MISMATCH"
+            )
+    except OSError as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_DOWNLOAD_IDENTITY_MISMATCH"
+        ) from error
+    finally:
+        os.close(descriptor)
+    return dict(item)
     raw = record["stdout_bytes"].encode("utf-8")
     if len(raw) != 7651 or hashlib.sha256(raw).hexdigest() != _LICENSE_SHA:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_LICENSE_MISMATCH")
@@ -389,7 +463,12 @@ def _verified_acquisition_workspace_success(plan: Mapping[str, Any]) -> Iterator
             raise error
         try:
             _verify_license_transcript(transcripts[5])
-            verified = [_download_fixed_artifact(item, wheelhouse) for item in lock["distributions"]]
+            pypi = capture("pypi_version")
+            _verify_pypi_version_transcript(pypi, lock)
+            verified = []
+            for item in lock["distributions"]:
+                record = capture("download:" + item["filename"])
+                verified.append(_verify_download_transcript(record, item, wheelhouse))
         except NautilusV065SupplyChainError as error:
             error.completed_transcripts = copy.deepcopy(transcripts)
             raise

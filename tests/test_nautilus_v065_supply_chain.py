@@ -34,7 +34,9 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
         lock = self.lock()
         command_names = [
             "uv_version", "python_version", "git_version", "gh_version",
-            "official_tag", "license", "slsa", "offline_venv",
+            "official_tag", "license", "pypi_version",
+            *["download:" + item["filename"] for item in lock["distributions"]],
+            "slsa", "offline_venv",
             "offline_sync", "offline_import",
         ]
         def transcript(name):
@@ -43,6 +45,17 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
                 "name": name,
                 "argv": [name],
                 "exit_code": 0,
+                "environment": {
+                    "HOME": "/private/tmp/nautilus-v065-test/home",
+                    "LANG": "C",
+                    "LC_ALL": "C",
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "GIT_CONFIG_GLOBAL": "/dev/null",
+                    "GIT_CONFIG_NOSYSTEM": "1",
+                    "GIT_TERMINAL_PROMPT": "0",
+                },
+                "started_at": "2026-08-22T00:00:00.000000Z",
+                "completed_at": "2026-08-22T00:00:01.000000Z",
                 "executable_path": "/usr/bin/true",
                 "executable_device_before": 1,
                 "executable_inode_before": 1,
@@ -185,6 +198,10 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
         payload = self.receipt()
         for mutate in (
             lambda value: value["transcripts"][0].pop("stderr_bytes"),
+            lambda value: value["transcripts"][0].pop("environment"),
+            lambda value: value["transcripts"][0].__setitem__(
+                "completed_at", "2026-08-21T23:59:59.000000Z"
+            ),
             lambda value: value["authority_counters"].__setitem__("orders", 1),
             lambda value: value["verified_files"].pop(),
         ):
