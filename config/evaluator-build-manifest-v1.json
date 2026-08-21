@@ -423,7 +423,7 @@
     "tests/fixtures/operations-projection-healthy.json": "bb1aec23580a2f18a723f33be86de3720a7b5a69342d5fbb82bc13a51707f0ba",
     "tests/system_paper_fixtures.py": "2c3ca742d23044392e7da1c2142f4d183a593216af6f59f17501b3c2ac5233db",
     "tests/test_challenger_replacement_plan.py": "a9708ba025395d0d6da01ab404558908355c7f11b2008b7ecac377df0f4b1833",
-    "tests/test_challenger_replacement_plan_supersession.py": "3ddc265d250b4d5058e342ada3e7719baa6521b76f52add1752bf9c5d76cdde8",
+    "tests/test_challenger_replacement_plan_supersession.py": "573ccd7ceb0c1457f11a0688199601d5f569160ef20101d448deec4e60de7a1f",
     "tests/test_challenger_replacement_plan_v2.py": "656e922601ba524d2779c15932bd622817d0d397ba0f50b0d0d62c6b35c7e289",
     "tests/test_estimators.py": "f2ee7e3582d2f85a555a92662b5485513a8c9f2ad8e69c487dc36bb387a85dcb",
     "tests/test_nautilus_evidence_adapter.py": "70dd0688ef9163320cbe241f9e86d47f46ac5401c407a92ce5c14c7f2529dbf1",
@@ -452,7 +452,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "d1d98fd0eb48f76eb897e9d39b96ce3f52a45a74eb7c6a7f40a743abb3a36a40",
+  "build_input_tree_hash": "ff17705c8fa2e15d7397bc9cb616fdb25d778ec57f99d8a38079075103f0fcaf",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -460,5 +460,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "166f33dd7c1177499bf998b8a328936c5ac350b190c0f89073e084ba0ed9b861"
+  "manifest_hash": "77b2b8ab981808c1d82a0e3396513d927613df3d1d1e3ad21bf43818691eae38"
 }

@@ -2044,24 +2044,28 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             ).stdout.decode("ascii").splitlines()
             self.assertEqual(len(plan_commits), 1)
             head = plan_commits[0]
-            subprocess.run(
-                [
-                    "/usr/bin/git",
-                    "clone",
-                    "--no-local",
-                    "--no-hardlinks",
-                    "--no-checkout",
-                    str(ROOT),
-                    str(clone),
-                ],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["/usr/bin/git", "-C", str(clone), "checkout", "--detach", head],
-                check=True,
-                capture_output=True,
-            )
+            previous_umask = os.umask(0o022)
+            try:
+                subprocess.run(
+                    [
+                        "/usr/bin/git",
+                        "clone",
+                        "--no-local",
+                        "--no-hardlinks",
+                        "--no-checkout",
+                        str(ROOT),
+                        str(clone),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["/usr/bin/git", "-C", str(clone), "checkout", "--detach", head],
+                    check=True,
+                    capture_output=True,
+                )
+            finally:
+                os.umask(previous_umask)
             (clone / ".git").chmod(0o700)
             self.assertEqual(stat.S_IMODE((clone / ".git").stat().st_mode), 0o700)
             artifact_root = clone / "artifacts" / "challenger-replacement"
