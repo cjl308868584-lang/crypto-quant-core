@@ -36,6 +36,15 @@ V1_PLAN_ID = "challenger_replacement_plan_d4a542c1566f7a90466ca4d5301b81847f5b5e
 V1_PLAN_HASH = "95f395b17d9c09d325c58391542ce5f3d9df5ce6a706b1bba8ffcb62dc6c883c"
 V1_PEELED_COMMIT = "e0a9b3eb6a3f385ea259722e6613df8708e8fe5a"
 V1_BYTES_BEFORE_TESTS = V1_PATH.read_bytes()
+V2_PATH = (
+    ROOT
+    / "artifacts"
+    / "challenger-replacement"
+    / "challenger-replacement-plan-v0.64.0.json"
+)
+V2_FILE_SHA256 = "5f1774fd912451d79c9efe13401e80f312fee3c707d9faa252933ef3e8810a8f"
+V2_PLAN_ID = "challenger_replacement_plan_65d85d60a534a917f45a1ffa5fc9d3f74d6d24995b900d31b8c73cd26f0bd97b"
+V2_PLAN_HASH = "c9a1e5f74c52fbf23be5a1d27fd23c25f3601ed58133178fc25480391ab65705"
 
 CONFIG_SCHEMA_PATH = ROOT / "config" / "challenger-replacement-plan-v2.schema.json"
 PACKAGE_SCHEMA_PATH = (
@@ -237,6 +246,21 @@ class ChallengerReplacementPlanV1ImmutableSourceTests(unittest.TestCase):
         self.assertEqual(raw["plan_id"], V1_PLAN_ID)
         self.assertEqual(raw["plan_hash"], V1_PLAN_HASH)
         self.assertEqual(load_challenger_replacement_plan(V1_PATH), raw)
+
+
+class ChallengerReplacementPlanV2ArtifactTests(unittest.TestCase):
+    def test_committed_artifact_is_exact_builder_bytes_and_loader_verified(self):
+        self.assertTrue(V2_PATH.is_file(), V2_PATH)
+        artifact_bytes = V2_PATH.read_bytes()
+        self.assertEqual(hashlib.sha256(artifact_bytes).hexdigest(), V2_FILE_SHA256)
+        self.assertEqual(
+            artifact_bytes,
+            canonical_json(build_challenger_replacement_plan_v2()).encode("utf-8")
+            + b"\n",
+        )
+        loaded = load_challenger_replacement_plan_v2(V2_PATH)
+        self.assertEqual(loaded["plan_id"], V2_PLAN_ID)
+        self.assertEqual(loaded["plan_hash"], V2_PLAN_HASH)
 
 
 class ChallengerReplacementPlanV2SchemaTests(unittest.TestCase):
