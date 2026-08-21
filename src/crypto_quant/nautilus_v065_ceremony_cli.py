@@ -2,6 +2,7 @@
 
 import argparse
 import base64
+import copy
 import hashlib
 import json
 import os
@@ -14,15 +15,26 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterator, Mapping, Optional, Sequence
 
 from .canonical import canonical_json
 from .challenger_replacement_supersession_publish import (
     SupersessionPublishError,
     _atomic_no_replace,
 )
-from .nautilus_v065_plan import build_nautilus_v065_plan
+from .nautilus_v065_contract import (
+    build_nautilus_v065_current_reference,
+    build_nautilus_v065_request,
+    load_nautilus_v065_result,
+)
+from .nautilus_v065_evidence import (
+    build_nautilus_v065_execution_failure_comparison,
+    build_nautilus_v065_supply_failure_comparison,
+    compare_nautilus_v065,
+)
+from .nautilus_v065_plan import build_nautilus_v065_plan, load_nautilus_v065_plan
 from .nautilus_v065_supply_chain import (
     NautilusV065SupplyChainError,
     build_nautilus_v065_dependency_lock,
@@ -31,10 +43,17 @@ from .nautilus_v065_supply_chain import (
 
 
 _ROOT = Path(__file__).resolve().parents[2]
-_ARTIFACT_ROOT = _ROOT / "artifacts" / "nautilus-v065"
+_ARTIFACT_ROOT = _ROOT / "artifacts" / "nautilus-sandbox"
+_FORMAL_ROOT = _ARTIFACT_ROOT / "v0.65.0"
 _PLAN_NAME = "nautilus-e2e-spike-plan-v0.65.0.json"
 _RECEIPT_NAME = "nautilus-supply-chain-receipt-v0.65.0.json"
-_FINAL_NAMES = frozenset({_PLAN_NAME, _RECEIPT_NAME})
+_REQUEST_NAME = "nautilus-sandbox-request-v0.65.0.json"
+_FIRST_RESULT_NAME = "nautilus-sandbox-result-first-v0.65.0.json"
+_REPLAY_RESULT_NAME = "nautilus-sandbox-result-replay-v0.65.0.json"
+_COMPARISON_NAME = "nautilus-sandbox-comparison-v0.65.0.json"
+_FINAL_NAMES = frozenset(
+    {_PLAN_NAME, _RECEIPT_NAME, _REQUEST_NAME, _FIRST_RESULT_NAME, _REPLAY_RESULT_NAME, _COMPARISON_NAME}
+)
 _MAX_OUTPUT = 4 * 1024 * 1024
 _MAX_ARTIFACT = 4 * 1024 * 1024
 _TAG = "v1.230.0"
@@ -99,6 +118,36 @@ def _executable_identity(path: Path) -> Dict[str, Any]:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_EXECUTABLE_CLOSE_FAILED") from error
 
 
+def _venv_python_identity(path: Path, workspace: Path) -> Dict[str, Any]:
+    expected = workspace / "venv" / "bin" / "python"
+    if path != expected:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_EXECUTABLE_INVALID")
+    try:
+        root = workspace.lstat()
+        link = path.lstat()
+        if (
+            not stat.S_ISDIR(root.st_mode)
+            or root.st_uid != os.geteuid()
+            or stat.S_IMODE(root.st_mode) != 0o700
+            or link.st_uid != os.geteuid()
+            or link.st_nlink != 1
+            or not (stat.S_ISLNK(link.st_mode) or stat.S_ISREG(link.st_mode))
+        ):
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_EXECUTABLE_INVALID")
+        target = path.resolve(strict=True) if stat.S_ISLNK(link.st_mode) else path
+    except (OSError, RuntimeError) as error:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_EXECUTABLE_INVALID") from error
+    return _executable_identity(target)
+
+
+def _command_executable_identity(name: str, executable: Path, workspace: Optional[Path]) -> Dict[str, Any]:
+    if name == "offline_import":
+        if workspace is None:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_WORKSPACE_REQUIRED")
+        return _venv_python_identity(executable, workspace)
+    return _executable_identity(executable)
+
+
 def _find_executable(name: str) -> Path:
     candidates = {
         "git": (Path("/usr/bin/git"),),
@@ -151,7 +200,7 @@ def _encoded_output(raw: bytes) -> tuple[str, str]:
 def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Dict[str, Any]:
     argv = list(_command(name, workspace))
     executable = Path(argv[0])
-    before = _executable_identity(executable)
+    before = _command_executable_identity(name, executable, workspace)
     home = str((workspace / "home") if workspace is not None else Path.home())
     environment = {
         "HOME": home,
@@ -162,19 +211,25 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_TERMINAL_PROMPT": "0",
     }
+    timeout_error = None
+    returncode = -1
     try:
         with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
-            result = subprocess.run(
-                argv,
-                cwd=workspace if workspace is not None else _ROOT,
-                env=environment,
-                stdin=subprocess.DEVNULL,
-                stdout=stdout_file,
-                stderr=stderr_file,
-                timeout=120,
-                shell=False,
-                check=False,
-            )
+            try:
+                result = subprocess.run(
+                    argv,
+                    cwd=workspace if workspace is not None else _ROOT,
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    timeout=120,
+                    shell=False,
+                    check=False,
+                )
+                returncode = result.returncode
+            except subprocess.TimeoutExpired as error:
+                timeout_error = error
             stdout_file.flush()
             stderr_file.flush()
             stdout_size = os.fstat(stdout_file.fileno()).st_size
@@ -187,29 +242,17 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
             stderr = stderr_file.read(stderr_size + 1)
             if len(stdout) != stdout_size or len(stderr) != stderr_size:
                 raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_OUTPUT_INVALID")
-    except subprocess.TimeoutExpired as error:
-        raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_TIMEOUT") from error
     except OSError as error:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_FAILED") from error
-    after = _executable_identity(executable)
+    after = _command_executable_identity(name, executable, workspace)
     if before != after:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_EXECUTABLE_CHANGED")
-    if result.returncode != 0:
-        reason = {
-            "official_tag": "NAUTILUS_V065_TAG_FETCH_FAILED",
-            "license": "NAUTILUS_V065_LICENSE_FETCH_FAILED",
-            "slsa": "NAUTILUS_V065_SLSA_VERIFICATION_FAILED",
-            "offline_venv": "NAUTILUS_V065_OFFLINE_ENV_FAILED",
-            "offline_sync": "NAUTILUS_V065_OFFLINE_SYNC_FAILED",
-            "offline_import": "NAUTILUS_V065_OFFLINE_IMPORT_FAILED",
-        }.get(name, "NAUTILUS_V065_COMMAND_NONZERO")
-        raise NautilusV065SupplyChainError(reason)
     stdout_encoding, stdout_text = _encoded_output(stdout)
     stderr_encoding, stderr_text = _encoded_output(stderr)
     record = {
         "name": name,
         "argv": argv,
-        "exit_code": result.returncode,
+        "exit_code": returncode,
         "executable_path": str(executable),
         "stdout_encoding": stdout_encoding,
         "stdout_bytes": stdout_text,
@@ -223,6 +266,18 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
     for suffix, identity in (("before", before), ("after", after)):
         for field in ("device", "inode", "mode", "size", "sha256"):
             record[f"executable_{field}_{suffix}"] = identity[field]
+    if timeout_error is not None:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_TIMEOUT", evidence=record) from timeout_error
+    if returncode != 0:
+        reason = {
+            "official_tag": "NAUTILUS_V065_TAG_FETCH_FAILED",
+            "license": "NAUTILUS_V065_LICENSE_FETCH_FAILED",
+            "slsa": "NAUTILUS_V065_SLSA_VERIFICATION_FAILED",
+            "offline_venv": "NAUTILUS_V065_OFFLINE_ENV_FAILED",
+            "offline_sync": "NAUTILUS_V065_OFFLINE_SYNC_FAILED",
+            "offline_import": "NAUTILUS_V065_OFFLINE_IMPORT_FAILED",
+        }.get(name, "NAUTILUS_V065_COMMAND_NONZERO")
+        raise NautilusV065SupplyChainError(reason, evidence=record)
     return record
 
 
@@ -284,15 +339,20 @@ def _verify_license_transcript(record: Mapping[str, Any]) -> None:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_LICENSE_MISMATCH")
 
 
-def acquire_nautilus_v065_supply_chain(*, plan: Mapping[str, Any]) -> Dict[str, Any]:
-    """Execute the fixed acquisition followed by a zero-network import boundary."""
-
+def _plan_binding(plan: Mapping[str, Any]) -> tuple[str, str]:
     try:
         if plan["status"] != "SPIKE_PLAN_PREREGISTERED_NOT_EXECUTED" or any(plan["authority"].values()):
             raise NautilusV065SupplyChainError("NAUTILUS_V065_PLAN_AUTHORITY_INVALID")
-        plan_id, plan_hash = plan["plan_id"], plan["plan_hash"]
+        return plan["plan_id"], plan["plan_hash"]
     except (KeyError, TypeError) as error:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_PLAN_INVALID") from error
+
+
+@contextmanager
+def _verified_acquisition_workspace_success(plan: Mapping[str, Any]) -> Iterator[Dict[str, Any]]:
+    """Keep the exact verified environment alive through sandbox execution."""
+
+    plan_id, plan_hash = _plan_binding(plan)
     lock = build_nautilus_v065_dependency_lock(repository_root=_ROOT)
     observed_platform = _platform_identity()
     temporary_parent = "/private/tmp" if sys.platform == "darwin" and Path("/private/tmp").is_dir() else None
@@ -303,41 +363,122 @@ def acquire_nautilus_v065_supply_chain(*, plan: Mapping[str, Any]) -> Dict[str, 
         wheelhouse = workspace / "wheelhouse"
         wheelhouse.mkdir(mode=0o700)
         transcripts = []
+
+        def capture(name: str) -> Dict[str, Any]:
+            try:
+                record = _capture_fixed_command(name, workspace=workspace)
+            except NautilusV065SupplyChainError as error:
+                error.completed_transcripts = copy.deepcopy(transcripts)
+                raise
+            transcripts.append(record)
+            return record
+
         for name in ("uv_version", "python_version", "git_version", "gh_version", "official_tag", "license"):
-            transcripts.append(_capture_fixed_command(name, workspace=workspace))
+            capture(name)
         tag_output = transcripts[4]["stdout_bytes"]
         if _TAG_OBJECT not in tag_output or _TAG_COMMIT not in tag_output:
-            raise NautilusV065SupplyChainError("NAUTILUS_V065_TAG_IDENTITY_MISMATCH")
-        _verify_license_transcript(transcripts[5])
-        verified = [_download_fixed_artifact(item, wheelhouse) for item in lock["distributions"]]
-        transcripts.append(_capture_fixed_command("slsa", workspace=workspace))
+            error = NautilusV065SupplyChainError("NAUTILUS_V065_TAG_IDENTITY_MISMATCH")
+            error.completed_transcripts = copy.deepcopy(transcripts)
+            raise error
+        try:
+            _verify_license_transcript(transcripts[5])
+            verified = [_download_fixed_artifact(item, wheelhouse) for item in lock["distributions"]]
+        except NautilusV065SupplyChainError as error:
+            error.completed_transcripts = copy.deepcopy(transcripts)
+            raise
+        capture("slsa")
         for name in ("offline_venv", "offline_sync", "offline_import"):
-            transcripts.append(_capture_fixed_command(name, workspace=workspace))
-    tools = []
-    for record in transcripts[:4]:
-        tools.append({"name": record["name"].removesuffix("_version"), "version": record["stdout_bytes"].strip(), "executable_sha256_before": record["executable_sha256_before"], "executable_sha256_after": record["executable_sha256_after"]})
-    receipt: Dict[str, Any] = {
-        "$schema": "./nautilus-supply-chain-receipt-v2.schema.json",
-        "schema_version": "2.0.0",
-        "receipt_id": "nautilus_v065_supply_chain_" + "0" * 64,
-        "receipt_hash": "0" * 64,
-        "plan_id": plan_id,
-        "plan_hash": plan_hash,
-        "dependency_lock": lock,
-        "platform": observed_platform,
-        "tools": tools,
-        "transcripts": transcripts,
-        "verified_files": verified,
-        "license": {"expression": "LGPL-3.0-or-later", "size": 7651, "sha256": _LICENSE_SHA},
-        "official_source": {"tag": _TAG, "tag_object": _TAG_OBJECT, "peeled_commit": _TAG_COMMIT},
-        "slsa": {"verified": True, "subject_filename": _WHEEL, "subject_sha256": _WHEEL_SHA},
-        "authority_counters": {"credential_reads": 0, "market_requests": 0, "account_requests": 0, "broker_requests": 0, "orders": 0, "production_state_writes": 0},
-        "status": "SUPPLY_CHAIN_VERIFIED_SANDBOX_READY",
-    }
-    digest = supply_chain_receipt_hash(receipt)
-    receipt["receipt_id"] = "nautilus_v065_supply_chain_" + digest
-    receipt["receipt_hash"] = digest
-    return receipt
+            capture(name)
+        tools = []
+        for record in transcripts[:4]:
+            tools.append({"name": record["name"].removesuffix("_version"), "version": record["stdout_bytes"].strip(), "executable_sha256_before": record["executable_sha256_before"], "executable_sha256_after": record["executable_sha256_after"]})
+        receipt: Dict[str, Any] = {
+            "$schema": "./nautilus-supply-chain-receipt-v2.schema.json",
+            "schema_version": "2.0.0",
+            "receipt_id": "nautilus_v065_supply_chain_" + "0" * 64,
+            "receipt_hash": "0" * 64,
+            "plan_id": plan_id,
+            "plan_hash": plan_hash,
+            "dependency_lock": lock,
+            "platform": observed_platform,
+            "tools": tools,
+            "transcripts": transcripts,
+            "verified_files": verified,
+            "license": {"expression": "LGPL-3.0-or-later", "size": 7651, "sha256": _LICENSE_SHA},
+            "official_source": {"tag": _TAG, "tag_object": _TAG_OBJECT, "peeled_commit": _TAG_COMMIT},
+            "slsa": {"verified": True, "subject_filename": _WHEEL, "subject_sha256": _WHEEL_SHA},
+            "authority_counters": {"credential_reads": 0, "market_requests": 0, "account_requests": 0, "broker_requests": 0, "orders": 0, "production_state_writes": 0},
+            "status": "SUPPLY_CHAIN_VERIFIED_SANDBOX_READY",
+        }
+        digest = supply_chain_receipt_hash(receipt)
+        receipt["receipt_id"] = "nautilus_v065_supply_chain_" + digest
+        receipt["receipt_hash"] = digest
+        yield {
+            "status": receipt["status"],
+            "receipt": receipt,
+            "python": workspace / "venv" / "bin" / "python",
+            "workspace": workspace,
+        }
+
+
+@contextmanager
+def _verified_acquisition_workspace(plan: Mapping[str, Any]) -> Iterator[Dict[str, Any]]:
+    """Yield either one retained verified environment or one frozen failure receipt."""
+
+    plan_id, plan_hash = _plan_binding(plan)
+    lock = build_nautilus_v065_dependency_lock(repository_root=_ROOT)
+    acquired = _verified_acquisition_workspace_success(plan)
+    try:
+        session = acquired.__enter__()
+    except NautilusV065SupplyChainError as error:
+        completed = copy.deepcopy(getattr(error, "completed_transcripts", []))
+        receipt: Dict[str, Any] = {
+            "$schema": "./nautilus-supply-chain-receipt-v2.schema.json",
+            "schema_version": "2.0.0",
+            "receipt_id": "nautilus_v065_supply_chain_failure_" + "0" * 64,
+            "receipt_hash": "0" * 64,
+            "plan_id": plan_id,
+            "plan_hash": plan_hash,
+            "dependency_lock": lock,
+            "transcripts": completed,
+            "failure": {
+                "reason_code": error.reason_code,
+                "failed_stage": error.evidence["name"] if error.evidence is not None else "ACQUISITION",
+                "completed_transcript_count": len(completed),
+                "failed_command": copy.deepcopy(error.evidence),
+            },
+            "authority_counters": {
+                "credential_reads": 0,
+                "market_requests": 0,
+                "account_requests": 0,
+                "broker_requests": 0,
+                "orders": 0,
+                "production_state_writes": 0,
+            },
+            "status": "SUPPLY_CHAIN_ACQUISITION_FAILED",
+        }
+        digest = supply_chain_receipt_hash(receipt)
+        receipt["receipt_id"] = "nautilus_v065_supply_chain_failure_" + digest
+        receipt["receipt_hash"] = digest
+        yield {
+            "status": receipt["status"],
+            "receipt": receipt,
+            "reason_code": error.reason_code,
+            "python": None,
+            "workspace": None,
+        }
+        return
+    try:
+        yield session
+    finally:
+        acquired.__exit__(*sys.exc_info())
+
+
+def acquire_nautilus_v065_supply_chain(*, plan: Mapping[str, Any]) -> Dict[str, Any]:
+    """Execute acquisition and return its verified or failure receipt."""
+
+    with _verified_acquisition_workspace(plan) as session:
+        return copy.deepcopy(session["receipt"])
 
 
 def _read_final(parent_fd: int, name: str) -> tuple[bytes, os.stat_result]:
@@ -360,6 +501,16 @@ def _read_final(parent_fd: int, name: str) -> tuple[bytes, os.stat_result]:
         os.close(descriptor)
 
 
+def _trusted_artifact_root_stat(value: os.stat_result) -> bool:
+    mode = stat.S_IMODE(value.st_mode)
+    return (
+        stat.S_ISDIR(value.st_mode)
+        and value.st_uid == os.geteuid()
+        and mode & 0o700 == 0o700
+        and mode & 0o022 == 0
+    )
+
+
 def _validate_artifact_root(root: Path, parent_fd: int, expected: os.stat_result) -> None:
     try:
         opened = os.fstat(parent_fd)
@@ -368,9 +519,7 @@ def _validate_artifact_root(root: Path, parent_fd: int, expected: os.stat_result
         raise NautilusV065SupplyChainError("NAUTILUS_V065_ARTIFACT_ROOT_INVALID") from error
     for value in (opened, attached):
         if (
-            not stat.S_ISDIR(value.st_mode)
-            or value.st_uid != os.geteuid()
-            or stat.S_IMODE(value.st_mode) != 0o700
+            not _trusted_artifact_root_stat(value)
             or (value.st_dev, value.st_ino) != (expected.st_dev, expected.st_ino)
         ):
             raise NautilusV065SupplyChainError("NAUTILUS_V065_ARTIFACT_ROOT_INVALID")
@@ -381,7 +530,7 @@ def _publish_fixed_artifact(*, root: Path, final_name: str, data: bytes) -> Dict
         raise NautilusV065SupplyChainError("NAUTILUS_V065_ARTIFACT_INVALID")
     root = Path(root)
     before = root.lstat()
-    if not root.is_absolute() or not stat.S_ISDIR(before.st_mode) or before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o700:
+    if not root.is_absolute() or not _trusted_artifact_root_stat(before):
         raise NautilusV065SupplyChainError("NAUTILUS_V065_ARTIFACT_ROOT_INVALID")
     flags = os.O_RDONLY | _required_flag("O_DIRECTORY") | _required_flag("O_NOFOLLOW")
     parent_fd = os.open(root, flags)
@@ -450,10 +599,152 @@ def _clean_head() -> str:
     return result.stdout.decode("ascii").strip()
 
 
+def _invoke_fixed_runner(
+    *,
+    python: Path,
+    workspace: Path,
+    request: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    invocation: str,
+) -> Dict[str, Any]:
+    if invocation not in {"first", "replay"}:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_INVOCATION_INVALID")
+    try:
+        records = [item for item in receipt["transcripts"] if item["name"] == "offline_import"]
+        if len(records) != 1 or records[0]["executable_path"] != str(python):
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID")
+        record = records[0]
+        expected = {
+            field: record[f"executable_{field}_before"]
+            for field in ("device", "inode", "mode", "size", "sha256")
+        }
+        if any(record[f"executable_{field}_after"] != expected[field] for field in expected):
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID")
+        if _venv_python_identity(python, workspace) != expected:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID")
+    except (KeyError, TypeError) as error:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID") from error
+    root = Path(tempfile.mkdtemp(prefix=f"runner-{invocation}-", dir=workspace))
+    root.chmod(0o700)
+    request_path = root / "request.json"
+    receipt_path = root / "receipt.json"
+    result_path = root / "result.json"
+    request_path.write_bytes(canonical_json(request).encode("utf-8") + b"\n")
+    receipt_path.write_bytes(
+        canonical_json({"receipt_id": receipt["receipt_id"], "receipt_hash": receipt["receipt_hash"]}).encode("utf-8") + b"\n"
+    )
+    request_path.chmod(0o600)
+    receipt_path.chmod(0o600)
+    environment = {
+        "HOME": str(root),
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "PYTHONPATH": str(_ROOT / "sandboxes" / "nautilus-v065" / "src"),
+        "LANG": "C",
+        "LC_ALL": "C",
+    }
+    result = subprocess.run(
+        [
+            str(python), "-P", "-m", "crypto_quant_nautilus_v065.runner",
+            "--request", str(request_path), "--receipt", str(receipt_path), "--result", str(result_path),
+        ],
+        cwd=root,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=120,
+        shell=False,
+        check=False,
+    )
+    if _venv_python_identity(python, workspace) != expected:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID")
+    if result.returncode != 0 or result.stdout or len(result.stderr) > _MAX_OUTPUT:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_FAILED")
+    return load_nautilus_v065_result(result_path.resolve())
+
+
+def _publish_canonical(root: Path, final_name: str, value: Mapping[str, Any]) -> None:
+    _publish_fixed_artifact(
+        root=root,
+        final_name=final_name,
+        data=canonical_json(value).encode("utf-8") + b"\n",
+    )
+
+
+def _acquire_and_run(*, plan: Mapping[str, Any], artifact_root: Path) -> Dict[str, Any]:
+    """Execute the fixed two-stage ceremony without accepting override inputs."""
+
+    with _verified_acquisition_workspace(plan) as session:
+        receipt = session["receipt"]
+        if session["status"] != "SUPPLY_CHAIN_VERIFIED_SANDBOX_READY":
+            comparison = build_nautilus_v065_supply_failure_comparison(
+                plan=plan,
+                receipt=receipt,
+                reason_code=session["reason_code"],
+                runner_invocation_count=0,
+            )
+            _publish_canonical(artifact_root, _RECEIPT_NAME, receipt)
+            _publish_canonical(artifact_root, _COMPARISON_NAME, comparison)
+            return {"conclusion": comparison["conclusion"], "runner_invocation_count": 0}
+        request = build_nautilus_v065_request(
+            plan_id=plan["plan_id"],
+            plan_hash=plan["plan_hash"],
+            supply_chain_receipt_id=receipt["receipt_id"],
+            supply_chain_receipt_hash=receipt["receipt_hash"],
+        )
+        current = build_nautilus_v065_current_reference(request=request)
+        first = None
+        invocation_count = 1
+        try:
+            first = _invoke_fixed_runner(
+                python=session["python"], workspace=session["workspace"], request=request,
+                receipt=receipt, invocation="first",
+            )
+            invocation_count = 2
+            replay = _invoke_fixed_runner(
+                python=session["python"], workspace=session["workspace"], request=request,
+                receipt=receipt, invocation="replay",
+            )
+        except NautilusV065SupplyChainError as error:
+            comparison = build_nautilus_v065_execution_failure_comparison(
+                plan=plan,
+                receipt=receipt,
+                request=request,
+                reason_code=error.reason_code,
+                runner_invocation_count=invocation_count,
+                first_result=first,
+            )
+            values = [(_RECEIPT_NAME, receipt), (_REQUEST_NAME, request)]
+            if first is not None:
+                values.append((_FIRST_RESULT_NAME, first))
+            values.append((_COMPARISON_NAME, comparison))
+            for name, value in values:
+                _publish_canonical(artifact_root, name, value)
+            return {"conclusion": comparison["conclusion"], "runner_invocation_count": invocation_count}
+        comparison = compare_nautilus_v065(
+            plan=plan,
+            receipt=receipt,
+            request=request,
+            current_reference=current,
+            first_result=first,
+            replay_result=replay,
+        )
+        for name, value in (
+            (_RECEIPT_NAME, receipt),
+            (_REQUEST_NAME, request),
+            (_FIRST_RESULT_NAME, first),
+            (_REPLAY_RESULT_NAME, replay),
+            (_COMPARISON_NAME, comparison),
+        ):
+            _publish_canonical(artifact_root, name, value)
+        return {"conclusion": comparison["conclusion"], "runner_invocation_count": 2}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nautilus-v065-ceremony")
     subcommands = parser.add_subparsers(dest="command", required=True)
     subcommands.add_parser("publish-plan")
+    subcommands.add_parser("acquire-and-run")
     return parser
 
 
@@ -464,6 +755,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not _ARTIFACT_ROOT.exists():
             _ARTIFACT_ROOT.mkdir(mode=0o700)
         result = _publish_fixed_artifact(root=_ARTIFACT_ROOT, final_name=_PLAN_NAME, data=canonical_json(plan).encode("utf-8") + b"\n")
+        print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+        return 0
+    if args.command == "acquire-and-run":
+        _clean_head()
+        plan = load_nautilus_v065_plan((_ARTIFACT_ROOT / _PLAN_NAME).resolve())
+        if not _FORMAL_ROOT.exists():
+            _FORMAL_ROOT.mkdir(mode=0o700)
+        result = _acquire_and_run(plan=plan, artifact_root=_FORMAL_ROOT)
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0
     raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_UNKNOWN")

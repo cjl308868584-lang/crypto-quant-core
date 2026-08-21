@@ -215,7 +215,9 @@ caller-provided executable.
 
 - [ ] **Step 4: Implement safe receipt publication**
 
-Use a fixed repository artifact root, owner-only retained parent, nonce staging, short-write/EINTR loop, same-fd
+Use a fixed public repository artifact root whose directory is owner-owned and never group/world writable (the
+tracked parent may be `0755`); keep acquisition/execution temp roots and the formal ceremony child root `0700`.
+Publication uses a retained parent descriptor, nonce staging, short-write/EINTR loop, same-fd
 readback, file fsync, atomic no-replace and directory fsync. Existing exact final replays; untrusted/different final,
 symlink, hardlink, FIFO, wrong mode or orphan protocol staging fails closed without chmod/delete.
 
@@ -314,7 +316,7 @@ env, socket attempt, live adapter import, second engine creation and crash befor
 - [ ] **Step 2: Run RED in the isolated verified environment**
 
 ```bash
-uv run --project sandboxes/nautilus-v065 --offline --frozen python -m unittest discover -s sandboxes/nautilus-v065/tests -p 'test_runner_*.py' -v
+PYTHONPATH=sandboxes/nautilus-v065/src uv run --project sandboxes/nautilus-v065 --offline --frozen python -m unittest discover -s sandboxes/nautilus-v065/tests -v
 ```
 
 Expected: runner import failure. This command is allowed only after Task 3's development acquisition fixtures have
@@ -334,7 +336,7 @@ live adapter imports, and publish via verified staging/no-replace/fsync. A crash
 - [ ] **Step 5: Run GREEN twice as distinct tests, not result selection**
 
 ```bash
-uv run --project sandboxes/nautilus-v065 --offline --frozen python -m unittest discover -s sandboxes/nautilus-v065/tests -p 'test_runner_*.py' -v
+PYTHONPATH=sandboxes/nautilus-v065/src uv run --project sandboxes/nautilus-v065 --offline --frozen python -m unittest discover -s sandboxes/nautilus-v065/tests -v
 PYTHONPATH=src:tests python3 -m unittest -v test_nautilus_v065_contract
 ```
 

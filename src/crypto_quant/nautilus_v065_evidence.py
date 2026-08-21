@@ -325,12 +325,29 @@ def compare_nautilus_v065(
 
 
 def build_nautilus_v065_supply_failure_comparison(
-    *, plan: Mapping[str, Any], reason_code: str, runner_invocation_count: int
+    *,
+    plan: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    reason_code: str,
+    runner_invocation_count: int,
 ) -> Dict[str, Any]:
     """Record an acquisition failure without fabricating engine evidence."""
 
     _verify_plan(plan)
-    if not isinstance(reason_code, str) or not reason_code or runner_invocation_count != 0:
+    try:
+        digest = supply_chain_receipt_hash(receipt)
+        valid_receipt = (
+            receipt["status"] == "SUPPLY_CHAIN_ACQUISITION_FAILED"
+            and receipt["plan_id"] == plan["plan_id"]
+            and receipt["plan_hash"] == plan["plan_hash"]
+            and receipt["receipt_hash"] == digest
+            and receipt["receipt_id"] == "nautilus_v065_supply_chain_failure_" + digest
+            and receipt["failure"]["reason_code"] == reason_code
+            and not any(receipt["authority_counters"].values())
+        )
+    except (KeyError, TypeError, ValueError):
+        valid_receipt = False
+    if not valid_receipt or not isinstance(reason_code, str) or not reason_code or runner_invocation_count != 0:
         raise NautilusV065EvidenceError("NAUTILUS_V065_SUPPLY_FAILURE_INVALID")
     comparison = {
         "$schema": "./nautilus-sandbox-comparison-v2.schema.json",
@@ -338,7 +355,7 @@ def build_nautilus_v065_supply_failure_comparison(
         "comparison_id": "nautilus_v065_comparison_" + _ZERO,
         "comparison_hash": _ZERO,
         "mode": "SUPPLY_CHAIN_FAILURE",
-        "bindings": _bindings(plan),
+        "bindings": _bindings(plan, receipt),
         "scenario_comparisons": [],
         "difference_classes": ["SUPPLY_CHAIN_OR_LICENSE_FAILURE"],
         "gates": {
@@ -354,6 +371,61 @@ def build_nautilus_v065_supply_failure_comparison(
         "conclusion": "INCONCLUSIVE_KEEP_CURRENT_CORE",
         "reason_code_or_null": reason_code,
         "runner_invocation_count": 0,
+        "current_core_effect": "UNCHANGED",
+        "status": "FINAL_COMPARISON_INCONCLUSIVE",
+    }
+    return _finish(comparison)
+
+
+def build_nautilus_v065_execution_failure_comparison(
+    *,
+    plan: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    request: Mapping[str, Any],
+    reason_code: str,
+    runner_invocation_count: int,
+    first_result: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Freeze incomplete sandbox execution without selecting a replacement run."""
+
+    _verify_plan(plan)
+    _verify_receipt(plan, receipt)
+    verified_request = _verify_request(dict(request))
+    if (
+        verified_request["plan_id"] != plan["plan_id"]
+        or verified_request["supply_chain_receipt_id"] != receipt["receipt_id"]
+        or not isinstance(reason_code, str)
+        or not reason_code
+        or runner_invocation_count not in (1, 2)
+    ):
+        raise NautilusV065EvidenceError("NAUTILUS_V065_EXECUTION_FAILURE_INVALID")
+    verified_first = None
+    if first_result is not None:
+        verified_first, safe = _verify_engine_result(first_result)
+        if not safe or runner_invocation_count != 2:
+            raise NautilusV065EvidenceError("NAUTILUS_V065_EXECUTION_FAILURE_INVALID")
+    comparison = {
+        "$schema": "./nautilus-sandbox-comparison-v2.schema.json",
+        "schema_version": "2.0.0",
+        "comparison_id": "nautilus_v065_comparison_" + _ZERO,
+        "comparison_hash": _ZERO,
+        "mode": "EXECUTION_FAILURE",
+        "bindings": _bindings(plan, receipt, verified_request, None, verified_first, None),
+        "scenario_comparisons": [],
+        "difference_classes": ["INVALID_OR_INCOMPLETE_EVIDENCE"],
+        "gates": {
+            "exact_supply_chain": True,
+            "slsa_attestation": True,
+            "license_verified": True,
+            "golden_scenarios": False,
+            "zero_safety_counters": True,
+            "fresh_process_replay": False,
+            "no_unresolved_economic_difference": False,
+            "critical_important_review_zero": True,
+        },
+        "conclusion": "INCONCLUSIVE_KEEP_CURRENT_CORE",
+        "reason_code_or_null": reason_code,
+        "runner_invocation_count": runner_invocation_count,
         "current_core_effect": "UNCHANGED",
         "status": "FINAL_COMPARISON_INCONCLUSIVE",
     }

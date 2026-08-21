@@ -4,11 +4,11 @@
   "title": "Nautilus v0.65 Supply Chain Receipt",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "plan_id", "plan_hash", "dependency_lock", "platform", "tools", "transcripts", "verified_files", "license", "official_source", "slsa", "authority_counters", "status"],
+  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "plan_id", "plan_hash", "dependency_lock", "transcripts", "authority_counters", "status"],
   "properties": {
     "$schema": {"const": "./nautilus-supply-chain-receipt-v2.schema.json"},
     "schema_version": {"const": "2.0.0"},
-    "receipt_id": {"pattern": "^nautilus_v065_supply_chain_[0-9a-f]{64}$"},
+    "receipt_id": {"pattern": "^nautilus_v065_supply_chain_(failure_)?[0-9a-f]{64}$"},
     "receipt_hash": {"$ref": "#/$defs/hash"},
     "plan_id": {"pattern": "^nautilus_v065_plan_[0-9a-f]{64}$"},
     "plan_hash": {"$ref": "#/$defs/hash"},
@@ -38,7 +38,7 @@
       }
     },
     "transcripts": {
-      "type": "array", "minItems": 1,
+      "type": "array", "minItems": 0,
       "items": {"$ref": "#/$defs/transcript"}
     },
     "verified_files": {
@@ -84,8 +84,35 @@
         "production_state_writes": {"const": 0}
       }
     },
-    "status": {"const": "SUPPLY_CHAIN_VERIFIED_SANDBOX_READY"}
+    "failure": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reason_code", "failed_stage", "completed_transcript_count", "failed_command"],
+      "properties": {
+        "reason_code": {"type": "string", "minLength": 1},
+        "failed_stage": {"type": "string", "minLength": 1},
+        "completed_transcript_count": {"type": "integer", "minimum": 0, "maximum": 10},
+        "failed_command": {"type": ["object", "null"]}
+      }
+    },
+    "status": {"enum": ["SUPPLY_CHAIN_VERIFIED_SANDBOX_READY", "SUPPLY_CHAIN_ACQUISITION_FAILED"]}
   },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "SUPPLY_CHAIN_VERIFIED_SANDBOX_READY"}}, "required": ["status"]},
+      "then": {
+        "required": ["platform", "tools", "verified_files", "license", "official_source", "slsa"],
+        "not": {"required": ["failure"]},
+        "properties": {"transcripts": {"minItems": 10}}
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "SUPPLY_CHAIN_ACQUISITION_FAILED"}}, "required": ["status"]},
+      "then": {
+        "required": ["failure"],
+        "not": {"anyOf": [{"required": ["platform"]}, {"required": ["tools"]}, {"required": ["verified_files"]}, {"required": ["license"]}, {"required": ["official_source"]}, {"required": ["slsa"]}]}
+      }
+    }
+  ],
   "$defs": {
     "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "distribution": {

@@ -9,6 +9,7 @@ from crypto_quant.nautilus_v065_contract import (
 )
 from crypto_quant.nautilus_v065_evidence import (
     NautilusV065EvidenceError,
+    build_nautilus_v065_execution_failure_comparison,
     build_nautilus_v065_supply_failure_comparison,
     compare_nautilus_v065,
 )
@@ -183,14 +184,54 @@ class NautilusV065EvidenceTests(unittest.TestCase):
         self.assertEqual(unsafe["conclusion"], "REJECT_KEEP_CURRENT_CORE")
 
     def test_supply_failure_is_inconclusive_without_runner_evidence(self):
+        verified_receipt, _request, _current, _first, _replay = self.evidence()
+        failure_receipt = {
+            "$schema": "./nautilus-supply-chain-receipt-v2.schema.json",
+            "schema_version": "2.0.0",
+            "receipt_id": "nautilus_v065_supply_chain_failure_" + "0" * 64,
+            "receipt_hash": "0" * 64,
+            "plan_id": self.plan["plan_id"],
+            "plan_hash": self.plan["plan_hash"],
+            "dependency_lock": verified_receipt["dependency_lock"],
+            "transcripts": [],
+            "failure": {
+                "reason_code": "NAUTILUS_V065_SLSA_VERIFICATION_FAILED",
+                "failed_stage": "slsa",
+                "completed_transcript_count": 0,
+                "failed_command": None,
+            },
+            "authority_counters": verified_receipt["authority_counters"],
+            "status": "SUPPLY_CHAIN_ACQUISITION_FAILED",
+        }
+        failure_digest = supply_chain_receipt_hash(failure_receipt)
+        failure_receipt["receipt_id"] = "nautilus_v065_supply_chain_failure_" + failure_digest
+        failure_receipt["receipt_hash"] = failure_digest
         comparison = build_nautilus_v065_supply_failure_comparison(
             plan=self.plan,
+            receipt=failure_receipt,
             reason_code="NAUTILUS_V065_SLSA_VERIFICATION_FAILED",
             runner_invocation_count=0,
         )
         self.assertEqual(comparison["difference_classes"], ["SUPPLY_CHAIN_OR_LICENSE_FAILURE"])
         self.assertEqual(comparison["conclusion"], "INCONCLUSIVE_KEEP_CURRENT_CORE")
         self.assertEqual(comparison["runner_invocation_count"], 0)
+        self.assertEqual(comparison["bindings"]["receipt_id"], failure_receipt["receipt_id"])
+
+    def test_execution_failure_is_inconclusive_and_binds_only_existing_evidence(self):
+        receipt, request, _current, first, _replay = self.evidence()
+        before_first = build_nautilus_v065_execution_failure_comparison(
+            plan=self.plan, receipt=receipt, request=request,
+            reason_code="NAUTILUS_V065_RUNNER_FAILED", runner_invocation_count=1,
+        )
+        self.assertEqual(before_first["difference_classes"], ["INVALID_OR_INCOMPLETE_EVIDENCE"])
+        self.assertIsNone(before_first["bindings"]["first_result_id"])
+        after_first = build_nautilus_v065_execution_failure_comparison(
+            plan=self.plan, receipt=receipt, request=request,
+            reason_code="NAUTILUS_V065_RUNNER_FAILED", runner_invocation_count=2,
+            first_result=first,
+        )
+        self.assertEqual(after_first["bindings"]["first_result_id"], first["result_id"])
+        self.assertEqual(after_first["conclusion"], "INCONCLUSIVE_KEEP_CURRENT_CORE")
 
     def test_tamper_unclassified_or_incomplete_evidence_fails_closed(self):
         receipt, request, current, first, replay = self.evidence()

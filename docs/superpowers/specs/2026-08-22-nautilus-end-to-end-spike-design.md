@@ -235,7 +235,9 @@ Python socket sentinel；只 import low-level backtest/model modules；禁用 li
 - `nautilus-sandbox-comparison-v2`。
 
 所有 canonical JSON 必须唯一编码、无 duplicate keys、LF 结尾、self/business hash 可重算、unknown field
-拒绝。owner-only loaders 使用 no-follow descriptor、regular/uid/mode/nlink/size/attachment 门和 bounded
+拒绝。公开 Git artifact 父目录允许 `0700` 或 `0755`，但必须 owner-owned、owner 可访问且 group/world
+不可写；正式 ceremony 子目录和 acquisition/execution temp roots 保持 `0700`。loaders 使用 no-follow
+descriptor、regular/uid/mode/nlink/size/attachment 门和 bounded
 read。publisher 使用 noncanonical nonce staging、same-fd readback/fsync、atomic no-replace 和 directory
 fsync；任何 partial final、symlink、hardlink、FIFO、wrong mode、different bytes 或 fsync failure 都失败关闭。
 
