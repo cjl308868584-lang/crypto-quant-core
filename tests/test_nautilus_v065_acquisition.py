@@ -254,15 +254,50 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             ), mock.patch.object(
                 module,
                 "_verify_staged_artifact_set",
-                side_effect=lambda *_args, **_kwargs: order.append("replay"),
+                side_effect=lambda *_args, **_kwargs: (
+                    order.append("replay") or {"token": "verified-snapshot"}
+                ),
             ), mock.patch.object(
                 module,
                 "_publish_formal_completion_marker",
                 create=True,
-                side_effect=lambda *_args, **_kwargs: order.append("marker"),
+                side_effect=lambda *_args, **kwargs: (
+                    self.assertEqual(
+                        kwargs["verified_snapshot"], {"token": "verified-snapshot"}
+                    )
+                    or order.append("marker")
+                ),
             ):
                 _commit_formal_ceremony(plan)
         self.assertEqual(order, ["replay", "marker"])
+
+    def test_formal_directory_is_durable_before_one_shot_acquisition(self):
+        plan = self.plan()
+        from crypto_quant import nautilus_v065_ceremony_cli as module
+
+        parent_fsynced = []
+        original_fsync = os.fsync
+
+        def fsync(descriptor):
+            parent_fsynced.append(descriptor)
+            return original_fsync(descriptor)
+
+        def acquisition(*, plan, artifact_root):
+            self.assertTrue(parent_fsynced)
+            raise RuntimeError("TEST_ONLY_STOP_AFTER_DURABLE_DIRECTORY")
+
+        with tempfile.TemporaryDirectory() as raw:
+            parent = Path(raw)
+            parent.chmod(0o755)
+            with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
+                module, "_FORMAL_ROOT", parent / "v0.65.0"
+            ), mock.patch.object(
+                module, "_acquire_and_run", side_effect=acquisition
+            ), mock.patch.object(module.os, "fsync", side_effect=fsync):
+                with self.assertRaisesRegex(
+                    RuntimeError, "TEST_ONLY_STOP_AFTER_DURABLE_DIRECTORY"
+                ):
+                    _commit_formal_ceremony(plan)
 
     def test_staged_set_verifier_rejects_individually_valid_unbound_documents(self):
         from crypto_quant.nautilus_v065_evidence import compare_nautilus_v065
@@ -361,7 +396,37 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                         },
                         expected_plan=wrong_plan,
                     )
-                _verify_staged_artifact_set(
+                verified_snapshot = _verify_staged_artifact_set(
+                    root,
+                    descriptor,
+                    {
+                        "conclusion": comparison["conclusion"],
+                        "runner_invocation_count": 2,
+                    },
+                    expected_plan=plan,
+                )
+                receipt_path.write_bytes(b"{}\n")
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError,
+                    "NAUTILUS_V065_FORMAL_COMMIT_FAILED",
+                ):
+                    _publish_formal_completion_marker(
+                        root,
+                        descriptor,
+                        {
+                            "conclusion": comparison["conclusion"],
+                            "runner_invocation_count": 2,
+                        },
+                        expected_plan=plan,
+                        verified_snapshot=verified_snapshot,
+                    )
+                self.assertFalse(
+                    (root / "nautilus-sandbox-complete-v0.65.0.json").exists()
+                )
+                receipt_path.write_text(
+                    canonical_json(receipt) + "\n", encoding="utf-8"
+                )
+                verified_snapshot = _verify_staged_artifact_set(
                     root,
                     descriptor,
                     {
@@ -378,6 +443,7 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                         "runner_invocation_count": 2,
                     },
                     expected_plan=plan,
+                    verified_snapshot=verified_snapshot,
                 )
                 marker = json.loads(
                     (root / "nautilus-sandbox-complete-v0.65.0.json").read_text()
@@ -385,6 +451,54 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 self.assertEqual(marker["plan_id"], plan["plan_id"])
                 self.assertEqual(marker["comparison_hash"], comparison["comparison_hash"])
                 self.assertEqual(len(marker["files"]), 5)
+                from crypto_quant.nautilus_v065_evidence import (
+                    load_nautilus_v065_completion_marker,
+                    verify_nautilus_v065_completion_marker,
+                )
+                verify_nautilus_v065_completion_marker(
+                    marker,
+                    expected_plan=plan,
+                    expected_comparison=comparison,
+                    expected_files=verified_snapshot["files"],
+                    expected_summary={
+                        "conclusion": comparison["conclusion"],
+                        "runner_invocation_count": 2,
+                    },
+                )
+                self.assertEqual(
+                    load_nautilus_v065_completion_marker(
+                        (root / "nautilus-sandbox-complete-v0.65.0.json").resolve(),
+                        expected_plan=plan,
+                        expected_comparison=comparison,
+                        expected_files=verified_snapshot["files"],
+                        expected_summary={
+                            "conclusion": comparison["conclusion"],
+                            "runner_invocation_count": 2,
+                        },
+                    ),
+                    marker,
+                )
+                changed_marker = dict(marker, marker_hash="0" * 64)
+                with self.assertRaisesRegex(
+                    ValueError, "NAUTILUS_V065_COMPLETION_MARKER_INVALID"
+                ):
+                    verify_nautilus_v065_completion_marker(
+                        changed_marker,
+                        expected_plan=plan,
+                        expected_comparison=comparison,
+                        expected_files=verified_snapshot["files"],
+                        expected_summary={
+                            "conclusion": comparison["conclusion"],
+                            "runner_invocation_count": 2,
+                        },
+                    )
+                self.assertEqual(
+                    (ROOT / "config/nautilus-formal-completion-v1.schema.json").read_bytes(),
+                    (
+                        ROOT
+                        / "src/crypto_quant/schemas/nautilus-formal-completion-v1.schema.json"
+                    ).read_bytes(),
+                )
             finally:
                 os.close(descriptor)
 

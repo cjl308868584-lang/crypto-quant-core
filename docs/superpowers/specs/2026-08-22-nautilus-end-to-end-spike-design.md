@@ -242,7 +242,8 @@ Python socket sentinel；只 import low-level backtest/model modules；禁用 li
 - `nautilus-supply-chain-receipt-v2`；
 - `nautilus-sandbox-request-v2`；
 - `nautilus-sandbox-result-v2`；
-- `nautilus-sandbox-comparison-v2`。
+- `nautilus-sandbox-comparison-v2`；
+- `nautilus-formal-completion-v1`。
 
 所有 canonical JSON 必须唯一编码、无 duplicate keys、LF 结尾、self/business hash 可重算、unknown field
 拒绝。公开 Git artifact 父目录允许 `0700` 或 `0755`，但必须 owner-owned、owner 可访问且 group/world
@@ -254,14 +255,17 @@ fsync；任何 partial final、symlink、hardlink、FIFO、wrong mode、differen
 单个 formal ceremony 先以 no-replace 创建固定 owner-only 正式容器并保持其 descriptor；receipt、request、
 result 和 comparison 分别通过 nonce staging + atomic no-replace 发布。随后从 retained descriptor 完成整套
 production replay 与 committed-plan binding，最后才发布独立 `nautilus-sandbox-complete-v0.65.0.json`
-完成标记。不允许按名称 rename 一个已验证目录，因为目录 entry 可在验证与 rename 之间被替换。正式容器
-一旦存在就禁止重跑；崩溃留下的无 comparison 部分目录只作为失败证据，不是完成结果，也不会再次请求
+完成标记。正式目录 entry 在任何一次性 acquisition 前必须通过 parent-directory fsync 耐久化。不允许
+按名称 rename 一个已验证目录，因为目录 entry 可在验证与 rename 之间被替换。正式容器
+一旦存在就禁止重跑；崩溃留下的无 completion marker 部分目录只作为失败证据，不是完成结果，也不会再次请求
 网络以寻找不同结论。
 
 确认完成前必须从 retained formal descriptor 读取不含完成标记的 exact 文件名集合，用 production schema/loader
 重放 receipt、request、first/replay result 与 comparison，并验证 comparison mode、bindings、
-runner invocation count、summary 以及传入 ceremony 的 committed plan identity 一致。完成标记绑定 plan、
-comparison 和所有组成文件的 size/SHA-256，并通过同一安全单文件 publisher 最后发布。空目录、缺文件、
+runner invocation count、summary 以及传入 ceremony 的 committed plan identity 一致。replay 返回 exact
+bytes/dev/inode snapshot；marker 发布边界重新打开并逐项比对 exact set、bytes/hash 和 identity。完成标记
+使用 strict mirrored schema 与 production loader，绑定 plan、comparison 和所有组成文件的
+size/SHA-256/dev/inode，并通过同一安全单文件 publisher 最后发布。空目录、缺文件、
 多文件、非 canonical bytes 或任一 loader 失败都不得产生完成标记。
 
 正式 artifacts：

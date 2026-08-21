@@ -40,10 +40,12 @@ from .nautilus_v065_contract import (
     verify_nautilus_v065_result,
 )
 from .nautilus_v065_evidence import (
+    build_nautilus_v065_completion_marker,
     build_nautilus_v065_execution_failure_comparison,
     build_nautilus_v065_supply_failure_comparison,
     compare_nautilus_v065,
     verify_nautilus_v065_comparison,
+    verify_nautilus_v065_completion_marker,
 )
 from .nautilus_v065_plan import build_nautilus_v065_plan, load_nautilus_v065_plan
 from .nautilus_v065_supply_chain import (
@@ -1095,12 +1097,17 @@ def _commit_formal_ceremony(plan: Mapping[str, Any]) -> Dict[str, Any]:
                 raise NautilusV065SupplyChainError(
                     "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
                 )
+            os.fsync(parent_fd)
             result = _acquire_and_run(plan=plan, artifact_root=formal)
-            _verify_staged_artifact_set(
+            verified_snapshot = _verify_staged_artifact_set(
                 formal, formal_fd, result, expected_plan=plan
             )
             _publish_formal_completion_marker(
-                formal, formal_fd, result, expected_plan=plan
+                formal,
+                formal_fd,
+                result,
+                expected_plan=plan,
+                verified_snapshot=verified_snapshot,
             )
             os.fsync(formal_fd)
             attached = os.stat(formal.name, dir_fd=parent_fd, follow_symlinks=False)
@@ -1123,7 +1130,7 @@ def _verify_staged_artifact_set(
     summary: Mapping[str, Any],
     *,
     expected_plan: Mapping[str, Any],
-) -> None:
+) -> Dict[str, Any]:
     try:
         if set(summary) != {"conclusion", "runner_invocation_count"}:
             raise ValueError
@@ -1212,6 +1219,19 @@ def _verify_staged_artifact_set(
             actual["current_reference_hash"] = None
         if bindings != actual:
             raise ValueError
+        files = []
+        bodies = {}
+        for name in sorted(expected):
+            body, identity = _read_final(staging_fd, name)
+            bodies[name] = body
+            files.append({
+                "name": name,
+                "size": len(body),
+                "sha256": hashlib.sha256(body).hexdigest(),
+                "device": identity.st_dev,
+                "inode": identity.st_ino,
+            })
+        return {"comparison": comparison, "files": files, "bodies": bodies}
     except (NautilusV065SupplyChainError, NautilusV065ContractError):
         raise
     except (KeyError, TypeError, ValueError, OSError, CanonicalizationError) as error:
@@ -1226,41 +1246,42 @@ def _publish_formal_completion_marker(
     summary: Mapping[str, Any],
     *,
     expected_plan: Mapping[str, Any],
+    verified_snapshot: Mapping[str, Any],
 ) -> None:
     try:
-        comparison_raw, _identity = _read_final(formal_fd, _COMPARISON_NAME)
-        comparison = verify_nautilus_v065_comparison(
-            dict(_strict_json_bytes(comparison_raw))
-        )
-        names = sorted(os.listdir(formal_fd))
-        if _COMPLETE_NAME in names:
+        files = verified_snapshot["files"]
+        bodies = verified_snapshot["bodies"]
+        comparison = verified_snapshot["comparison"]
+        names = sorted(item["name"] for item in files)
+        if sorted(os.listdir(formal_fd)) != names or _COMPLETE_NAME in names:
             raise ValueError
-        files = []
-        for name in names:
-            body, _value = _read_final(formal_fd, name)
-            files.append({
-                "name": name,
-                "size": len(body),
-                "sha256": hashlib.sha256(body).hexdigest(),
-            })
-        marker = {
-            "format": "NAUTILUS_V065_FORMAL_COMPLETION_V1",
-            "plan_id": expected_plan["plan_id"],
-            "plan_hash": expected_plan["plan_hash"],
-            "comparison_id": comparison["comparison_id"],
-            "comparison_hash": comparison["comparison_hash"],
-            "conclusion": summary["conclusion"],
-            "runner_invocation_count": summary["runner_invocation_count"],
-            "files": files,
-            "marker_hash": "0" * 64,
-        }
-        marker["marker_hash"] = hashlib.sha256(
-            canonical_json(marker).encode("utf-8")
-        ).hexdigest()
+        for item in files:
+            body, identity = _read_final(formal_fd, item["name"])
+            if (
+                body != bodies[item["name"]]
+                or len(body) != item["size"]
+                or hashlib.sha256(body).hexdigest() != item["sha256"]
+                or identity.st_dev != item["device"]
+                or identity.st_ino != item["inode"]
+            ):
+                raise ValueError
+        marker = build_nautilus_v065_completion_marker(
+            expected_plan=expected_plan,
+            expected_comparison=comparison,
+            expected_files=files,
+            expected_summary=summary,
+        )
         body = canonical_json(marker).encode("utf-8") + b"\n"
         _publish_fixed_artifact(root=formal, final_name=_COMPLETE_NAME, data=body)
         replayed, _value = _read_final(formal_fd, _COMPLETE_NAME)
-        if replayed != body:
+        replayed_value = dict(_strict_json_bytes(replayed))
+        if replayed != body or verify_nautilus_v065_completion_marker(
+            replayed_value,
+            expected_plan=expected_plan,
+            expected_comparison=comparison,
+            expected_files=files,
+            expected_summary=summary,
+        ) != marker:
             raise ValueError
     except (NautilusV065SupplyChainError, NautilusV065ContractError):
         raise

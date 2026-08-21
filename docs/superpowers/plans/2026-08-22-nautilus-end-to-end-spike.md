@@ -475,7 +475,10 @@ If it succeeds, the CLI runs first and replay fresh processes offline, then publ
 The CLI creates fixed owner-only `v0.65.0` once and retains its descriptor. Receipt/request/results/comparison use safe
 individual-file publication. After production replay verifies their exact set, cross-document bindings and the
 committed plan identity, publish `nautilus-sandbox-complete-v0.65.0.json` as the distinct final completion marker.
-Never rename a
+Fsync the parent immediately after creating and attaching the formal directory, before acquisition. Carry the
+replay's exact bytes/dev/inode snapshot into marker publication and recheck every constituent plus the exact filename
+set. The marker has a strict mirrored schema and production loader which recompute its self hash and constituent
+bindings. Never rename a
 verified directory by pathname. Any existing formal directory blocks all reruns and is retained for evidence;
 a crash before the completion marker therefore freezes a partial failure, not a false completed result.
 Before reporting success, replay the exact formal filename set with production schemas/loaders and verify all

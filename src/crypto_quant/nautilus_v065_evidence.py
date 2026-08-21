@@ -6,11 +6,13 @@ import json
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from importlib import resources
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from jsonschema import Draft202012Validator
 
 from .canonical import canonical_json
+from .challenger_replacement_plan import ChallengerReplacementPlanError, _strict_json_bytes
 from .nautilus_v065_contract import (
     NautilusV065ContractError,
     _self_hash,
@@ -18,11 +20,16 @@ from .nautilus_v065_contract import (
     build_nautilus_v065_current_reference,
     verify_nautilus_v065_result,
 )
-from .nautilus_v065_plan import nautilus_v065_plan_hash
+from .nautilus_v065_plan import (
+    NautilusV065PlanError,
+    _read_plan_bytes,
+    nautilus_v065_plan_hash,
+)
 from .nautilus_v065_supply_chain import supply_chain_receipt_hash
 
 
 _SCHEMA = "nautilus-sandbox-comparison-v2.schema.json"
+_COMPLETION_SCHEMA = "nautilus-formal-completion-v1.schema.json"
 _ZERO = "0" * 64
 _ORDER = (
     "EXACT_MATCH",
@@ -73,6 +80,135 @@ def _validator() -> Draft202012Validator:
     schema = json.loads(resources.files("crypto_quant").joinpath("schemas", _SCHEMA).read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
+
+
+@lru_cache(maxsize=1)
+def _completion_validator() -> Draft202012Validator:
+    schema = json.loads(
+        resources.files("crypto_quant")
+        .joinpath("schemas", _COMPLETION_SCHEMA)
+        .read_text(encoding="utf-8")
+    )
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
+def _completion_hash(value: Mapping[str, Any]) -> str:
+    material = copy.deepcopy(dict(value))
+    material["marker_id"] = "nautilus_v065_completion_" + _ZERO
+    material["marker_hash"] = _ZERO
+    return hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest()
+
+
+def build_nautilus_v065_completion_marker(
+    *,
+    expected_plan: Mapping[str, Any],
+    expected_comparison: Mapping[str, Any],
+    expected_files: Sequence[Mapping[str, Any]],
+    expected_summary: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Build the unique marker for one already replayed formal artifact set."""
+
+    value = {
+        "$schema": "./nautilus-formal-completion-v1.schema.json",
+        "schema_version": "1.0.0",
+        "marker_id": "nautilus_v065_completion_" + _ZERO,
+        "marker_hash": _ZERO,
+        "plan_id": expected_plan["plan_id"],
+        "plan_hash": expected_plan["plan_hash"],
+        "comparison_id": expected_comparison["comparison_id"],
+        "comparison_hash": expected_comparison["comparison_hash"],
+        "conclusion": expected_summary["conclusion"],
+        "runner_invocation_count": expected_summary["runner_invocation_count"],
+        "files": copy.deepcopy(list(expected_files)),
+        "status": "FORMAL_CEREMONY_COMPLETED_VERIFIED",
+    }
+    digest = _completion_hash(value)
+    value["marker_id"] = "nautilus_v065_completion_" + digest
+    value["marker_hash"] = digest
+    return verify_nautilus_v065_completion_marker(
+        value,
+        expected_plan=expected_plan,
+        expected_comparison=expected_comparison,
+        expected_files=expected_files,
+        expected_summary=expected_summary,
+    )
+
+
+def verify_nautilus_v065_completion_marker(
+    payload: Mapping[str, Any],
+    *,
+    expected_plan: Mapping[str, Any],
+    expected_comparison: Mapping[str, Any],
+    expected_files: Sequence[Mapping[str, Any]],
+    expected_summary: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Replay the strict completion marker and all frozen bindings."""
+
+    value = copy.deepcopy(dict(payload))
+    try:
+        digest = _completion_hash(value)
+        if (
+            tuple(_completion_validator().iter_errors(value))
+            or value["marker_hash"] != digest
+            or value["marker_id"] != "nautilus_v065_completion_" + digest
+            or value["plan_id"] != expected_plan["plan_id"]
+            or value["plan_hash"] != expected_plan["plan_hash"]
+            or value["comparison_id"] != expected_comparison["comparison_id"]
+            or value["comparison_hash"] != expected_comparison["comparison_hash"]
+            or value["conclusion"] != expected_summary["conclusion"]
+            or value["runner_invocation_count"]
+            != expected_summary["runner_invocation_count"]
+            or value["files"] != list(expected_files)
+        ):
+            raise NautilusV065EvidenceError(
+                "NAUTILUS_V065_COMPLETION_MARKER_INVALID"
+            )
+    except NautilusV065EvidenceError:
+        raise
+    except (KeyError, TypeError, ValueError) as error:
+        raise NautilusV065EvidenceError(
+            "NAUTILUS_V065_COMPLETION_MARKER_INVALID"
+        ) from error
+    return value
+
+
+def load_nautilus_v065_completion_marker(
+    path: Path,
+    *,
+    expected_plan: Mapping[str, Any],
+    expected_comparison: Mapping[str, Any],
+    expected_files: Sequence[Mapping[str, Any]],
+    expected_summary: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Load canonical owner-controlled marker bytes and replay the contract."""
+
+    try:
+        body = _read_plan_bytes(Path(path))
+        value = dict(_strict_json_bytes(body))
+        if body != canonical_json(value).encode("utf-8") + b"\n":
+            raise NautilusV065EvidenceError(
+                "NAUTILUS_V065_COMPLETION_MARKER_INVALID"
+            )
+        return verify_nautilus_v065_completion_marker(
+            value,
+            expected_plan=expected_plan,
+            expected_comparison=expected_comparison,
+            expected_files=expected_files,
+            expected_summary=expected_summary,
+        )
+    except NautilusV065EvidenceError:
+        raise
+    except (
+        ChallengerReplacementPlanError,
+        NautilusV065PlanError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise NautilusV065EvidenceError(
+            "NAUTILUS_V065_COMPLETION_MARKER_INVALID"
+        ) from error
 
 
 def _comparison_hash(value: Mapping[str, Any]) -> str:

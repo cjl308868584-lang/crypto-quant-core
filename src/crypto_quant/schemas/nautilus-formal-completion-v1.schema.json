@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/nautilus-formal-completion-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "marker_id", "marker_hash", "plan_id", "plan_hash", "comparison_id", "comparison_hash", "conclusion", "runner_invocation_count", "files", "status"],
+  "properties": {
+    "$schema": {"const": "./nautilus-formal-completion-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "marker_id": {"type": "string", "pattern": "^nautilus_v065_completion_[0-9a-f]{64}$"},
+    "marker_hash": {"$ref": "#/$defs/hash"},
+    "plan_id": {"type": "string", "pattern": "^nautilus_v065_plan_[0-9a-f]{64}$"},
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "comparison_id": {"type": "string", "pattern": "^nautilus_v065_comparison_[0-9a-f]{64}$"},
+    "comparison_hash": {"$ref": "#/$defs/hash"},
+    "conclusion": {"enum": ["ADOPT_FOR_PREREGISTERED_SHADOW", "REJECT_KEEP_CURRENT_CORE", "INCONCLUSIVE_KEEP_CURRENT_CORE"]},
+    "runner_invocation_count": {"type": "integer", "minimum": 0, "maximum": 2},
+    "files": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/file"}
+    },
+    "status": {"const": "FORMAL_CEREMONY_COMPLETED_VERIFIED"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "size", "sha256", "device", "inode"],
+      "properties": {
+        "name": {
+          "enum": [
+            "nautilus-supply-chain-receipt-v0.65.0.json",
+            "nautilus-sandbox-request-v0.65.0.json",
+            "nautilus-sandbox-result-first-v0.65.0.json",
+            "nautilus-sandbox-result-replay-v0.65.0.json",
+            "nautilus-sandbox-comparison-v0.65.0.json"
+          ]
+        },
+        "size": {"type": "integer", "minimum": 1, "maximum": 4194304},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "device": {"type": "integer", "minimum": 0},
+        "inode": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}
