@@ -162,7 +162,9 @@ committed plan 和固定 repository root，按固定顺序执行：
 
 每个命令保存 exact argv、固定环境 allowlist、start/end、exit code、stdout bytes、stderr bytes、
 byte count 和 SHA-256。stdout/stderr 在子进程运行期间分别以 4 MiB 上限主动读取，触限立即终止整个
-进程组；每个 wheel 的 curl 同时使用 committed lock 中的 exact size 作为 `--max-filesize`。任一
+进程组；timeout 后只允许固定的 bounded drain，逃逸并持有 pipe 的 descendant 不得阻塞返回。loader
+按 command name 重放固定 executable path class，并要求四个 tool records 与前四条 version transcripts
+逐字段一致。每个 wheel 的 curl 同时使用 committed lock 中的 exact size 作为 `--max-filesize`。任一
 timeout、redirect drift、hash/size/tag/license/attestation mismatch、lock drift、
 unsupported platform 或 transcript 缺失都结束为 INCONCLUSIVE。禁止改变源、版本、hash 或重试寻找更好
 结果；只允许每个已预注册命令内部的固定网络 retry policy。
@@ -249,12 +251,13 @@ descriptor、regular/uid/mode/nlink/size/attachment 门和 bounded
 read。publisher 使用 noncanonical nonce staging、same-fd readback/fsync、atomic no-replace 和 directory
 fsync；任何 partial final、symlink、hardlink、FIFO、wrong mode、different bytes 或 fsync failure 都失败关闭。
 
-单个 formal ceremony 的完整文件集先写入固定 owner-only 非规范 staging directory；只有 acquisition、
-两次 sandbox invocation 和 comparison 全部结束后，才对整个目录执行一次 atomic no-replace 并 fsync
-父目录。正式目录或 staging 任一已存在都禁止重跑，因此崩溃不会把部分 artifact 集误当作完整结果，
-也不会自动再次请求网络以寻找不同结论。
+单个 formal ceremony 先以 no-replace 创建固定 owner-only 正式容器并保持其 descriptor；receipt、request
+和 result 文件分别通过 nonce staging + atomic no-replace 发布，comparison 永远最后发布并作为唯一完成
+标记。不允许按名称 rename 一个已验证目录，因为目录 entry 可在验证与 rename 之间被替换。正式容器
+一旦存在就禁止重跑；崩溃留下的无 comparison 部分目录只作为失败证据，不是完成结果，也不会再次请求
+网络以寻找不同结论。
 
-发布整个目录前必须从 retained staging descriptor 读取 exact 文件名集合，用 production schema/loader
+确认完成前必须从 retained formal descriptor 读取 exact 文件名集合，用 production schema/loader
 重放 receipt、request、first/replay result 与 comparison，并验证 comparison mode、bindings、
 runner invocation count 和 summary 一致。空目录、缺文件、多文件、非 canonical bytes 或任一 loader
 失败都不得发布。

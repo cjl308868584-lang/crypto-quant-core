@@ -33,6 +33,8 @@ from crypto_quant.nautilus_v065_ceremony_cli import (
     _invoke_fixed_runner,
     _load_frozen_current_reference,
     _publish_fixed_artifact,
+    _run_bounded_command,
+    _verify_staged_artifact_set,
     _verify_formal_candidate,
     _verified_acquisition_workspace,
     acquire_nautilus_v065_supply_chain,
@@ -119,7 +121,7 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         verify.assert_called_once_with(plan, "1" * 40)
         commit.assert_called_once_with(plan)
 
-    def test_formal_ceremony_publishes_one_directory_and_never_reruns_partial(self):
+    def test_formal_ceremony_uses_comparison_marker_and_never_reruns_partial(self):
         plan = self.plan()
         from crypto_quant import nautilus_v065_ceremony_cli as module
 
@@ -127,7 +129,6 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             parent = Path(raw)
             parent.chmod(0o755)
             formal = parent / "v0.65.0"
-            staging = parent / ".v0.65.0.in-progress"
             with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
                 module, "_FORMAL_ROOT", formal
             ), mock.patch.object(
@@ -141,15 +142,14 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 result = _commit_formal_ceremony(plan)
             self.assertEqual(result["conclusion"], "REJECT_KEEP_CURRENT_CORE")
             self.assertTrue(formal.is_dir())
-            self.assertFalse(staging.exists())
-            acquire.assert_called_once_with(plan=plan, artifact_root=staging)
+            self.assertFalse((parent / ".v0.65.0.in-progress").exists())
+            acquire.assert_called_once_with(plan=plan, artifact_root=formal)
             verify_set.assert_called_once()
 
         with tempfile.TemporaryDirectory() as raw:
             parent = Path(raw)
             parent.chmod(0o755)
             formal = parent / "v0.65.0"
-            staging = parent / ".v0.65.0.in-progress"
             with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
                 module, "_FORMAL_ROOT", formal
             ), mock.patch.object(
@@ -159,8 +159,8 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(RuntimeError, "TEST_ONLY_CRASH_AFTER_OBSERVATION"):
                     _commit_formal_ceremony(plan)
-            self.assertTrue(staging.is_dir())
-            self.assertFalse(formal.exists())
+            self.assertTrue(formal.is_dir())
+            self.assertFalse((parent / ".v0.65.0.in-progress").exists())
 
             with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
                 module, "_FORMAL_ROOT", formal
@@ -194,8 +194,119 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                     "NAUTILUS_V065_FORMAL_ARTIFACT_SET_INVALID",
                 ):
                     _commit_formal_ceremony(plan)
-            self.assertFalse((parent / "v0.65.0").exists())
-            self.assertTrue((parent / ".v0.65.0.in-progress").exists())
+            self.assertTrue((parent / "v0.65.0").is_dir())
+            self.assertFalse(
+                (parent / "v0.65.0" / "nautilus-sandbox-comparison-v0.65.0.json").exists()
+            )
+            self.assertFalse((parent / ".v0.65.0.in-progress").exists())
+
+    def test_formal_ceremony_never_renames_a_verified_directory_by_name(self):
+        plan = self.plan()
+        from crypto_quant import nautilus_v065_ceremony_cli as module
+
+        source_is_directory = []
+
+        def inspect_source(parent_fd, source, _target):
+            source_is_directory.append(
+                __import__("stat").S_ISDIR(
+                    os.stat(source, dir_fd=parent_fd, follow_symlinks=False).st_mode
+                )
+            )
+            raise RuntimeError("TEST_ONLY_STOP_AT_ATOMIC_PUBLICATION")
+
+        with tempfile.TemporaryDirectory() as raw:
+            parent = Path(raw)
+            parent.chmod(0o755)
+            with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
+                module, "_FORMAL_ROOT", parent / "v0.65.0"
+            ), mock.patch.object(
+                module,
+                "_acquire_and_run",
+                return_value={"conclusion": "REJECT_KEEP_CURRENT_CORE"},
+            ), mock.patch.object(
+                module, "_verify_staged_artifact_set"
+            ), mock.patch.object(
+                module, "_atomic_no_replace", side_effect=inspect_source
+            ):
+                _commit_formal_ceremony(plan)
+        self.assertNotIn(True, source_is_directory)
+
+    def test_staged_set_verifier_rejects_individually_valid_unbound_documents(self):
+        from crypto_quant.nautilus_v065_evidence import compare_nautilus_v065
+        from crypto_quant.nautilus_v065_supply_chain import supply_chain_receipt_hash
+
+        plan = self.plan()
+        receipt = __import__(
+            "test_nautilus_v065_supply_chain"
+        ).NautilusV065SupplyChainTests().receipt()
+        receipt["plan_id"], receipt["plan_hash"] = plan["plan_id"], plan["plan_hash"]
+        receipt["receipt_id"] = "nautilus_v065_supply_chain_" + "0" * 64
+        receipt["receipt_hash"] = "0" * 64
+        digest = supply_chain_receipt_hash(receipt)
+        receipt["receipt_id"] = "nautilus_v065_supply_chain_" + digest
+        receipt["receipt_hash"] = digest
+        request = build_nautilus_v065_request(
+            plan_id=plan["plan_id"],
+            plan_hash=plan["plan_hash"],
+            supply_chain_receipt_id=receipt["receipt_id"],
+            supply_chain_receipt_hash=receipt["receipt_hash"],
+        )
+        current = build_nautilus_v065_current_reference(request=request)
+        candidate = copy.deepcopy(current)
+        candidate["engine"] = "NAUTILUS_TRADER_1.230.0"
+        candidate["result_id"] = "nautilus_v065_result_" + "0" * 64
+        candidate["result_hash"] = "0" * 64
+        result_digest = _self_hash(candidate, "result_id", "result_hash")
+        candidate["result_id"] = "nautilus_v065_result_" + result_digest
+        candidate["result_hash"] = result_digest
+        comparison = compare_nautilus_v065(
+            plan=plan,
+            receipt=receipt,
+            request=request,
+            current_reference=current,
+            first_result=candidate,
+            replay_result=candidate,
+        )
+        unrelated = copy.deepcopy(receipt)
+        unrelated["transcripts"][0]["started_at"] = (
+            "2026-08-21T23:59:59.000000Z"
+        )
+        unrelated["receipt_id"] = "nautilus_v065_supply_chain_" + "0" * 64
+        unrelated["receipt_hash"] = "0" * 64
+        unrelated_digest = supply_chain_receipt_hash(unrelated)
+        unrelated["receipt_id"] = "nautilus_v065_supply_chain_" + unrelated_digest
+        unrelated["receipt_hash"] = unrelated_digest
+
+        values = {
+            "nautilus-supply-chain-receipt-v0.65.0.json": unrelated,
+            "nautilus-sandbox-request-v0.65.0.json": request,
+            "nautilus-sandbox-result-first-v0.65.0.json": candidate,
+            "nautilus-sandbox-result-replay-v0.65.0.json": candidate,
+            "nautilus-sandbox-comparison-v0.65.0.json": comparison,
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            root.chmod(0o700)
+            for name, value in values.items():
+                path = root / name
+                path.write_text(canonical_json(value) + "\n", encoding="utf-8")
+                path.chmod(0o600)
+            descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError,
+                    "NAUTILUS_V065_FORMAL_ARTIFACT_SET_INVALID",
+                ):
+                    _verify_staged_artifact_set(
+                        root,
+                        descriptor,
+                        {
+                            "conclusion": comparison["conclusion"],
+                            "runner_invocation_count": 2,
+                        },
+                    )
+            finally:
+                os.close(descriptor)
 
     def test_formal_candidate_allows_exactly_one_plan_only_commit(self):
         plan = self.plan()
@@ -818,6 +929,22 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 timeout=10,
             )
         self.assertLess(time.monotonic() - started, 5)
+
+    def test_bounded_command_timeout_does_not_wait_for_escaped_pipe_holder(self):
+        code = (
+            "import os,time;pid=os.fork();"
+            "(os.setsid(),time.sleep(2.5)) if pid==0 else time.sleep(100)"
+        )
+        started = time.monotonic()
+        returncode, _stdout, _stderr, timed_out = _run_bounded_command(
+            [sys.executable, "-c", code],
+            cwd=ROOT,
+            environment={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+            timeout=1,
+        )
+        self.assertTrue(timed_out)
+        self.assertNotEqual(returncode, 0)
+        self.assertLess(time.monotonic() - started, 2)
 
     def test_nonzero_command_error_retains_exact_failure_record(self):
         with mock.patch(

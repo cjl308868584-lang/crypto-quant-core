@@ -51,7 +51,18 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
             "offline_sync", "offline_import",
         ]
         def transcript(name):
-            executable = str(workspace / "venv/bin/python") if name == "offline_import" else "/usr/bin/true"
+            if name in {"git_version", "official_tag"}:
+                executable = "/usr/bin/git"
+            elif name == "pypi_version" or name == "license" or name.startswith("download:"):
+                executable = "/usr/bin/curl"
+            elif name in {"uv_version", "offline_venv", "offline_sync"}:
+                executable = "/opt/homebrew/bin/uv"
+            elif name in {"gh_version", "slsa"}:
+                executable = "/opt/homebrew/bin/gh"
+            elif name == "python_version":
+                executable = "/opt/homebrew/bin/python3.12"
+            else:
+                executable = str(workspace / "venv/bin/python")
             tails = {
                 "uv_version": ["--version"],
                 "python_version": ["--version"],
@@ -61,7 +72,7 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
                 "official_tag": ["ls-remote", "https://github.com/nautechsystems/nautilus_trader.git", "refs/tags/v1.230.0", "refs/tags/v1.230.0^{}"],
                 "license": ["--fail", "--silent", "--show-error", "--proto", "=https", "https://raw.githubusercontent.com/nautechsystems/nautilus_trader/8160730c7c550480b0a439fb11086a4c4de15f0b/LICENSE"],
                 "slsa": ["attestation", "verify", str(workspace / "wheelhouse" / WHEEL), "--repo", "nautechsystems/nautilus_trader"],
-                "offline_venv": ["venv", "--offline", "--python", "/usr/bin/true", str(workspace / "venv")],
+                "offline_venv": ["venv", "--offline", "--python", "/opt/homebrew/bin/python3.12", str(workspace / "venv")],
                 "offline_sync": ["pip", "install", "--offline", "--python", str(workspace / "venv/bin/python"), "--find-links", str(workspace / "wheelhouse"), "nautilus_trader==1.230.0"],
                 "offline_import": ["-I", "-c", _OFFLINE_IMPORT_CODE],
             }
@@ -82,7 +93,12 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
             elif name.startswith("download:"):
                 raw = ("200 " + urls[name.removeprefix("download:")] + "\n").encode()
             else:
-                raw = (name + "\n").encode()
+                raw = {
+                    "uv_version": b"uv 0.8.12\n",
+                    "python_version": b"Python 3.12.13\n",
+                    "git_version": b"git version 2.50.1\n",
+                    "gh_version": b"gh version 2.76.2\n",
+                }.get(name, (name + "\n").encode())
             return {
                 "name": name,
                 "argv": [executable, *tails[name]],
@@ -133,14 +149,7 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
                 "python_implementation": "CPython",
                 "python_version": "3.12.13",
             },
-            "tools": [
-                {
-                    "name": "uv",
-                    "version": "0.8.12",
-                    "executable_sha256_before": "3" * 64,
-                    "executable_sha256_after": "3" * 64,
-                }
-            ],
+            "tools": [],
             "transcripts": [transcript(name) for name in command_names],
             "verified_files": lock["distributions"],
             "license": {
@@ -168,6 +177,15 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
             },
             "status": "SUPPLY_CHAIN_VERIFIED_SANDBOX_READY",
         }
+        payload["tools"] = [
+            {
+                "name": item["name"].removesuffix("_version"),
+                "version": item["stdout_bytes"].strip(),
+                "executable_sha256_before": item["executable_sha256_before"],
+                "executable_sha256_after": item["executable_sha256_after"],
+            }
+            for item in payload["transcripts"][:4]
+        ]
         payload["receipt_id"] = "nautilus_v065_supply_chain_" + supply_chain_receipt_hash(payload)
         payload["receipt_hash"] = supply_chain_receipt_hash(payload)
         return payload
@@ -271,6 +289,29 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
                     "NAUTILUS_V065_TRANSCRIPT_SEMANTIC_INVALID",
                 ):
                     load_nautilus_v065_supply_chain_receipt(path.resolve())
+
+    def test_receipt_loader_rejects_self_declared_untrusted_command_executable(self):
+        payload = self.receipt()
+        transcript = next(
+            item for item in payload["transcripts"] if item["name"] == "pypi_version"
+        )
+        transcript["executable_path"] = "/tmp/unverified-curl"
+        transcript["argv"][0] = "/tmp/unverified-curl"
+        payload["receipt_id"] = "nautilus_v065_supply_chain_" + "0" * 64
+        payload["receipt_hash"] = "0" * 64
+        digest = supply_chain_receipt_hash(payload)
+        payload["receipt_id"] = "nautilus_v065_supply_chain_" + digest
+        payload["receipt_hash"] = digest
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "receipt.json"
+            path.write_text(canonical_json(payload) + "\n", encoding="utf-8")
+            path.chmod(0o600)
+            with self.assertRaisesRegex(
+                NautilusV065SupplyChainError,
+                "NAUTILUS_V065_TRANSCRIPT_SEMANTIC_INVALID",
+            ):
+                load_nautilus_v065_supply_chain_receipt(path)
+
     def test_receipt_rejects_missing_output_and_nonzero_authority(self):
         payload = self.receipt()
         for mutate in (

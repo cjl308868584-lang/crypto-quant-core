@@ -237,6 +237,38 @@ def _pypi_semantics(raw: bytes, lock: Mapping[str, Any], urls: Mapping[str, str]
         raise NautilusV065SupplyChainError("NAUTILUS_V065_TRANSCRIPT_SEMANTIC_INVALID") from error
 
 
+def _fixed_executable_matches(name: str, executable: str, workspace: Path) -> bool:
+    path = Path(executable)
+    if not path.is_absolute():
+        return False
+    if name in {"git_version", "official_tag"}:
+        return path == Path("/usr/bin/git")
+    if name == "pypi_version" or name == "license" or name.startswith("download:"):
+        return path == Path("/usr/bin/curl")
+    if name in {"uv_version", "offline_venv", "offline_sync"}:
+        tool = "uv"
+        fixed = {Path("/opt/homebrew/bin/uv"), Path("/usr/local/bin/uv")}
+    elif name in {"gh_version", "slsa"}:
+        tool = "gh"
+        fixed = {
+            Path("/opt/homebrew/bin/gh"), Path("/usr/local/bin/gh"), Path("/usr/bin/gh")
+        }
+    elif name == "python_version":
+        return bool(re.fullmatch(
+            r"/(?:opt/homebrew|usr/local)/bin/python3\.12|"
+            r"/Library/Frameworks/Python\.framework/Versions/3\.12/bin/python3\.12|"
+            r"/(?:Users|home)/[^/]+/\.local/bin/python3\.12",
+            executable,
+        ))
+    elif name == "offline_import":
+        return path == workspace / "venv/bin/python"
+    else:
+        return False
+    return path in fixed or bool(
+        re.fullmatch(rf"/(?:Users|home)/[^/]+/\.local/bin/{tool}", executable)
+    )
+
+
 def _validate_transcript_semantics(
     records: Sequence[Mapping[str, Any]], lock: Mapping[str, Any], *, failed_final: bool
 ) -> None:
@@ -259,7 +291,12 @@ def _validate_transcript_semantics(
             name = record["name"]
             executable = record["executable_path"]
             argv = record["argv"]
-            if not isinstance(argv, list) or not argv or argv[0] != executable:
+            if (
+                not isinstance(argv, list)
+                or not argv
+                or argv[0] != executable
+                or not _fixed_executable_matches(name, executable, workspace)
+            ):
                 raise ValueError
             if name in {"uv_version", "python_version", "git_version", "gh_version"}:
                 expected_tail = ["--version"]
@@ -383,9 +420,16 @@ def _validate_receipt(payload: Mapping[str, Any]) -> Dict[str, Any]:
         _validate_transcript_semantics(
             payload["transcripts"], expected_lock, failed_final=False
         )
-        for tool in payload["tools"]:
-            if tool["executable_sha256_before"] != tool["executable_sha256_after"]:
-                raise NautilusV065SupplyChainError("NAUTILUS_V065_TOOL_IDENTITY_CHANGED")
+        expected_tools = []
+        for transcript in payload["transcripts"][:4]:
+            expected_tools.append({
+                "name": transcript["name"].removesuffix("_version"),
+                "version": _decode_transcript(transcript, "stdout").decode("utf-8").strip(),
+                "executable_sha256_before": transcript["executable_sha256_before"],
+                "executable_sha256_after": transcript["executable_sha256_after"],
+            })
+        if payload["tools"] != expected_tools:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_TOOL_IDENTITY_CHANGED")
         digest = supply_chain_receipt_hash(payload)
         if payload["receipt_hash"] != digest or payload["receipt_id"] != "nautilus_v065_supply_chain_" + digest:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_RECEIPT_HASH_MISMATCH")

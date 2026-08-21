@@ -245,6 +245,7 @@ def _run_bounded_command(
         selector.register(stream, selectors.EVENT_READ)
     deadline = time.monotonic() + timeout
     timed_out = False
+    drain_deadline: Optional[float] = None
 
     def terminate() -> None:
         if process.poll() is None:
@@ -255,11 +256,20 @@ def _run_bounded_command(
 
     try:
         while selector.get_map():
-            remaining = deadline - time.monotonic()
+            now = time.monotonic()
+            remaining = deadline - now
             if remaining <= 0 and not timed_out:
                 timed_out = True
                 terminate()
-            for key, _mask in selector.select(max(0.0, min(0.1, remaining)) if not timed_out else 0.1):
+                drain_deadline = now + 0.25
+            if timed_out and drain_deadline is not None and now >= drain_deadline:
+                break
+            wait_for = (
+                max(0.0, min(0.1, remaining))
+                if not timed_out
+                else max(0.0, min(0.1, drain_deadline - now))
+            )
+            for key, _mask in selector.select(wait_for):
                 stream = key.fileobj
                 chunk = os.read(stream.fileno(), 65536)
                 if not chunk:
@@ -1028,7 +1038,7 @@ def _acquire_and_run(*, plan: Mapping[str, Any], artifact_root: Path) -> Dict[st
 def _commit_formal_ceremony(plan: Mapping[str, Any]) -> Dict[str, Any]:
     parent = _ARTIFACT_ROOT
     formal = _FORMAL_ROOT
-    staging_name = ".v0.65.0.in-progress"
+    legacy_staging_name = ".v0.65.0.in-progress"
     if formal.parent != parent or formal.name != "v0.65.0":
         raise NautilusV065SupplyChainError("NAUTILUS_V065_FORMAL_STATE_CONFLICT")
     try:
@@ -1048,7 +1058,7 @@ def _commit_formal_ceremony(plan: Mapping[str, Any]) -> Dict[str, Any]:
         ) from error
     try:
         _validate_artifact_root(parent, parent_fd, before)
-        for name in (staging_name, formal.name):
+        for name in (legacy_staging_name, formal.name):
             try:
                 os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
             except FileNotFoundError:
@@ -1061,42 +1071,37 @@ def _commit_formal_ceremony(plan: Mapping[str, Any]) -> Dict[str, Any]:
                 "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
             )
         try:
-            os.mkdir(staging_name, 0o700, dir_fd=parent_fd)
+            os.mkdir(formal.name, 0o700, dir_fd=parent_fd)
         except OSError as error:
             raise NautilusV065SupplyChainError(
                 "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
             ) from error
-        staging = parent / staging_name
-        result = _acquire_and_run(plan=plan, artifact_root=staging)
-        staging_fd = os.open(staging_name, flags, dir_fd=parent_fd)
+        created = os.stat(formal.name, dir_fd=parent_fd, follow_symlinks=False)
+        formal_fd = os.open(formal.name, flags, dir_fd=parent_fd)
         try:
-            value = os.fstat(staging_fd)
-            attached = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
+            value = os.fstat(formal_fd)
+            attached = os.stat(formal.name, dir_fd=parent_fd, follow_symlinks=False)
             if (
                 not stat.S_ISDIR(value.st_mode)
                 or value.st_uid != os.geteuid()
                 or stat.S_IMODE(value.st_mode) != 0o700
+                or (value.st_dev, value.st_ino) != (created.st_dev, created.st_ino)
                 or (value.st_dev, value.st_ino) != (attached.st_dev, attached.st_ino)
             ):
                 raise NautilusV065SupplyChainError(
                     "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
                 )
-            _verify_staged_artifact_set(staging, staging_fd, result)
-            os.fsync(staging_fd)
+            result = _acquire_and_run(plan=plan, artifact_root=formal)
+            _verify_staged_artifact_set(formal, formal_fd, result)
+            os.fsync(formal_fd)
+            attached = os.stat(formal.name, dir_fd=parent_fd, follow_symlinks=False)
+            if (value.st_dev, value.st_ino) != (attached.st_dev, attached.st_ino):
+                raise NautilusV065SupplyChainError(
+                    "NAUTILUS_V065_FORMAL_COMMIT_FAILED"
+                )
         finally:
-            os.close(staging_fd)
-        try:
-            _atomic_no_replace(parent_fd, staging_name, formal.name)
-        except (FileExistsError, SupersessionPublishError, OSError) as error:
-            raise NautilusV065SupplyChainError(
-                "NAUTILUS_V065_FORMAL_COMMIT_FAILED"
-            ) from error
+            os.close(formal_fd)
         os.fsync(parent_fd)
-        committed = os.stat(formal.name, dir_fd=parent_fd, follow_symlinks=False)
-        if (committed.st_dev, committed.st_ino) != (value.st_dev, value.st_ino):
-            raise NautilusV065SupplyChainError(
-                "NAUTILUS_V065_FORMAL_COMMIT_FAILED"
-            )
         _validate_artifact_root(parent, parent_fd, before)
         return result
     finally:
@@ -1140,13 +1145,55 @@ def _verify_staged_artifact_set(
             parsed = dict(_strict_json_bytes(body))
             if body != canonical_json(parsed).encode("utf-8") + b"\n":
                 raise ValueError
-        load_nautilus_v065_supply_chain_receipt((staging / _RECEIPT_NAME).resolve())
+        receipt = load_nautilus_v065_supply_chain_receipt(
+            (staging / _RECEIPT_NAME).resolve()
+        )
+        request = None
+        first = None
+        replay = None
         if _REQUEST_NAME in expected:
-            load_nautilus_v065_request((staging / _REQUEST_NAME).resolve())
+            request = load_nautilus_v065_request((staging / _REQUEST_NAME).resolve())
         if _FIRST_RESULT_NAME in expected:
-            load_nautilus_v065_result((staging / _FIRST_RESULT_NAME).resolve())
+            first = load_nautilus_v065_result((staging / _FIRST_RESULT_NAME).resolve())
         if _REPLAY_RESULT_NAME in expected:
-            load_nautilus_v065_result((staging / _REPLAY_RESULT_NAME).resolve())
+            replay = load_nautilus_v065_result((staging / _REPLAY_RESULT_NAME).resolve())
+        bindings = comparison["bindings"]
+        actual = {
+            "plan_id": receipt["plan_id"],
+            "plan_hash": receipt["plan_hash"],
+            "receipt_id": receipt["receipt_id"],
+            "receipt_hash": receipt["receipt_hash"],
+            "request_id": None if request is None else request["request_id"],
+            "request_hash": None if request is None else request["request_hash"],
+            "current_reference_id": None,
+            "current_reference_hash": None,
+            "first_result_id": None if first is None else first["result_id"],
+            "first_result_hash": None if first is None else first["result_hash"],
+            "replay_result_id": None if replay is None else replay["result_id"],
+            "replay_result_hash": None if replay is None else replay["result_hash"],
+        }
+        if request is not None:
+            if (
+                request["plan_id"] != receipt["plan_id"]
+                or request["plan_hash"] != receipt["plan_hash"]
+                or request["supply_chain_receipt_id"] != receipt["receipt_id"]
+                or request["supply_chain_receipt_hash"] != receipt["receipt_hash"]
+            ):
+                raise ValueError
+            current = build_nautilus_v065_current_reference(request=request)
+            actual["current_reference_id"] = current["result_id"]
+            actual["current_reference_hash"] = current["result_hash"]
+            for result in (first, replay):
+                if result is not None and (
+                    result["request_id"] != request["request_id"]
+                    or result["request_hash"] != request["request_hash"]
+                ):
+                    raise ValueError
+        if mode != "ENGINE_COMPARISON":
+            actual["current_reference_id"] = None
+            actual["current_reference_hash"] = None
+        if bindings != actual:
+            raise ValueError
     except (NautilusV065SupplyChainError, NautilusV065ContractError):
         raise
     except (KeyError, TypeError, ValueError, OSError, CanonicalizationError) as error:

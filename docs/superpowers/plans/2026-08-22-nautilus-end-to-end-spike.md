@@ -213,7 +213,9 @@ Expected: import failure because CLI does not exist.
 For each successful process, record executable dev/ino/mode/size/SHA before and after, exact argv, sanitized env
 keys, start/end, exit code, stdout/stderr exact bytes (base64 only when non-UTF8), sizes and hashes. Reject output
 over the fixed limit while the child is still running and terminate its process group; pass each locked wheel's exact
-size to curl as its active maximum. No shell, redirects, inherited Git/Python/proxy/credential environment or
+size to curl as its active maximum. Timeout handling has a bounded drain and cannot wait indefinitely for an escaped
+pipe holder. Loader replay maps each command name to its fixed executable path class and derives all four tool records
+from their exact version transcripts. No shell, redirects, inherited Git/Python/proxy/credential environment or
 caller-provided executable. Do not use an unrecorded urllib download path. The receipt must contain exactly 25
 ordered transcripts: four tool identities, PyPI JSON, tag, license, 14 wheels, SLSA and three offline environment
 commands.
@@ -222,7 +224,7 @@ commands.
 
 Use a fixed public repository artifact root whose directory is owner-owned and never group/world writable (the
 tracked parent may be `0755`); keep acquisition/execution temp roots and the formal ceremony child root `0700`.
-Publication uses a retained parent descriptor, nonce staging, short-write/EINTR loop, same-fd
+Individual-file publication uses a retained parent descriptor, nonce staging, short-write/EINTR loop, same-fd
 readback, file fsync, atomic no-replace and directory fsync. Existing exact final replays; untrusted/different final,
 symlink, hardlink, FIFO, wrong mode or orphan protocol staging fails closed without chmod/delete.
 
@@ -470,11 +472,13 @@ PYTHONPATH=src python3 -m crypto_quant.nautilus_v065_ceremony_cli acquire-and-ru
 
 If acquisition fails, the CLI publishes receipt + `INCONCLUSIVE_KEEP_CURRENT_CORE` only and never invokes runner.
 If it succeeds, the CLI runs first and replay fresh processes offline, then publishes request/results/comparison.
-All ceremony outputs first live only in fixed owner-only `.v0.65.0.in-progress`; after the complete truthful set is
-durable, one atomic no-replace directory rename publishes `v0.65.0`. Any existing staging/final directory blocks
-all reruns and is retained for evidence.
-Before that rename, replay the exact staged filename set with production schemas/loaders and verify its comparison
-mode, bindings and summary. Empty, incomplete, extra or semantically invalid staged sets fail closed.
+The CLI creates fixed owner-only `v0.65.0` once and retains its descriptor. Receipt/request/results use safe
+individual-file publication; comparison is always the final file and the only completion marker. Never rename a
+verified directory by pathname. Any existing formal directory blocks all reruns and is retained for evidence;
+a crash before comparison therefore freezes a partial failure, not a false completed result.
+Before reporting success, replay the exact formal filename set with production schemas/loaders and verify all
+receipt/request/result/comparison identities and hashes, mode, bindings and summary. Empty, incomplete, extra or
+semantically invalid sets fail closed.
 
 - [ ] **Step 3: Replay exact artifacts and prove no production mutation**
 
