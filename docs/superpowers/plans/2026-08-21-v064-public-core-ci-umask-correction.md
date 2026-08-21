@@ -128,7 +128,8 @@ Expected: 41 tests pass. Also rerun C0→C4 under `umask 0027`; expect PASS.
 
 Name the test `test_historical_r3_publisher_and_linux_test_blobs_match_f`. For each frozen path, use
 `/usr/bin/git rev-parse <commit>:<path>` and `cat-file blob <oid>`. Require the F3 OID and bytes to
-equal F. Require current HEAD's publisher OID to differ from F3 after this correction.
+equal F. Current behavior is covered by the restrictive-umask publisher test, not by a source-change
+detector against current HEAD.
 
 - [ ] **Step 2: Verify the new test is initially absent**
 

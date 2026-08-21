@@ -275,6 +275,17 @@ def _trusted_empty_staging_stat(value: os.stat_result) -> bool:
     )
 
 
+def _trusted_new_empty_staging_stat(value: os.stat_result) -> bool:
+    mode = stat.S_IMODE(value.st_mode)
+    return (
+        stat.S_ISREG(value.st_mode)
+        and value.st_uid == os.geteuid() == 501
+        and mode & ~0o644 == 0
+        and value.st_nlink == 1
+        and value.st_size == 0
+    )
+
+
 def _read_final(parent_fd: int, name: str) -> Tuple[bytes, os.stat_result]:
     flags = (
         os.O_RDONLY
@@ -505,10 +516,21 @@ def _publish_fixed(kind: str, final_name: str, data: bytes) -> Dict[str, Any]:
         staging_primary = None
         try:
             created = os.fstat(staging_fd)
-            if not _trusted_empty_staging_stat(created):
+            if not _trusted_new_empty_staging_stat(created):
                 raise SupersessionPublishError(
                     "CHALLENGER_REPLACEMENT_SUPERSESSION_STAGING_UNTRUSTED"
                 )
+            os.fchmod(staging_fd, 0o644)
+            normalized = os.fstat(staging_fd)
+            if (
+                not _trusted_empty_staging_stat(normalized)
+                or (normalized.st_dev, normalized.st_ino)
+                != (created.st_dev, created.st_ino)
+            ):
+                raise SupersessionPublishError(
+                    "CHALLENGER_REPLACEMENT_SUPERSESSION_STAGING_UNTRUSTED"
+                )
+            created = normalized
             _write_all(staging_fd, data)
             _seek_start(staging_fd)
             if _read_exact_descriptor(staging_fd, len(data)) != data:

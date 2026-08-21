@@ -835,34 +835,39 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
         ):
             build_v064_public_ci_bundle_manifest(self.repository, old_commit)
 
-    def test_real_publisher_and_linux_test_blobs_remain_identical_to_f(self):
-        source_commit = subprocess.run(
-            ("/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD^{commit}"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        ).stdout.decode("ascii").strip()
-        manifest = build_v064_public_ci_bundle_manifest(ROOT, source_commit)
-        entries = {entry["path"]: entry for entry in manifest["files"]}
+    def test_historical_r3_publisher_and_linux_test_blobs_match_f(self):
+        original_source = "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff"
+        r3_source = "f9705fa2151ab98a5b9efe63be05979e4bc5bfa6"
         for relative in (
             "src/crypto_quant/challenger_replacement_supersession_publish.py",
             "tests/test_v064_linux_supersession_publish.py",
         ):
-            expected_oid = subprocess.run(
+            original_oid = subprocess.run(
                 (
                     "/usr/bin/git",
                     "-C",
                     str(ROOT),
                     "rev-parse",
-                    "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff:%s" % relative,
+                    original_source + ":" + relative,
                 ),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=True,
             ).stdout.decode("ascii").strip()
-            self.assertEqual(entries[relative]["source_blob_oid"], expected_oid)
+            r3_oid = subprocess.run(
+                (
+                    "/usr/bin/git",
+                    "-C",
+                    str(ROOT),
+                    "rev-parse",
+                    r3_source + ":" + relative,
+                ),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            ).stdout.decode("ascii").strip()
+            self.assertEqual(r3_oid, original_oid)
             self.assertEqual(
-                (ROOT / relative).read_bytes(),
                 subprocess.run(
                     (
                         "/usr/bin/git",
@@ -870,7 +875,20 @@ class V064PublicCiBundleManifestTests(unittest.TestCase):
                         str(ROOT),
                         "cat-file",
                         "blob",
-                        expected_oid,
+                        r3_oid,
+                    ),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                ).stdout,
+                subprocess.run(
+                    (
+                        "/usr/bin/git",
+                        "-C",
+                        str(ROOT),
+                        "cat-file",
+                        "blob",
+                        original_oid,
                     ),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,

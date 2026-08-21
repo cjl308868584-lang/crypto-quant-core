@@ -627,8 +627,10 @@ an empty staging inventory; only that path may enter the next candidate state.
 
 Do not call `system_paper_evidence.publish_owner_exact` and do not open a canonical final for direct
 write. Retain a validated parent dirfd; create a same-directory noncanonical nonce staging file with
-`O_CREAT|O_EXCL|O_RDWR|O_NOFOLLOW` and requested mode `0644`; verify actual uid `501`, mode `0644` and
-nlink `1` without path chmod; handle short write/EINTR; read back exact bytes from the same fd;
+`O_CREAT|O_EXCL|O_RDWR|O_NOFOLLOW` and requested mode `0644`; first verify the newly held descriptor
+is regular, uid `501`, nlink `1`, size `0` and has an actual mode that is a safe subset of `0644`, then
+use only `fchmod(fd, 0644)` to remove caller-umask variance and revalidate identity/exact mode. Never
+path-chmod or chmod an existing entry; handle short write/EINTR; read back exact bytes from the same fd;
 verify size/hash/identity; fsync the file; then use exactly one platform primitive:
 
 ```text

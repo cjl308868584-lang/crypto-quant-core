@@ -390,8 +390,10 @@ Git clean，中间状态必须按 allowlist 精确命名。
 1. retained parent dirfd 必须 owner uid=`501`、mode=`0755`，并经 identity、非 symlink ancestor 校验；缺少
    `O_NOFOLLOW`/`O_DIRECTORY`/`O_NONBLOCK` 时显式 unsupported；
 2. 在同目录以非 canonical unique nonce staging name 和 `O_CREAT|O_EXCL|O_RDWR|O_NOFOLLOW`
-   新建 mode=`0644`，验证实际 uid=`501`、mode=`0644`、nlink=`1`，通过唯一 retained fd 处理
-   short write/EINTR；不得通过 path chmod 修复对象；
+   请求新建 mode=`0644`；先验证新 descriptor 指向 regular、uid=`501`、nlink=`1`、size=`0`
+   且实际 mode 是 `0644` 的安全子集，再仅通过该 retained descriptor `fchmod(0644)`
+   消除调用进程 umask 差异并重验 identity/exact mode；通过同一 fd 处理 short
+   write/EINTR；不得通过 path chmod 修复对象，不得对任何既有 entry 执行 chmod；
 3. 在同一 fd 上 seek/readback exact bytes、size/hash/identity，然后 `fsync(file)`；
 4. 用第6.6节冻结并实证的 atomic no-replace primitive 发布到固定 canonical final，再
    `fsync(parent dirfd)` 和重验 parent/final identity，只有完成后才返回成功；
