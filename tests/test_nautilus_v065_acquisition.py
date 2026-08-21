@@ -40,6 +40,7 @@ from crypto_quant.nautilus_v065_ceremony_cli import (
     _verified_acquisition_workspace,
     acquire_nautilus_v065_supply_chain,
     build_parser,
+    load_nautilus_v065_formal_completion,
     main,
 )
 
@@ -435,24 +436,31 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                     },
                     expected_plan=plan,
                 )
-                _publish_formal_completion_marker(
-                    root,
-                    descriptor,
-                    {
-                        "conclusion": comparison["conclusion"],
-                        "runner_invocation_count": 2,
-                    },
-                    expected_plan=plan,
-                    verified_snapshot=verified_snapshot,
-                )
+                with mock.patch(
+                    "crypto_quant.nautilus_v065_ceremony_cli._publish_fixed_artifact",
+                    side_effect=AssertionError("PATH_REOPEN_FORBIDDEN"),
+                ) as path_publisher:
+                    _publish_formal_completion_marker(
+                        root,
+                        descriptor,
+                        {
+                            "conclusion": comparison["conclusion"],
+                            "runner_invocation_count": 2,
+                        },
+                        expected_plan=plan,
+                        verified_snapshot=verified_snapshot,
+                    )
+                path_publisher.assert_not_called()
                 marker = json.loads(
                     (root / "nautilus-sandbox-complete-v0.65.0.json").read_text()
                 )
                 self.assertEqual(marker["plan_id"], plan["plan_id"])
                 self.assertEqual(marker["comparison_hash"], comparison["comparison_hash"])
                 self.assertEqual(len(marker["files"]), 5)
+                self.assertTrue(
+                    all(set(item) == {"name", "size", "sha256"} for item in marker["files"])
+                )
                 from crypto_quant.nautilus_v065_evidence import (
-                    load_nautilus_v065_completion_marker,
                     verify_nautilus_v065_completion_marker,
                 )
                 verify_nautilus_v065_completion_marker(
@@ -466,16 +474,9 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(
-                    load_nautilus_v065_completion_marker(
-                        (root / "nautilus-sandbox-complete-v0.65.0.json").resolve(),
-                        expected_plan=plan,
-                        expected_comparison=comparison,
-                        expected_files=verified_snapshot["files"],
-                        expected_summary={
-                            "conclusion": comparison["conclusion"],
-                            "runner_invocation_count": 2,
-                        },
-                    ),
+                    load_nautilus_v065_formal_completion(
+                        root.resolve(), expected_plan=plan
+                    )["marker"],
                     marker,
                 )
                 changed_marker = dict(marker, marker_hash="0" * 64)
@@ -501,6 +502,45 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 )
             finally:
                 os.close(descriptor)
+
+    def test_formal_loader_rejects_marker_without_actual_constituent_files(self):
+        from crypto_quant.nautilus_v065_ceremony_cli import (
+            load_nautilus_v065_formal_completion,
+        )
+        from crypto_quant.nautilus_v065_evidence import (
+            build_nautilus_v065_completion_marker,
+        )
+
+        plan = self.plan()
+        comparison = {
+            "comparison_id": "nautilus_v065_comparison_" + "1" * 64,
+            "comparison_hash": "1" * 64,
+        }
+        summary = {
+            "conclusion": "INCONCLUSIVE_KEEP_CURRENT_CORE",
+            "runner_invocation_count": 0,
+        }
+        files = [
+            {"name": "nautilus-supply-chain-receipt-v0.65.0.json", "size": 1, "sha256": "2" * 64},
+            {"name": "nautilus-sandbox-comparison-v0.65.0.json", "size": 1, "sha256": "3" * 64},
+        ]
+        marker = build_nautilus_v065_completion_marker(
+            expected_plan=plan,
+            expected_comparison=comparison,
+            expected_files=files,
+            expected_summary=summary,
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            root.chmod(0o700)
+            path = root / "nautilus-sandbox-complete-v0.65.0.json"
+            path.write_text(canonical_json(marker) + "\n", encoding="utf-8")
+            path.chmod(0o600)
+            with self.assertRaisesRegex(
+                NautilusV065SupplyChainError,
+                "NAUTILUS_V065_FORMAL_ARTIFACT_SET_INVALID",
+            ):
+                load_nautilus_v065_formal_completion(root, expected_plan=plan)
 
     def test_formal_candidate_allows_exactly_one_plan_only_commit(self):
         plan = self.plan()

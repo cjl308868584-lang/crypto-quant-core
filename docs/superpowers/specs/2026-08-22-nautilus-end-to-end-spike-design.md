@@ -263,9 +263,11 @@ production replay 与 committed-plan binding，最后才发布独立 `nautilus-s
 确认完成前必须从 retained formal descriptor 读取不含完成标记的 exact 文件名集合，用 production schema/loader
 重放 receipt、request、first/replay result 与 comparison，并验证 comparison mode、bindings、
 runner invocation count、summary 以及传入 ceremony 的 committed plan identity 一致。replay 返回 exact
-bytes/dev/inode snapshot；marker 发布边界重新打开并逐项比对 exact set、bytes/hash 和 identity。完成标记
-使用 strict mirrored schema 与 production loader，绑定 plan、comparison 和所有组成文件的
-size/SHA-256/dev/inode，并通过同一安全单文件 publisher 最后发布。空目录、缺文件、
+bytes 与仅在当前发布事务内使用的 dev/inode snapshot；marker 必须经 retained formal descriptor 发布，
+并在发布前后逐项比对 exact set、bytes/hash 和临时 identity，禁止按路径重新打开正式目录。完成标记
+使用 strict mirrored schema，持久化绑定 plan、comparison 和所有组成文件的可移植 name/size/SHA-256，
+不持久化 checkout 之间不稳定的 dev/inode。production formal-set loader 必须独立枚举并散列实际 sibling
+files，再以这些实际值验证 marker；不得信任调用者提供的 file manifest。空目录、缺文件、
 多文件、非 canonical bytes 或任一 loader 失败都不得产生完成标记。
 
 正式 artifacts：

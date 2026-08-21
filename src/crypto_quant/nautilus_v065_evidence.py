@@ -6,13 +6,11 @@ import json
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from importlib import resources
-from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from jsonschema import Draft202012Validator
 
 from .canonical import canonical_json
-from .challenger_replacement_plan import ChallengerReplacementPlanError, _strict_json_bytes
 from .nautilus_v065_contract import (
     NautilusV065ContractError,
     _self_hash,
@@ -20,11 +18,7 @@ from .nautilus_v065_contract import (
     build_nautilus_v065_current_reference,
     verify_nautilus_v065_result,
 )
-from .nautilus_v065_plan import (
-    NautilusV065PlanError,
-    _read_plan_bytes,
-    nautilus_v065_plan_hash,
-)
+from .nautilus_v065_plan import nautilus_v065_plan_hash
 from .nautilus_v065_supply_chain import supply_chain_receipt_hash
 
 
@@ -171,44 +165,6 @@ def verify_nautilus_v065_completion_marker(
             "NAUTILUS_V065_COMPLETION_MARKER_INVALID"
         ) from error
     return value
-
-
-def load_nautilus_v065_completion_marker(
-    path: Path,
-    *,
-    expected_plan: Mapping[str, Any],
-    expected_comparison: Mapping[str, Any],
-    expected_files: Sequence[Mapping[str, Any]],
-    expected_summary: Mapping[str, Any],
-) -> Dict[str, Any]:
-    """Load canonical owner-controlled marker bytes and replay the contract."""
-
-    try:
-        body = _read_plan_bytes(Path(path))
-        value = dict(_strict_json_bytes(body))
-        if body != canonical_json(value).encode("utf-8") + b"\n":
-            raise NautilusV065EvidenceError(
-                "NAUTILUS_V065_COMPLETION_MARKER_INVALID"
-            )
-        return verify_nautilus_v065_completion_marker(
-            value,
-            expected_plan=expected_plan,
-            expected_comparison=expected_comparison,
-            expected_files=expected_files,
-            expected_summary=expected_summary,
-        )
-    except NautilusV065EvidenceError:
-        raise
-    except (
-        ChallengerReplacementPlanError,
-        NautilusV065PlanError,
-        OSError,
-        TypeError,
-        ValueError,
-    ) as error:
-        raise NautilusV065EvidenceError(
-            "NAUTILUS_V065_COMPLETION_MARKER_INVALID"
-        ) from error
 
 
 def _comparison_hash(value: Mapping[str, Any]) -> str:

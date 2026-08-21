@@ -702,9 +702,60 @@ def _validate_artifact_root(root: Path, parent_fd: int, expected: os.stat_result
             raise NautilusV065SupplyChainError("NAUTILUS_V065_ARTIFACT_ROOT_INVALID")
 
 
-def _publish_fixed_artifact(*, root: Path, final_name: str, data: bytes) -> Dict[str, Any]:
+def _publish_fixed_artifact_at(
+    parent_fd: int, *, final_name: str, data: bytes
+) -> Dict[str, Any]:
     if final_name not in _FINAL_NAMES or not isinstance(data, bytes) or not 0 < len(data) <= _MAX_ARTIFACT:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_ARTIFACT_INVALID")
+    if not _trusted_artifact_root_stat(os.fstat(parent_fd)):
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_ARTIFACT_ROOT_INVALID")
+    names = os.listdir(parent_fd)
+    if any(_STAGING_RE.fullmatch(name) for name in names):
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_STAGING_PRESENT")
+    try:
+        existing, value = _read_final(parent_fd, final_name)
+    except FileNotFoundError:
+        existing = None
+    if existing is not None:
+        if existing != data:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_CONFLICT")
+        os.fsync(parent_fd)
+        return {"status": "ALREADY_PUBLISHED", "file_sha256": hashlib.sha256(data).hexdigest(), "device": value.st_dev, "inode": value.st_ino}
+    digest = hashlib.sha256(data).hexdigest()
+    staging = f".nautilus-v065-{digest}-{secrets.token_hex(16)}.staging"
+    stage_flags = os.O_CREAT | os.O_EXCL | os.O_RDWR | _required_flag("O_NOFOLLOW")
+    stage_fd = os.open(staging, stage_flags, 0o600, dir_fd=parent_fd)
+    try:
+        offset = 0
+        while offset < len(data):
+            try:
+                offset += os.write(stage_fd, data[offset:])
+            except InterruptedError:
+                continue
+        os.lseek(stage_fd, 0, os.SEEK_SET)
+        if os.read(stage_fd, len(data) + 1) != data:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_STAGING_BYTES_MISMATCH")
+        os.fsync(stage_fd)
+        try:
+            _atomic_no_replace(parent_fd, staging, final_name)
+        except FileExistsError:
+            existing, value = _read_final(parent_fd, final_name)
+            if existing != data:
+                raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_CONFLICT")
+            os.fsync(parent_fd)
+            return {"status": "ALREADY_PUBLISHED", "file_sha256": hashlib.sha256(data).hexdigest(), "device": value.st_dev, "inode": value.st_ino}
+        except SupersessionPublishError as error:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_ATOMIC_PUBLISH_FAILED") from error
+        os.fsync(parent_fd)
+        final, value = _read_final(parent_fd, final_name)
+        if final != data:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_CONFLICT")
+        return {"status": "COMMITTED", "file_sha256": digest, "device": value.st_dev, "inode": value.st_ino}
+    finally:
+        os.close(stage_fd)
+
+
+def _publish_fixed_artifact(*, root: Path, final_name: str, data: bytes) -> Dict[str, Any]:
     root = Path(root)
     before = root.lstat()
     if not root.is_absolute() or not _trusted_artifact_root_stat(before):
@@ -715,53 +766,11 @@ def _publish_fixed_artifact(*, root: Path, final_name: str, data: bytes) -> Dict
         opened = os.fstat(parent_fd)
         if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
             raise NautilusV065SupplyChainError("NAUTILUS_V065_ARTIFACT_ROOT_INVALID")
-        names = os.listdir(parent_fd)
-        if any(_STAGING_RE.fullmatch(name) for name in names):
-            raise NautilusV065SupplyChainError("NAUTILUS_V065_STAGING_PRESENT")
-        try:
-            existing, value = _read_final(parent_fd, final_name)
-        except FileNotFoundError:
-            existing = None
-        if existing is not None:
-            if existing != data:
-                raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_CONFLICT")
-            os.fsync(parent_fd)
-            _validate_artifact_root(root, parent_fd, before)
-            return {"status": "ALREADY_PUBLISHED", "file_sha256": hashlib.sha256(data).hexdigest(), "device": value.st_dev, "inode": value.st_ino}
-        digest = hashlib.sha256(data).hexdigest()
-        staging = f".nautilus-v065-{digest}-{secrets.token_hex(16)}.staging"
-        stage_flags = os.O_CREAT | os.O_EXCL | os.O_RDWR | _required_flag("O_NOFOLLOW")
-        stage_fd = os.open(staging, stage_flags, 0o600, dir_fd=parent_fd)
-        try:
-            offset = 0
-            while offset < len(data):
-                try:
-                    offset += os.write(stage_fd, data[offset:])
-                except InterruptedError:
-                    continue
-            os.lseek(stage_fd, 0, os.SEEK_SET)
-            if os.read(stage_fd, len(data) + 1) != data:
-                raise NautilusV065SupplyChainError("NAUTILUS_V065_STAGING_BYTES_MISMATCH")
-            os.fsync(stage_fd)
-            try:
-                _atomic_no_replace(parent_fd, staging, final_name)
-            except FileExistsError:
-                existing, value = _read_final(parent_fd, final_name)
-                if existing != data:
-                    raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_CONFLICT")
-                os.fsync(parent_fd)
-                _validate_artifact_root(root, parent_fd, before)
-                return {"status": "ALREADY_PUBLISHED", "file_sha256": digest, "device": value.st_dev, "inode": value.st_ino}
-            except SupersessionPublishError as error:
-                raise NautilusV065SupplyChainError("NAUTILUS_V065_ATOMIC_PUBLISH_FAILED") from error
-            os.fsync(parent_fd)
-            _validate_artifact_root(root, parent_fd, before)
-            final, value = _read_final(parent_fd, final_name)
-            if final != data:
-                raise NautilusV065SupplyChainError("NAUTILUS_V065_FINAL_CONFLICT")
-            return {"status": "COMMITTED", "file_sha256": digest, "device": value.st_dev, "inode": value.st_ino}
-        finally:
-            os.close(stage_fd)
+        result = _publish_fixed_artifact_at(
+            parent_fd, final_name=final_name, data=data
+        )
+        _validate_artifact_root(root, parent_fd, before)
+        return result
     finally:
         os.close(parent_fd)
 
@@ -1130,6 +1139,7 @@ def _verify_staged_artifact_set(
     summary: Mapping[str, Any],
     *,
     expected_plan: Mapping[str, Any],
+    completion_marker_present: bool = False,
 ) -> Dict[str, Any]:
     try:
         if set(summary) != {"conclusion", "runner_invocation_count"}:
@@ -1158,7 +1168,12 @@ def _verify_staged_artifact_set(
             }
         else:
             raise ValueError
-        if set(os.listdir(staging_fd)) != expected:
+        listed = set(os.listdir(staging_fd))
+        if completion_marker_present:
+            if _COMPLETE_NAME not in listed:
+                raise ValueError
+            listed.remove(_COMPLETE_NAME)
+        if listed != expected:
             raise ValueError
         for name in expected:
             body, _value = _read_final(staging_fd, name)
@@ -1221,6 +1236,7 @@ def _verify_staged_artifact_set(
             raise ValueError
         files = []
         bodies = {}
+        identities = {}
         for name in sorted(expected):
             body, identity = _read_final(staging_fd, name)
             bodies[name] = body
@@ -1228,10 +1244,17 @@ def _verify_staged_artifact_set(
                 "name": name,
                 "size": len(body),
                 "sha256": hashlib.sha256(body).hexdigest(),
+            })
+            identities[name] = {
                 "device": identity.st_dev,
                 "inode": identity.st_ino,
-            })
-        return {"comparison": comparison, "files": files, "bodies": bodies}
+            }
+        return {
+            "comparison": comparison,
+            "files": files,
+            "bodies": bodies,
+            "identities": identities,
+        }
     except (NautilusV065SupplyChainError, NautilusV065ContractError):
         raise
     except (KeyError, TypeError, ValueError, OSError, CanonicalizationError) as error:
@@ -1251,6 +1274,7 @@ def _publish_formal_completion_marker(
     try:
         files = verified_snapshot["files"]
         bodies = verified_snapshot["bodies"]
+        identities = verified_snapshot["identities"]
         comparison = verified_snapshot["comparison"]
         names = sorted(item["name"] for item in files)
         if sorted(os.listdir(formal_fd)) != names or _COMPLETE_NAME in names:
@@ -1261,8 +1285,8 @@ def _publish_formal_completion_marker(
                 body != bodies[item["name"]]
                 or len(body) != item["size"]
                 or hashlib.sha256(body).hexdigest() != item["sha256"]
-                or identity.st_dev != item["device"]
-                or identity.st_ino != item["inode"]
+                or identity.st_dev != identities[item["name"]]["device"]
+                or identity.st_ino != identities[item["name"]]["inode"]
             ):
                 raise ValueError
         marker = build_nautilus_v065_completion_marker(
@@ -1272,7 +1296,9 @@ def _publish_formal_completion_marker(
             expected_summary=summary,
         )
         body = canonical_json(marker).encode("utf-8") + b"\n"
-        _publish_fixed_artifact(root=formal, final_name=_COMPLETE_NAME, data=body)
+        _publish_fixed_artifact_at(
+            formal_fd, final_name=_COMPLETE_NAME, data=body
+        )
         replayed, _value = _read_final(formal_fd, _COMPLETE_NAME)
         replayed_value = dict(_strict_json_bytes(replayed))
         if replayed != body or verify_nautilus_v065_completion_marker(
@@ -1283,11 +1309,90 @@ def _publish_formal_completion_marker(
             expected_summary=summary,
         ) != marker:
             raise ValueError
+        if set(os.listdir(formal_fd)) != set(names) | {_COMPLETE_NAME}:
+            raise ValueError
+        for item in files:
+            constituent, identity = _read_final(formal_fd, item["name"])
+            if (
+                constituent != bodies[item["name"]]
+                or len(constituent) != item["size"]
+                or hashlib.sha256(constituent).hexdigest() != item["sha256"]
+                or identity.st_dev != identities[item["name"]]["device"]
+                or identity.st_ino != identities[item["name"]]["inode"]
+            ):
+                raise ValueError
     except (NautilusV065SupplyChainError, NautilusV065ContractError):
         raise
     except (KeyError, TypeError, ValueError, OSError, CanonicalizationError) as error:
         raise NautilusV065SupplyChainError(
             "NAUTILUS_V065_FORMAL_COMMIT_FAILED"
+        ) from error
+
+
+def load_nautilus_v065_formal_completion(
+    formal_root: Path, *, expected_plan: Mapping[str, Any]
+) -> Dict[str, Any]:
+    """Replay a complete formal artifact set from its actual sibling files."""
+
+    formal_root = Path(formal_root)
+    try:
+        before = formal_root.lstat()
+        if not formal_root.is_absolute() or not _trusted_artifact_root_stat(before):
+            raise ValueError
+        flags = os.O_RDONLY | _required_flag("O_DIRECTORY") | _required_flag("O_NOFOLLOW")
+        formal_fd = os.open(formal_root, flags)
+        try:
+            opened = os.fstat(formal_fd)
+            if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                raise ValueError
+            raw_comparison, _identity = _read_final(formal_fd, _COMPARISON_NAME)
+            comparison = verify_nautilus_v065_comparison(
+                dict(_strict_json_bytes(raw_comparison))
+            )
+            if raw_comparison != canonical_json(comparison).encode("utf-8") + b"\n":
+                raise ValueError
+            summary = {
+                "conclusion": comparison["conclusion"],
+                "runner_invocation_count": comparison["runner_invocation_count"],
+            }
+            snapshot = _verify_staged_artifact_set(
+                formal_root,
+                formal_fd,
+                summary,
+                expected_plan=expected_plan,
+                completion_marker_present=True,
+            )
+            raw_marker, _marker_identity = _read_final(formal_fd, _COMPLETE_NAME)
+            marker_value = dict(_strict_json_bytes(raw_marker))
+            if raw_marker != canonical_json(marker_value).encode("utf-8") + b"\n":
+                raise ValueError
+            marker = verify_nautilus_v065_completion_marker(
+                marker_value,
+                expected_plan=expected_plan,
+                expected_comparison=snapshot["comparison"],
+                expected_files=snapshot["files"],
+                expected_summary=summary,
+            )
+            _validate_artifact_root(formal_root, formal_fd, before)
+            return {
+                "marker": marker,
+                "comparison": snapshot["comparison"],
+                "files": snapshot["files"],
+            }
+        finally:
+            os.close(formal_fd)
+    except (
+        ChallengerReplacementPlanError,
+        NautilusV065ContractError,
+        NautilusV065SupplyChainError,
+        CanonicalizationError,
+        KeyError,
+        TypeError,
+        ValueError,
+        OSError,
+    ) as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_FORMAL_ARTIFACT_SET_INVALID"
         ) from error
 
 
