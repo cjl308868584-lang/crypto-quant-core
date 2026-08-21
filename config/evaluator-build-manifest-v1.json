@@ -415,7 +415,7 @@
     "src/crypto_quant/v064_public_ci_bundle_cli.py": "9a3dc9059f3d0cf69f8d8f9642a00cc9e0b6fa8bec64415d1feaa4c1622c0cf1",
     "src/crypto_quant/v064_public_ci_r2_failure.py": "01362e51a6075753fa67299f88988e54cf4c356d660227e6bc75b051b77367dd",
     "src/crypto_quant/v064_public_ci_witness.py": "eb48f6592a8e7f17e0177bc43337266694919e8e99cc78695b82bf7e2d0b9641",
-    "src/crypto_quant/v064_public_ci_witness_cli.py": "c7ddf5b8e93d314ffc75479369d5d51624bd41e8a5c4b2499f429f023a68594b",
+    "src/crypto_quant/v064_public_ci_witness_cli.py": "5cf123a120b92b06a00093d1b52325b48110146c725e08cef9d19bac4dc16608",
     "tests/fixtures/launchctl/system-paper-first-success.txt": "3df7a2608eb9cd76e91c37fe15c28a125855095ba3006258462c69ddbe285c7a",
     "tests/fixtures/launchctl/system-paper-not-running.txt": "56f82073682a9838de2eb56133e652d84620aaf5c98a64825fb913476c91f30c",
     "tests/fixtures/operations-projection-healthy.json": "bb1aec23580a2f18a723f33be86de3720a7b5a69342d5fbb82bc13a51707f0ba",
@@ -446,11 +446,11 @@
     "tests/test_system_paper_scheduler.py": "bd602843f290cc40bcf84693955e4fd4296e21ffc1656496379fe1b7a634c13a",
     "tests/test_system_paper_start_receipt.py": "1c8b06335e2e426e59ba4c67873517e5492f2fb31bb79937670172181e6ede20",
     "tests/test_v064_linux_supersession_publish.py": "b1b899075cf0d3c568f18d850f9707c6160074d49b94d11df75548b897eb3e70",
-    "tests/test_v064_public_ci_bundle.py": "adbc053ba78bc2c7da36a144c1413416abf977acdfc44375025a97ed3888aa5b",
+    "tests/test_v064_public_ci_bundle.py": "8947045995b9284b3cc74c1325f4b1280f2ec0c968f7422153d13a964bd8a032",
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
-    "tests/test_v064_public_ci_witness.py": "256f12b659a8295fb2878aed7535ba572347be4b32a51bebbbccbafc2c86b8ec"
+    "tests/test_v064_public_ci_witness.py": "72c2cc4be36076064ca4917f909e28a840b9b0892f408fd0be60b0c5f59f3f48"
   },
-  "build_input_tree_hash": "e55a3c7962e1b62bff8c1366a9e1e1eb32610a23e98279eca8ef5883cae37a94",
+  "build_input_tree_hash": "9469b9b2f5679d8ddde172e9385db924c0b587112b2f5164e78e812d854778e8",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -458,5 +458,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "a580bfc36244f4f99ffc6c7d6281ca9da9245fbf5f16f2425f0a43c6d656477f"
+  "manifest_hash": "5b91774edd80c717434ca3a27386609a98dd0a4645472721e73c64a993c7a0e8"
 }

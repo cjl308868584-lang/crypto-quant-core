@@ -6,6 +6,7 @@ import os
 import shlex
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -1548,8 +1549,13 @@ class V064PublicCiFinalFreezeTests(unittest.TestCase):
         head = self.head()
         candidates = []
         candidate_bytes = []
+        temporary_parent = (
+            Path("/private/tmp")
+            if sys.platform == "darwin" and Path("/private/tmp").is_dir()
+            else ROOT
+        )
         with tempfile.TemporaryDirectory(
-            prefix="v064-r3-final-replay-", dir="/private/tmp"
+            prefix="v064-r3-final-replay-", dir=temporary_parent
         ) as temporary:
             temporary_root = Path(temporary)
             for name in ("first", "second"):

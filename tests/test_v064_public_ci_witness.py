@@ -921,7 +921,7 @@ class V064PublicCiWitnessDerivationTests(unittest.TestCase):
             log_bytes=log_bytes, transcript=transcript,
             private_repository=ROOT,
         )
-        with tempfile.TemporaryDirectory() as raw:
+        with tempfile.TemporaryDirectory(dir=ROOT) as raw:
             raw_root = Path(raw).resolve()
             path = raw_root / "witness.json"
             path.write_bytes(_canonical(witness)); path.chmod(0o600)
@@ -1082,6 +1082,7 @@ class V064PublicCiWitnessPublicationTests(unittest.TestCase):
         self.patches = (
             mock.patch.object(v064_public_ci_witness_cli, "_PRIVATE_REPOSITORY", self.repository),
             mock.patch.object(v064_public_ci_witness_cli, "_ARTIFACT_ROOT", self.output),
+            mock.patch.object(v064_public_ci_witness_cli, "_OWNER_UID", os.geteuid()),
             mock.patch.object(
                 v064_public_ci_witness_cli,
                 "_validate_repository_identity",

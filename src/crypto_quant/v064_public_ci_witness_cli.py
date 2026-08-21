@@ -35,6 +35,7 @@ _EVIDENCE_NAMES = (
     "v064-public-ci-r3-witness-v1.json",
 )
 _MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
+_OWNER_UID = 501
 _STAGING_PREFIX = ".v064-public-ci-r3-"
 _STAGING_RE = re.compile(
     r"\A\.v064-public-ci-r3-(?P<final>" +
@@ -144,7 +145,7 @@ def _read_descriptor(descriptor: int, size: int) -> bytes:
 def _trusted_directory(value: os.stat_result, mode: int) -> bool:
     return (
         stat.S_ISDIR(value.st_mode)
-        and value.st_uid == os.geteuid() == 501
+        and value.st_uid == os.geteuid() == _OWNER_UID
         and stat.S_IMODE(value.st_mode) == mode
     )
 
@@ -208,7 +209,7 @@ def _open_artifact_root() -> Tuple[int, os.stat_result]:
         parent_stat = parent.lstat()
         if (
             not stat.S_ISDIR(parent_stat.st_mode)
-            or parent_stat.st_uid != os.geteuid() == 501
+            or parent_stat.st_uid != os.geteuid() == _OWNER_UID
             or stat.S_IMODE(parent_stat.st_mode) != 0o755
         ):
             raise ValueError("V064_PUBLIC_CI_R3_EVIDENCE_ROOT_INVALID")
@@ -262,7 +263,7 @@ def _read_named(root_fd: int, name: str, expected: bytes) -> bytes:
         opened = os.fstat(descriptor)
         if (
             not stat.S_ISREG(opened.st_mode)
-            or opened.st_uid != os.geteuid() == 501
+            or opened.st_uid != os.geteuid() == _OWNER_UID
             or stat.S_IMODE(opened.st_mode) != 0o600
             or opened.st_nlink != 1
             or opened.st_size != len(expected)
@@ -317,7 +318,7 @@ def _create_staging(root_fd: int, final_name: str, body: bytes) -> str:
         attached = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
         if (
             not stat.S_ISREG(opened.st_mode)
-            or opened.st_uid != os.geteuid() == 501
+            or opened.st_uid != os.geteuid() == _OWNER_UID
             or stat.S_IMODE(opened.st_mode) != 0o600
             or opened.st_nlink != 1
             or opened.st_size != len(body)
@@ -352,7 +353,7 @@ def _recover_staging(root_fd: int, name: str, body: bytes) -> None:
         opened = os.fstat(descriptor)
         if (
             not stat.S_ISREG(opened.st_mode)
-            or opened.st_uid != os.geteuid() == 501
+            or opened.st_uid != os.geteuid() == _OWNER_UID
             or stat.S_IMODE(opened.st_mode) != 0o600
             or opened.st_nlink != 1
             or opened.st_size > len(body)
@@ -372,7 +373,7 @@ def _recover_staging(root_fd: int, name: str, body: bytes) -> None:
         attached = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
         if (
             not stat.S_ISREG(after.st_mode)
-            or after.st_uid != os.geteuid() == 501
+            or after.st_uid != os.geteuid() == _OWNER_UID
             or stat.S_IMODE(after.st_mode) != 0o600
             or after.st_nlink != 1
             or after.st_size != len(body)
