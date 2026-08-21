@@ -40,7 +40,6 @@ jobs:
       - run: python -m pip install -r requirements.lock
       - run: python -m pip install -e . --no-deps
       - run: make validate
-      - run: make test
       - name: Configure fixed owner UID for security-boundary tests
         run: |
           ! getent passwd 501
@@ -63,3 +62,4 @@ jobs:
           -v
           test_challenger_replacement_plan_supersession.FixedSupersessionPublisherTests
           test_challenger_replacement_plan_supersession.SupersessionCliBoundaryTests.test_temporary_git_ceremony_transitions_c0_through_c4_exactly
+      - run: make test

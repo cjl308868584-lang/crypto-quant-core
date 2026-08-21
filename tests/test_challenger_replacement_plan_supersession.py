@@ -136,7 +136,13 @@ def _prepare_ceremony_plan_fixture(repository, artifact_root):
             or not pre_normalization_mode & stat.S_IRUSR
             or pre_normalization_mode & (stat.S_IWOTH | 0o7111)
         ):
-            raise AssertionError("tracked ceremony plan file is untrusted")
+            raise AssertionError(
+                "tracked ceremony plan file is untrusted: "
+                f"mode={pre_normalization_mode:04o} "
+                f"uid={pre_normalization.st_uid} euid={os.geteuid()} "
+                f"nlink={pre_normalization.st_nlink} "
+                f"regular={stat.S_ISREG(pre_normalization.st_mode)}"
+            )
         if head_bytes != expected or plan_path.read_bytes() != expected:
             raise AssertionError("HEAD and worktree ceremony plan bytes are not canonical")
         plan_path.chmod(0o644)
@@ -1641,7 +1647,6 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
             workflow,
         )
         fixed_owner_boundary = """\
-      - run: make test
       - name: Configure fixed owner UID for security-boundary tests
         run: |
           ! getent passwd 501
@@ -1664,6 +1669,7 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
           -v
           test_challenger_replacement_plan_supersession.FixedSupersessionPublisherTests
           test_challenger_replacement_plan_supersession.SupersessionCliBoundaryTests.test_temporary_git_ceremony_transitions_c0_through_c4_exactly
+      - run: make test
 """
         self.assertIn(fixed_owner_boundary, workflow)
         self.assertEqual(workflow.count("make test"), 1)

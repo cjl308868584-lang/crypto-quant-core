@@ -22,7 +22,7 @@
   "file_set_policy": "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
   "file_hashes": {
     ".gitattributes": "7a8e8efda0e664ca86fce23220cc4af5e50821892a593a68c5140e600bb875af",
-    ".github/workflows/ci.yml": "510e5ba4c12db9a1bc585c6df06167f9562bc1a18e91727bac8e4444282f3022",
+    ".github/workflows/ci.yml": "852b9442f5e45e7cefa6b7f46da351c7a18c82584c4dcad2d63be39dc38c050a",
     ".gitignore": "92f64510c012b182cb42ec6b1c70d21f9ff621baaf7b67b85fafc9f05b1c8806",
     "README.md": "b8960114f2f29be4f0ded4c3119485ee1748e6f11600f078849d98b002520fa5",
     "artifacts/account-cost/binance-account-commission-smoke-not-run-v0.22.0.json": "3ab008d9e95665ada3e0351052ece7dd9db0c63044d99397fa797e6719e3bcb0",
@@ -423,7 +423,7 @@
     "tests/fixtures/operations-projection-healthy.json": "bb1aec23580a2f18a723f33be86de3720a7b5a69342d5fbb82bc13a51707f0ba",
     "tests/system_paper_fixtures.py": "2c3ca742d23044392e7da1c2142f4d183a593216af6f59f17501b3c2ac5233db",
     "tests/test_challenger_replacement_plan.py": "a9708ba025395d0d6da01ab404558908355c7f11b2008b7ecac377df0f4b1833",
-    "tests/test_challenger_replacement_plan_supersession.py": "573ccd7ceb0c1457f11a0688199601d5f569160ef20101d448deec4e60de7a1f",
+    "tests/test_challenger_replacement_plan_supersession.py": "97f4101c82827c5f8c1437ca61bc913b94bc98177b686c172de6bb5e215efb9a",
     "tests/test_challenger_replacement_plan_v2.py": "656e922601ba524d2779c15932bd622817d0d397ba0f50b0d0d62c6b35c7e289",
     "tests/test_estimators.py": "f2ee7e3582d2f85a555a92662b5485513a8c9f2ad8e69c487dc36bb387a85dcb",
     "tests/test_nautilus_evidence_adapter.py": "70dd0688ef9163320cbe241f9e86d47f46ac5401c407a92ce5c14c7f2529dbf1",
@@ -452,7 +452,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "ff17705c8fa2e15d7397bc9cb616fdb25d778ec57f99d8a38079075103f0fcaf",
+  "build_input_tree_hash": "f4f173759dd988ac4ce56eb684d9becad75928097e7bbaf16b53f17a10a18092",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -460,5 +460,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "77b2b8ab981808c1d82a0e3396513d927613df3d1d1e3ad21bf43818691eae38"
+  "manifest_hash": "f2bcb39bd2e5049c7fc6655d940465fed055b8fbbe180c80dc236f33f51db1ff"
 }
