@@ -20,6 +20,8 @@ jobs:
         python-version: ["3.9", "3.12"]
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Configure Asia/Shanghai runtime timezone
         run: |
           sudo ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
@@ -38,4 +40,26 @@ jobs:
       - run: python -m pip install -r requirements.lock
       - run: python -m pip install -e . --no-deps
       - run: make validate
+      - name: Configure fixed owner UID for security-boundary tests
+        run: |
+          ! getent passwd 501
+          ! getent group 501
+          sudo groupadd --gid 501 cryptoquant-ci
+          sudo useradd --uid 501 --gid 501 --no-create-home --shell /usr/sbin/nologin cryptoquant-ci
+          sudo install -d -o 501 -g 501 -m 700 /opt/cryptoquant-ci-home
+          sudo install -d -o 501 -g 501 -m 700 /opt/cryptoquant-ci-workspace
+          sudo cp -a "$GITHUB_WORKSPACE/." /opt/cryptoquant-ci-workspace/
+          sudo chown -R 501:501 /opt/cryptoquant-ci-workspace
+          sudo chmod 700 /opt/cryptoquant-ci-workspace
+      - name: Run fixed-owner supersession security-boundary tests
+        run: >-
+          sudo -u '#501' env
+          HOME=/opt/cryptoquant-ci-home
+          TMPDIR=/opt/cryptoquant-ci-home
+          PATH="$PATH"
+          PYTHONPATH=/opt/cryptoquant-ci-workspace/src:/opt/cryptoquant-ci-workspace/tests
+          python3 -m unittest
+          -v
+          test_challenger_replacement_plan_supersession.FixedSupersessionPublisherTests
+          test_challenger_replacement_plan_supersession.SupersessionCliBoundaryTests.test_temporary_git_ceremony_transitions_c0_through_c4_exactly
       - run: make test

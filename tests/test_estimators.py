@@ -278,6 +278,64 @@ class EstimatorRegistryTests(unittest.TestCase):
 
 
 class EvaluatorBuildTests(unittest.TestCase):
+    def test_v064_release_inputs_are_complete(self):
+        expected = set(EvaluatorBuild.expected_file_paths(ROOT))
+        required = {
+            ".github/workflows/ci.yml",
+            ".gitattributes",
+            ".gitignore",
+            "artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json",
+            "artifacts/challenger-replacement/challenger-replacement-plan-supersession-v0.64.0.json",
+            "artifacts/challenger-replacement/challenger-replacement-plan-v0.64.0.json",
+            "artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json",
+            "artifacts/v064-public-ci-r2-failure/v064-public-ci-r2-failure-record-v1.json",
+            "artifacts/v064-public-ci-r2-failure/v064-public-ci-r2-jobs-api-v1.json",
+            "artifacts/v064-public-ci-r2-failure/v064-public-ci-r2-run-api-v1.json",
+            "artifacts/v064-public-ci-r2-failure/v064-public-ci-r2-run-log-v1.txt",
+            "artifacts/v064-public-ci-r3/v064-public-ci-r3-acquisition-transcript-v1.json",
+            "artifacts/v064-public-ci-r3/v064-public-ci-r3-jobs-api-v1.json",
+            "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-api-v1.json",
+            "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-log-v1.txt",
+            "artifacts/v064-public-ci-r3/v064-public-ci-r3-witness-v1.json",
+            "config/challenger-replacement-owner-attestation-v1.schema.json",
+            "config/challenger-replacement-plan-supersession-v1.schema.json",
+            "config/challenger-replacement-plan-v2.schema.json",
+            "config/challenger-replacement-supersession-machine-evidence-v1.schema.json",
+            "config/v064-public-ci-r2-failure-record-v1.schema.json",
+            "docs/adr/0064-replacement-challenger-plan-v2-storage-supersession.md",
+            "docs/implementation-status-v0.64.0.md",
+            "docs/superpowers/plans/2026-08-20-v064-public-ci-r3-interpreter-identity.md",
+            "docs/superpowers/plans/2026-08-21-v064-public-core-ci-umask-correction.md",
+            "docs/superpowers/specs/2026-08-20-v064-public-ci-r3-interpreter-identity-design.md",
+            "docs/superpowers/specs/2026-08-21-v064-public-core-ci-umask-correction-design.md",
+            "tests/test_challenger_replacement_plan_supersession.py",
+            "tests/test_challenger_replacement_plan_v2.py",
+            "tests/test_v064_public_ci_r2_failure.py",
+        }
+        self.assertEqual(required - expected, set())
+
+    def test_v064_public_ci_private_contract_is_frozen_in_build_inputs(self):
+        expected = set(EvaluatorBuild.expected_file_paths(ROOT))
+        required = {
+            "config/v064-public-ci-bundle-manifest-v1.schema.json",
+            "config/v064-public-ci-witness-v1.schema.json",
+            "docs/superpowers/plans/2026-08-09-replacement-challenger-plan-v2-supersession.md",
+            "docs/superpowers/plans/2026-08-13-v064-minimal-public-ci-mirror.md",
+            "docs/superpowers/plans/2026-08-16-v064-public-ci-r2-correction.md",
+            "docs/superpowers/specs/2026-08-09-replacement-challenger-plan-v2-supersession-design.md",
+            "docs/superpowers/specs/2026-08-12-v064-minimal-public-ci-mirror-design.md",
+            "docs/superpowers/specs/2026-08-15-v064-public-ci-r2-correction-design.md",
+            "public_ci/v064/.github/workflows/ci.yml",
+            "public_ci/v064/.gitignore",
+            "public_ci/v064/NOTICE.md",
+            "public_ci/v064/README.md",
+            "public_ci/v064/SECURITY.md",
+            "tests/test_v064_linux_supersession_publish.py",
+            "tests/test_v064_public_ci_bundle.py",
+            "tests/test_v064_public_ci_witness.py",
+        }
+        self.assertEqual(required - expected, set())
+
     @classmethod
     def setUpClass(cls):
         catalog = load_json_strict(
@@ -569,10 +627,10 @@ class EvaluatorBuildTests(unittest.TestCase):
         }
 
         self.assertEqual(set(manifest["file_hashes"]), expected)
-        self.assertEqual(semantic_versions, {(0, 63, 0)})
-        self.assertEqual(crypto_quant.__version__, "0.63.0")
-        self.assertEqual(manifest["package_version"], "0.63.0")
-        self.assertEqual(manifest["manifest_version"], "1.57.0")
+        self.assertEqual(semantic_versions, {(0, 64, 0)})
+        self.assertEqual(crypto_quant.__version__, "0.64.0")
+        self.assertEqual(manifest["package_version"], "0.64.0")
+        self.assertEqual(manifest["manifest_version"], "1.58.0")
         self.assertIn("src/crypto_quant/release.py", expected)
         self.assertIn("src/crypto_quant/estimators.py", expected)
         self.assertIn("config/release-gates-v1.1.json", expected)
@@ -855,9 +913,9 @@ class EvaluatorBuildTests(unittest.TestCase):
         )
         self.assertIn("src/crypto_quant/paired_risk.py", expected)
         self.assertIn("src/crypto_quant/statistical_decision.py", expected)
-        self.assertEqual(manifest["manifest_version"], "1.57.0")
-        self.assertEqual(manifest["package_version"], "0.63.0")
-        self.assertEqual(crypto_quant.__version__, "0.63.0")
+        self.assertEqual(manifest["manifest_version"], "1.58.0")
+        self.assertEqual(manifest["package_version"], "0.64.0")
+        self.assertEqual(crypto_quant.__version__, "0.64.0")
         self.assertEqual(
             manifest["file_set_policy"],
             "ALL_PACKAGE_CODE_RESOURCES_PLUS_FROZEN_RELEASE_INPUTS",
@@ -865,7 +923,7 @@ class EvaluatorBuildTests(unittest.TestCase):
         self.assertEqual(manifest["metric_catalog_version"], "1.1.6")
         self.assertEqual(manifest["golden_vector_count"], 41)
         build = EvaluatorBuild.load(ROOT, self.registry)
-        self.assertEqual(build.manifest_version, "1.57.0")
+        self.assertEqual(build.manifest_version, "1.58.0")
         self.assertEqual(build.executable_estimator_count, 26)
         self.assertEqual(build.unavailable_estimator_count, 32)
         self.assertEqual(build.build_hash, manifest["manifest_hash"])

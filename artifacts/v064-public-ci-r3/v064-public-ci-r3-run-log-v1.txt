@@ -1,0 +1,655 @@
+portability (3.9)	Set up job	﻿2026-08-21T01:07:18.8257250Z Current runner version: '2.336.0'
+portability (3.9)	Set up job	2026-08-21T01:07:18.8292597Z ##[group]Runner Image Provisioner
+portability (3.9)	Set up job	2026-08-21T01:07:18.8293925Z Hosted Compute Agent
+portability (3.9)	Set up job	2026-08-21T01:07:18.8294833Z Version: 20260729.566
+portability (3.9)	Set up job	2026-08-21T01:07:18.8296153Z Commit: cf7153fe6e25b664e8693c24944bf2b00355d109
+portability (3.9)	Set up job	2026-08-21T01:07:18.8297330Z Build Date: 2026-07-29T19:17:02Z
+portability (3.9)	Set up job	2026-08-21T01:07:18.8298785Z Worker ID: {01d4fea2-e65c-4bdc-994d-1887ce54f3ce}
+portability (3.9)	Set up job	2026-08-21T01:07:18.8300008Z Azure Region: eastus
+portability (3.9)	Set up job	2026-08-21T01:07:18.8300903Z ##[endgroup]
+portability (3.9)	Set up job	2026-08-21T01:07:18.8303329Z ##[group]Operating System
+portability (3.9)	Set up job	2026-08-21T01:07:18.8304429Z Ubuntu
+portability (3.9)	Set up job	2026-08-21T01:07:18.8305489Z 24.04.4
+portability (3.9)	Set up job	2026-08-21T01:07:18.8306295Z LTS
+portability (3.9)	Set up job	2026-08-21T01:07:18.8307075Z ##[endgroup]
+portability (3.9)	Set up job	2026-08-21T01:07:18.8308013Z ##[group]Runner Image
+portability (3.9)	Set up job	2026-08-21T01:07:18.8308990Z Image: ubuntu-24.04
+portability (3.9)	Set up job	2026-08-21T01:07:18.8309814Z Version: 20260816.277.1
+portability (3.9)	Set up job	2026-08-21T01:07:18.8311598Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260816.277/images/ubuntu/Ubuntu2404-Readme.md
+portability (3.9)	Set up job	2026-08-21T01:07:18.8314442Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260816.277
+portability (3.9)	Set up job	2026-08-21T01:07:18.8316192Z ##[endgroup]
+portability (3.9)	Set up job	2026-08-21T01:07:18.8317896Z ##[group]GITHUB_TOKEN Permissions
+portability (3.9)	Set up job	2026-08-21T01:07:18.8320813Z Contents: read
+portability (3.9)	Set up job	2026-08-21T01:07:18.8321813Z Metadata: read
+portability (3.9)	Set up job	2026-08-21T01:07:18.8322704Z ##[endgroup]
+portability (3.9)	Set up job	2026-08-21T01:07:18.8325951Z Secret source: Actions
+portability (3.9)	Set up job	2026-08-21T01:07:18.8327981Z Prepare workflow directory
+portability (3.9)	Set up job	2026-08-21T01:07:18.8781685Z Prepare all required actions
+portability (3.9)	Set up job	2026-08-21T01:07:18.8849141Z Getting action download info
+portability (3.9)	Set up job	2026-08-21T01:07:19.0492502Z Download action repository 'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)
+portability (3.9)	Set up job	2026-08-21T01:07:19.3290584Z Download action repository 'actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1' (SHA:ece7cb06caefa5fff74198d8649806c4678c61a1)
+portability (3.9)	Set up job	2026-08-21T01:07:19.8038489Z Complete job name: portability (3.9)
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	﻿2026-08-21T01:07:19.8952871Z ##[group]Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8954790Z with:
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8955954Z   persist-credentials: false
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8957336Z   repository: cjl308868584-lang/crypto-quant-v064-public-ci-r3
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8967131Z   token: ***
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8968066Z   ssh-strict: true
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8969033Z   ssh-user: git
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8969962Z   clean: true
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8970946Z   sparse-checkout-cone-mode: true
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8972083Z   fetch-depth: 1
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8973042Z   fetch-tags: false
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8973995Z   show-progress: true
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8975060Z   lfs: false
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8976034Z   submodules: false
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8977022Z   set-safe-directory: true
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8978125Z   allow-unsafe-pr-checkout: false
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:19.8979556Z ##[endgroup]
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0039684Z Syncing repository: cjl308868584-lang/crypto-quant-v064-public-ci-r3
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0043528Z ##[group]Getting Git version info
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0046265Z Working directory is '/home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3'
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0049474Z [command]/usr/bin/git version
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0093482Z git version 2.55.0
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0116615Z ##[endgroup]
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0138261Z Temporarily overriding HOME='/home/runner/work/_temp/f9c663b3-9ee6-4469-81f2-0201688d68bf' before making global git config changes
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0142785Z Adding repository directory to the temporary git global config as a safe directory
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0147939Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0199846Z Deleting the contents of '/home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3'
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0204712Z ##[group]Initializing the repository
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0208487Z [command]/usr/bin/git init /home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0287263Z hint: Using 'master' as the name for the initial branch. This default branch name
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0290514Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0293592Z hint: to use in all of your new repositories, which will suppress this warning,
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0296437Z hint: call:
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0297693Z hint:
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0299229Z hint: 	git config --global init.defaultBranch <name>
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0301234Z hint:
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0303055Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0306195Z hint: 'development'. The just-created branch can be renamed via this command:
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0307896Z hint:
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0308790Z hint: 	git branch -m <name>
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0310577Z hint:
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0312568Z hint: Disable this message with "git config set advice.defaultBranchName false"
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0316980Z Initialized empty Git repository in /home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3/.git/
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0323558Z [command]/usr/bin/git remote add origin https://github.com/cjl308868584-lang/crypto-quant-v064-public-ci-r3
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0347364Z ##[endgroup]
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0349704Z ##[group]Disabling automatic garbage collection
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0351783Z [command]/usr/bin/git config --local gc.auto 0
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0389321Z ##[endgroup]
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0391060Z ##[group]Setting up auth
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0396387Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0433434Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0798909Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.0842084Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.1103420Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.1143208Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.1387704Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.1430190Z ##[endgroup]
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.1431804Z ##[group]Fetching the repository
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.1440290Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +460ec57568e863b2e39e7572193f2545542d586b:refs/remotes/origin/main
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4758240Z From https://github.com/cjl308868584-lang/crypto-quant-v064-public-ci-r3
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4761148Z  * [new ref]         460ec57568e863b2e39e7572193f2545542d586b -> origin/main
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4766553Z ##[endgroup]
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4768893Z ##[group]Determining the checkout info
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4771439Z ##[endgroup]
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4773334Z [command]/usr/bin/git sparse-checkout disable
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4826782Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4862357Z ##[group]Checking out the ref
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4866833Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4929339Z Switched to a new branch 'main'
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4934307Z branch 'main' set up to track 'origin/main'.
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4940042Z ##[endgroup]
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.4981307Z [command]/usr/bin/git log -1 --format=%H
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5010027Z 460ec57568e863b2e39e7572193f2545542d586b
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5019570Z ##[group]Removing auth
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5022933Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5057875Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5300104Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5329678Z http.https://github.com/.extraheader
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5336823Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5407351Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5648967Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5683420Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+portability (3.9)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5920384Z ##[endgroup]
+portability (3.9)	Verify closed bundle before repository imports	﻿2026-08-21T01:07:20.6201518Z ##[group]Run set -euo pipefail
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6202958Z ^[[36;1mset -euo pipefail^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6204574Z ^[[36;1mtest "$GITHUB_REPOSITORY" = "cjl308868584-lang/crypto-quant-v064-public-ci-r3"^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6206526Z ^[[36;1mtest "$GITHUB_REF" = "refs/heads/main"^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6207712Z ^[[36;1mpython3 - <<'PY'^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6208937Z ^[[36;1mimport ast, hashlib, json, pathlib, re, subprocess, sys^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6210324Z ^[[36;1mroot = pathlib.Path.cwd()^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6211375Z ^[[36;1mexpected = {^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6212674Z ^[[36;1m    ".github/workflows/ci.yml", ".gitignore", "NOTICE.md", "README.md",^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6214297Z ^[[36;1m    "SECURITY.md", "bundle-manifest-v1.json",^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6216131Z ^[[36;1m    "src/crypto_quant/challenger_replacement_supersession_publish.py",^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6217859Z ^[[36;1m    "tests/test_v064_linux_supersession_publish.py",^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6219094Z ^[[36;1m}^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6219941Z ^[[36;1mactual = {^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6221099Z ^[[36;1m    str(path.relative_to(root)) for path in root.rglob("*")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6222780Z ^[[36;1m    if path.is_file() and ".git" not in path.relative_to(root).parts^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6224165Z ^[[36;1m}^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6225182Z ^[[36;1mif actual != expected:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6226344Z ^[[36;1m    raise SystemExit("PUBLIC_FILE_SET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6227973Z ^[[36;1mmanifest = json.loads((root / "bundle-manifest-v1.json").read_bytes())^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6229495Z ^[[36;1mfiles = manifest["files"]^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6231052Z ^[[36;1mif [item["path"] for item in files] != sorted(expected - {"bundle-manifest-v1.json"}):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6232889Z ^[[36;1m    raise SystemExit("PUBLIC_MANIFEST_FILE_SET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6234220Z ^[[36;1mfor item in files:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6235516Z ^[[36;1m    body = (root / item["path"]).read_bytes()^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6237173Z ^[[36;1m    if len(body) != item["size"] or hashlib.sha256(body).hexdigest() != item["sha256"]:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6238939Z ^[[36;1m        raise SystemExit("PUBLIC_FILE_HASH_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6240250Z ^[[36;1m    blob = subprocess.run(^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6241541Z ^[[36;1m        ["/usr/bin/git", "hash-object", "--", item["path"]],^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6243006Z ^[[36;1m        check=True, stdout=subprocess.PIPE,^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6244294Z ^[[36;1m    ).stdout.decode("ascii").strip()^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6245724Z ^[[36;1m    if blob != item["source_blob_oid"]:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6247161Z ^[[36;1m        raise SystemExit("PUBLIC_BLOB_IDENTITY_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6249207Z ^[[36;1mnormalized = json.dumps(files, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6251747Z ^[[36;1mif hashlib.sha256(normalized).hexdigest() != manifest["file_set_sha256"]:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6253535Z ^[[36;1m    raise SystemExit("PUBLIC_FILE_SET_HASH_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6254900Z ^[[36;1mtracked = subprocess.run(^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6256544Z ^[[36;1m    ["/usr/bin/git", "ls-files", "-z"], check=True, stdout=subprocess.PIPE^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6258049Z ^[[36;1m).stdout.split(b"\0")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6259353Z ^[[36;1mif {item.decode() for item in tracked if item} != expected:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6260957Z ^[[36;1m    raise SystemExit("PUBLIC_TRACKED_SET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6262284Z ^[[36;1mforbidden = re.compile(^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6263567Z ^[[36;1m    rb"ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|/" +^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6265196Z ^[[36;1m    rb"Users/|BEGIN " + rb"PRIVATE KEY"^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6266375Z ^[[36;1m)^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6267675Z ^[[36;1mif any(forbidden.search((root / item).read_bytes()) for item in expected):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6269503Z ^[[36;1m    raise SystemExit("PUBLIC_SENSITIVE_BYTES_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6271209Z ^[[36;1mcombined = b"\n".join((root / item).read_bytes() for item in expected)^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6273322Z ^[[36;1memail_pattern = rb"[A-Za-z0-9._+-]+" + b"@" + rb"[A-Za-z0-9.-]+\.[A-Za-z]{2,}"^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6275133Z ^[[36;1mif re.search(email_pattern, combined):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6276489Z ^[[36;1m    raise SystemExit("PUBLIC_EMAIL_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6278024Z ^[[36;1mif re.search(rb"https?://", combined, flags=re.IGNORECASE):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6279584Z ^[[36;1m    raise SystemExit("PUBLIC_URL_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6280852Z ^[[36;1mlowered = combined.lower()^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6281933Z ^[[36;1mfor term in (^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6283073Z ^[[36;1m    b"stra" + b"tegy_result", b"econ" + b"omic_result",^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6284549Z ^[[36;1m    b"bro" + b"kerclient", b"ord" + b"er_submission",^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6286059Z ^[[36;1m    b"cred" + b"ential_access",^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6287170Z ^[[36;1m):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6288054Z ^[[36;1m    if term in lowered:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6289261Z ^[[36;1m        raise SystemExit("PUBLIC_FORBIDDEN_TERM")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6291299Z ^[[36;1mtest_tree = ast.parse((root / "tests/test_v064_linux_supersession_publish.py").read_text())^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6293068Z ^[[36;1mimports = {^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6294451Z ^[[36;1m    alias.name for node in ast.walk(test_tree) if isinstance(node, ast.Import)^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6296321Z ^[[36;1m    for alias in node.names^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6297400Z ^[[36;1m} | {^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6298434Z ^[[36;1m    node.module for node in ast.walk(test_tree)^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6299941Z ^[[36;1m    if isinstance(node, ast.ImportFrom) and node.module^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6301258Z ^[[36;1m}^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6303189Z ^[[36;1mallowed = {"ast", "ctypes", "errno", "importlib.util", "os", "pathlib", "socket", "stat", "subprocess", "sys", "tempfile", "time", "unittest"}^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6305637Z ^[[36;1mif imports != allowed:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6306878Z ^[[36;1m    raise SystemExit("PUBLIC_IMPORT_SET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6308228Z ^[[36;1mfor node in ast.walk(test_tree):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6309435Z ^[[36;1m    if isinstance(node, ast.Call):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6311632Z ^[[36;1m        name = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else ""^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6314625Z ^[[36;1m        if name in {"__import__", "import_module", "urlopen", "request", "connect", "create_connection", "system", "popen"}:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6316984Z ^[[36;1m            raise SystemExit("PUBLIC_DYNAMIC_CALL_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6318599Z ^[[36;1m        if name in {"run", "Popen", "check_call", "check_output"}:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6320427Z ^[[36;1m            if not node.args or not isinstance(node.args[0], (ast.Tuple, ast.List)):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6322502Z ^[[36;1m                raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6324222Z ^[[36;1m            first = node.args[0].elts[0] if node.args[0].elts else None^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6326324Z ^[[36;1m            fixed_git = isinstance(first, ast.Constant) and first.value == "/usr/bin/git"^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6329281Z ^[[36;1m            fixed_python = isinstance(first, ast.Attribute) and isinstance(first.value, ast.Name) and first.value.id == "sys" and first.attr == "executable"^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6331820Z ^[[36;1m            if not (fixed_git or fixed_python):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6333334Z ^[[36;1m                raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6336067Z ^[[36;1m            if fixed_python and (len(node.args[0].elts) < 2 or not isinstance(node.args[0].elts[1], ast.Constant) or node.args[0].elts[1].value != "-c"):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6338662Z ^[[36;1m                raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6340110Z ^[[36;1m            if fixed_git:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6341241Z ^[[36;1m                elts = node.args[0].elts^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6343680Z ^[[36;1m                git_ls = len(elts) == 3 and all(isinstance(item, ast.Constant) for item in elts) and [item.value for item in elts] == ["/usr/bin/git", "ls-files", "-z"]^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6348163Z ^[[36;1m                git_hash = len(elts) == 4 and all(isinstance(item, ast.Constant) for item in elts[:3]) and [item.value for item in elts[:3]] == ["/usr/bin/git", "hash-object", "--"] and isinstance(elts[3], ast.Subscript)^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6351148Z ^[[36;1m                if not (git_ls or git_hash):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6352637Z ^[[36;1m                    raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6354088Z ^[[36;1m            if fixed_python:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6355343Z ^[[36;1m                elts = node.args[0].elts^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6356725Z ^[[36;1m                source = elts[2] if len(elts) > 2 else None^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6358752Z ^[[36;1m                expected_lengths = {"RAW_RACE_CHILD": 6, "CRASH_CHILD": 5, "RETRY_CHILD": 4, "FIFO_READ_CHILD": 5}^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6361552Z ^[[36;1m                if not isinstance(source, ast.Name) or source.id not in expected_lengths or len(elts) != expected_lengths[source.id]:^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6363980Z ^[[36;1m                    raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6367778Z ^[[36;1m                regular_tail = all(isinstance(item, (ast.Name, ast.Attribute, ast.Call)) for item in elts[3:]) and not any(isinstance(item, ast.Call) and (not isinstance(item.func, ast.Name) or item.func.id != "str" or len(item.args) != 1) for item in elts[3:])^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6373753Z ^[[36;1m                fixed_directory_fsync_tail = source.id == "CRASH_CHILD" and len(elts) == 5 and isinstance(elts[3], ast.Call) and isinstance(elts[3].func, ast.Name) and elts[3].func.id == "str" and len(elts[3].args) == 1 and isinstance(elts[4], ast.Constant) and elts[4].value == "directory-fsync"^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6377879Z ^[[36;1m                if not (regular_tail or fixed_directory_fsync_tail):^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6379559Z ^[[36;1m                    raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6381629Z ^[[36;1mmanifest_sha = hashlib.sha256((root / "bundle-manifest-v1.json").read_bytes()).hexdigest()^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6383800Z ^[[36;1mprint("source_candidate_f=" + manifest["source"]["candidate_commit"])^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6385786Z ^[[36;1mprint("public_commit=" + "460ec57568e863b2e39e7572193f2545542d586b")^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6387369Z ^[[36;1mprint("manifest_sha256=" + manifest_sha)^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6388825Z ^[[36;1mprint("file_set_sha256=" + manifest["file_set_sha256"])^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6390152Z ^[[36;1mPY^[[0m
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6440480Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.6441838Z ##[endgroup]
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.7204787Z source_candidate_f=f9705fa2151ab98a5b9efe63be05979e4bc5bfa6
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.7206807Z public_commit=460ec57568e863b2e39e7572193f2545542d586b
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.7208776Z manifest_sha256=138cfa89928b639887d7b0636e9eec547ccb56f0f91bde20d795745e8057eb5b
+portability (3.9)	Verify closed bundle before repository imports	2026-08-21T01:07:20.7211026Z file_set_sha256=af99cedf41dc40b20e5caa290828e2d7110ef5b664e502e17c0b504bd4df9309
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	﻿2026-08-21T01:07:20.7533664Z ##[group]Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.7535421Z with:
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.7536236Z   python-version: 3.9
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.7537137Z   check-latest: false
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.7545716Z   token: ***
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.7546591Z   update-environment: true
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.7547568Z   allow-prereleases: false
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.7548523Z   freethreaded: false
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.7549387Z ##[endgroup]
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.8997607Z ##[group]Installed versions
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:20.9075516Z Version 3.9 was not found in the local cache
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.3861731Z Version 3.9 is available for downloading
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.3863975Z Download from "https://github.com/actions/python-versions/releases/download/3.9.25-19039189640/python-3.9.25-linux-24.04-x64.tar.gz"
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.7760473Z Extract downloaded archive
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.7898490Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/ecca878a-560b-4c6d-9512-d37067c8fd28 -f /home/runner/work/_temp/5e013e61-443d-430d-81b9-5a4116f47917
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:23.3196496Z Execute installation script
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:23.3310010Z Check if Python hostedtoolcache folder exist...
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:23.3311214Z Create Python 3.9.25 folder
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:23.3324693Z Copy Python binaries to hostedtoolcache folder
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:23.7980541Z Create additional symlinks (Required for the UsePythonVersion Azure Pipelines task and the setup-python GitHub Action)
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:23.8025543Z Upgrading pip...
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:26.4693415Z Looking in links: /tmp/tmpv2quc1_t
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:26.4696756Z Requirement already satisfied: setuptools in /opt/hostedtoolcache/Python/3.9.25/x64/lib/python3.9/site-packages (79.0.1)
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:26.4701389Z Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.9.25/x64/lib/python3.9/site-packages (23.0.1)
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:28.1768522Z Collecting pip
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:28.2108827Z Downloading pip-26.0.1-py3-none-any.whl (1.8 MB)
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:28.2549739Z ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 43.3 MB/s eta 0:00:00
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:28.2550461Z 
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:28.3110978Z Installing collected packages: pip
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:28.3111549Z Attempting uninstall: pip
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:28.3118772Z Found existing installation: pip 23.0.1
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:28.4913797Z Uninstalling pip-23.0.1:
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:28.4985110Z Successfully uninstalled pip-23.0.1
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:29.3387149Z Successfully installed pip-26.0.1
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:29.3935689Z Create complete file
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:29.3993829Z Successfully set up CPython (3.9.25)
+portability (3.9)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:29.3994717Z ##[endgroup]
+portability (3.9)	Run fixed-owner public boundary	﻿2026-08-21T01:07:29.4214850Z ##[group]Run set -euo pipefail
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4215491Z ^[[36;1mset -euo pipefail^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4215754Z ^[[36;1m! getent passwd 501^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4216013Z ^[[36;1m! getent group 501^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4216311Z ^[[36;1msudo groupadd --gid 501 v064-public-ci^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4216816Z ^[[36;1msudo useradd --uid 501 --gid 501 --no-create-home --shell /usr/sbin/nologin v064-public-ci^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4217375Z ^[[36;1msudo install -d -o 501 -g 501 -m 700 /opt/v064-public-ci-home^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4217880Z ^[[36;1msudo install -d -o 501 -g 501 -m 700 /opt/v064-public-ci-workspace^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4218358Z ^[[36;1msudo cp -a "$GITHUB_WORKSPACE/." /opt/v064-public-ci-workspace/^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4218820Z ^[[36;1msudo chown -R 501:501 /opt/v064-public-ci-workspace^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4219192Z ^[[36;1msudo chmod 700 /opt/v064-public-ci-workspace^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4219678Z ^[[36;1msudo install -d -o 501 -g 501 -m 755 /opt/v064-public-ci-home/artifacts/challenger-replacement^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4220425Z ^[[36;1mpython_bin="$(command -v python)"^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4220732Z ^[[36;1mtest -n "$python_bin"^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4221033Z ^[[36;1mcase "$python_bin" in /*) ;; *) exit 1 ;; esac^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4221353Z ^[[36;1mtest -x "$python_bin"^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4221835Z ^[[36;1mtest "$("$python_bin" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" = "3.9"^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4222479Z ^[[36;1msudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home \^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4223160Z ^[[36;1m  V064_PUBLIC_LINUX_REQUIRED=1 PYTHONPATH=/opt/v064-public-ci-workspace/src:/opt/v064-public-ci-workspace/tests \^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4224282Z ^[[36;1m  /bin/bash -c 'set -euo pipefail; /usr/bin/uname -sr; /usr/bin/ldd --version | /usr/bin/head -1; "$1" --version; cd /opt/v064-public-ci-workspace; exec "$1" -m unittest -v tests/test_v064_linux_supersession_publish.py' \^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4225324Z ^[[36;1m  v064-fixed-owner "$python_bin"^[[0m
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4269575Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4269945Z env:
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4270224Z   pythonLocation: /opt/hostedtoolcache/Python/3.9.25/x64
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4270686Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.9.25/x64/lib/pkgconfig
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4271112Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.9.25/x64
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4271500Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.9.25/x64
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4271880Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.9.25/x64
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4272254Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.9.25/x64/lib
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4272578Z ##[endgroup]
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.4660410Z useradd warning: v064-public-ci's uid 501 outside of the UID_MIN 1000 and UID_MAX 60000 range.
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.5494298Z Linux 6.17.0-1022-azure
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.5512067Z /usr/bin/ldd: line 41: printf: write error: Broken pipe
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.5512760Z /usr/bin/ldd: line 43: printf: write error: Broken pipe
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.5513148Z ldd (Ubuntu GLIBC 2.39-0ubuntu8.8) 2.39
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.5525418Z Python 3.9.25
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.6483511Z test_actual_renameat2_noreplace_preserves_existing_sentinel (tests.test_v064_linux_supersession_publish.V064ActualLinuxBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:29.7461380Z test_fresh_process_repairs_visible_final_after_directory_fsync_failure (tests.test_v064_linux_supersession_publish.V064ActualLinuxBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0364471Z test_fresh_process_replays_file_fsync_and_noreplace_crash_boundaries (tests.test_v064_linux_supersession_publish.V064ActualLinuxBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0864818Z test_two_fresh_interpreters_yield_one_success_and_one_eexist (tests.test_v064_linux_supersession_publish.V064ActualLinuxBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0886683Z test_current_platform_noreplace_preserves_existing_sentinel (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0891912Z test_every_rejection_preserves_full_sentinel_snapshot (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0894886Z test_fixed_publisher_loads_without_package_import (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0897358Z test_linux_required_mode_fails_closed_on_non_linux (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0899113Z test_local_darwin_mode_and_required_linux_mode_are_distinct (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0911481Z test_post_fsync_attachment_and_orphan_inventory_block_success (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... staging_basename=.v064-supersession-plan-b97295be7fa8b49d8d64ec318c127eab337ffeaba23796bcaa1006352bdc149b-8d3ddbde6822677809cccdf0a1ccd39a.staging
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0928290Z staging_basename=.v064-supersession-plan-1b4025dc7b8d27cf38df85e77b20ed44a00851a2c28b338560560d85deded8e3-9cc8b09579cb6833bb23d5ce211a3f52.staging
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.0939637Z ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1181250Z test_public_module_executes_with_only_allowlisted_imports_and_safe_bytes (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1190022Z test_publisher_close_failure_never_reports_success_and_each_fd_closes_once (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... staging_basename=.v064-supersession-plan-c6188a7a8d07275dd9b44729f718a3d6c80a7f5291cf9cfd100ac896f4722726-ef2f1459273975846263db845a31e824.staging
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1202597Z ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1208899Z test_required_file_flags_fail_closed_when_missing_or_zero (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1215481Z test_short_write_eintr_and_close_paths_are_deterministic (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1717176Z test_symlink_hardlink_fifo_socket_directory_and_wrong_mode_fail_before_io (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1731959Z test_unsupported_symbol_flags_and_errnos_never_fall_back (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests) ... ok
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1732849Z 
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1733098Z ----------------------------------------------------------------------
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1733616Z Ran 16 tests in 0.536s
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1733838Z 
+portability (3.9)	Run fixed-owner public boundary	2026-08-21T01:07:30.1733954Z OK
+portability (3.9)	Post Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	﻿2026-08-21T01:07:30.1941768Z Post job cleanup.
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	﻿2026-08-21T01:07:30.3373771Z Post job cleanup.
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.4245552Z [command]/usr/bin/git version
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.4288997Z git version 2.55.0
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.4359577Z Temporarily overriding HOME='/home/runner/work/_temp/d41fecc5-3fce-4855-a032-9eac46ac1e1d' before making global git config changes
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.4360876Z Adding repository directory to the temporary git global config as a safe directory
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.4364779Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.4406487Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.4448719Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.4726059Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.4770923Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.5039866Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+portability (3.9)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:30.5078311Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+portability (3.9)	Complete job	﻿2026-08-21T01:07:30.5503751Z Cleaning up orphan processes
+portability (3.12)	Set up job	﻿2026-08-21T01:07:19.6938244Z Current runner version: '2.336.0'
+portability (3.12)	Set up job	2026-08-21T01:07:19.6965084Z ##[group]Runner Image Provisioner
+portability (3.12)	Set up job	2026-08-21T01:07:19.6966091Z Hosted Compute Agent
+portability (3.12)	Set up job	2026-08-21T01:07:19.6966726Z Version: 20260729.566
+portability (3.12)	Set up job	2026-08-21T01:07:19.6967401Z Commit: cf7153fe6e25b664e8693c24944bf2b00355d109
+portability (3.12)	Set up job	2026-08-21T01:07:19.6968213Z Build Date: 2026-07-29T19:17:02Z
+portability (3.12)	Set up job	2026-08-21T01:07:19.6968910Z Worker ID: {f08d88f6-b09e-4d86-b1e5-fcfa7ada1864}
+portability (3.12)	Set up job	2026-08-21T01:07:19.6969680Z Azure Region: westus2
+portability (3.12)	Set up job	2026-08-21T01:07:19.6970469Z ##[endgroup]
+portability (3.12)	Set up job	2026-08-21T01:07:19.6971937Z ##[group]Operating System
+portability (3.12)	Set up job	2026-08-21T01:07:19.6972693Z Ubuntu
+portability (3.12)	Set up job	2026-08-21T01:07:19.6973256Z 24.04.4
+portability (3.12)	Set up job	2026-08-21T01:07:19.6973805Z LTS
+portability (3.12)	Set up job	2026-08-21T01:07:19.6974355Z ##[endgroup]
+portability (3.12)	Set up job	2026-08-21T01:07:19.6974888Z ##[group]Runner Image
+portability (3.12)	Set up job	2026-08-21T01:07:19.6975546Z Image: ubuntu-24.04
+portability (3.12)	Set up job	2026-08-21T01:07:19.6976164Z Version: 20260816.277.1
+portability (3.12)	Set up job	2026-08-21T01:07:19.6977658Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260816.277/images/ubuntu/Ubuntu2404-Readme.md
+portability (3.12)	Set up job	2026-08-21T01:07:19.6979511Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260816.277
+portability (3.12)	Set up job	2026-08-21T01:07:19.6980815Z ##[endgroup]
+portability (3.12)	Set up job	2026-08-21T01:07:19.6981929Z ##[group]GITHUB_TOKEN Permissions
+portability (3.12)	Set up job	2026-08-21T01:07:19.6984080Z Contents: read
+portability (3.12)	Set up job	2026-08-21T01:07:19.6984764Z Metadata: read
+portability (3.12)	Set up job	2026-08-21T01:07:19.6985381Z ##[endgroup]
+portability (3.12)	Set up job	2026-08-21T01:07:19.6987396Z Secret source: Actions
+portability (3.12)	Set up job	2026-08-21T01:07:19.6988776Z Prepare workflow directory
+portability (3.12)	Set up job	2026-08-21T01:07:19.7324547Z Prepare all required actions
+portability (3.12)	Set up job	2026-08-21T01:07:19.7373815Z Getting action download info
+portability (3.12)	Set up job	2026-08-21T01:07:20.0786708Z Download action repository 'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)
+portability (3.12)	Set up job	2026-08-21T01:07:20.2961475Z Download action repository 'actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1' (SHA:ece7cb06caefa5fff74198d8649806c4678c61a1)
+portability (3.12)	Set up job	2026-08-21T01:07:20.5101566Z Complete job name: portability (3.12)
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	﻿2026-08-21T01:07:20.5956517Z ##[group]Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5957637Z with:
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5958099Z   persist-credentials: false
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5958760Z   repository: cjl308868584-lang/crypto-quant-v064-public-ci-r3
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5963168Z   token: ***
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5963642Z   ssh-strict: true
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5964066Z   ssh-user: git
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5964911Z   clean: true
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5965538Z   sparse-checkout-cone-mode: true
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5966171Z   fetch-depth: 1
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5966613Z   fetch-tags: false
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5967225Z   show-progress: true
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5967888Z   lfs: false
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5968310Z   submodules: false
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5968756Z   set-safe-directory: true
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5969269Z   allow-unsafe-pr-checkout: false
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.5970349Z ##[endgroup]
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7025598Z Syncing repository: cjl308868584-lang/crypto-quant-v064-public-ci-r3
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7027977Z ##[group]Getting Git version info
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7029266Z Working directory is '/home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3'
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7031641Z [command]/usr/bin/git version
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7142371Z git version 2.55.0
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7207299Z ##[endgroup]
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7216450Z Temporarily overriding HOME='/home/runner/work/_temp/ba1066fa-be25-49d7-b9ad-183a6ecf15b9' before making global git config changes
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7219010Z Adding repository directory to the temporary git global config as a safe directory
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7223349Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7280643Z Deleting the contents of '/home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3'
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7299782Z ##[group]Initializing the repository
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7301725Z [command]/usr/bin/git init /home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7418320Z hint: Using 'master' as the name for the initial branch. This default branch name
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7441648Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7443726Z hint: to use in all of your new repositories, which will suppress this warning,
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7445285Z hint: call:
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7446408Z hint:
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7447240Z hint: 	git config --global init.defaultBranch <name>
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7448282Z hint:
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7449305Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7451213Z hint: 'development'. The just-created branch can be renamed via this command:
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7452536Z hint:
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7453039Z hint: 	git branch -m <name>
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7453547Z hint:
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7454193Z hint: Disable this message with "git config set advice.defaultBranchName false"
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7456341Z Initialized empty Git repository in /home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3/.git/
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7458832Z [command]/usr/bin/git remote add origin https://github.com/cjl308868584-lang/crypto-quant-v064-public-ci-r3
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7483722Z ##[endgroup]
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7485014Z ##[group]Disabling automatic garbage collection
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7487446Z [command]/usr/bin/git config --local gc.auto 0
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7522336Z ##[endgroup]
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7524098Z ##[group]Setting up auth
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7533196Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7569447Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7951597Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.7992203Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.8303325Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.8343718Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.8571137Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.8611544Z ##[endgroup]
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.8613071Z ##[group]Fetching the repository
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:20.8622768Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +460ec57568e863b2e39e7572193f2545542d586b:refs/remotes/origin/main
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2491600Z From https://github.com/cjl308868584-lang/crypto-quant-v064-public-ci-r3
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2493887Z  * [new ref]         460ec57568e863b2e39e7572193f2545542d586b -> origin/main
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2498180Z ##[endgroup]
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2500498Z ##[group]Determining the checkout info
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2502798Z ##[endgroup]
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2508253Z [command]/usr/bin/git sparse-checkout disable
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2561076Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2592759Z ##[group]Checking out the ref
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2597931Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2745072Z Switched to a new branch 'main'
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2746129Z branch 'main' set up to track 'origin/main'.
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2747970Z ##[endgroup]
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2749718Z [command]/usr/bin/git log -1 --format=%H
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2764302Z 460ec57568e863b2e39e7572193f2545542d586b
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2767132Z ##[group]Removing auth
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2768669Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.2809865Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.3050614Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.3079835Z http.https://github.com/.extraheader
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.3088661Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.3126777Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.3346236Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.3379889Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+portability (3.12)	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:21.3601728Z ##[endgroup]
+portability (3.12)	Verify closed bundle before repository imports	﻿2026-08-21T01:07:21.3857741Z ##[group]Run set -euo pipefail
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3859098Z ^[[36;1mset -euo pipefail^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3861131Z ^[[36;1mtest "$GITHUB_REPOSITORY" = "cjl308868584-lang/crypto-quant-v064-public-ci-r3"^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3863116Z ^[[36;1mtest "$GITHUB_REF" = "refs/heads/main"^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3864445Z ^[[36;1mpython3 - <<'PY'^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3865775Z ^[[36;1mimport ast, hashlib, json, pathlib, re, subprocess, sys^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3867313Z ^[[36;1mroot = pathlib.Path.cwd()^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3868489Z ^[[36;1mexpected = {^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3869931Z ^[[36;1m    ".github/workflows/ci.yml", ".gitignore", "NOTICE.md", "README.md",^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3872038Z ^[[36;1m    "SECURITY.md", "bundle-manifest-v1.json",^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3873876Z ^[[36;1m    "src/crypto_quant/challenger_replacement_supersession_publish.py",^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3875947Z ^[[36;1m    "tests/test_v064_linux_supersession_publish.py",^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3877325Z ^[[36;1m}^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3878171Z ^[[36;1mactual = {^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3879396Z ^[[36;1m    str(path.relative_to(root)) for path in root.rglob("*")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3881472Z ^[[36;1m    if path.is_file() and ".git" not in path.relative_to(root).parts^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3883027Z ^[[36;1m}^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3883865Z ^[[36;1mif actual != expected:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3885124Z ^[[36;1m    raise SystemExit("PUBLIC_FILE_SET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3886982Z ^[[36;1mmanifest = json.loads((root / "bundle-manifest-v1.json").read_bytes())^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3888697Z ^[[36;1mfiles = manifest["files"]^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3890571Z ^[[36;1mif [item["path"] for item in files] != sorted(expected - {"bundle-manifest-v1.json"}):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3892715Z ^[[36;1m    raise SystemExit("PUBLIC_MANIFEST_FILE_SET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3894190Z ^[[36;1mfor item in files:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3895334Z ^[[36;1m    body = (root / item["path"]).read_bytes()^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3897233Z ^[[36;1m    if len(body) != item["size"] or hashlib.sha256(body).hexdigest() != item["sha256"]:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3899261Z ^[[36;1m        raise SystemExit("PUBLIC_FILE_HASH_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3900898Z ^[[36;1m    blob = subprocess.run(^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3902265Z ^[[36;1m        ["/usr/bin/git", "hash-object", "--", item["path"]],^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3903835Z ^[[36;1m        check=True, stdout=subprocess.PIPE,^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3905212Z ^[[36;1m    ).stdout.decode("ascii").strip()^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3906586Z ^[[36;1m    if blob != item["source_blob_oid"]:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3908115Z ^[[36;1m        raise SystemExit("PUBLIC_BLOB_IDENTITY_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3910717Z ^[[36;1mnormalized = json.dumps(files, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3913670Z ^[[36;1mif hashlib.sha256(normalized).hexdigest() != manifest["file_set_sha256"]:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3915747Z ^[[36;1m    raise SystemExit("PUBLIC_FILE_SET_HASH_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3917187Z ^[[36;1mtracked = subprocess.run(^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3918716Z ^[[36;1m    ["/usr/bin/git", "ls-files", "-z"], check=True, stdout=subprocess.PIPE^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3920555Z ^[[36;1m).stdout.split(b"\0")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3921962Z ^[[36;1mif {item.decode() for item in tracked if item} != expected:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3923743Z ^[[36;1m    raise SystemExit("PUBLIC_TRACKED_SET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3925137Z ^[[36;1mforbidden = re.compile(^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3926494Z ^[[36;1m    rb"ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|/" +^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3928058Z ^[[36;1m    rb"Users/|BEGIN " + rb"PRIVATE KEY"^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3929248Z ^[[36;1m)^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3930741Z ^[[36;1mif any(forbidden.search((root / item).read_bytes()) for item in expected):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3932791Z ^[[36;1m    raise SystemExit("PUBLIC_SENSITIVE_BYTES_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3934682Z ^[[36;1mcombined = b"\n".join((root / item).read_bytes() for item in expected)^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3936979Z ^[[36;1memail_pattern = rb"[A-Za-z0-9._+-]+" + b"@" + rb"[A-Za-z0-9.-]+\.[A-Za-z]{2,}"^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3938753Z ^[[36;1mif re.search(email_pattern, combined):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3940497Z ^[[36;1m    raise SystemExit("PUBLIC_EMAIL_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3942145Z ^[[36;1mif re.search(rb"https?://", combined, flags=re.IGNORECASE):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3943771Z ^[[36;1m    raise SystemExit("PUBLIC_URL_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3945058Z ^[[36;1mlowered = combined.lower()^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3946121Z ^[[36;1mfor term in (^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3947261Z ^[[36;1m    b"stra" + b"tegy_result", b"econ" + b"omic_result",^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3948831Z ^[[36;1m    b"bro" + b"kerclient", b"ord" + b"er_submission",^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3950351Z ^[[36;1m    b"cred" + b"ential_access",^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3951544Z ^[[36;1m):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3952412Z ^[[36;1m    if term in lowered:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3953675Z ^[[36;1m        raise SystemExit("PUBLIC_FORBIDDEN_TERM")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3955774Z ^[[36;1mtest_tree = ast.parse((root / "tests/test_v064_linux_supersession_publish.py").read_text())^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3957747Z ^[[36;1mimports = {^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3959180Z ^[[36;1m    alias.name for node in ast.walk(test_tree) if isinstance(node, ast.Import)^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3961037Z ^[[36;1m    for alias in node.names^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3962131Z ^[[36;1m} | {^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3963109Z ^[[36;1m    node.module for node in ast.walk(test_tree)^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3964679Z ^[[36;1m    if isinstance(node, ast.ImportFrom) and node.module^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3966040Z ^[[36;1m}^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3968153Z ^[[36;1mallowed = {"ast", "ctypes", "errno", "importlib.util", "os", "pathlib", "socket", "stat", "subprocess", "sys", "tempfile", "time", "unittest"}^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3970735Z ^[[36;1mif imports != allowed:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3971965Z ^[[36;1m    raise SystemExit("PUBLIC_IMPORT_SET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3973347Z ^[[36;1mfor node in ast.walk(test_tree):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3974550Z ^[[36;1m    if isinstance(node, ast.Call):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3976931Z ^[[36;1m        name = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else ""^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3980531Z ^[[36;1m        if name in {"__import__", "import_module", "urlopen", "request", "connect", "create_connection", "system", "popen"}:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3982997Z ^[[36;1m            raise SystemExit("PUBLIC_DYNAMIC_CALL_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3984712Z ^[[36;1m        if name in {"run", "Popen", "check_call", "check_output"}:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3986704Z ^[[36;1m            if not node.args or not isinstance(node.args[0], (ast.Tuple, ast.List)):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3988916Z ^[[36;1m                raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3991083Z ^[[36;1m            first = node.args[0].elts[0] if node.args[0].elts else None^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3993302Z ^[[36;1m            fixed_git = isinstance(first, ast.Constant) and first.value == "/usr/bin/git"^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3996727Z ^[[36;1m            fixed_python = isinstance(first, ast.Attribute) and isinstance(first.value, ast.Name) and first.value.id == "sys" and first.attr == "executable"^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.3999575Z ^[[36;1m            if not (fixed_git or fixed_python):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4001375Z ^[[36;1m                raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4004309Z ^[[36;1m            if fixed_python and (len(node.args[0].elts) < 2 or not isinstance(node.args[0].elts[1], ast.Constant) or node.args[0].elts[1].value != "-c"):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4007275Z ^[[36;1m                raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4008778Z ^[[36;1m            if fixed_git:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4009896Z ^[[36;1m                elts = node.args[0].elts^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4012782Z ^[[36;1m                git_ls = len(elts) == 3 and all(isinstance(item, ast.Constant) for item in elts) and [item.value for item in elts] == ["/usr/bin/git", "ls-files", "-z"]^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4017904Z ^[[36;1m                git_hash = len(elts) == 4 and all(isinstance(item, ast.Constant) for item in elts[:3]) and [item.value for item in elts[:3]] == ["/usr/bin/git", "hash-object", "--"] and isinstance(elts[3], ast.Subscript)^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4021600Z ^[[36;1m                if not (git_ls or git_hash):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4023196Z ^[[36;1m                    raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4024720Z ^[[36;1m            if fixed_python:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4025901Z ^[[36;1m                elts = node.args[0].elts^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4027282Z ^[[36;1m                source = elts[2] if len(elts) > 2 else None^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4029503Z ^[[36;1m                expected_lengths = {"RAW_RACE_CHILD": 6, "CRASH_CHILD": 5, "RETRY_CHILD": 4, "FIFO_READ_CHILD": 5}^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4032927Z ^[[36;1m                if not isinstance(source, ast.Name) or source.id not in expected_lengths or len(elts) != expected_lengths[source.id]:^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4035635Z ^[[36;1m                    raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4039973Z ^[[36;1m                regular_tail = all(isinstance(item, (ast.Name, ast.Attribute, ast.Call)) for item in elts[3:]) and not any(isinstance(item, ast.Call) and (not isinstance(item.func, ast.Name) or item.func.id != "str" or len(item.args) != 1) for item in elts[3:])^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4047187Z ^[[36;1m                fixed_directory_fsync_tail = source.id == "CRASH_CHILD" and len(elts) == 5 and isinstance(elts[3], ast.Call) and isinstance(elts[3].func, ast.Name) and elts[3].func.id == "str" and len(elts[3].args) == 1 and isinstance(elts[4], ast.Constant) and elts[4].value == "directory-fsync"^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4051914Z ^[[36;1m                if not (regular_tail or fixed_directory_fsync_tail):^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4053719Z ^[[36;1m                    raise SystemExit("PUBLIC_SUBPROCESS_TARGET_INVALID")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4055969Z ^[[36;1mmanifest_sha = hashlib.sha256((root / "bundle-manifest-v1.json").read_bytes()).hexdigest()^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4058353Z ^[[36;1mprint("source_candidate_f=" + manifest["source"]["candidate_commit"])^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4060490Z ^[[36;1mprint("public_commit=" + "460ec57568e863b2e39e7572193f2545542d586b")^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4062158Z ^[[36;1mprint("manifest_sha256=" + manifest_sha)^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4063638Z ^[[36;1mprint("file_set_sha256=" + manifest["file_set_sha256"])^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4064992Z ^[[36;1mPY^[[0m
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4107422Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4108827Z ##[endgroup]
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4923563Z source_candidate_f=f9705fa2151ab98a5b9efe63be05979e4bc5bfa6
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4925556Z public_commit=460ec57568e863b2e39e7572193f2545542d586b
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4927721Z manifest_sha256=138cfa89928b639887d7b0636e9eec547ccb56f0f91bde20d795745e8057eb5b
+portability (3.12)	Verify closed bundle before repository imports	2026-08-21T01:07:21.4930552Z file_set_sha256=af99cedf41dc40b20e5caa290828e2d7110ef5b664e502e17c0b504bd4df9309
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	﻿2026-08-21T01:07:21.5202006Z ##[group]Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.5204457Z with:
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.5205604Z   python-version: 3.12
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.5206850Z   check-latest: false
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.5218215Z   token: ***
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.5219075Z   update-environment: true
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.5220002Z   allow-prereleases: false
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.5221194Z   freethreaded: false
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.5222084Z ##[endgroup]
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.6522225Z ##[group]Installed versions
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.7851385Z Successfully set up CPython (3.12.14)
+portability (3.12)	Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	2026-08-21T01:07:21.7854055Z ##[endgroup]
+portability (3.12)	Run fixed-owner public boundary	﻿2026-08-21T01:07:21.8045574Z ##[group]Run set -euo pipefail
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8046672Z ^[[36;1mset -euo pipefail^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8047610Z ^[[36;1m! getent passwd 501^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8048555Z ^[[36;1m! getent group 501^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8049585Z ^[[36;1msudo groupadd --gid 501 v064-public-ci^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8051737Z ^[[36;1msudo useradd --uid 501 --gid 501 --no-create-home --shell /usr/sbin/nologin v064-public-ci^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8053860Z ^[[36;1msudo install -d -o 501 -g 501 -m 700 /opt/v064-public-ci-home^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8055636Z ^[[36;1msudo install -d -o 501 -g 501 -m 700 /opt/v064-public-ci-workspace^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8057435Z ^[[36;1msudo cp -a "$GITHUB_WORKSPACE/." /opt/v064-public-ci-workspace/^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8059071Z ^[[36;1msudo chown -R 501:501 /opt/v064-public-ci-workspace^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8060739Z ^[[36;1msudo chmod 700 /opt/v064-public-ci-workspace^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8062694Z ^[[36;1msudo install -d -o 501 -g 501 -m 755 /opt/v064-public-ci-home/artifacts/challenger-replacement^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8064602Z ^[[36;1mpython_bin="$(command -v python)"^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8065705Z ^[[36;1mtest -n "$python_bin"^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8066789Z ^[[36;1mcase "$python_bin" in /*) ;; *) exit 1 ;; esac^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8067984Z ^[[36;1mtest -x "$python_bin"^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8069779Z ^[[36;1mtest "$("$python_bin" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" = "3.12"^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8072443Z ^[[36;1msudo -u '#501' env HOME=/opt/v064-public-ci-home TMPDIR=/opt/v064-public-ci-home \^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8075033Z ^[[36;1m  V064_PUBLIC_LINUX_REQUIRED=1 PYTHONPATH=/opt/v064-public-ci-workspace/src:/opt/v064-public-ci-workspace/tests \^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8079173Z ^[[36;1m  /bin/bash -c 'set -euo pipefail; /usr/bin/uname -sr; /usr/bin/ldd --version | /usr/bin/head -1; "$1" --version; cd /opt/v064-public-ci-workspace; exec "$1" -m unittest -v tests/test_v064_linux_supersession_publish.py' \^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8084159Z ^[[36;1m  v064-fixed-owner "$python_bin"^[[0m
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8344902Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8346230Z env:
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8347227Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8348864Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8350622Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8352076Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8353530Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8354976Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8356197Z ##[endgroup]
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:21.8817001Z useradd warning: v064-public-ci's uid 501 outside of the UID_MIN 1000 and UID_MAX 60000 range.
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:22.2802654Z Linux 6.17.0-1022-azure
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:22.2821208Z /usr/bin/ldd: line 41: printf: write error: Broken pipe
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:22.2822317Z ldd (Ubuntu GLIBC 2.39-0ubuntu8.8) 2.39
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:22.2823312Z /usr/bin/ldd: line 43: printf: write error: Broken pipe
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:22.2840059Z Python 3.12.14
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.2629827Z test_actual_renameat2_noreplace_preserves_existing_sentinel (tests.test_v064_linux_supersession_publish.V064ActualLinuxBoundaryTests.test_actual_renameat2_noreplace_preserves_existing_sentinel) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.3400735Z test_fresh_process_repairs_visible_final_after_directory_fsync_failure (tests.test_v064_linux_supersession_publish.V064ActualLinuxBoundaryTests.test_fresh_process_repairs_visible_final_after_directory_fsync_failure) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.5720654Z test_fresh_process_replays_file_fsync_and_noreplace_crash_boundaries (tests.test_v064_linux_supersession_publish.V064ActualLinuxBoundaryTests.test_fresh_process_replays_file_fsync_and_noreplace_crash_boundaries) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6299506Z test_two_fresh_interpreters_yield_one_success_and_one_eexist (tests.test_v064_linux_supersession_publish.V064ActualLinuxBoundaryTests.test_two_fresh_interpreters_yield_one_success_and_one_eexist) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6310486Z test_current_platform_noreplace_preserves_existing_sentinel (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_current_platform_noreplace_preserves_existing_sentinel) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6326300Z test_every_rejection_preserves_full_sentinel_snapshot (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_every_rejection_preserves_full_sentinel_snapshot) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6331814Z test_fixed_publisher_loads_without_package_import (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_fixed_publisher_loads_without_package_import) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6334769Z test_linux_required_mode_fails_closed_on_non_linux (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_linux_required_mode_fails_closed_on_non_linux) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6337873Z test_local_darwin_mode_and_required_linux_mode_are_distinct (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_local_darwin_mode_and_required_linux_mode_are_distinct) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6349164Z test_post_fsync_attachment_and_orphan_inventory_block_success (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_post_fsync_attachment_and_orphan_inventory_block_success) ... staging_basename=.v064-supersession-plan-b97295be7fa8b49d8d64ec318c127eab337ffeaba23796bcaa1006352bdc149b-64d9aa2f54011eeac75594f7902fc711.staging
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6363888Z staging_basename=.v064-supersession-plan-1b4025dc7b8d27cf38df85e77b20ed44a00851a2c28b338560560d85deded8e3-100d9f5c513cf8563fefe4836a669a26.staging
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6381561Z ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6712472Z test_public_module_executes_with_only_allowlisted_imports_and_safe_bytes (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_public_module_executes_with_only_allowlisted_imports_and_safe_bytes) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6719462Z test_publisher_close_failure_never_reports_success_and_each_fd_closes_once (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_publisher_close_failure_never_reports_success_and_each_fd_closes_once) ... staging_basename=.v064-supersession-plan-c6188a7a8d07275dd9b44729f718a3d6c80a7f5291cf9cfd100ac896f4722726-e56027fe845e09a9094c4a9cd217a90a.staging
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6732500Z ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6739182Z test_required_file_flags_fail_closed_when_missing_or_zero (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_required_file_flags_fail_closed_when_missing_or_zero) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.6746203Z test_short_write_eintr_and_close_paths_are_deterministic (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_short_write_eintr_and_close_paths_are_deterministic) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.7147692Z test_symlink_hardlink_fifo_socket_directory_and_wrong_mode_fail_before_io (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_symlink_hardlink_fifo_socket_directory_and_wrong_mode_fail_before_io) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.7158378Z test_unsupported_symbol_flags_and_errnos_never_fall_back (tests.test_v064_linux_supersession_publish.V064StaticAndPortableBoundaryTests.test_unsupported_symbol_flags_and_errnos_never_fall_back) ... ok
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.7160581Z 
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.7161148Z ----------------------------------------------------------------------
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.7161844Z Ran 16 tests in 0.552s
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.7162104Z 
+portability (3.12)	Run fixed-owner public boundary	2026-08-21T01:07:23.7162227Z OK
+portability (3.12)	Post Run actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1	﻿2026-08-21T01:07:23.7401671Z Post job cleanup.
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	﻿2026-08-21T01:07:23.8781597Z Post job cleanup.
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:23.9624738Z [command]/usr/bin/git version
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:23.9667897Z git version 2.55.0
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:23.9717069Z Temporarily overriding HOME='/home/runner/work/_temp/05935e6d-b0fc-49a9-b282-e58ebc0f10dd' before making global git config changes
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:23.9723814Z Adding repository directory to the temporary git global config as a safe directory
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:23.9736790Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/crypto-quant-v064-public-ci-r3/crypto-quant-v064-public-ci-r3
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:23.9771445Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:23.9810377Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:24.0065379Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:24.0104186Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:24.0363529Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+portability (3.12)	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-08-21T01:07:24.0400367Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+portability (3.12)	Complete job	﻿2026-08-21T01:07:24.0879735Z Cleaning up orphan processes

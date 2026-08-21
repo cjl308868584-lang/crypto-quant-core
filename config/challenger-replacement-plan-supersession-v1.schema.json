@@ -1,0 +1,350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-plan-supersession-v1.schema.json",
+  "title": "Replacement Challenger preregistration plan supersession record V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "record_id",
+    "record_hash",
+    "previous_plan",
+    "superseding_plan",
+    "machine_evidence_binding",
+    "owner_attestation_binding",
+    "prohibition",
+    "authority",
+    "status",
+        "warnings",
+        "ceremony_precondition"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-plan-supersession-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "record_id": {
+      "type": "string",
+      "pattern": "^challenger_replacement_plan_supersession_[0-9a-f]{64}$"
+    },
+    "record_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "previous_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_tag",
+        "peeled_commit",
+        "path",
+        "file_sha256",
+        "plan_id",
+        "plan_hash",
+        "service_identity",
+        "runtime_root"
+      ],
+      "properties": {
+        "release_tag": {
+          "const": "v0.62.0"
+        },
+        "peeled_commit": {
+          "const": "e0a9b3eb6a3f385ea259722e6613df8708e8fe5a"
+        },
+        "path": {
+          "const": "artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json"
+        },
+        "file_sha256": {
+          "const": "d450d1e9f8dc422eb5a93beb8a5ffbb1746a4a6d1facb3c5a20a76f4bd527734"
+        },
+        "plan_id": {
+          "const": "challenger_replacement_plan_d4a542c1566f7a90466ca4d5301b81847f5b5eba93c7a00903d2d95331bc23a2"
+        },
+        "plan_hash": {
+          "const": "95f395b17d9c09d325c58391542ce5f3d9df5ce6a706b1bba8ffcb62dc6c883c"
+        },
+        "service_identity": {
+          "const": "gui/501/local.crypto-quant.challenger-replacement-v1"
+        },
+        "runtime_root": {
+          "const": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1"
+        }
+      }
+    },
+    "superseding_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "file_sha256",
+        "plan_id",
+        "plan_hash",
+        "foundation",
+        "service_identity",
+        "runtime_root"
+      ],
+      "properties": {
+        "path": {
+          "const": "artifacts/challenger-replacement/challenger-replacement-plan-v0.64.0.json"
+        },
+        "file_sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "plan_id": {
+          "type": "string",
+          "pattern": "^challenger_replacement_plan_[0-9a-f]{64}$"
+        },
+        "plan_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "foundation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "release_tag",
+            "peeled_commit",
+            "package_version",
+            "manifest_version",
+            "build_input_tree_hash",
+            "manifest_hash",
+            "manifest_file_sha256"
+          ],
+          "properties": {
+            "release_tag": {
+              "const": "v0.63.0"
+            },
+            "peeled_commit": {
+              "const": "df91e19240df14839125608422489adf3b902e76"
+            },
+            "package_version": {
+              "const": "0.63.0"
+            },
+            "manifest_version": {
+              "const": "1.57.0"
+            },
+            "build_input_tree_hash": {
+              "const": "7fdfd6c69f1342892b222882b76ee4988487a482c958a9cdacf00461b2fd8f19"
+            },
+            "manifest_hash": {
+              "const": "f4a74896a6d7b2166adba86075ef06b8d7986f900a086d04ee2f03754baded4b"
+            },
+            "manifest_file_sha256": {
+              "const": "13bea4bfcf633e767eed73d431e57d496dcee47820aacf92e7b61b0efed5c546"
+            }
+          }
+        },
+        "service_identity": {
+          "const": "gui/501/local.crypto-quant.challenger-replacement-v1"
+        },
+        "runtime_root": {
+          "const": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1"
+        }
+      }
+    },
+    "machine_evidence_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "file_sha256",
+        "evidence_id",
+        "evidence_hash",
+        "git_history_evidence_hash",
+        "evidence_qualification",
+        "observation"
+      ],
+      "properties": {
+        "path": {
+          "const": "artifacts/challenger-replacement/challenger-replacement-supersession-machine-evidence-v0.64.0.json"
+        },
+        "file_sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "evidence_id": {
+          "type": "string",
+          "pattern": "^challenger_replacement_supersession_machine_evidence_[0-9a-f]{64}$"
+        },
+        "evidence_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "git_history_evidence_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "evidence_qualification": {
+          "const": "REAL_MACHINE_READ_ONLY_SUPERSESSION_PRECONDITION"
+        },
+        "observation": {
+          "const": "NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION"
+        }
+      }
+    },
+    "owner_attestation_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "file_sha256",
+        "attestation_id",
+        "attestation_hash",
+        "attestation_type",
+        "signer_github_login",
+        "signer_os_username",
+        "signer_uid"
+      ],
+      "properties": {
+        "path": {
+          "const": "artifacts/challenger-replacement/challenger-replacement-owner-attestation-v0.64.0.json"
+        },
+        "file_sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "attestation_id": {
+          "type": "string",
+          "pattern": "^challenger_replacement_owner_attestation_[0-9a-f]{64}$"
+        },
+        "attestation_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "attestation_type": {
+          "const": "ACCOUNTABLE_OWNER_PRE_START_HISTORY_ATTESTATION_V1"
+        },
+        "signer_github_login": {
+          "const": "cjl308868584-lang"
+        },
+        "signer_os_username": {
+          "const": "chenm4"
+        },
+        "signer_uid": {
+          "const": 501
+        }
+      }
+    },
+    "prohibition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "supersession_forbidden_after"
+      ],
+      "properties": {
+        "reason": {
+          "const": "SUPERSEDED_PRE_START_STORAGE_SAFETY_CORRECTION"
+        },
+        "supersession_forbidden_after": {
+          "const": "PLAN_SUPERSESSION_FORBIDDEN_AFTER_FIRST_START_RECEIPT_OR_CANONICAL_EVENT"
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentials_allowed",
+        "account_requests_allowed",
+        "broker_requests_allowed",
+        "real_orders_allowed",
+        "production_activation",
+        "runtime_install_authorized",
+        "replacement_start_authorized",
+        "runner_invocation_count",
+        "market_request_count",
+        "state_write_count"
+      ],
+      "properties": {
+        "credentials_allowed": {
+          "const": false
+        },
+        "account_requests_allowed": {
+          "const": false
+        },
+        "broker_requests_allowed": {
+          "const": false
+        },
+        "real_orders_allowed": {
+          "const": false
+        },
+        "production_activation": {
+          "const": false
+        },
+        "runtime_install_authorized": {
+          "const": false
+        },
+        "replacement_start_authorized": {
+          "const": false
+        },
+        "runner_invocation_count": {
+          "const": 0
+        },
+        "market_request_count": {
+          "const": 0
+        },
+        "state_write_count": {
+          "const": 0
+        }
+      }
+    },
+    "status": {
+      "const": "PLAN_SUPERSESSION_RECORDED_PRE_START"
+    },
+        "warnings": {
+      "const": [
+        "OWNER_ATTESTATION_IS_GOVERNANCE_CLAIM_NOT_MACHINE_PROOF",
+        "NO_RUNTIME_OR_START_AUTHORITY"
+            ]
+        },
+        "ceremony_precondition": {
+            "$ref": "#/$defs/ceremony_precondition"
+        }
+  },
+  "$defs": {
+        "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "transcript": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "argv", "exit_code", "stdout_base64", "stdout_sha256", "stderr_base64", "stderr_sha256"],
+            "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                "exit_code": {"const": 0},
+                "stdout_base64": {"type": "string", "pattern": "^[A-Za-z0-9+/]*={0,2}$"},
+                "stdout_sha256": {"$ref": "#/$defs/hash"},
+                "stderr_base64": {"const": ""},
+                "stderr_sha256": {"const": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+            }
+        },
+        "final_snapshot": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "file_sha256", "device_decimal", "inode_decimal", "mode_octal", "nlink", "size", "mtime_ns_decimal", "ctime_ns_decimal"],
+            "properties": {
+                "path": {"type": "string", "minLength": 1},
+                "file_sha256": {"$ref": "#/$defs/hash"},
+                "device_decimal": {"type": "string", "pattern": "^[0-9]+$"},
+                "inode_decimal": {"type": "string", "pattern": "^[0-9]+$"},
+                "mode_octal": {"const": "0644"},
+                "nlink": {"const": 1},
+                "size": {"type": "integer", "minimum": 1, "maximum": 4194304},
+                "mtime_ns_decimal": {"type": "string", "pattern": "^[0-9]+$"},
+                "ctime_ns_decimal": {"type": "string", "pattern": "^[0-9]+$"}
+            }
+        },
+        "ceremony_precondition": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["state", "candidate_head", "head_transcript", "status_transcript", "allowlisted_finals", "staging_inventory"],
+            "properties": {
+                "state": {"const": "C2_EVIDENCE_ATTESTATION_ONLY"},
+                "candidate_head": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "head_transcript": {"$ref": "#/$defs/transcript"},
+                "status_transcript": {"$ref": "#/$defs/transcript"},
+                "allowlisted_finals": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/final_snapshot"}},
+                "staging_inventory": {"const": []}
+            }
+        }
+  }
+}

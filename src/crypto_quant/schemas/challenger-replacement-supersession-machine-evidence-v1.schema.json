@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-supersession-machine-evidence-v1.schema.json",
+  "title": "Replacement Challenger plan supersession machine evidence V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "evidence_id",
+    "evidence_hash",
+    "evidence_qualification",
+    "observed_at",
+    "system_timezone",
+    "effective_uid",
+    "observation",
+    "service_identity",
+    "runtime_root",
+    "target_plist",
+    "current_observations",
+    "collector_actions",
+    "launchctl_transcript",
+    "git_history"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-supersession-machine-evidence-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "evidence_id": {
+      "type": "string",
+      "pattern": "^challenger_replacement_supersession_machine_evidence_[0-9a-f]{64}$"
+    },
+    "evidence_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "evidence_qualification": {
+      "enum": [
+        "TEST_FIXTURE_ONLY_NOT_SUPERSESSION_EVIDENCE",
+        "REAL_MACHINE_READ_ONLY_SUPERSESSION_PRECONDITION"
+      ]
+    },
+    "observed_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "system_timezone": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effective_uid": {
+      "const": 501
+    },
+    "observation": {
+      "const": "NO_OBSERVABLE_REPLACEMENT_STATE_AT_COLLECTION"
+    },
+    "service_identity": {
+      "const": "gui/501/local.crypto-quant.challenger-replacement-v1"
+    },
+    "runtime_root": {
+      "const": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1"
+    },
+    "target_plist": {
+      "const": "/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-replacement-v1.plist"
+    },
+    "current_observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_root_lstat",
+        "target_plist_lstat",
+        "service_state",
+        "start_receipt_root_state",
+        "start_receipt_count",
+        "state_event_root_state",
+        "state_event_count",
+        "canonical_event_count"
+      ],
+      "properties": {
+        "runtime_root_lstat": {
+          "const": "ENOENT"
+        },
+        "target_plist_lstat": {
+          "const": "ENOENT"
+        },
+        "service_state": {
+          "const": "NOT_LOADED"
+        },
+        "start_receipt_root_state": {
+          "const": "ABSENT_DERIVED_FROM_RUNTIME_ROOT_ABSENT"
+        },
+        "start_receipt_count": {
+          "const": 0
+        },
+        "state_event_root_state": {
+          "const": "ABSENT_DERIVED_FROM_RUNTIME_ROOT_ABSENT"
+        },
+        "state_event_count": {
+          "const": 0
+        },
+        "canonical_event_count": {
+          "const": 0
+        }
+      }
+    },
+    "collector_actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_write_count",
+        "runner_invocation_count",
+        "market_request_count",
+        "broker_request_count",
+        "order_count"
+      ],
+      "properties": {
+        "state_write_count": {
+          "const": 0
+        },
+        "runner_invocation_count": {
+          "const": 0
+        },
+        "market_request_count": {
+          "const": 0
+        },
+        "broker_request_count": {
+          "const": 0
+        },
+        "order_count": {
+          "const": 0
+        }
+      }
+    },
+    "launchctl_transcript": {
+      "$ref": "#/$defs/transcript"
+    },
+    "git_history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v0_62_tag_type",
+        "v0_62_peeled_commit",
+        "v0_62_plan_path",
+        "v0_62_plan_file_sha256",
+        "v0_62_plan_id",
+        "v0_62_plan_hash",
+        "v0_63_tag_type",
+        "v0_63_peeled_commit",
+        "candidate_head",
+        "v0_63_ancestor_of_candidate",
+        "candidate_status_porcelain_base64",
+        "candidate_status_porcelain_sha256",
+        "transcripts",
+        "git_history_evidence_hash"
+      ],
+      "properties": {
+        "v0_62_tag_type": {
+          "const": "tag"
+        },
+        "v0_62_peeled_commit": {
+          "const": "e0a9b3eb6a3f385ea259722e6613df8708e8fe5a"
+        },
+        "v0_62_plan_path": {
+          "const": "artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json"
+        },
+        "v0_62_plan_file_sha256": {
+          "const": "d450d1e9f8dc422eb5a93beb8a5ffbb1746a4a6d1facb3c5a20a76f4bd527734"
+        },
+        "v0_62_plan_id": {
+          "const": "challenger_replacement_plan_d4a542c1566f7a90466ca4d5301b81847f5b5eba93c7a00903d2d95331bc23a2"
+        },
+        "v0_62_plan_hash": {
+          "const": "95f395b17d9c09d325c58391542ce5f3d9df5ce6a706b1bba8ffcb62dc6c883c"
+        },
+        "v0_63_tag_type": {
+          "const": "tag"
+        },
+        "v0_63_peeled_commit": {
+          "const": "df91e19240df14839125608422489adf3b902e76"
+        },
+        "candidate_head": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "v0_63_ancestor_of_candidate": {
+          "const": true
+        },
+        "candidate_status_porcelain_base64": {
+          "const": ""
+        },
+        "candidate_status_porcelain_sha256": {
+          "const": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "transcripts": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/transcript"
+          }
+        },
+        "git_history_evidence_hash": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "transcript": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "argv",
+        "exit_code",
+        "stdout_base64",
+        "stdout_sha256",
+        "stderr_base64",
+        "stderr_sha256"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "stdout_base64": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        },
+        "stdout_sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "stderr_base64": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        },
+        "stderr_sha256": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    }
+  }
+}
