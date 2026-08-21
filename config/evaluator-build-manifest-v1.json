@@ -193,7 +193,7 @@
     "docs/superpowers/plans/2026-08-13-v064-minimal-public-ci-mirror.md": "2536439c9c38506ce26617cc39fc780847d115b40f9b014b41347a9dea11c95d",
     "docs/superpowers/plans/2026-08-16-v064-public-ci-r2-correction.md": "f88932c3ac3a56079b6094bdb1255a0f5069a578a60f64abc322b703dc560cf1",
     "docs/superpowers/plans/2026-08-20-v064-public-ci-r3-interpreter-identity.md": "bdee0762624a131a2009083686406ba6317680f3d37050847ee95cfef02087fc",
-    "docs/superpowers/plans/2026-08-21-v064-public-core-ci-umask-correction.md": "68675a630adefabe735fd81168c515910a227ec5ed08e89189fcfdfe9570b080",
+    "docs/superpowers/plans/2026-08-21-v064-public-core-ci-umask-correction.md": "62ba52e1cf9349f5abf9a06a73497cad4d424cd1a4d0ceb414a4ecd821e21183",
     "docs/superpowers/specs/2026-08-02-system-paper-wal-scheduler-design.md": "ba7a327bb3d243045b9522796135521adba0c38acf708749220be558c473b549",
     "docs/superpowers/specs/2026-08-03-system-paper-deployment-trust-chain-design.md": "acf72abafc844ac98a7c2e11334d31278a5af626c8b54a2c639fe5e93e0372f8",
     "docs/superpowers/specs/2026-08-04-system-paper-deployment-review-hardening-design.md": "38244e35ee0782dc66f2430d81655f6101fcb5e8e4b232317a7b72ca77b32b30",
@@ -208,7 +208,7 @@
     "docs/superpowers/specs/2026-08-12-v064-minimal-public-ci-mirror-design.md": "d8467045f6365c2fb58861b6b1d4c6db8e4b4657f42d14589d1437067e9c904d",
     "docs/superpowers/specs/2026-08-15-v064-public-ci-r2-correction-design.md": "068e6fb60375d6c4c68a79bf84dadc8d9f42f4445ed516b50c28bd3bd8fac456",
     "docs/superpowers/specs/2026-08-20-v064-public-ci-r3-interpreter-identity-design.md": "69dff502803a2ea2c50b66ee246dba5566674029aa22022c1907b10ad693ff2b",
-    "docs/superpowers/specs/2026-08-21-v064-public-core-ci-umask-correction-design.md": "a308446ed0495261d07d1fca94172ca8bd7399b88ed2c8febe120ed0139ae3d8",
+    "docs/superpowers/specs/2026-08-21-v064-public-core-ci-umask-correction-design.md": "5b19d54e219a4b3d8fc98c5c4e8d72da4ca98e46a1893ade8533f924ca1ef6f3",
     "public_ci/v064/.github/workflows/ci.yml": "1c1d982c31eb348f5568464a7db40d9177bba8202b939ebc7e033a843eac5407",
     "public_ci/v064/.gitignore": "6feaded4e28ea86e001a6751b4e3d960e8b7c31b9616ff9936b79297086e809b",
     "public_ci/v064/NOTICE.md": "b6a1c3c9b51e6ba74e8c2cd0fff93e0343d9cb97d76683bcb3b690055a17d3d4",
@@ -452,7 +452,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "12c2b1453c0648a1f9fcbd688ab8cac55a80f335132faf3a9da68b6623c26487",
+  "build_input_tree_hash": "a2a85267fb424b793fac538df40a55be33e900621cb877b1aa1303f16b134344",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -460,5 +460,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "779630933f891c09ffffc36d341f596facdaeebd3bb4ce025a4477bc6fac1713"
+  "manifest_hash": "6d32f81a3f9b558f1aa911b1d8d49b9d51491a9ac720675ee2d1cff88186b760"
 }

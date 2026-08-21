@@ -14,7 +14,12 @@
 
 - R1/R2/R3 committed artifacts, repositories, runs, schemas, and witness bytes remain unchanged.
 - Current code authority is public PR Python 3.9/3.12 CI, fixed UID 501, merged-main CI, and annotated-tag identity.
-- Only a freshly `O_EXCL|O_NOFOLLOW`-created staging descriptor may be normalized with `fchmod`; no existing path or entry is chmodded.
+- For production artifact publication, only a freshly `O_EXCL|O_NOFOLLOW`-created staging
+  descriptor may be normalized with `fchmod`; no existing production final, staging, or external
+  entry is chmodded.
+- Only the test-owned reviewed checkout inside its verified `0700` private parent may normalize an exact
+  `100644` HEAD plan through a retained no-follow descriptor; arbitrary world-writable plans remain rejected.
+- Run the fixed UID boundary before the long full suite so security failures stop each matrix job early.
 - No scheduler, deployment, Runner, Broker, credential, market/account request, order, production root, strategy-state write, or UI change.
 - One local full suite for the final changed code state; no mechanical duplicate.
 
@@ -114,6 +119,16 @@ PYTHONPATH=src:tests python3 -m unittest -v \
 ```
 
 Expected: 41 tests pass. Also rerun C0→C4 under `umask 0027`; expect PASS.
+
+- [x] **Step 5: Close the permissive checkout boundary**
+
+Preserve run `32509529713` as the exact RED showing
+`mode=0666 uid=501 euid=501 nlink=1 regular=True`. Add a controlled-checkout regression; first
+verify the private parent, HEAD `100644` entry, and retained descriptor's canonical bytes, UID,
+nlink, type, and size, then normalize the descriptor and revalidate its attachment identity and
+exact mode. Keep the independent arbitrary-world-writable rejection unchanged. Run
+`FixedSupersessionPublisherTests` plus `SupersessionCliBoundaryTests`; expect 42 tests. Require the
+reordered public CI gate to pass on both Python versions before either full suite begins.
 
 ### Task 3: Split historical R3 evidence from current code
 
@@ -230,7 +245,8 @@ gh pr view 33 --json headRefOid,isDraft,state,statusCheckRollup,url
 
 - [ ] **Step 2: Require PR Python 3.9/3.12 and fixed UID success**
 
-Do not rerun an unchanged SHA. Any failure stops merge and is debugged from exact logs.
+Run the fixed UID boundary before `make test` in each matrix job. Do not rerun an unchanged SHA. Any
+failure stops merge and is debugged from exact logs.
 
 - [ ] **Step 3: Merge and require exact merged-main CI**
 

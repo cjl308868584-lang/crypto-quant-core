@@ -34,6 +34,21 @@ Two deterministic RED reproductions identify one environmental contract gap:
 2. `os.open(..., mode=0644)` is also filtered by the caller's umask. The publisher then rejected its
    own newly created mode-`0640` staging file before publication.
 
+Later public-core runs exposed a distinct test-fixture boundary after the production publisher fix:
+
+- run `32501051838` passed the complete Python 3.12 suite, then failed only the UID-501 ceremony;
+- run `32509529713` moved that fixed-owner gate before the full suite and recorded the exact checkout
+  identity as `mode=0666 uid=501 euid=501 nlink=1 regular=True`;
+- run `32510011662` proved the corrected fixed-owner gate on both Python 3.9 and 3.12 before entering
+  the full suites.
+
+The reviewed Git checkout can therefore materialize a world-writable worktree file even while the
+calling process temporarily uses umask `0022`. Ambient checkout mode is not itself authority. The
+general ceremony helper must continue rejecting any arbitrary world-writable existing plan, while
+the test-owned private clone may normalize only its exact reviewed checkout through a retained
+descriptor after proving the Git object, canonical bytes, ownership, type, link count, size, and
+attachment.
+
 The failure is not an Actions quota issue, strategy failure, evidence corruption, or permission to
 weaken fixed-owner checks.
 
@@ -86,6 +101,23 @@ attachment, close, bounded-read, FIFO, symlink, hardlink, and crash-recovery gat
   GitHub and referenced in the correcting commit/PR; it does not require a new formal mirror artifact.
 - No new repository, mirror schema, witness root, or Actions workflow is introduced.
 
+### 4.4 Reviewed checkout fixture
+
+The UID-501 C0→C4 integration test creates a fresh `0700`, effective-UID-owned private parent and
+uses `--no-local --no-hardlinks` for the reviewed clone. Its fixed plan path must be a `100644` HEAD
+blob whose bytes equal the canonical v2 plan. The checked-out entry is opened
+`O_RDONLY|O_NOFOLLOW|O_NONBLOCK`; `fstat` must prove regular file, effective-UID ownership, one link,
+exact size, owner readability, and no executable or special permission bits. Exact bytes are read
+from that retained descriptor before `fchmod(fd, 0644)`. A second `fstat` and final `lstat` must keep
+the same device/inode and exact attachment. No path chmod or generic acceptance of mode `0666` is
+allowed.
+
+The ordinary helper remains unchanged: a caller-supplied world-writable tracked plan is untrusted,
+is not modified, and fails closed.
+
+The fixed-owner security boundary runs before `make test` in each public matrix job. This preserves
+all coverage while making a boundary regression fail in seconds rather than after both long suites.
+
 ## 5. Tests and release gates
 
 Required RED/GREEN evidence:
@@ -98,10 +130,13 @@ Required RED/GREEN evidence:
    fail-closed with sentinel identity unchanged;
 5. historical R3 replay still proves its publisher/Linux-test blobs equal the original frozen F
    blobs, while current HEAD is not constrained to those bytes;
-6. focused and adjacent tests, compileall, diff-check, build-manifest replay, and one full local suite
+6. an exact reviewed checkout at initial mode `0666` is normalized only by retained descriptor,
+   while the generic world-writable fixture remains rejected without modification;
+7. fixed-owner CI precedes the full suite without deleting either gate;
+8. focused and adjacent tests, compileall, diff-check, build-manifest replay, and one full local suite
    pass for the final code state;
-7. exact public PR Python 3.9/3.12 CI and fixed UID boundary pass, then merged-main CI passes;
-8. annotated `v0.64.0` peels exactly to `origin/main`.
+9. exact public PR Python 3.9/3.12 CI and fixed UID boundary pass, then merged-main CI passes;
+10. annotated `v0.64.0` peels exactly to `origin/main`.
 
 Any failed gate stops merge/tag. CI must not be rerun without a code-state change merely to search for
 a better result.
