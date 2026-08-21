@@ -343,7 +343,15 @@ def load_nautilus_v065_request(path: Path) -> Dict[str, Any]:
 
 
 def load_nautilus_v065_result(path: Path) -> Dict[str, Any]:
-    payload = _load(path, _RESULT_SCHEMA)
+    return verify_nautilus_v065_result(_load(path, _RESULT_SCHEMA))
+
+
+def verify_nautilus_v065_result(payload: Mapping[str, Any]) -> Dict[str, Any]:
+    """Verify an already decoded result without performing file I/O."""
+
+    payload = copy.deepcopy(dict(payload))
+    if tuple(_validator(_RESULT_SCHEMA).iter_errors(payload)):
+        raise NautilusV065ContractError("NAUTILUS_V065_RESULT_SCHEMA_INVALID")
     if [item["scenario"] for item in payload["scenario_results"]] != list(_SCENARIOS):
         raise NautilusV065ContractError("NAUTILUS_V065_RESULT_SCENARIOS_INVALID")
     for item in payload["scenario_results"]:

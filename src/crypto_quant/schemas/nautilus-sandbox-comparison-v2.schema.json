@@ -1,0 +1,31 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://crypto-quant.local/schemas/nautilus-sandbox-comparison-v2.schema.json",
+  "type":"object","additionalProperties":false,
+  "required":["$schema","schema_version","comparison_id","comparison_hash","mode","bindings","scenario_comparisons","difference_classes","gates","conclusion","reason_code_or_null","runner_invocation_count","current_core_effect","status"],
+  "properties":{
+    "$schema":{"const":"./nautilus-sandbox-comparison-v2.schema.json"},
+    "schema_version":{"const":"2.0.0"},
+    "comparison_id":{"pattern":"^nautilus_v065_comparison_[0-9a-f]{64}$"},
+    "comparison_hash":{"$ref":"#/$defs/hash"},
+    "mode":{"enum":["ENGINE_COMPARISON","SUPPLY_CHAIN_FAILURE"]},
+    "bindings":{"$ref":"#/$defs/bindings"},
+    "scenario_comparisons":{"type":"array","maxItems":4,"items":{"$ref":"#/$defs/scenario"}},
+    "difference_classes":{"type":"array","minItems":1,"uniqueItems":true,"items":{"$ref":"#/$defs/classification"}},
+    "gates":{"$ref":"#/$defs/gates"},
+    "conclusion":{"enum":["ADOPT_FOR_PREREGISTERED_SHADOW","REJECT_KEEP_CURRENT_CORE","INCONCLUSIVE_KEEP_CURRENT_CORE"]},
+    "reason_code_or_null":{"type":["string","null"],"minLength":1},
+    "runner_invocation_count":{"type":"integer","minimum":0,"maximum":2},
+    "current_core_effect":{"const":"UNCHANGED"},
+    "status":{"enum":["FINAL_COMPARISON_ADOPT","FINAL_COMPARISON_REJECT","FINAL_COMPARISON_INCONCLUSIVE"]}
+  },
+  "$defs":{
+    "hash":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "nullable_id":{"type":["string","null"]},
+    "bindings":{"type":"object","additionalProperties":false,"required":["plan_id","plan_hash","receipt_id","receipt_hash","request_id","request_hash","current_reference_id","current_reference_hash","first_result_id","first_result_hash","replay_result_id","replay_result_hash"],"properties":{"plan_id":{"type":"string","pattern":"^nautilus_v065_plan_[0-9a-f]{64}$"},"plan_hash":{"$ref":"#/$defs/hash"},"receipt_id":{"$ref":"#/$defs/nullable_id"},"receipt_hash":{"type":["string","null"],"pattern":"^[0-9a-f]{64}$"},"request_id":{"$ref":"#/$defs/nullable_id"},"request_hash":{"type":["string","null"],"pattern":"^[0-9a-f]{64}$"},"current_reference_id":{"$ref":"#/$defs/nullable_id"},"current_reference_hash":{"type":["string","null"],"pattern":"^[0-9a-f]{64}$"},"first_result_id":{"$ref":"#/$defs/nullable_id"},"first_result_hash":{"type":["string","null"],"pattern":"^[0-9a-f]{64}$"},"replay_result_id":{"$ref":"#/$defs/nullable_id"},"replay_result_hash":{"type":["string","null"],"pattern":"^[0-9a-f]{64}$"}}},
+    "classification":{"enum":["EXACT_MATCH","EXPECTED_ENGINE_REPRESENTATION_DIFFERENCE","ROUNDING_POLICY_DIFFERENCE","FILL_MODEL_DIFFERENCE","FEE_MODEL_DIFFERENCE","POSITION_ACCOUNTING_DIFFERENCE","PNL_ACCOUNTING_DIFFERENCE","RESTART_SEMANTICS_DIFFERENCE","UNSUPPORTED_INSTRUMENT_RULE","SUPPLY_CHAIN_OR_LICENSE_FAILURE","SAFETY_BOUNDARY_VIOLATION","INVALID_OR_INCOMPLETE_EVIDENCE"]},
+    "difference":{"type":"object","additionalProperties":false,"required":["field","current_value","candidate_value","classification"],"properties":{"field":{"enum":["status","filled_quantity","average_price","fee_usdt","ending_cash_usdt","ending_position_eth","realized_pnl_usdt","unrealized_pnl_usdt","net_pnl_usdt","events"]},"current_value":{"type":"string"},"candidate_value":{"type":"string"},"classification":{"$ref":"#/$defs/classification"}}},
+    "scenario":{"type":"object","additionalProperties":false,"required":["scenario","scenario_hash","difference_classes","differences"],"properties":{"scenario":{"enum":["IMMEDIATE_FULL","PARTIAL_THEN_FULL","BELOW_MINIMUM_REJECTED","FRESH_PROCESS_REPLAY"]},"scenario_hash":{"$ref":"#/$defs/hash"},"difference_classes":{"type":"array","minItems":1,"uniqueItems":true,"items":{"$ref":"#/$defs/classification"}},"differences":{"type":"array","items":{"$ref":"#/$defs/difference"}}}},
+    "gates":{"type":"object","additionalProperties":false,"required":["exact_supply_chain","slsa_attestation","license_verified","golden_scenarios","zero_safety_counters","fresh_process_replay","no_unresolved_economic_difference","critical_important_review_zero"],"properties":{"exact_supply_chain":{"type":"boolean"},"slsa_attestation":{"type":"boolean"},"license_verified":{"type":"boolean"},"golden_scenarios":{"type":"boolean"},"zero_safety_counters":{"type":"boolean"},"fresh_process_replay":{"type":"boolean"},"no_unresolved_economic_difference":{"type":"boolean"},"critical_important_review_zero":{"type":"boolean"}}}
+  }
+}
