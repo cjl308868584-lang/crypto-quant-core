@@ -1887,11 +1887,23 @@ class SupersessionCliBoundaryTests(unittest.TestCase):
     def test_temporary_git_ceremony_transitions_c0_through_c4_exactly(self):
         with tempfile.TemporaryDirectory(dir=_test_temp_root()) as temporary:
             clone = Path(temporary) / "reviewed-clone"
-            head = subprocess.run(
-                ["/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD"],
+            plan_commits = subprocess.run(
+                [
+                    "/usr/bin/git",
+                    "-C",
+                    str(ROOT),
+                    "log",
+                    "--format=%H",
+                    "--diff-filter=A",
+                    "--",
+                    "artifacts/challenger-replacement/"
+                    "challenger-replacement-plan-v0.64.0.json",
+                ],
                 check=True,
                 capture_output=True,
-            ).stdout.decode("ascii").strip()
+            ).stdout.decode("ascii").splitlines()
+            self.assertEqual(len(plan_commits), 1)
+            head = plan_commits[0]
             subprocess.run(
                 [
                     "/usr/bin/git",

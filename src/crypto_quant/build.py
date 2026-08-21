@@ -232,25 +232,63 @@ _FROZEN_RELEASE_PATHS = (
 )
 
 _V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS = (
+    ".github/workflows/ci.yml",
+    ".gitignore",
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-owner-attestation-v0.64.0.json",
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-plan-supersession-v0.64.0.json",
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-plan-v0.64.0.json",
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-supersession-machine-evidence-v0.64.0.json",
+    "artifacts/v064-public-ci-r2-failure/"
+    "v064-public-ci-r2-failure-record-v1.json",
+    "artifacts/v064-public-ci-r2-failure/"
+    "v064-public-ci-r2-jobs-api-v1.json",
+    "artifacts/v064-public-ci-r2-failure/"
+    "v064-public-ci-r2-run-api-v1.json",
+    "artifacts/v064-public-ci-r2-failure/"
+    "v064-public-ci-r2-run-log-v1.txt",
+    "artifacts/v064-public-ci-r3/"
+    "v064-public-ci-r3-acquisition-transcript-v1.json",
+    "artifacts/v064-public-ci-r3/v064-public-ci-r3-jobs-api-v1.json",
+    "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-api-v1.json",
+    "artifacts/v064-public-ci-r3/v064-public-ci-r3-run-log-v1.txt",
+    "artifacts/v064-public-ci-r3/v064-public-ci-r3-witness-v1.json",
+    "config/challenger-replacement-owner-attestation-v1.schema.json",
+    "config/challenger-replacement-plan-supersession-v1.schema.json",
+    "config/challenger-replacement-plan-v2.schema.json",
+    "config/challenger-replacement-supersession-machine-evidence-v1.schema.json",
     "config/v064-public-ci-bundle-manifest-v1.schema.json",
+    "config/v064-public-ci-r2-failure-record-v1.schema.json",
     "config/v064-public-ci-witness-v1.schema.json",
+    "docs/adr/0064-replacement-challenger-plan-v2-storage-supersession.md",
+    "docs/implementation-status-v0.64.0.md",
     "docs/superpowers/plans/"
     "2026-08-09-replacement-challenger-plan-v2-supersession.md",
     "docs/superpowers/plans/2026-08-13-v064-minimal-public-ci-mirror.md",
     "docs/superpowers/plans/2026-08-16-v064-public-ci-r2-correction.md",
+    "docs/superpowers/plans/"
+    "2026-08-20-v064-public-ci-r3-interpreter-identity.md",
     "docs/superpowers/specs/"
     "2026-08-09-replacement-challenger-plan-v2-supersession-design.md",
     "docs/superpowers/specs/"
     "2026-08-12-v064-minimal-public-ci-mirror-design.md",
     "docs/superpowers/specs/"
     "2026-08-15-v064-public-ci-r2-correction-design.md",
+    "docs/superpowers/specs/"
+    "2026-08-20-v064-public-ci-r3-interpreter-identity-design.md",
     "public_ci/v064/.github/workflows/ci.yml",
     "public_ci/v064/.gitignore",
     "public_ci/v064/NOTICE.md",
     "public_ci/v064/README.md",
     "public_ci/v064/SECURITY.md",
     "tests/test_v064_linux_supersession_publish.py",
+    "tests/test_challenger_replacement_plan_supersession.py",
+    "tests/test_challenger_replacement_plan_v2.py",
     "tests/test_v064_public_ci_bundle.py",
+    "tests/test_v064_public_ci_r2_failure.py",
     "tests/test_v064_public_ci_witness.py",
 )
 

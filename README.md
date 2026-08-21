@@ -224,6 +224,9 @@
 216. [Nautilus Sandbox Preflight Comparison Schema](config/nautilus-sandbox-comparison-v1.schema.json)
 217. [Nautilus Sandbox 隔离 Spike ADR-0063](docs/adr/0063-nautilus-sandbox-isolation-spike.md)
 218. [实施追踪 v0.63.0](docs/implementation-status-v0.63.0.md)
+219. [Replacement Challenger v2 冻结计划](artifacts/challenger-replacement/challenger-replacement-plan-v0.64.0.json)
+220. [Replacement Challenger 存储安全 supersession ADR-0064](docs/adr/0064-replacement-challenger-plan-v2-storage-supersession.md)
+221. [实施追踪 v0.64.0](docs/implementation-status-v0.64.0.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -238,7 +241,7 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.63.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文、当前账户 Spot/USDⓈ-M commission 的只读取证边界、账户费率与Paper经济结果的PIT费用重放绑定、账户成本/永续同槽位的context-complete可恢复侧车、共享可信时钟与保留决策前账户证据的可恢复完整周期编排、42个完整月与显式日档修复的完整研究语料、官方1m执行代理、严格因果event-based标签、固定低维Logistic档案研究、固定分组的简单基线失败归因、仅前向challenger事件流状态机与不可回填记录器、固定3+1公共请求边界的实时只读runner与source bundle、无凭据macOS LaunchAgent合同、固定用户域原子安装与私有执行快照、首槽state/bundle/log/install receipt的只读交叉取证、首个预注册真实decision的逐字节证据封存、在退出结果出现前冻结的首个episode只读观察器、决策后1m保守成交与双边成本计划、完整日档验证与Decimal经济结果评估器、只在completed receipt和日档时间门后工作的owner-only官方archive采集器、从全部可信输入自动派生唯一结果的离线CLI、首个自然完成episode的逐字节证据封存、在第二Episode前冻结的90天全纳入confirmatory cohort、在cohort首槽前冻结的累计经济评估门、从cohort start自动验证全部槽并为所有completed Episode生成不可选择receipt的只追加管线、从全部verified receipt自动求UTC日并集并跨Episode复用完整官方1m日档的共享归档层、从全部completed receipts和verified日档自动生成每Episode成本后结果与不可变累计索引的全纳入管线、固定尾部前禁止读取PnL、尾部后才对完整540槽运行预注册累计门的离线评估器、把 receipt/archive/result 三阶段按固定顺序安全串联的一次性证据维护协调器、每天08:10且与策略Runner隔离的证据维护LaunchAgent合同、由Git冻结external trust约束的owner-only私有执行快照、首次08:10自然维护证据、原 cohort 漏槽失败与停用证据，以及无凭据 BASELINE_ONLY System Paper 的90天范围、公开数据、虚拟本金、保守成本、模拟成交和零真实交易权限计划，及独立、崩溃安全、不可回填的 WAL scheduler library、deployment trust chain、90天固定尾部 evaluator、严格 tail-blind operations projection，以及仅回环、只读、无轮询的运维 Web、确定性告警与失败关闭运行手册，以及 replacement Challenger 的失败 ancestry、新运行身份、540槽预注册和严格证据隔离计划。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
+Git中的设计基线已冻结，当前代码版本为 `0.64.0`，正在逐项执行《开发路线与验收门槛》第9节。已完成规范化哈希、Decimal/tick/step基础、版本化InstrumentMetadata、核心决策链、SQLite WAL账本与Outbox、Golden Replay、RiskLock与部署档位风控、订单UNKNOWN对账、PositionExecutor、发布Artifact信任链、可重放经济账本、依赖序列统计、AI相对简单基线的同proposal/time配对增量、删除最大正贡献单元后的完整GROWTH endpoint复评、删除Top-5正贡献完整交易后的路径依赖经济重放、累计Trial Registry上的Holm/双侧区间宽度/ESS/MERE功效重放、AI-vs-baseline与Minor candidate-vs-active的配对最大回撤和ES95改善区间、Binance官方公开历史归档、公开Spot行情的同时只读捕获与修订/缺口证据、从当前公开输入到基线决策/保守模拟成交/双独立经济账本的单周期离线 Paper 闭环、4h槽位与可恢复长期Paper调度、三样本交易所时钟纠偏、当前永续 Mark/Index/Premium/OI/Funding 上下文、当前账户 Spot/USDⓈ-M commission 的只读取证边界、账户费率与Paper经济结果的PIT费用重放绑定、账户成本/永续同槽位的context-complete可恢复侧车、共享可信时钟与保留决策前账户证据的可恢复完整周期编排、42个完整月与显式日档修复的完整研究语料、官方1m执行代理、严格因果event-based标签、固定低维Logistic档案研究、固定分组的简单基线失败归因、仅前向challenger事件流状态机与不可回填记录器、固定3+1公共请求边界的实时只读runner与source bundle、无凭据macOS LaunchAgent合同、固定用户域原子安装与私有执行快照、首槽state/bundle/log/install receipt的只读交叉取证、首个预注册真实decision的逐字节证据封存、在退出结果出现前冻结的首个episode只读观察器、决策后1m保守成交与双边成本计划、完整日档验证与Decimal经济结果评估器、只在completed receipt和日档时间门后工作的owner-only官方archive采集器、从全部可信输入自动派生唯一结果的离线CLI、首个自然完成episode的逐字节证据封存、在第二Episode前冻结的90天全纳入confirmatory cohort、在cohort首槽前冻结的累计经济评估门、从cohort start自动验证全部槽并为所有completed Episode生成不可选择receipt的只追加管线、从全部verified receipt自动求UTC日并集并跨Episode复用完整官方1m日档的共享归档层、从全部completed receipts和verified日档自动生成每Episode成本后结果与不可变累计索引的全纳入管线、固定尾部前禁止读取PnL、尾部后才对完整540槽运行预注册累计门的离线评估器、把 receipt/archive/result 三阶段按固定顺序安全串联的一次性证据维护协调器、每天08:10且与策略Runner隔离的证据维护LaunchAgent合同、由Git冻结external trust约束的owner-only私有执行快照、首次08:10自然维护证据、原 cohort 漏槽失败与停用证据，以及无凭据 BASELINE_ONLY System Paper 的90天范围、公开数据、虚拟本金、保守成本、模拟成交和零真实交易权限计划，及独立、崩溃安全、不可回填的 WAL scheduler library、deployment trust chain、90天固定尾部 evaluator、严格 tail-blind operations projection，以及仅回环、只读、无轮询的运维 Web、确定性告警与失败关闭运行手册，以及 replacement Challenger 的失败 ancestry、新运行身份、540槽预注册和严格证据隔离计划。完整验证都必须显式提供在Artifact之外保存的 trusted attestation hash，self-hash不能自证来源可信。
 
 当前58个Catalog算法中有26个Estimator可执行，其余32个明确Fail-Closed。公开历史归档的结构化请求只能访问ETHUSDT/BTCUSDT的allowlisted数据族；生产transport只执行无凭据GET，必须在解压前通过官方checksum，并将来源、质量和快照绑定到哈希。真实smoke已验证2026-07-25 ETHUSDT Spot daily 4h归档，但全部事后归档固定为`ARCHIVE_REPLAY_ONLY`：URL不是Artifact身份，也不能证明历史决策时点的数据可用性。Fee Schedule因产品、账户层级、折扣和生效期而独立冻结，不能从行情或当前网页费率反填历史。
 
@@ -336,7 +339,16 @@ v0.62冻结 replacement Challenger 的预注册和证据隔离计划：唯一 pa
 
 v0.63冻结独立 Python 3.12 NautilusTrader 供应链边界以及 exact `1.227.0` wheel/tag/commit/license/传递依赖身份。官方 frozen environment 两次同源有界获取都未形成可用环境，且 exact terminal transcript 未作为可重放制品保留；因此报告诚实标记为 `SUPPLY_CHAIN_FETCH_NOT_MACHINE_REPLAYABLE / INCONCLUSIVE_BLOCKED`。本版本不保留未运行过的 fixture/request/result 协议，也没有 runner、BacktestEngine、Golden/replay 或 synthetic result。本结果不影响任何现有90天流，也不允许 Shadow 或采用。项目同时停止扩建通用交易引擎、Broker、交易所适配和通用 UI，把后续投入集中到证据可信、失败关闭、对账和长期 Paper 观察。
 
-仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的启动前代码批次现已覆盖 v0.59 evaluator、v0.60 Tail-Blind 运维投影和 v0.61 只读 Web/alerts/runbooks，但仍未 production 安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。replacement Challenger 现仅完成 v0.62 预注册/隔离，尚缺 WAL runtime、deployment/start trust chain、评估器与运维层；Nautilus v0.63 Spike 因 frozen environment 获取阻断而保持 `INCONCLUSIVE_BLOCKED`，没有接管任何事实源。两条流都必须在启动前工程和真实机器门完成后，才能从各自首个自然成功槽的 start receipt 独立计时。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.63.0](docs/implementation-status-v0.63.0.md)，工程裁决见[ADR-0063](docs/adr/0063-nautilus-sandbox-isolation-spike.md)。
+v0.64 在 replacement 未安装、未启动且未观察到 runtime root/plist/service/event
+的前提下，用显式 supersession 把 v0.62 的 SQLite/artifact 存储路径合同更正为
+append-only canonical event log 唯一权威。v0.62 bytes/tag 保持不变，研究范围、
+决策、cohort、evidence、predecessor 失败和零交易权限保留；exports 仅是未来可重建
+的非权威输出。机器 snapshot 只证明采集时的状态，“从未启动”历史事实由
+owner attestation 承担，loader 不声称证明它为真。状态为
+`PLAN_FROZEN_REPLACEMENT_V2_NOT_STARTED`：不含 runtime、deployment、start receipt 或任何
+90 天证据。
+
+仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的启动前代码批次现已覆盖 v0.59 evaluator、v0.60 Tail-Blind 运维投影和 v0.61 只读 Web/alerts/runbooks，但仍未 production 安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。replacement Challenger 现完成 v0.64 plan-only storage supersession，尚缺 event runtime、deployment/start trust chain、评估器与运维层；Nautilus v0.63 Spike 因 frozen environment 获取阻断而保持 `INCONCLUSIVE_BLOCKED`，没有接管任何事实源。两条流都必须在启动前工程和真实机器门完成后，才能从各自首个自然成功槽的 start receipt 独立计时。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.64.0](docs/implementation-status-v0.64.0.md)，工程裁决见[ADR-0064](docs/adr/0064-replacement-challenger-plan-v2-storage-supersession.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
