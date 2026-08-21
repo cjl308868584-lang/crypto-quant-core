@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -55,6 +56,13 @@ def _transcript_provenance():
         "started_at": "2026-08-22T00:00:00.000000Z",
         "completed_at": "2026-08-22T00:00:01.000000Z",
     }
+
+
+def _supply_transcripts_by_name():
+    receipt = __import__(
+        "test_nautilus_v065_supply_chain"
+    ).NautilusV065SupplyChainTests().receipt()
+    return {item["name"]: copy.deepcopy(item) for item in receipt["transcripts"]}
 
 
 def _subcommands(parser):
@@ -126,12 +134,16 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 module,
                 "_acquire_and_run",
                 return_value={"conclusion": "REJECT_KEEP_CURRENT_CORE"},
-            ) as acquire:
+            ) as acquire, mock.patch.object(
+                module,
+                "_verify_staged_artifact_set",
+            ) as verify_set:
                 result = _commit_formal_ceremony(plan)
             self.assertEqual(result["conclusion"], "REJECT_KEEP_CURRENT_CORE")
             self.assertTrue(formal.is_dir())
             self.assertFalse(staging.exists())
             acquire.assert_called_once_with(plan=plan, artifact_root=staging)
+            verify_set.assert_called_once()
 
         with tempfile.TemporaryDirectory() as raw:
             parent = Path(raw)
@@ -159,6 +171,31 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 ):
                     _commit_formal_ceremony(plan)
             rerun.assert_not_called()
+
+    def test_formal_ceremony_never_commits_an_empty_or_incomplete_artifact_set(self):
+        plan = self.plan()
+        from crypto_quant import nautilus_v065_ceremony_cli as module
+
+        with tempfile.TemporaryDirectory() as raw:
+            parent = Path(raw)
+            parent.chmod(0o755)
+            with mock.patch.object(module, "_ARTIFACT_ROOT", parent), mock.patch.object(
+                module, "_FORMAL_ROOT", parent / "v0.65.0"
+            ), mock.patch.object(
+                module,
+                "_acquire_and_run",
+                return_value={
+                    "conclusion": "INCONCLUSIVE_KEEP_CURRENT_CORE",
+                    "runner_invocation_count": 0,
+                },
+            ):
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError,
+                    "NAUTILUS_V065_FORMAL_ARTIFACT_SET_INVALID",
+                ):
+                    _commit_formal_ceremony(plan)
+            self.assertFalse((parent / "v0.65.0").exists())
+            self.assertTrue((parent / ".v0.65.0.in-progress").exists())
 
     def test_formal_candidate_allows_exactly_one_plan_only_commit(self):
         plan = self.plan()
@@ -464,6 +501,28 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             "runner_invocation_count": 1,
         })
 
+    def test_runner_stderr_maps_only_observed_safety_boundaries_to_reject_reasons(self):
+        module = __import__(
+            "crypto_quant.nautilus_v065_ceremony_cli",
+            fromlist=["_runner_failure_reason"],
+        )
+        self.assertEqual(
+            module._runner_failure_reason(1, b"", b"NETWORK_FORBIDDEN\n"),
+            "NAUTILUS_V065_SAFETY_NETWORK_ATTEMPT",
+        )
+        self.assertEqual(
+            module._runner_failure_reason(1, b"", b"SECOND_ENGINE_FORBIDDEN\n"),
+            "NAUTILUS_V065_SAFETY_SECOND_ENGINE_ATTEMPT",
+        )
+        self.assertEqual(
+            module._runner_failure_reason(1, b"", b"CREDENTIAL_ENV_FORBIDDEN\n"),
+            "NAUTILUS_V065_SAFETY_CREDENTIAL_ATTEMPT",
+        )
+        self.assertEqual(
+            module._runner_failure_reason(1, b"", b"anything-else\n"),
+            "NAUTILUS_V065_RUNNER_FAILED",
+        )
+
     def test_real_acquisition_error_becomes_replayable_failure_receipt_without_runner(self):
         plan = self.plan()
         published = []
@@ -514,30 +573,12 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
 
     def test_failure_receipt_retains_completed_and_failed_command_evidence(self):
         plan = self.plan()
-
-        def transcript(name):
-            raw = (name + "\n").encode()
-            return {
-                "name": name, "argv": [name], "exit_code": 0,
-                **_transcript_provenance(),
-                "executable_path": "/usr/bin/true",
-                "executable_device_before": 1, "executable_inode_before": 1,
-                "executable_mode_before": 0o755, "executable_size_before": 1,
-                "executable_sha256_before": "3" * 64,
-                "executable_device_after": 1, "executable_inode_after": 1,
-                "executable_mode_after": 0o755, "executable_size_after": 1,
-                "executable_sha256_after": "3" * 64,
-                "stdout_encoding": "utf-8", "stdout_bytes": raw.decode(),
-                "stdout_size": len(raw), "stdout_sha256": hashlib.sha256(raw).hexdigest(),
-                "stderr_encoding": "utf-8", "stderr_bytes": "", "stderr_size": 0,
-                "stderr_sha256": hashlib.sha256(b"").hexdigest(),
-            }
-
-        failed = transcript("git_version")
+        transcripts = _supply_transcripts_by_name()
+        failed = transcripts["git_version"]
         failed["exit_code"] = 17
         error = NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_NONZERO")
         error.evidence = failed
-        calls = [transcript("uv_version"), transcript("python_version"), error]
+        calls = [transcripts["uv_version"], transcripts["python_version"], error]
         with mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._platform_identity",
             return_value={
@@ -575,27 +616,11 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
     def test_download_failure_receipt_keeps_all_completed_command_transcripts(self):
         plan = self.plan()
         calls = []
+        transcripts = _supply_transcripts_by_name()
 
         def command(name, **_kwargs):
             calls.append(name)
-            raw = (name + "\n").encode()
-            if name == "official_tag":
-                raw = b"112d335088ec11cdd1d60038b16c8fe56406aead refs/tags/v1.230.0\n8160730c7c550480b0a439fb11086a4c4de15f0b refs/tags/v1.230.0^{}\n"
-            record = {
-                "name": name, "argv": [name], "exit_code": 0,
-                **_transcript_provenance(),
-                "executable_path": "/usr/bin/true",
-                "executable_device_before": 1, "executable_inode_before": 1,
-                "executable_mode_before": 0o755, "executable_size_before": 1,
-                "executable_sha256_before": "3" * 64,
-                "executable_device_after": 1, "executable_inode_after": 1,
-                "executable_mode_after": 0o755, "executable_size_after": 1,
-                "executable_sha256_after": "3" * 64,
-                "stdout_encoding": "utf-8", "stdout_bytes": raw.decode(),
-                "stdout_size": len(raw), "stdout_sha256": hashlib.sha256(raw).hexdigest(),
-                "stderr_encoding": "utf-8", "stderr_bytes": "", "stderr_size": 0,
-                "stderr_sha256": hashlib.sha256(b"").hexdigest(),
-            }
+            record = copy.deepcopy(transcripts[name])
             if name.startswith("download:"):
                 record["exit_code"] = 22
                 raise NautilusV065SupplyChainError(
@@ -625,16 +650,14 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         self.assertEqual(receipt["failure"]["failed_command"]["name"], calls[-1])
 
     def test_command_capture_uses_fixed_executable_sanitized_env_and_exact_bytes(self):
-        def execute(*_args, **kwargs):
-            kwargs["stdout"].write(b"ok\n")
-            return mock.Mock(returncode=0)
-
-        with mock.patch("subprocess.run", side_effect=execute) as run:
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command",
+            return_value=(0, b"ok\n", b"", False),
+        ) as run:
             record = _capture_fixed_command("git_version")
         argv = run.call_args.args[0]
         self.assertEqual(argv, ["/usr/bin/git", "--version"])
-        self.assertFalse(run.call_args.kwargs["shell"])
-        environment = run.call_args.kwargs["env"]
+        environment = run.call_args.kwargs["environment"]
         self.assertEqual(
             set(environment),
             {"HOME", "LANG", "LC_ALL", "PATH", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"},
@@ -662,6 +685,11 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             )
             self.assertNotIn("--location", metadata)
             self.assertNotIn("--location", _command("license", workspace))
+            offline_probe = _command("offline_import", workspace)[-1]
+            self.assertIn("importlib.metadata", offline_probe)
+            self.assertIn("LGPL-3.0-or-later", offline_probe)
+            self.assertIn("m.distributions()", offline_probe)
+            self.assertIn("nautilus_trader.adapters", offline_probe)
             urls = __import__(
                 "crypto_quant.nautilus_v065_ceremony_cli",
                 fromlist=["_download_urls"],
@@ -673,6 +701,8 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 self.assertEqual(argv[-1], urls[item["filename"]])
                 self.assertIn(str(workspace / "wheelhouse" / item["filename"]), argv)
                 self.assertIn("%{http_code} %{url_effective}\n", argv)
+                limit_index = argv.index("--max-filesize")
+                self.assertEqual(argv[limit_index + 1], str(item["size"]))
 
     def test_pypi_version_and_download_transcripts_bind_exact_official_files(self):
         module = __import__(
@@ -686,7 +716,7 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         )
         url = module._download_urls()[candidate["filename"]]
         metadata = {
-            "info": {"version": "1.230.0"},
+            "info": {"version": "1.230.0", "requires_python": ">=3.12,<3.15"},
             "urls": [{
                 "filename": candidate["filename"],
                 "size": candidate["size"],
@@ -702,6 +732,14 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         changed = copy.deepcopy(record)
         changed["stdout_bytes"] = changed["stdout_bytes"].replace(
             "files.pythonhosted.org", "example.invalid"
+        )
+        with self.assertRaisesRegex(
+            NautilusV065SupplyChainError, "NAUTILUS_V065_PYPI_METADATA_MISMATCH"
+        ):
+            module._verify_pypi_version_transcript(changed, lock)
+        changed = copy.deepcopy(record)
+        changed["stdout_bytes"] = changed["stdout_bytes"].replace(
+            ">=3.12,<3.15", ">=3.11"
         )
         with self.assertRaisesRegex(
             NautilusV065SupplyChainError, "NAUTILUS_V065_PYPI_METADATA_MISMATCH"
@@ -734,35 +772,58 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 ):
                     module._verify_download_transcript(redirected, item, wheelhouse)
 
+    def test_license_transcript_requires_exact_frozen_size_and_hash(self):
+        module = __import__(
+            "crypto_quant.nautilus_v065_ceremony_cli",
+            fromlist=["_verify_license_transcript"],
+        )
+        with self.assertRaisesRegex(
+            NautilusV065SupplyChainError, "NAUTILUS_V065_LICENSE_MISMATCH"
+        ):
+            module._verify_license_transcript({
+                "stdout_encoding": "utf-8",
+                "stdout_bytes": "wrong-license",
+            })
+
     def test_command_capture_fails_closed_on_timeout_output_and_executable_change(self):
-        with mock.patch("subprocess.run", side_effect=__import__("subprocess").TimeoutExpired("git", 10)):
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command",
+            return_value=(-1, b"partial-out", b"partial-err", True),
+        ):
             with self.assertRaisesRegex(NautilusV065SupplyChainError, "NAUTILUS_V065_COMMAND_TIMEOUT"):
                 _capture_fixed_command("git_version")
-        def too_large(*_args, **kwargs):
-            kwargs["stdout"].write(b"x" * (4 * 1024 * 1024 + 1))
-            return mock.Mock(returncode=0)
-
-        with mock.patch("subprocess.run", side_effect=too_large):
-            with self.assertRaisesRegex(NautilusV065SupplyChainError, "NAUTILUS_V065_COMMAND_OUTPUT_LIMIT"):
-                _capture_fixed_command("git_version")
-        def ok(*_args, **kwargs):
-            kwargs["stdout"].write(b"ok")
-            return mock.Mock(returncode=0)
-
-        with mock.patch("subprocess.run", side_effect=ok), mock.patch(
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command",
+            return_value=(0, b"ok", b"", False),
+        ), mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._executable_identity",
             side_effect=[{"sha256": "1" * 64}, {"sha256": "2" * 64}],
         ):
             with self.assertRaisesRegex(NautilusV065SupplyChainError, "NAUTILUS_V065_EXECUTABLE_CHANGED"):
                 _capture_fixed_command("git_version")
 
-    def test_nonzero_command_error_retains_exact_failure_record(self):
-        def nonzero(*_args, **kwargs):
-            kwargs["stdout"].write(b"failure-stdout\n")
-            kwargs["stderr"].write(b"failure-stderr\n")
-            return mock.Mock(returncode=17)
+    def test_bounded_command_stops_a_live_process_before_output_exceeds_limit(self):
+        module = __import__(
+            "crypto_quant.nautilus_v065_ceremony_cli",
+            fromlist=["_run_bounded_command"],
+        )
+        started = time.monotonic()
+        with self.assertRaisesRegex(
+            NautilusV065SupplyChainError, "NAUTILUS_V065_COMMAND_OUTPUT_LIMIT"
+        ):
+            module._run_bounded_command(
+                [sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'x'*(5*1024*1024))"],
+                cwd=ROOT,
+                environment={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+                timeout=10,
+            )
+        self.assertLess(time.monotonic() - started, 5)
 
-        with mock.patch("subprocess.run", side_effect=nonzero):
+    def test_nonzero_command_error_retains_exact_failure_record(self):
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command",
+            return_value=(17, b"failure-stdout\n", b"failure-stderr\n", False),
+        ):
             with self.assertRaises(NautilusV065SupplyChainError) as raised:
                 _capture_fixed_command("git_version")
         evidence = raised.exception.evidence
@@ -780,10 +841,10 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             python_link = workspace / "venv/bin/python"
             python_link.symlink_to(Path("/usr/bin/true"))
 
-            def execute(*_args, **_kwargs):
-                return mock.Mock(returncode=0)
-
-            with mock.patch("subprocess.run", side_effect=execute):
+            with mock.patch(
+                "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command",
+                return_value=(0, b"", b"", False),
+            ):
                 record = _capture_fixed_command("offline_import", workspace=workspace)
         self.assertEqual(record["executable_path"], str(python_link))
         self.assertEqual(
@@ -793,12 +854,10 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         self.assertEqual(record["executable_sha256_before"], record["executable_sha256_after"])
 
     def test_timeout_command_error_retains_partial_output_record(self):
-        def timeout(*_args, **kwargs):
-            kwargs["stdout"].write(b"partial-out")
-            kwargs["stderr"].write(b"partial-err")
-            raise __import__("subprocess").TimeoutExpired("git", 120)
-
-        with mock.patch("subprocess.run", side_effect=timeout):
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command",
+            return_value=(-1, b"partial-out", b"partial-err", True),
+        ):
             with self.assertRaisesRegex(NautilusV065SupplyChainError, "NAUTILUS_V065_COMMAND_TIMEOUT") as raised:
                 _capture_fixed_command("git_version")
         evidence = raised.exception.evidence
@@ -810,40 +869,11 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         plan = self.plan()
         lock = build_nautilus_v065_dependency_lock(repository_root=ROOT)
         calls = []
+        transcripts = _supply_transcripts_by_name()
 
         def command(name, **_kwargs):
             calls.append(("command", name))
-            if name == "official_tag":
-                raw = b"112d335088ec11cdd1d60038b16c8fe56406aead refs/tags/v1.230.0\n8160730c7c550480b0a439fb11086a4c4de15f0b refs/tags/v1.230.0^{}\n"
-            elif name == "license":
-                raw = b"license-fixture"
-            else:
-                raw = (name + "\n").encode()
-            return {
-                "name": name,
-                "argv": [name],
-                "exit_code": 0,
-                **_transcript_provenance(),
-                "executable_path": "/usr/bin/true",
-                "executable_device_before": 1,
-                "executable_inode_before": 1,
-                "executable_mode_before": 0o755,
-                "executable_size_before": 1,
-                "stdout_encoding": "utf-8",
-                "stdout_bytes": raw.decode(),
-                "stdout_size": len(raw),
-                "stdout_sha256": hashlib.sha256(raw).hexdigest(),
-                "stderr_encoding": "utf-8",
-                "stderr_bytes": "",
-                "stderr_size": 0,
-                "stderr_sha256": hashlib.sha256(b"").hexdigest(),
-                "executable_sha256_before": "3" * 64,
-                "executable_device_after": 1,
-                "executable_inode_after": 1,
-                "executable_mode_after": 0o755,
-                "executable_size_after": 1,
-                "executable_sha256_after": "3" * 64,
-            }
+            return copy.deepcopy(transcripts[name])
 
         def verify_download(_record, item, _wheelhouse):
             return dict(item)

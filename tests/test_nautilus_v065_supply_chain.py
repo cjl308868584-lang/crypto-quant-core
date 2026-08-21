@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ from jsonschema import Draft202012Validator
 
 from crypto_quant.canonical import canonical_json
 from crypto_quant.nautilus_v065_supply_chain import (
+    _OFFLINE_IMPORT_CODE,
     NautilusV065SupplyChainError,
     build_nautilus_v065_dependency_lock,
     load_nautilus_v065_supply_chain_receipt,
@@ -24,6 +26,7 @@ PACKAGE_SCHEMA = (
 )
 WHEEL = "nautilus_trader-1.230.0-cp312-cp312-macosx_15_0_arm64.whl"
 WHEEL_SHA = "033f6207d1c52095d64a7644f43b90cab939c2038044db70a4165f2acef3d079"
+LICENSE = ROOT / "tests" / "fixtures" / "nautilus-v065" / "LICENSE-1.230.0.txt"
 
 
 class NautilusV065SupplyChainTests(unittest.TestCase):
@@ -32,6 +35,14 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
 
     def receipt(self):
         lock = self.lock()
+        workspace = Path("/private/tmp/nautilus-v065-test")
+        urls = {
+            url.rsplit("/", 1)[1]: url
+            for url in re.findall(
+                r'url = "(https://files\.pythonhosted\.org/[^"]+\.whl)"',
+                LOCK.read_text(encoding="utf-8"),
+            )
+        }
         command_names = [
             "uv_version", "python_version", "git_version", "gh_version",
             "pypi_version", "official_tag", "license",
@@ -40,10 +51,41 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
             "offline_sync", "offline_import",
         ]
         def transcript(name):
-            raw = (name + "\n").encode()
+            executable = str(workspace / "venv/bin/python") if name == "offline_import" else "/usr/bin/true"
+            tails = {
+                "uv_version": ["--version"],
+                "python_version": ["--version"],
+                "git_version": ["--version"],
+                "gh_version": ["--version"],
+                "pypi_version": ["--fail", "--silent", "--show-error", "--proto", "=https", "https://pypi.org/pypi/nautilus_trader/1.230.0/json"],
+                "official_tag": ["ls-remote", "https://github.com/nautechsystems/nautilus_trader.git", "refs/tags/v1.230.0", "refs/tags/v1.230.0^{}"],
+                "license": ["--fail", "--silent", "--show-error", "--proto", "=https", "https://raw.githubusercontent.com/nautechsystems/nautilus_trader/8160730c7c550480b0a439fb11086a4c4de15f0b/LICENSE"],
+                "slsa": ["attestation", "verify", str(workspace / "wheelhouse" / WHEEL), "--repo", "nautechsystems/nautilus_trader"],
+                "offline_venv": ["venv", "--offline", "--python", "/usr/bin/true", str(workspace / "venv")],
+                "offline_sync": ["pip", "install", "--offline", "--python", str(workspace / "venv/bin/python"), "--find-links", str(workspace / "wheelhouse"), "nautilus_trader==1.230.0"],
+                "offline_import": ["-I", "-c", _OFFLINE_IMPORT_CODE],
+            }
+            if name.startswith("download:"):
+                filename = name.removeprefix("download:")
+                distribution = next(item for item in lock["distributions"] if item["filename"] == filename)
+                tails[name] = ["--fail", "--silent", "--show-error", "--proto", "=https", "--max-filesize", str(distribution["size"]), "--output", str(workspace / "wheelhouse" / filename), "--write-out", "%{http_code} %{url_effective}\n", urls[filename]]
+            if name == "official_tag":
+                raw = b"112d335088ec11cdd1d60038b16c8fe56406aead\trefs/tags/v1.230.0\n8160730c7c550480b0a439fb11086a4c4de15f0b\trefs/tags/v1.230.0^{}\n"
+            elif name == "license":
+                raw = LICENSE.read_bytes()
+            elif name == "pypi_version":
+                candidate = next(item for item in lock["distributions"] if item["filename"] == WHEEL)
+                raw = json.dumps({
+                    "info": {"version": "1.230.0", "requires_python": ">=3.12,<3.15"},
+                    "urls": [{"filename": WHEEL, "size": candidate["size"], "url": urls[WHEEL], "digests": {"sha256": WHEEL_SHA}}],
+                }, separators=(",", ":")).encode()
+            elif name.startswith("download:"):
+                raw = ("200 " + urls[name.removeprefix("download:")] + "\n").encode()
+            else:
+                raw = (name + "\n").encode()
             return {
                 "name": name,
-                "argv": [name],
+                "argv": [executable, *tails[name]],
                 "exit_code": 0,
                 "environment": {
                     "HOME": "/private/tmp/nautilus-v065-test/home",
@@ -56,7 +98,7 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
                 },
                 "started_at": "2026-08-22T00:00:00.000000Z",
                 "completed_at": "2026-08-22T00:00:01.000000Z",
-                "executable_path": "/usr/bin/true",
+                "executable_path": executable,
                 "executable_device_before": 1,
                 "executable_inode_before": 1,
                 "executable_mode_before": 493,
@@ -194,6 +236,41 @@ class NautilusV065SupplyChainTests(unittest.TestCase):
             ):
                 load_nautilus_v065_supply_chain_receipt(path.resolve())
 
+    def test_receipt_loader_replays_fixed_command_environment_and_network_semantics(self):
+        for mutate in (
+            lambda value: value["transcripts"][4]["argv"].__setitem__(
+                -1, "https://example.invalid/not-pypi"
+            ),
+            lambda value: value["transcripts"][4]["environment"].__setitem__(
+                "HOME", "/private/tmp/other-workspace/home"
+            ),
+            lambda value: value["transcripts"][4].__setitem__(
+                "stdout_bytes",
+                value["transcripts"][4]["stdout_bytes"].replace(
+                    ">=3.12,<3.15", ">=3.11"
+                ),
+            ),
+        ):
+            changed = self.receipt()
+            mutate(changed)
+            transcript = changed["transcripts"][4]
+            raw = transcript["stdout_bytes"].encode("utf-8")
+            transcript["stdout_size"] = len(raw)
+            transcript["stdout_sha256"] = hashlib.sha256(raw).hexdigest()
+            changed["receipt_id"] = "nautilus_v065_supply_chain_" + "0" * 64
+            changed["receipt_hash"] = "0" * 64
+            digest = supply_chain_receipt_hash(changed)
+            changed["receipt_id"] = "nautilus_v065_supply_chain_" + digest
+            changed["receipt_hash"] = digest
+            with tempfile.TemporaryDirectory() as raw_dir:
+                path = Path(raw_dir) / "receipt.json"
+                path.write_bytes(canonical_json(changed).encode("utf-8") + b"\n")
+                path.chmod(0o600)
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError,
+                    "NAUTILUS_V065_TRANSCRIPT_SEMANTIC_INVALID",
+                ):
+                    load_nautilus_v065_supply_chain_receipt(path.resolve())
     def test_receipt_rejects_missing_output_and_nonzero_authority(self):
         payload = self.receipt()
         for mutate in (

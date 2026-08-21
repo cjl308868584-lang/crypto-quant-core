@@ -9,10 +9,13 @@ import os
 import platform
 import re
 import secrets
+import selectors
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +35,7 @@ from .nautilus_v065_contract import (
     NautilusV065ContractError,
     build_nautilus_v065_current_reference,
     build_nautilus_v065_request,
+    load_nautilus_v065_request,
     load_nautilus_v065_result,
     verify_nautilus_v065_result,
 )
@@ -39,11 +43,14 @@ from .nautilus_v065_evidence import (
     build_nautilus_v065_execution_failure_comparison,
     build_nautilus_v065_supply_failure_comparison,
     compare_nautilus_v065,
+    verify_nautilus_v065_comparison,
 )
 from .nautilus_v065_plan import build_nautilus_v065_plan, load_nautilus_v065_plan
 from .nautilus_v065_supply_chain import (
+    _OFFLINE_IMPORT_CODE,
     NautilusV065SupplyChainError,
     build_nautilus_v065_dependency_lock,
+    load_nautilus_v065_supply_chain_receipt,
     supply_chain_receipt_hash,
 )
 
@@ -192,12 +199,14 @@ def _command(name: str, workspace: Optional[Path]) -> Sequence[str]:
     venv = workspace / "venv"
     if name.startswith("download:"):
         filename = name.removeprefix("download:")
-        url = _download_urls().get(filename)
-        if url is None:
+        spec = _download_specs().get(filename)
+        if spec is None:
             raise NautilusV065SupplyChainError("NAUTILUS_V065_DOWNLOAD_URL_MISSING")
+        url, size = spec
         return [
             str(_find_executable("curl")), "--fail", "--silent", "--show-error",
-            "--proto", "=https", "--output", str(wheelhouse / filename),
+            "--proto", "=https", "--max-filesize", str(size),
+            "--output", str(wheelhouse / filename),
             "--write-out", "%{http_code} %{url_effective}\n", url,
         ]
     if name == "slsa":
@@ -207,7 +216,7 @@ def _command(name: str, workspace: Optional[Path]) -> Sequence[str]:
     if name == "offline_sync":
         return [str(_find_executable("uv")), "pip", "install", "--offline", "--python", str(venv / "bin" / "python"), "--find-links", str(wheelhouse), "nautilus_trader==1.230.0"]
     if name == "offline_import":
-        return [str(venv / "bin" / "python"), "-I", "-c", "import nautilus_trader,platform;assert nautilus_trader.__version__=='1.230.0';assert platform.machine()=='arm64'"]
+        return [str(venv / "bin" / "python"), "-I", "-c", _OFFLINE_IMPORT_CODE]
     raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_UNKNOWN")
 
 
@@ -216,6 +225,64 @@ def _encoded_output(raw: bytes) -> tuple[str, str]:
         return "utf-8", raw.decode("utf-8")
     except UnicodeDecodeError:
         return "base64", base64.b64encode(raw).decode("ascii")
+
+
+def _run_bounded_command(
+    argv: Sequence[str], *, cwd: Path, environment: Mapping[str, str], timeout: int
+) -> tuple[int, bytes, bytes, bool]:
+    process = subprocess.Popen(
+        list(argv), cwd=cwd, env=dict(environment), stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False,
+        start_new_session=True,
+    )
+    if process.stdout is None or process.stderr is None:
+        process.kill()
+        process.wait()
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_FAILED")
+    selector = selectors.DefaultSelector()
+    streams = {process.stdout: bytearray(), process.stderr: bytearray()}
+    for stream in streams:
+        selector.register(stream, selectors.EVENT_READ)
+    deadline = time.monotonic() + timeout
+    timed_out = False
+
+    def terminate() -> None:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    try:
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 and not timed_out:
+                timed_out = True
+                terminate()
+            for key, _mask in selector.select(max(0.0, min(0.1, remaining)) if not timed_out else 0.1):
+                stream = key.fileobj
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    selector.unregister(stream)
+                    continue
+                buffer = streams[stream]
+                if len(buffer) + len(chunk) > _MAX_OUTPUT:
+                    terminate()
+                    process.wait()
+                    raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_OUTPUT_LIMIT")
+                buffer.extend(chunk)
+        returncode = process.wait()
+        return returncode, bytes(streams[process.stdout]), bytes(streams[process.stderr]), timed_out
+    finally:
+        terminate()
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        selector.close()
+        process.stdout.close()
+        process.stderr.close()
 
 
 def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Dict[str, Any]:
@@ -232,38 +299,14 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_TERMINAL_PROMPT": "0",
     }
-    timeout_error = None
-    returncode = -1
     started_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
     try:
-        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
-            try:
-                result = subprocess.run(
-                    argv,
-                    cwd=workspace if workspace is not None else _ROOT,
-                    env=environment,
-                    stdin=subprocess.DEVNULL,
-                    stdout=stdout_file,
-                    stderr=stderr_file,
-                    timeout=120,
-                    shell=False,
-                    check=False,
-                )
-                returncode = result.returncode
-            except subprocess.TimeoutExpired as error:
-                timeout_error = error
-            stdout_file.flush()
-            stderr_file.flush()
-            stdout_size = os.fstat(stdout_file.fileno()).st_size
-            stderr_size = os.fstat(stderr_file.fileno()).st_size
-            if stdout_size > _MAX_OUTPUT or stderr_size > _MAX_OUTPUT:
-                raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_OUTPUT_LIMIT")
-            stdout_file.seek(0)
-            stderr_file.seek(0)
-            stdout = stdout_file.read(stdout_size + 1)
-            stderr = stderr_file.read(stderr_size + 1)
-            if len(stdout) != stdout_size or len(stderr) != stderr_size:
-                raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_OUTPUT_INVALID")
+        returncode, stdout, stderr, timed_out = _run_bounded_command(
+            argv,
+            cwd=workspace if workspace is not None else _ROOT,
+            environment=environment,
+            timeout=120,
+        )
     except OSError as error:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_FAILED") from error
     completed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
@@ -292,8 +335,8 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
     for suffix, identity in (("before", before), ("after", after)):
         for field in ("device", "inode", "mode", "size", "sha256"):
             record[f"executable_{field}_{suffix}"] = identity[field]
-    if timeout_error is not None:
-        raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_TIMEOUT", evidence=record) from timeout_error
+    if timed_out:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_TIMEOUT", evidence=record)
     if returncode != 0:
         reason = {
             "official_tag": "NAUTILUS_V065_TAG_FETCH_FAILED",
@@ -313,12 +356,19 @@ def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Di
     return record
 
 
-def _download_urls() -> Dict[str, str]:
+def _download_specs() -> Dict[str, tuple[str, int]]:
     text = (_ROOT / "sandboxes/nautilus-v065/uv.lock").read_text(encoding="utf-8")
     return {
-        url.rsplit("/", 1)[1]: url
-        for url in re.findall(r'url = "(https://files\.pythonhosted\.org/[^"]+\.whl)"', text)
+        url.rsplit("/", 1)[1]: (url, int(size))
+        for url, size in re.findall(
+            r'url = "(https://files\.pythonhosted\.org/[^"]+\.whl)", hash = "sha256:[0-9a-f]{64}", size = ([1-9][0-9]*)',
+            text,
+        )
     }
+
+
+def _download_urls() -> Dict[str, str]:
+    return {filename: spec[0] for filename, spec in _download_specs().items()}
 
 
 def _platform_identity() -> Dict[str, Any]:
@@ -330,6 +380,9 @@ def _platform_identity() -> Dict[str, Any]:
 
 def _verify_license_transcript(record: Mapping[str, Any]) -> None:
     if record["stdout_encoding"] != "utf-8":
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_LICENSE_MISMATCH")
+    raw = record["stdout_bytes"].encode("utf-8")
+    if len(raw) != 7651 or hashlib.sha256(raw).hexdigest() != _LICENSE_SHA:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_LICENSE_MISMATCH")
 
 
@@ -351,6 +404,7 @@ def _verify_pypi_version_transcript(
         ]
         if (
             payload["info"]["version"] != "1.230.0"
+            or payload["info"].get("requires_python") != ">=3.12,<3.15"
             or len(matches) != 1
             or matches[0].get("size") != candidate["size"]
             or matches[0].get("url") != expected_url
@@ -415,9 +469,6 @@ def _verify_download_transcript(
     finally:
         os.close(descriptor)
     return dict(item)
-    raw = record["stdout_bytes"].encode("utf-8")
-    if len(raw) != 7651 or hashlib.sha256(raw).hexdigest() != _LICENSE_SHA:
-        raise NautilusV065SupplyChainError("NAUTILUS_V065_LICENSE_MISMATCH")
 
 
 def _plan_binding(plan: Mapping[str, Any]) -> tuple[str, str]:
@@ -760,6 +811,16 @@ def _verify_formal_candidate(plan: Mapping[str, Any], current_head: str) -> None
         ) from error
 
 
+def _runner_failure_reason(returncode: int, stdout: bytes, stderr: bytes) -> str:
+    if returncode != 0 and not stdout:
+        return {
+            b"CREDENTIAL_ENV_FORBIDDEN\n": "NAUTILUS_V065_SAFETY_CREDENTIAL_ATTEMPT",
+            b"NETWORK_FORBIDDEN\n": "NAUTILUS_V065_SAFETY_NETWORK_ATTEMPT",
+            b"SECOND_ENGINE_FORBIDDEN\n": "NAUTILUS_V065_SAFETY_SECOND_ENGINE_ATTEMPT",
+        }.get(stderr, "NAUTILUS_V065_RUNNER_FAILED")
+    return "NAUTILUS_V065_RUNNER_FAILED"
+
+
 def _invoke_fixed_runner(
     *,
     python: Path,
@@ -820,7 +881,9 @@ def _invoke_fixed_runner(
     if _venv_python_identity(python, workspace) != expected:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID")
     if result.returncode != 0 or result.stdout or result.stderr:
-        raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_FAILED")
+        raise NautilusV065SupplyChainError(
+            _runner_failure_reason(result.returncode, result.stdout, result.stderr)
+        )
     return load_nautilus_v065_result(result_path.resolve())
 
 
@@ -1018,6 +1081,7 @@ def _commit_formal_ceremony(plan: Mapping[str, Any]) -> Dict[str, Any]:
                 raise NautilusV065SupplyChainError(
                     "NAUTILUS_V065_FORMAL_STATE_CONFLICT"
                 )
+            _verify_staged_artifact_set(staging, staging_fd, result)
             os.fsync(staging_fd)
         finally:
             os.close(staging_fd)
@@ -1037,6 +1101,58 @@ def _commit_formal_ceremony(plan: Mapping[str, Any]) -> Dict[str, Any]:
         return result
     finally:
         os.close(parent_fd)
+
+
+def _verify_staged_artifact_set(
+    staging: Path, staging_fd: int, summary: Mapping[str, Any]
+) -> None:
+    try:
+        if set(summary) != {"conclusion", "runner_invocation_count"}:
+            raise ValueError
+        raw_comparison, _identity = _read_final(staging_fd, _COMPARISON_NAME)
+        comparison_value = dict(_strict_json_bytes(raw_comparison))
+        if raw_comparison != canonical_json(comparison_value).encode("utf-8") + b"\n":
+            raise ValueError
+        comparison = verify_nautilus_v065_comparison(comparison_value)
+        if (
+            summary["conclusion"] != comparison["conclusion"]
+            or summary["runner_invocation_count"] != comparison["runner_invocation_count"]
+        ):
+            raise ValueError
+        mode = comparison["mode"]
+        if mode == "SUPPLY_CHAIN_FAILURE":
+            expected = {_RECEIPT_NAME, _COMPARISON_NAME}
+        elif mode == "EXECUTION_FAILURE":
+            expected = {_RECEIPT_NAME, _REQUEST_NAME, _COMPARISON_NAME}
+            if comparison["bindings"]["first_result_id"] is not None:
+                expected.add(_FIRST_RESULT_NAME)
+        elif mode == "ENGINE_COMPARISON":
+            expected = {
+                _RECEIPT_NAME, _REQUEST_NAME, _FIRST_RESULT_NAME,
+                _REPLAY_RESULT_NAME, _COMPARISON_NAME,
+            }
+        else:
+            raise ValueError
+        if set(os.listdir(staging_fd)) != expected:
+            raise ValueError
+        for name in expected:
+            body, _value = _read_final(staging_fd, name)
+            parsed = dict(_strict_json_bytes(body))
+            if body != canonical_json(parsed).encode("utf-8") + b"\n":
+                raise ValueError
+        load_nautilus_v065_supply_chain_receipt((staging / _RECEIPT_NAME).resolve())
+        if _REQUEST_NAME in expected:
+            load_nautilus_v065_request((staging / _REQUEST_NAME).resolve())
+        if _FIRST_RESULT_NAME in expected:
+            load_nautilus_v065_result((staging / _FIRST_RESULT_NAME).resolve())
+        if _REPLAY_RESULT_NAME in expected:
+            load_nautilus_v065_result((staging / _REPLAY_RESULT_NAME).resolve())
+    except (NautilusV065SupplyChainError, NautilusV065ContractError):
+        raise
+    except (KeyError, TypeError, ValueError, OSError, CanonicalizationError) as error:
+        raise NautilusV065SupplyChainError(
+            "NAUTILUS_V065_FORMAL_ARTIFACT_SET_INVALID"
+        ) from error
 
 
 def build_parser() -> argparse.ArgumentParser:

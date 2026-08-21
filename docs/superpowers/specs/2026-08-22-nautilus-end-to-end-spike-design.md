@@ -157,10 +157,13 @@ committed plan 和固定 repository root，按固定顺序执行：
 5. 在 import 前验证每个 size/hash；
 6. 对 Nautilus wheel 执行 official GitHub attestation verification；
 7. 在 verified local cache 上执行 offline frozen install；
-8. fresh process 验证 installed distributions、license、Python/platform 和禁止 extras/live adapters。
+8. fresh process 枚举并精确比较完整 installed-distribution name/version 集，验证 Nautilus metadata
+   license、Python/platform，并证明没有加载任何 `nautilus_trader.adapters` 模块。
 
 每个命令保存 exact argv、固定环境 allowlist、start/end、exit code、stdout bytes、stderr bytes、
-byte count 和 SHA-256。任一 timeout、redirect drift、hash/size/tag/license/attestation mismatch、lock drift、
+byte count 和 SHA-256。stdout/stderr 在子进程运行期间分别以 4 MiB 上限主动读取，触限立即终止整个
+进程组；每个 wheel 的 curl 同时使用 committed lock 中的 exact size 作为 `--max-filesize`。任一
+timeout、redirect drift、hash/size/tag/license/attestation mismatch、lock drift、
 unsupported platform 或 transcript 缺失都结束为 INCONCLUSIVE。禁止改变源、版本、hash 或重试寻找更好
 结果；只允许每个已预注册命令内部的固定网络 retry policy。
 
@@ -251,6 +254,11 @@ fsync；任何 partial final、symlink、hardlink、FIFO、wrong mode、differen
 父目录。正式目录或 staging 任一已存在都禁止重跑，因此崩溃不会把部分 artifact 集误当作完整结果，
 也不会自动再次请求网络以寻找不同结论。
 
+发布整个目录前必须从 retained staging descriptor 读取 exact 文件名集合，用 production schema/loader
+重放 receipt、request、first/replay result 与 comparison，并验证 comparison mode、bindings、
+runner invocation count 和 summary 一致。空目录、缺文件、多文件、非 canonical bytes 或任一 loader
+失败都不得发布。
+
 正式 artifacts：
 
 - `artifacts/nautilus-sandbox/nautilus-e2e-spike-plan-v0.65.0.json`；
@@ -282,7 +290,8 @@ counters 为 0；fresh replay 相同；所有经济差异为 exact match 或预�
 difference；无 rounding/fill/fee/position/PnL/restart/instrument/safety 未解决差异；独立审查
 Critical/Important 为 0。
 
-任何已证明的不兼容或安全问题为 `REJECT_KEEP_CURRENT_CORE`。证据缺失或运行环境不可用为
+任何已证明的不兼容或实际观察到的 credential、network 或 second-engine 安全边界违反为
+`REJECT_KEEP_CURRENT_CORE`。证据缺失、一般 runner 失败或运行环境不可用为
 `INCONCLUSIVE_KEEP_CURRENT_CORE`。三种结果都不改变现有 System Paper/replacement 事实源。
 
 ## 10. 公共 GitHub Actions 策略

@@ -192,7 +192,8 @@ git commit -m "feat: lock v0.65 Nautilus supply chain"
 Tests inspect parser/source and patch private fixed command/result-verification boundaries. They require only the
 parameterless `publish-plan` command at this intermediate task, no public override, clean reviewed commit, owner-only temp root, fixed command order, sanitized env,
 bounded stdout/stderr, exact PyPI JSON plus 14 individually transcribed nonredirecting wheel downloads, wheel
-verification before install/import, SLSA verification, offline sync,
+verification before install/import, SLSA verification, offline sync, exact installed-distribution inventory,
+Nautilus license metadata and no loaded live-adapter module,
 and fixed reason codes for timeout/hash/license/tag/attestation/platform failures.
 
 ```python
@@ -211,7 +212,8 @@ Expected: import failure because CLI does not exist.
 
 For each successful process, record executable dev/ino/mode/size/SHA before and after, exact argv, sanitized env
 keys, start/end, exit code, stdout/stderr exact bytes (base64 only when non-UTF8), sizes and hashes. Reject output
-over the fixed limit before allocating. No shell, redirects, inherited Git/Python/proxy/credential environment or
+over the fixed limit while the child is still running and terminate its process group; pass each locked wheel's exact
+size to curl as its active maximum. No shell, redirects, inherited Git/Python/proxy/credential environment or
 caller-provided executable. Do not use an unrecorded urllib download path. The receipt must contain exactly 25
 ordered transcripts: four tool identities, PyPI JSON, tag, license, 14 wheels, SLSA and three offline environment
 commands.
@@ -384,6 +386,8 @@ Add `acquire-and-run` only now. It calls the Task 3 acquisition function; on ver
 request, invokes exactly two Task 5 fresh processes, then calls the pure comparison. On acquisition failure it
 publishes only receipt + INCONCLUSIVE comparison and runner invocation count remains 0. Parser tests require the
 exact two parameterless commands and reject every option or positional argument.
+Observed credential, network or second-engine sentinel violations produce the fixed
+`SAFETY_BOUNDARY_VIOLATION`/`REJECT_KEEP_CURRENT_CORE` result; generic execution failure remains INCONCLUSIVE.
 
 - [ ] **Step 5: Run GREEN and static authority scan**
 
@@ -469,6 +473,8 @@ If it succeeds, the CLI runs first and replay fresh processes offline, then publ
 All ceremony outputs first live only in fixed owner-only `.v0.65.0.in-progress`; after the complete truthful set is
 durable, one atomic no-replace directory rename publishes `v0.65.0`. Any existing staging/final directory blocks
 all reruns and is retained for evidence.
+Before that rename, replay the exact staged filename set with production schemas/loaders and verify its comparison
+mode, bindings and summary. Empty, incomplete, extra or semantically invalid staged sets fail closed.
 
 - [ ] **Step 3: Replay exact artifacts and prove no production mutation**
 

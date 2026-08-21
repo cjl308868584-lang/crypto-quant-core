@@ -10,7 +10,7 @@ import stat
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
 from jsonschema import Draft202012Validator
@@ -27,6 +27,25 @@ _LOCK_RELATIVE = Path("sandboxes/nautilus-v065/uv.lock")
 _WHEEL = "nautilus_trader-1.230.0-cp312-cp312-macosx_15_0_arm64.whl"
 _WHEEL_SHA = "033f6207d1c52095d64a7644f43b90cab939c2038044db70a4165f2acef3d079"
 _WHEEL_SIZE = 156035900
+_TAG_OBJECT = "112d335088ec11cdd1d60038b16c8fe56406aead"
+_TAG_COMMIT = "8160730c7c550480b0a439fb11086a4c4de15f0b"
+_LICENSE_SHA = "ee907919ec88c9c017b1f8b608db20960b6598aefcc4fe58820bde955d65ed3c"
+_PYPI_URL = "https://pypi.org/pypi/nautilus_trader/1.230.0/json"
+_LICENSE_URL = "https://raw.githubusercontent.com/nautechsystems/nautilus_trader/8160730c7c550480b0a439fb11086a4c4de15f0b/LICENSE"
+_OFFLINE_IMPORT_CODE = (
+    "import importlib.metadata as m,nautilus_trader,platform,sys;"
+    "expected=[('click','8.4.2'),('fsspec','2026.2.0'),('msgspec','0.21.1'),"
+    "('nautilus_trader','1.230.0'),('numpy','2.5.2'),('pandas','3.0.5'),"
+    "('portion','2.6.2'),('pyarrow','25.0.1'),('python-dateutil','2.9.0.post0'),"
+    "('pytz','2026.3.post1'),('six','1.17.0'),('sortedcontainers','2.4.0'),"
+    "('tqdm','4.70.0'),('uvloop','0.22.1')];"
+    "actual=sorted((d.metadata['Name'],d.version) for d in m.distributions());"
+    "assert actual==expected;assert nautilus_trader.__version__=='1.230.0';"
+    "assert platform.machine()=='arm64';assert platform.python_implementation()=='CPython';"
+    "assert sys.version_info[:2]==(3,12);"
+    "assert m.metadata('nautilus-trader')['License']=='LGPL-3.0-or-later';"
+    "assert not any(x.startswith('nautilus_trader.adapters') for x in sys.modules)"
+)
 _SELECTED_FILENAMES = frozenset(
     {
         "click-8.4.2-py3-none-any.whl",
@@ -186,6 +205,109 @@ def _expected_transcript_names(lock: Mapping[str, Any]) -> list[str]:
     ]
 
 
+def _locked_download_urls() -> Dict[str, str]:
+    try:
+        text = (_ROOT / _LOCK_RELATIVE).read_text(encoding="utf-8")
+    except OSError as error:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_LOCK_FILE_INVALID") from error
+    urls = {
+        url.rsplit("/", 1)[1]: url
+        for url in re.findall(r'url = "(https://files\.pythonhosted\.org/[^"]+\.whl)"', text)
+    }
+    if not _SELECTED_FILENAMES.issubset(urls):
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_LOCK_DISTRIBUTIONS_MISSING")
+    return urls
+
+
+def _pypi_semantics(raw: bytes, lock: Mapping[str, Any], urls: Mapping[str, str]) -> None:
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+        candidate = next(item for item in lock["distributions"] if item["filename"] == _WHEEL)
+        matches = [item for item in payload["urls"] if item.get("filename") == _WHEEL]
+        if (
+            payload["info"]["version"] != "1.230.0"
+            or payload["info"].get("requires_python") != ">=3.12,<3.15"
+            or len(matches) != 1
+            or matches[0].get("size") != candidate["size"]
+            or matches[0].get("url") != urls[_WHEEL]
+            or matches[0].get("digests", {}).get("sha256") != _WHEEL_SHA
+        ):
+            raise ValueError
+    except (KeyError, StopIteration, TypeError, UnicodeDecodeError, ValueError) as error:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_TRANSCRIPT_SEMANTIC_INVALID") from error
+
+
+def _validate_transcript_semantics(
+    records: Sequence[Mapping[str, Any]], lock: Mapping[str, Any], *, failed_final: bool
+) -> None:
+    if not records:
+        return
+    urls = _locked_download_urls()
+    try:
+        home = Path(records[0]["environment"]["HOME"])
+        workspace = home.parent
+        if (
+            not home.is_absolute()
+            or home.name != "home"
+            or not workspace.name.startswith("nautilus-v065-")
+            or any(record["environment"] != records[0]["environment"] for record in records)
+        ):
+            raise ValueError
+        python_records = [record for record in records if record["name"] == "python_version"]
+        python_executable = python_records[0]["executable_path"] if python_records else None
+        for index, record in enumerate(records):
+            name = record["name"]
+            executable = record["executable_path"]
+            argv = record["argv"]
+            if not isinstance(argv, list) or not argv or argv[0] != executable:
+                raise ValueError
+            if name in {"uv_version", "python_version", "git_version", "gh_version"}:
+                expected_tail = ["--version"]
+            elif name == "pypi_version":
+                expected_tail = ["--fail", "--silent", "--show-error", "--proto", "=https", _PYPI_URL]
+            elif name == "official_tag":
+                expected_tail = ["ls-remote", "https://github.com/nautechsystems/nautilus_trader.git", "refs/tags/v1.230.0", "refs/tags/v1.230.0^{}"]
+            elif name == "license":
+                expected_tail = ["--fail", "--silent", "--show-error", "--proto", "=https", _LICENSE_URL]
+            elif name.startswith("download:"):
+                filename = name.removeprefix("download:")
+                distribution = next(item for item in lock["distributions"] if item["filename"] == filename)
+                expected_tail = ["--fail", "--silent", "--show-error", "--proto", "=https", "--max-filesize", str(distribution["size"]), "--output", str(workspace / "wheelhouse" / filename), "--write-out", "%{http_code} %{url_effective}\n", urls[filename]]
+            elif name == "slsa":
+                expected_tail = ["attestation", "verify", str(workspace / "wheelhouse" / _WHEEL), "--repo", "nautechsystems/nautilus_trader"]
+            elif name == "offline_venv":
+                expected_tail = ["venv", "--offline", "--python", python_executable, str(workspace / "venv")]
+            elif name == "offline_sync":
+                expected_tail = ["pip", "install", "--offline", "--python", str(workspace / "venv/bin/python"), "--find-links", str(workspace / "wheelhouse"), "nautilus_trader==1.230.0"]
+            elif name == "offline_import":
+                if executable != str(workspace / "venv/bin/python"):
+                    raise ValueError
+                expected_tail = ["-I", "-c", _OFFLINE_IMPORT_CODE]
+            else:
+                raise ValueError
+            if argv[1:] != expected_tail:
+                raise ValueError
+            if failed_final and index == len(records) - 1 and record["exit_code"] != 0:
+                continue
+            stdout = _decode_transcript(record, "stdout")
+            stderr = _decode_transcript(record, "stderr")
+            if name == "pypi_version":
+                _pypi_semantics(stdout, lock, urls)
+            elif name == "official_tag":
+                expected = f"{_TAG_OBJECT}\trefs/tags/v1.230.0\n{_TAG_COMMIT}\trefs/tags/v1.230.0^{{}}\n".encode("ascii")
+                if stdout != expected or stderr:
+                    raise ValueError
+            elif name == "license":
+                if len(stdout) != 7651 or hashlib.sha256(stdout).hexdigest() != _LICENSE_SHA or stderr:
+                    raise ValueError
+            elif name.startswith("download:"):
+                filename = name.removeprefix("download:")
+                if stdout != ("200 " + urls[filename] + "\n").encode("utf-8") or stderr:
+                    raise ValueError
+    except (KeyError, IndexError, TypeError, ValueError) as error:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_TRANSCRIPT_SEMANTIC_INVALID") from error
+
+
 def _decode_transcript(value: Mapping[str, Any], prefix: str) -> bytes:
     encoding = value[prefix + "_encoding"]
     content = value[prefix + "_bytes"]
@@ -237,6 +359,11 @@ def _validate_receipt(payload: Mapping[str, Any]) -> Dict[str, Any]:
                 if len(payload["transcripts"]) >= len(expected_commands) or failed["name"] != expected_commands[len(payload["transcripts"])]:
                     raise NautilusV065SupplyChainError("NAUTILUS_V065_FAILURE_RECEIPT_INVALID")
                 _validate_transcript_record(failed)
+            _validate_transcript_semantics(
+                [*payload["transcripts"], *([] if failed is None else [failed])],
+                expected_lock,
+                failed_final=failed is not None,
+            )
             if any(payload["authority_counters"].values()):
                 raise NautilusV065SupplyChainError("NAUTILUS_V065_FAILURE_RECEIPT_INVALID")
             digest = supply_chain_receipt_hash(payload)
@@ -253,6 +380,9 @@ def _validate_receipt(payload: Mapping[str, Any]) -> Dict[str, Any]:
             for field in ("device", "inode", "mode", "size", "sha256"):
                 if transcript[f"executable_{field}_before"] != transcript[f"executable_{field}_after"]:
                     raise NautilusV065SupplyChainError("NAUTILUS_V065_EXECUTABLE_CHANGED")
+        _validate_transcript_semantics(
+            payload["transcripts"], expected_lock, failed_final=False
+        )
         for tool in payload["tools"]:
             if tool["executable_sha256_before"] != tool["executable_sha256_after"]:
                 raise NautilusV065SupplyChainError("NAUTILUS_V065_TOOL_IDENTITY_CHANGED")

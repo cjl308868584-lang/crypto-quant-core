@@ -53,6 +53,11 @@ _SAFETY_KEYS = {
     "credential_reads", "network_requests", "live_adapter_imports", "broker_requests",
     "real_orders", "production_state_writes", "second_engine_creations",
 }
+_RUNNER_SAFETY_REASONS = {
+    "NAUTILUS_V065_SAFETY_CREDENTIAL_ATTEMPT",
+    "NAUTILUS_V065_SAFETY_NETWORK_ATTEMPT",
+    "NAUTILUS_V065_SAFETY_SECOND_ENGINE_ATTEMPT",
+}
 
 
 class NautilusV065EvidenceError(ValueError):
@@ -84,6 +89,25 @@ def _finish(value: Dict[str, Any]) -> Dict[str, Any]:
     if tuple(_validator().iter_errors(value)):
         raise NautilusV065EvidenceError("NAUTILUS_V065_COMPARISON_SCHEMA_INVALID")
     return copy.deepcopy(value)
+
+
+def verify_nautilus_v065_comparison(payload: Mapping[str, Any]) -> Dict[str, Any]:
+    """Replay the strict schema and derived identity of a comparison artifact."""
+
+    value = copy.deepcopy(dict(payload))
+    try:
+        digest = _comparison_hash(value)
+        if (
+            tuple(_validator().iter_errors(value))
+            or value["comparison_hash"] != digest
+            or value["comparison_id"] != "nautilus_v065_comparison_" + digest
+        ):
+            raise NautilusV065EvidenceError("NAUTILUS_V065_COMPARISON_INVALID")
+    except NautilusV065EvidenceError:
+        raise
+    except (KeyError, TypeError, ValueError) as error:
+        raise NautilusV065EvidenceError("NAUTILUS_V065_COMPARISON_INVALID") from error
+    return value
 
 
 def _verify_plan(plan: Mapping[str, Any]) -> None:
@@ -404,6 +428,7 @@ def build_nautilus_v065_execution_failure_comparison(
         verified_first, safe = _verify_engine_result(first_result)
         if not safe or runner_invocation_count != 2:
             raise NautilusV065EvidenceError("NAUTILUS_V065_EXECUTION_FAILURE_INVALID")
+    safety_violation = reason_code in _RUNNER_SAFETY_REASONS
     comparison = {
         "$schema": "./nautilus-sandbox-comparison-v2.schema.json",
         "schema_version": "2.0.0",
@@ -412,21 +437,21 @@ def build_nautilus_v065_execution_failure_comparison(
         "mode": "EXECUTION_FAILURE",
         "bindings": _bindings(plan, receipt, verified_request, None, verified_first, None),
         "scenario_comparisons": [],
-        "difference_classes": ["INVALID_OR_INCOMPLETE_EVIDENCE"],
+        "difference_classes": ["SAFETY_BOUNDARY_VIOLATION" if safety_violation else "INVALID_OR_INCOMPLETE_EVIDENCE"],
         "gates": {
             "exact_supply_chain": True,
             "slsa_attestation": True,
             "license_verified": True,
             "golden_scenarios": False,
-            "zero_safety_counters": True,
+            "zero_safety_counters": not safety_violation,
             "fresh_process_replay": False,
             "no_unresolved_economic_difference": False,
             "critical_important_review_zero": True,
         },
-        "conclusion": "INCONCLUSIVE_KEEP_CURRENT_CORE",
+        "conclusion": "REJECT_KEEP_CURRENT_CORE" if safety_violation else "INCONCLUSIVE_KEEP_CURRENT_CORE",
         "reason_code_or_null": reason_code,
         "runner_invocation_count": runner_invocation_count,
         "current_core_effect": "UNCHANGED",
-        "status": "FINAL_COMPARISON_INCONCLUSIVE",
+        "status": "FINAL_COMPARISON_REJECT" if safety_violation else "FINAL_COMPARISON_INCONCLUSIVE",
     }
     return _finish(comparison)

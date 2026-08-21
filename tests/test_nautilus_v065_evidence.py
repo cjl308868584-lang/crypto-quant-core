@@ -12,6 +12,7 @@ from crypto_quant.nautilus_v065_evidence import (
     build_nautilus_v065_execution_failure_comparison,
     build_nautilus_v065_supply_failure_comparison,
     compare_nautilus_v065,
+    verify_nautilus_v065_comparison,
 )
 from crypto_quant.nautilus_v065_plan import build_nautilus_v065_plan
 from crypto_quant.nautilus_v065_supply_chain import supply_chain_receipt_hash
@@ -233,6 +234,20 @@ class NautilusV065EvidenceTests(unittest.TestCase):
         self.assertEqual(after_first["bindings"]["first_result_id"], first["result_id"])
         self.assertEqual(after_first["conclusion"], "INCONCLUSIVE_KEEP_CURRENT_CORE")
 
+    def test_observed_runner_safety_violation_is_reject_not_inconclusive(self):
+        receipt, request, _current, _first, _replay = self.evidence()
+        comparison = build_nautilus_v065_execution_failure_comparison(
+            plan=self.plan,
+            receipt=receipt,
+            request=request,
+            reason_code="NAUTILUS_V065_SAFETY_NETWORK_ATTEMPT",
+            runner_invocation_count=1,
+        )
+        self.assertEqual(comparison["difference_classes"], ["SAFETY_BOUNDARY_VIOLATION"])
+        self.assertFalse(comparison["gates"]["zero_safety_counters"])
+        self.assertEqual(comparison["conclusion"], "REJECT_KEEP_CURRENT_CORE")
+        self.assertEqual(comparison["status"], "FINAL_COMPARISON_REJECT")
+
     def test_tamper_unclassified_or_incomplete_evidence_fails_closed(self):
         receipt, request, current, first, replay = self.evidence()
         for mutate in (
@@ -249,6 +264,18 @@ class NautilusV065EvidenceTests(unittest.TestCase):
                         plan=self.plan, receipt=receipt, request=request,
                         current_reference=current, first_result=first, replay_result=replay,
                     )
+
+    def test_comparison_verifier_replays_schema_and_self_hash(self):
+        receipt, request, current, first, replay = self.evidence()
+        comparison = compare_nautilus_v065(
+            plan=self.plan, receipt=receipt, request=request,
+            current_reference=current, first_result=first, replay_result=replay,
+        )
+        self.assertEqual(verify_nautilus_v065_comparison(comparison), comparison)
+        changed = copy.deepcopy(comparison)
+        changed["comparison_hash"] = "0" * 64
+        with self.assertRaises(NautilusV065EvidenceError):
+            verify_nautilus_v065_comparison(changed)
 
 
 if __name__ == "__main__":
