@@ -490,11 +490,11 @@
     "tests/test_system_paper_scheduler.py": "bd602843f290cc40bcf84693955e4fd4296e21ffc1656496379fe1b7a634c13a",
     "tests/test_system_paper_start_receipt.py": "1c8b06335e2e426e59ba4c67873517e5492f2fb31bb79937670172181e6ede20",
     "tests/test_v064_linux_supersession_publish.py": "b1b899075cf0d3c568f18d850f9707c6160074d49b94d11df75548b897eb3e70",
-    "tests/test_v064_public_ci_bundle.py": "050bce3f6dba2f1af7734ecbcca8df407297f26a96e51ad781fd8225a657ce34",
+    "tests/test_v064_public_ci_bundle.py": "fafda7e7452df0590a935068765bdeb8b21d4f9f99a6bb6fa46901c0fd9a1c41",
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "8793f690ad52d21384da77117f85f459aa4c602404c081fa97cc2acd0d4ddb0a",
+  "build_input_tree_hash": "d3fe3658c4b44014030ba5704d62ae5e96f9ec37b51659579bdb81a51d050647",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -502,5 +502,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "11c0011e915e26831c053ea4150b09cd203ebf685ada3b26b77b67b474083a61"
+  "manifest_hash": "5ee22db97ee5e7d52f5fa692af246fa0ac81377518d8d524a2aa79920741deef"
 }
