@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/nautilus-e2e-spike-plan-v1.schema.json",
+  "title": "NautilusTrader v0.65 end-to-end spike preregistration plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "plan_id",
+    "plan_hash",
+    "foundation",
+    "predecessor",
+    "candidate",
+    "code_lock_candidate",
+    "scenarios",
+    "difference_classes",
+    "terminal_conclusions",
+    "adoption_gates",
+    "authority",
+    "status",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"const": "./nautilus-e2e-spike-plan-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "plan_id": {"type": "string", "pattern": "^nautilus_v065_plan_[0-9a-f]{64}$"},
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "foundation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_tag", "peeled_commit", "package_version", "manifest_version", "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"],
+      "properties": {
+        "release_tag": {"const": "v0.64.0"},
+        "peeled_commit": {"const": "c4f6ea213077850a8fc8b9bd3392f1a4bac466f9"},
+        "package_version": {"const": "0.64.0"},
+        "manifest_version": {"const": "1.58.0"},
+        "build_input_tree_hash": {"const": "a2a85267fb424b793fac538df40a55be33e900621cb877b1aa1303f16b134344"},
+        "manifest_hash": {"const": "6d32f81a3f9b558f1aa911b1d8d49b9d51491a9ac720675ee2d1cff88186b760"},
+        "manifest_file_sha256": {"const": "038cf827b84ff47b596bd1f3ab72e370ffb17a64a5e6e36264c952769b32abca"}
+      }
+    },
+    "predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_tag", "peeled_commit", "dependency_lock_path", "dependency_lock_file_sha256", "comparison_path", "comparison_file_sha256", "conclusion", "reason_code", "interpretation"],
+      "properties": {
+        "release_tag": {"const": "v0.63.0"},
+        "peeled_commit": {"const": "df91e19240df14839125608422489adf3b902e76"},
+        "dependency_lock_path": {"const": "artifacts/nautilus-sandbox/nautilus-sandbox-dependency-lock-v0.63.0.json"},
+        "dependency_lock_file_sha256": {"const": "ed0342ea4274026b6d936b5489f215eb44b4ae5e8ba651b69f3ed01db09230ee"},
+        "comparison_path": {"const": "artifacts/nautilus-sandbox/nautilus-sandbox-comparison-v0.63.0.json"},
+        "comparison_file_sha256": {"const": "88eb4df9cd37e31fca0e636b2ebcf077ddacb33a1eb9877d5e318f04a9a903be"},
+        "conclusion": {"const": "INCONCLUSIVE_BLOCKED"},
+        "reason_code": {"const": "SUPPLY_CHAIN_FETCH_NOT_MACHINE_REPLAYABLE"},
+        "interpretation": {"const": "NO_ENGINE_OR_GOLDEN_COMPATIBILITY_RESULT"}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "version", "requires_python", "official_tag", "tag_object", "peeled_commit", "wheel_filename", "wheel_size", "wheel_sha256", "license_expression", "license_sha256", "operating_system", "operating_system_major", "machine", "python_implementation", "python_minor"],
+      "properties": {
+        "package": {"const": "nautilus_trader"},
+        "version": {"const": "1.230.0"},
+        "requires_python": {"const": ">=3.12,<3.15"},
+        "official_tag": {"const": "v1.230.0"},
+        "tag_object": {"const": "112d335088ec11cdd1d60038b16c8fe56406aead"},
+        "peeled_commit": {"const": "8160730c7c550480b0a439fb11086a4c4de15f0b"},
+        "wheel_filename": {"const": "nautilus_trader-1.230.0-cp312-cp312-macosx_15_0_arm64.whl"},
+        "wheel_size": {"const": 156035900},
+        "wheel_sha256": {"const": "033f6207d1c52095d64a7644f43b90cab939c2038044db70a4165f2acef3d079"},
+        "license_expression": {"const": "LGPL-3.0-or-later"},
+        "license_sha256": {"const": "ee907919ec88c9c017b1f8b608db20960b6598aefcc4fe58820bde955d65ed3c"},
+        "operating_system": {"const": "macOS"},
+        "operating_system_major": {"const": 15},
+        "machine": {"const": "arm64"},
+        "python_implementation": {"const": "CPython"},
+        "python_minor": {"const": "3.12"}
+      }
+    },
+    "code_lock_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "foundation_ancestor"],
+      "properties": {
+        "commit": {"$ref": "#/$defs/commit"},
+        "tree": {"$ref": "#/$defs/commit"},
+        "foundation_ancestor": {"const": "c4f6ea213077850a8fc8b9bd3392f1a4bac466f9"}
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "IMMEDIATE_FULL"},
+        {"const": "PARTIAL_THEN_FULL"},
+        {"const": "BELOW_MINIMUM_REJECTED"},
+        {"const": "FRESH_PROCESS_REPLAY"}
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "difference_classes": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "EXACT_MATCH"},
+        {"const": "EXPECTED_ENGINE_REPRESENTATION_DIFFERENCE"},
+        {"const": "ROUNDING_POLICY_DIFFERENCE"},
+        {"const": "FILL_MODEL_DIFFERENCE"},
+        {"const": "FEE_MODEL_DIFFERENCE"},
+        {"const": "POSITION_ACCOUNTING_DIFFERENCE"},
+        {"const": "PNL_ACCOUNTING_DIFFERENCE"},
+        {"const": "RESTART_SEMANTICS_DIFFERENCE"},
+        {"const": "UNSUPPORTED_INSTRUMENT_RULE"},
+        {"const": "SUPPLY_CHAIN_OR_LICENSE_FAILURE"},
+        {"const": "SAFETY_BOUNDARY_VIOLATION"},
+        {"const": "INVALID_OR_INCOMPLETE_EVIDENCE"}
+      ],
+      "items": false,
+      "minItems": 12,
+      "maxItems": 12
+    },
+    "terminal_conclusions": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "ADOPT_FOR_PREREGISTERED_SHADOW"},
+        {"const": "REJECT_KEEP_CURRENT_CORE"},
+        {"const": "INCONCLUSIVE_KEEP_CURRENT_CORE"}
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "adoption_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exact_supply_chain", "slsa_attestation", "license_verified", "golden_scenarios", "zero_safety_counters", "fresh_process_replay", "no_unresolved_economic_difference", "critical_important_review_zero", "allowed_adopt_difference_classes", "adopt_next_action", "first_final_is_permanent"],
+      "properties": {
+        "exact_supply_chain": {"const": true},
+        "slsa_attestation": {"const": true},
+        "license_verified": {"const": true},
+        "golden_scenarios": {"const": true},
+        "zero_safety_counters": {"const": true},
+        "fresh_process_replay": {"const": true},
+        "no_unresolved_economic_difference": {"const": true},
+        "critical_important_review_zero": {"const": true},
+        "allowed_adopt_difference_classes": {
+          "type": "array",
+          "prefixItems": [{"const": "EXACT_MATCH"}, {"const": "EXPECTED_ENGINE_REPRESENTATION_DIFFERENCE"}],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "adopt_next_action": {"const": "PREREGISTERED_SHADOW_DESIGN_ONLY"},
+        "first_final_is_permanent": {"const": true}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["production_activation", "runtime_install_authorized", "sandbox_service_install_authorized", "live_adapter_allowed", "credentials_allowed", "market_requests_allowed_during_sandbox", "account_requests_allowed", "broker_requests_allowed", "real_orders_allowed", "production_state_writes_allowed", "runner_or_scheduler_invocation_allowed"],
+      "properties": {
+        "production_activation": {"const": false},
+        "runtime_install_authorized": {"const": false},
+        "sandbox_service_install_authorized": {"const": false},
+        "live_adapter_allowed": {"const": false},
+        "credentials_allowed": {"const": false},
+        "market_requests_allowed_during_sandbox": {"const": false},
+        "account_requests_allowed": {"const": false},
+        "broker_requests_allowed": {"const": false},
+        "real_orders_allowed": {"const": false},
+        "production_state_writes_allowed": {"const": false},
+        "runner_or_scheduler_invocation_allowed": {"const": false}
+      }
+    },
+    "status": {"const": "SPIKE_PLAN_PREREGISTERED_NOT_EXECUTED"},
+    "warnings": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "V0_63_INCONCLUSIVE_IS_NOT_A_REJECTION"},
+        {"const": "FORMAL_ACQUISITION_NOT_EXECUTED"},
+        {"const": "CURRENT_RESEARCH_FACT_SOURCES_UNCHANGED"},
+        {"const": "NO_PROFITABILITY_OR_AI_ADVANTAGE_CLAIM"},
+        {"const": "NO_INSTALL_CREDENTIAL_ORDER_OR_CANARY_AUTHORITY"}
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  }
+}
