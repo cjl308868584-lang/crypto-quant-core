@@ -67,14 +67,9 @@ PUBLIC_INVENTORY = tuple(
         + ["bundle-manifest-v1.json"]
     )
 )
-PROTECTED_PUBLIC_BLOBS = {
-    "src/crypto_quant/challenger_replacement_supersession_publish.py": (
-        "8a67fffdfd17bdf26cc74ee23e14a7c8fe91b7a8"
-    ),
-    "tests/test_v064_linux_supersession_publish.py": (
-        "4fc14ffd73ce09803afb6cda724b51c919f1d8ba"
-    ),
-}
+CURRENT_PUBLIC_GIT_SOURCES = tuple(
+    relative for relative, kind, _source in EXACT_FILES if kind == "PRIVATE_GIT_BLOB"
+)
 PREDECESSOR_FAILED_PUBLIC_WITNESS = {
     "repository": "cjl308868584-lang/crypto-quant-v064-public-ci",
     "private_candidate_f": "1967f79ff8d013bf149bf36e2cdcb6a81ed200ff",
@@ -1528,8 +1523,13 @@ class V064PublicCiFinalFreezeTests(unittest.TestCase):
             PUBLIC_INVENTORY,
         )
         entries = {item["path"]: item for item in manifest["files"]}
-        for relative, expected_oid in PROTECTED_PUBLIC_BLOBS.items():
+        for relative in CURRENT_PUBLIC_GIT_SOURCES:
             with self.subTest(relative=relative):
+                expected_oid = (
+                    _git_bytes(ROOT, "rev-parse", f"{head}:{relative}")
+                    .decode("ascii")
+                    .strip()
+                )
                 self.assertEqual(entries[relative]["source_blob_oid"], expected_oid)
 
     def test_evaluator_build_manifest_exactly_replays_final_inputs(self):
