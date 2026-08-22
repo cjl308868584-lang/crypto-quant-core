@@ -74,9 +74,12 @@ v0.67 必须绑定以下完整 foundation，而不是只比较版本字符串：
 - main CI run：`32554406969`，Python 3.9、Python 3.12、macOS 15 arm64
   均为 `success`。
 
-v0.67 release artifact 不反向包含尚未知的 v0.67 merge commit，避免 self-reference。
-它冻结预期 `release_tag=v0.67.0`、package/build manifest identity 和完整 input tree。
-最终 peeled commit 由 PR/main CI、annotated tag 与未来 v0.68 install receipt 正向绑定。
+v0.67 deployment artifact 不反向包含尚未知的 v0.67 merge commit、manifest hash、manifest
+file SHA 或 build input tree hash，避免 artifact 被 manifest 收录时形成 self-reference。它只冻结
+候选 `release_tag=v0.67.0`、`package_version=0.67.0`、
+`manifest_version=1.61.0`。最终 manifest/hash/tree identity 由 v0.67 release status、ADR、
+PR/main CI 和 annotated tag 正向绑定；未来 v0.68 install receipt 再把这些 final identities 与
+安装 bytes 绑定。
 
 ## 3. 方案选择
 
@@ -313,8 +316,10 @@ target plist = /Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-
 ```
 
 所有 old Challenger/System Paper roots、labels 和 artifacts 永久禁止。deployment artifact
-绑定 v2 plan、v0.66 foundation、v0.67 expected build identity、固定 source file allowlist、
-runtime CLI、network contract、plist bytes hash 和所有 owner-only paths。
+绑定 v2 plan、v0.66 foundation、v0.67 candidate release tuple、固定 source file allowlist、
+runtime CLI、network contract、plist bytes hash 和所有 owner-only paths。production loader
+另行加载 final v0.67 build manifest，要求 artifact 自身被 manifest 收录且 candidate tuple
+一致；artifact 不包含 final manifest/tree hash。
 
 ### 9.2 LaunchAgent candidate
 
