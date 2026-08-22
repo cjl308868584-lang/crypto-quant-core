@@ -234,12 +234,13 @@ PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_evidence \
   tests.test_challenger_replacement_decision \
   tests.test_challenger_replacement_plan_v2
-rg -n "open\(|read_bytes|write_bytes|chmod|OutputRoot|publish|recover|sqlite3|Broker|order" \
+rg -n "open\(|read_bytes|write_bytes|chmod|OutputRoot|publish|recover|sqlite3|\\bBroker\\b|order_writes|place_order|submit_order" \
   src/crypto_quant/challenger_replacement_evidence.py \
   src/crypto_quant/challenger_replacement_decision.py
 ```
 
-Expected: tests pass and forbidden scan is empty.
+Expected: tests pass and forbidden behavior scan is empty. The frozen document field
+`orders_allowed=false` remains required and is not an order implementation.
 
 - [ ] **Step 6: Commit**
 
