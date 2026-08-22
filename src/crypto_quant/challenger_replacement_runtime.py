@@ -8,14 +8,21 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Mapping
 
 from .canonical import business_hash, canonical_json, utc_datetime
-from .challenger_replacement_decision import load_challenger_replacement_decision_bytes
-from .challenger_replacement_decision import build_challenger_replacement_decision
+from .challenger_replacement_decision import (
+    build_challenger_replacement_cohort_decision,
+    build_challenger_replacement_decision,
+    load_challenger_replacement_cohort_decision_bytes,
+    load_challenger_replacement_decision_bytes,
+)
 from .challenger_replacement_evidence import (
     _build_identity,
     _strict_json_bytes,
+    build_challenger_replacement_cohort_source_bundle,
     build_challenger_replacement_source_bundle,
+    load_challenger_replacement_cohort_source_bundle_bytes,
     load_challenger_replacement_source_bundle_bytes,
 )
+from .challenger_replacement_live_input import ChallengerReplacementLiveCapture
 from .challenger_replacement_events import (
     ChallengerReplacementEventError,
     ChallengerReplacementEventRoot,
@@ -46,6 +53,34 @@ def _invalid():
 
 def _hash_valid(value):
     return isinstance(value, str) and len(value) == 64 and set(value) <= _HASH
+
+
+def _runtime_build_identity(value):
+    try:
+        return _build_identity(value)
+    except ValueError:
+        keys = {
+            "release_tag", "peeled_commit", "package_version", "manifest_version",
+            "build_input_tree_hash", "manifest_hash", "manifest_file_sha256",
+        }
+        if (
+            not isinstance(value, Mapping)
+            or set(value) != keys
+            or value.get("release_tag") != "v0.67.0"
+            or value.get("package_version") != "0.67.0"
+            or value.get("manifest_version") != "1.61.0"
+            or not isinstance(value.get("peeled_commit"), str)
+            or len(value["peeled_commit"]) != 40
+            or set(value["peeled_commit"]) - _HASH
+            or any(
+                not _hash_valid(value[name])
+                for name in (
+                    "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"
+                )
+            )
+        ):
+            raise
+        return dict(value)
 
 
 def _time(value):
@@ -138,10 +173,20 @@ def _apply_event(projection, event, plan, build_identity):
         source_bytes = _decode_exact(
             payload["source_bundle_bytes_base64"], payload["source_bundle_sha256"])
         try:
-            source = load_challenger_replacement_source_bundle_bytes(
-                source_bytes, plan=plan, build_identity=build_identity,
-                previous_source_bundle=projection["_previous_source_bundle"],
-                previous_decision=projection["_previous_decision"])
+            source_document = _strict_json_bytes(source_bytes)
+            if (
+                source_document.get("$schema")
+                == "./challenger-replacement-source-bundle-v2.schema.json"
+            ):
+                source = load_challenger_replacement_cohort_source_bundle_bytes(
+                    source_bytes, plan=plan, build_identity=build_identity,
+                    previous_source_bundle=projection["_previous_source_bundle"],
+                    previous_decision=projection["_previous_decision"])
+            else:
+                source = load_challenger_replacement_source_bundle_bytes(
+                    source_bytes, plan=plan, build_identity=build_identity,
+                    previous_source_bundle=projection["_previous_source_bundle"],
+                    previous_decision=projection["_previous_decision"])
         except ValueError as error:
             raise ChallengerReplacementRuntimeError(
                 "CHALLENGER_REPLACEMENT_STATE_EVENT_INVALID") from error
@@ -179,9 +224,18 @@ def _apply_event(projection, event, plan, build_identity):
         decision_bytes = _decode_exact(
             payload["decision_bytes_base64"], payload["decision_sha256"])
         try:
-            decision = load_challenger_replacement_decision_bytes(
-                decision_bytes, plan=plan, source_bundle=slot["source_bundle"],
-                previous_decision=projection["_previous_decision"])
+            decision_document = _strict_json_bytes(decision_bytes)
+            if (
+                decision_document.get("$schema")
+                == "./challenger-replacement-decision-v2.schema.json"
+            ):
+                decision = load_challenger_replacement_cohort_decision_bytes(
+                    decision_bytes, plan=plan, source_bundle=slot["source_bundle"],
+                    previous_decision=projection["_previous_decision"])
+            else:
+                decision = load_challenger_replacement_decision_bytes(
+                    decision_bytes, plan=plan, source_bundle=slot["source_bundle"],
+                    previous_decision=projection["_previous_decision"])
         except ValueError as error:
             raise ChallengerReplacementRuntimeError(
                 "CHALLENGER_REPLACEMENT_STATE_EVENT_INVALID") from error
@@ -263,7 +317,7 @@ class ChallengerReplacementRuntimeState:
             raise ChallengerReplacementRuntimeError("CHALLENGER_REPLACEMENT_STATE_ROOT_INVALID")
         reasons = challenger_replacement_plan_v2_reasons(plan) if isinstance(plan, Mapping) else ("invalid",)
         try:
-            identity = _build_identity(build_identity)
+            identity = _runtime_build_identity(build_identity)
         except ValueError:
             identity = None
         if reasons or identity is None:
@@ -325,8 +379,6 @@ def _slot_result(slot):
 
 
 def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
-    """Advance one bound slot through the exact three durable stages."""
-
     if (
         not isinstance(state, ChallengerReplacementRuntimeState)
         or not isinstance(capture, Mapping)
@@ -338,7 +390,82 @@ def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
         or not worker_id
     ):
         _runtime_input_invalid()
-    slot_id = capture["slot_id"]
+    return _run_challenger_replacement_slot(
+        state=state,
+        slot_id=capture["slot_id"],
+        observed_at=observed_at,
+        worker_id=worker_id,
+        fixture_capture=capture,
+        live_capture=None,
+    )
+
+
+def run_challenger_replacement_cohort_slot(*, state, live_capture, worker_id):
+    """Advance one adapter-derived cohort slot through three durable stages."""
+
+    if (
+        not isinstance(state, ChallengerReplacementRuntimeState)
+        or not isinstance(live_capture, ChallengerReplacementLiveCapture)
+        or not isinstance(worker_id, str)
+        or not worker_id
+    ):
+        _runtime_input_invalid()
+    receipt = live_capture.document
+    try:
+        slot_id = receipt["slot"]["slot_id"]
+        observed_at = receipt["slot"]["captured_at"]
+    except (KeyError, TypeError) as error:
+        raise ChallengerReplacementRuntimeError(
+            "CHALLENGER_REPLACEMENT_RUNTIME_INPUT_INVALID"
+        ) from error
+    return _run_challenger_replacement_slot(
+        state=state,
+        slot_id=slot_id,
+        observed_at=observed_at,
+        worker_id=worker_id,
+        fixture_capture=None,
+        live_capture=live_capture,
+    )
+
+
+def resume_challenger_replacement_slot(*, state, worker_id):
+    """Continue only the durable slot already embedded in the event log."""
+
+    if (
+        not isinstance(state, ChallengerReplacementRuntimeState)
+        or not isinstance(worker_id, str)
+        or not worker_id
+    ):
+        _runtime_input_invalid()
+    projection = state._replay()
+    slot_id = projection["active_slot_id"]
+    if slot_id is None:
+        completed = [
+            (slot["source_bundle"]["slot"]["sequence"], slot_id, slot)
+            for slot_id, slot in projection["slots"].items()
+            if slot["stage"] == "SLOT_SUCCEEDED"
+        ]
+        if not completed:
+            raise ChallengerReplacementRuntimeError(
+                "CHALLENGER_REPLACEMENT_RUNTIME_RESUME_UNAVAILABLE"
+            )
+        return _slot_result(max(completed)[2])
+    slot = projection["slots"][slot_id]
+    return _run_challenger_replacement_slot(
+        state=state,
+        slot_id=slot_id,
+        observed_at=slot["input_recorded_at"],
+        worker_id=worker_id,
+        fixture_capture=None,
+        live_capture=None,
+    )
+
+
+def _run_challenger_replacement_slot(
+    *, state, slot_id, observed_at, worker_id, fixture_capture, live_capture
+):
+    """Share only the fixed event append/recovery engine."""
+
     projection = state._replay()
     existing = projection["slots"].get(slot_id)
     if existing is not None and existing["stage"] == "SLOT_SUCCEEDED":
@@ -348,16 +475,24 @@ def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
             "CHALLENGER_REPLACEMENT_ACTIVE_SLOT_CONFLICT")
     if existing is None:
         try:
-            source = build_challenger_replacement_source_bundle(
-                plan=state.plan, build_identity=state.build_identity,
-                capture=capture, observed_at=observed_at,
-                previous_source_bundle=projection["_previous_source_bundle"],
-                previous_decision=projection["_previous_decision"])
+            if live_capture is None:
+                source = build_challenger_replacement_source_bundle(
+                    plan=state.plan, build_identity=state.build_identity,
+                    capture=fixture_capture, observed_at=observed_at,
+                    previous_source_bundle=projection["_previous_source_bundle"],
+                    previous_decision=projection["_previous_decision"])
+                capture_bytes = canonical_json(dict(fixture_capture)).encode("utf-8")
+            else:
+                source = build_challenger_replacement_cohort_source_bundle(
+                    plan=state.plan, build_identity=state.build_identity,
+                    live_capture=live_capture,
+                    previous_source_bundle=projection["_previous_source_bundle"],
+                    previous_decision=projection["_previous_decision"])
+                capture_bytes = live_capture.canonical_bytes
         except ValueError as error:
             raise ChallengerReplacementRuntimeError(
                 "CHALLENGER_REPLACEMENT_SOURCE_BUILD_FAILED") from error
         source_bytes = canonical_json(source).encode("utf-8")
-        capture_bytes = canonical_json(dict(capture)).encode("utf-8")
         state.append(
             event_type="INPUT_PREPARED", slot_id=slot_id, worker_id=worker_id,
             recorded_at=observed_at,
@@ -370,10 +505,19 @@ def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
         existing = projection["slots"][slot_id]
     if existing["stage"] == "INPUT_PREPARED":
         try:
-            decision = build_challenger_replacement_decision(
-                plan=state.plan, source_bundle=existing["source_bundle"],
-                recorded_at=existing["input_recorded_at"],
-                previous_decision=projection["_previous_decision"])
+            if (
+                existing["source_bundle"].get("$schema")
+                == "./challenger-replacement-source-bundle-v2.schema.json"
+            ):
+                decision = build_challenger_replacement_cohort_decision(
+                    plan=state.plan, source_bundle=existing["source_bundle"],
+                    recorded_at=existing["input_recorded_at"],
+                    previous_decision=projection["_previous_decision"])
+            else:
+                decision = build_challenger_replacement_decision(
+                    plan=state.plan, source_bundle=existing["source_bundle"],
+                    recorded_at=existing["input_recorded_at"],
+                    previous_decision=projection["_previous_decision"])
         except ValueError as error:
             token = projection["last_event_hash"]
             state.append(
