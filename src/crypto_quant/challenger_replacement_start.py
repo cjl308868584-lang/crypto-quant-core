@@ -19,6 +19,7 @@ from .challenger_replacement_preflight import _run
 from .challenger_replacement_install_trust import (
     ReplacementInstallTrustError,
     _close_descriptor,
+    _fsync_retry,
     _open_directory,
     _publish_contract_exact,
     _read_exact,
@@ -98,13 +99,18 @@ class _RetainedPath:
                     )
             else:
                 current = os.fstat(self.descriptor)
+                os.lseek(self.descriptor, 0, os.SEEK_SET)
+                current_body = _read_exact(self.descriptor, current.st_size)
+                after_read = os.fstat(self.descriptor)
                 attached = os.stat(
                     self.path.name, dir_fd=self.parent_fd,
                     follow_symlinks=False,
                 )
                 if (
                     not _same_file_identity(self.opened, current)
-                    or not _same_file_identity(current, attached)
+                    or not _same_file_identity(current, after_read)
+                    or not _same_file_identity(after_read, attached)
+                    or current_body != self.body
                 ):
                     raise ChallengerReplacementStartError(
                         "CHALLENGER_REPLACEMENT_FIRST_SLOT_PATH_IDENTITY_CHANGED"
@@ -292,6 +298,22 @@ def _revalidate_sources(sources):
         )
 
 
+def _revalidate_retained_sources(sources):
+    for capability in sources.get("retained_paths", ()):
+        capability.validate()
+    sources["event_root"].validate()
+    if (
+        "state" in sources
+        and sources["state"].replay() != sources["projection"]
+    ):
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED"
+        )
+    sources["event_root"].validate()
+    if "install_inputs" in sources:
+        _revalidate_sources(sources)
+
+
 def _launchctl_observation_valid(contract, result, expected_runs):
     if result[0] != 0 or result[2]:
         return False
@@ -471,19 +493,7 @@ def observe_fixed_replacement_first_slot():
             "reason_codes": sorted(set(reasons)),
             "authority": _authority(1),
         }
-        for capability in sources.get("retained_paths", ()):
-            capability.validate()
-        sources["event_root"].validate()
-        if (
-            "state" in sources
-            and sources["state"].replay() != sources["projection"]
-        ):
-            raise ChallengerReplacementStartError(
-                "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED"
-            )
-        sources["event_root"].validate()
-        if "install_inputs" in sources:
-            _revalidate_sources(sources)
+        _revalidate_retained_sources(sources)
     except _EXPECTED_OBSERVATION_ERRORS as error:
         body_error = error
         result = _failed_summary(
@@ -547,6 +557,48 @@ def _observer_from_binding(binding):
             "CHALLENGER_REPLACEMENT_START_RECEIPT_INVALID"
         )
     return observer
+
+
+def _validate_retained_observer_sources(sources, observer):
+    _revalidate_retained_sources(sources)
+    status, first_scheduled, reasons = _classify(
+        sources, _utc_millis(observer["observed_at"])
+    )
+    expected = {
+        "status": status, "observed_at": observer["observed_at"],
+        "first_eligible_scheduled_for": sources["install_receipt"][
+            "first_eligible_scheduled_for"
+        ],
+        "first_scheduled_for": first_scheduled,
+        "event_count": len(sources["projection"]["events"]),
+        "completed_slot_count": sources["projection"][
+            "completed_slot_count"
+        ],
+        **_terminal_evidence(sources["projection"]),
+        "reason_codes": sorted(set(reasons)), "authority": _authority(1),
+    }
+    if sources.get("stderr") or expected != observer:
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED"
+        )
+
+
+def _retain_verified_observer_sources(observer):
+    sources = None
+    try:
+        sources = _load_fixed_observation_sources()
+        _validate_retained_observer_sources(sources, observer)
+        return sources
+    except _EXPECTED_OBSERVATION_ERRORS as error:
+        if sources is not None:
+            _close_observation_sources(sources, error)
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED"
+        ) from error
+    except BaseException as error:
+        if sources is not None:
+            _close_observation_sources(sources, error)
+        raise
 
 
 def _build_replacement_start_receipt(
@@ -668,7 +720,7 @@ def _load_existing_start_receipt(inputs, install_receipt, install_bytes):
     root_fd = -1
     primary = None
     try:
-        root_fd, _ = _open_directory(root, exact_mode=0o700)
+        root_fd, root_opened = _open_directory(root, exact_mode=0o700)
         names = sorted(os.listdir(root_fd))
         if not names:
             return None
@@ -691,6 +743,11 @@ def _load_existing_start_receipt(inputs, install_receipt, install_bytes):
             raise ChallengerReplacementStartError(
                 "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
             )
+        _fsync_retry(root_fd)
+        _validate_directory_attachment(
+            root, root_fd, root_opened,
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED",
+        )
         return receipt, observer
     except ChallengerReplacementStartError as error:
         if error.reason_code == (
@@ -698,6 +755,11 @@ def _load_existing_start_receipt(inputs, install_receipt, install_bytes):
         ):
             primary = error
             raise
+        primary = ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
+        )
+        raise primary from error
+    except (OSError, ReplacementInstallTrustError) as error:
         primary = ChallengerReplacementStartError(
             "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
         )
@@ -721,11 +783,47 @@ def _load_start_install_sources():
 
 def publish_fixed_replacement_start_receipt():
     inputs, install_receipt, install_bytes = _load_start_install_sources()
-    existing = _load_existing_start_receipt(
-        inputs, install_receipt, install_bytes
-    )
-    if existing is not None:
-        receipt, observer = existing
+    retained = None
+    primary = None
+    try:
+        existing = _load_existing_start_receipt(
+            inputs, install_receipt, install_bytes
+        )
+        if existing is not None:
+            receipt, observer = existing
+            retained = _retain_verified_observer_sources(observer)
+            if _load_start_install_sources() != (
+                inputs, install_receipt, install_bytes
+            ):
+                raise ChallengerReplacementStartError(
+                    "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED"
+                )
+            outcome = "ALREADY_PUBLISHED"
+        else:
+            observer = observe_fixed_replacement_first_slot()
+            if observer["status"] != "FIRST_NATURAL_SLOT_VERIFIED":
+                return {
+                    "publication_outcome": "NOT_PUBLISHED",
+                    "observer": observer,
+                }
+            retained = _retain_verified_observer_sources(observer)
+            receipt = _build_replacement_start_receipt(
+                observer=observer, contract=inputs["contract"],
+                contract_bytes=inputs["contract_bytes"],
+                install_receipt=install_receipt,
+                install_receipt_bytes=install_bytes, published_at=_now(),
+            )
+            root = Path(inputs["contract"]["paths"]["start_receipt_root"])
+            try:
+                outcome, _ = _publish_contract_exact(
+                    root, receipt["receipt_id"] + ".json",
+                    canonical_json(receipt).encode("utf-8"),
+                )
+            except ReplacementInstallTrustError as error:
+                raise ChallengerReplacementStartError(
+                    "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
+                ) from error
+        _validate_retained_observer_sources(retained, observer)
         if _load_start_install_sources() != (
             inputs, install_receipt, install_bytes
         ):
@@ -734,38 +832,13 @@ def publish_fixed_replacement_start_receipt():
             )
         root = Path(inputs["contract"]["paths"]["start_receipt_root"])
         return {
-            "publication_outcome": "ALREADY_PUBLISHED",
-            "observer": observer, "receipt": receipt,
+            "publication_outcome": outcome, "observer": observer,
+            "receipt": receipt,
             "receipt_path": str(root / (receipt["receipt_id"] + ".json")),
         }
-    observer = observe_fixed_replacement_first_slot()
-    if observer["status"] != "FIRST_NATURAL_SLOT_VERIFIED":
-        return {
-            "publication_outcome": "NOT_PUBLISHED", "observer": observer,
-        }
-    receipt = _build_replacement_start_receipt(
-        observer=observer, contract=inputs["contract"],
-        contract_bytes=inputs["contract_bytes"],
-        install_receipt=install_receipt,
-        install_receipt_bytes=install_bytes, published_at=_now(),
-    )
-    root = Path(inputs["contract"]["paths"]["start_receipt_root"])
-    try:
-        outcome, _ = _publish_contract_exact(
-            root, receipt["receipt_id"] + ".json",
-            canonical_json(receipt).encode("utf-8"),
-        )
-    except ReplacementInstallTrustError as error:
-        raise ChallengerReplacementStartError(
-            "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
-        ) from error
-    replayed = _load_start_install_sources()
-    if replayed != (inputs, install_receipt, install_bytes):
-        raise ChallengerReplacementStartError(
-            "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED"
-        )
-    return {
-        "publication_outcome": outcome, "observer": observer,
-        "receipt": receipt,
-        "receipt_path": str(root / (receipt["receipt_id"] + ".json")),
-    }
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        if retained is not None:
+            _close_observation_sources(retained, primary)

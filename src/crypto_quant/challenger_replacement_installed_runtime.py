@@ -39,6 +39,35 @@ class ReplacementInstalledRuntimeError(ValueError):
         self.reason_code = reason_code
 
 
+def _authorized_first_slot_prefix(projection, install_receipt):
+    """Recognize only the installed cohort's recoverable first-slot prefix."""
+
+    if (
+        projection["orphan_staging_count"]
+        or projection["failed_slot_count"]
+        or len(projection["slots"]) != 1
+        or len(projection["events"]) not in (1, 2, 3)
+    ):
+        return False
+    slot = next(iter(projection["slots"].values()))
+    expected_stage = {
+        1: "INPUT_PREPARED", 2: "RESULT_PREPARED", 3: "SLOT_SUCCEEDED",
+    }[len(projection["events"])]
+    expected_completed = int(expected_stage == "SLOT_SUCCEEDED")
+    try:
+        scheduled_for = slot["source_bundle"]["slot"]["scheduled_for"]
+        recorded_at = _utc_millis(slot["input_recorded_at"])
+        installed_at = _utc_millis(install_receipt["installed_at"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (
+        slot["stage"] == expected_stage
+        and projection["completed_slot_count"] == expected_completed
+        and scheduled_for == install_receipt["first_eligible_scheduled_for"]
+        and recorded_at >= installed_at
+    )
+
+
 def _load_snapshot_plan_and_strategy(contract):
     root_fd = -1
     primary = None
@@ -110,6 +139,7 @@ def _load_fixed_runtime_sources():
             if (
                 (projection["events"] or projection["orphan_staging_count"])
                 and existing is None
+                and not _authorized_first_slot_prefix(projection, receipt)
             ):
                 raise ReplacementInstalledRuntimeError(
                     "CHALLENGER_REPLACEMENT_START_RECEIPT_REQUIRED"

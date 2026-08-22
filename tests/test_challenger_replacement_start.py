@@ -556,11 +556,121 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
         ):
             start.publish_fixed_replacement_start_receipt()
 
+    def test_publication_retains_and_revalidates_first_slot_sources(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        inputs, install_receipt, observer = self._inputs()
+        sources = observation_sources(
+            successful_projection(), stdout=runtime_stdout()
+        )
+        changed = {**sources["projection"], "last_event_hash": "d" * 64}
+        with temporary_workspace() as directory:
+            root = Path(directory) / "start-receipts"
+            root.mkdir(mode=0o700)
+            inputs["contract"]["paths"]["start_receipt_root"] = str(root)
+
+            def publish_then_change(*_args, **_kwargs):
+                sources["state"].replay.return_value = changed
+                return "PUBLISHED", mock.Mock()
+
+            with mock.patch.object(
+                start, "observe_fixed_replacement_first_slot",
+                return_value=observer,
+            ), mock.patch.object(
+                start, "_load_fixed_successful_install_receipt",
+                return_value=(inputs, install_receipt, b"install-receipt"),
+            ), mock.patch.object(
+                start, "_load_fixed_observation_sources",
+                return_value=sources,
+            ) as retain, mock.patch.object(
+                start, "_publish_contract_exact",
+                side_effect=publish_then_change,
+            ), mock.patch.object(
+                start, "_now",
+                return_value=datetime(
+                    2026, 8, 22, 4, 11, tzinfo=timezone.utc
+                ),
+            ), self.assertRaisesRegex(
+                start.ChallengerReplacementStartError,
+                "FIRST_SLOT_SOURCE_CHANGED",
+            ):
+                start.publish_fixed_replacement_start_receipt()
+        retain.assert_called_once()
+        sources["event_root"].close.assert_called_once()
+
+    def test_publication_rejects_stderr_appearing_after_observation(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        observer = self._inputs()[2]
+        sources = observation_sources(
+            successful_projection(), stdout=runtime_stdout(), stderr=b"late"
+        )
+        with mock.patch.object(
+            start, "_load_fixed_observation_sources", return_value=sources
+        ), self.assertRaisesRegex(
+            start.ChallengerReplacementStartError,
+            "FIRST_SLOT_SOURCE_CHANGED",
+        ):
+            start._retain_verified_observer_sources(observer)
+        sources["event_root"].close.assert_called_once()
+
+    def test_existing_receipt_revalidates_current_first_slot_sources(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        inputs, install_receipt, observer = self._inputs()
+        sources = observation_sources(
+            successful_projection(), stdout=runtime_stdout()
+        )
+        with temporary_workspace() as directory:
+            root = Path(directory) / "start-receipts"
+            root.mkdir(mode=0o700)
+            inputs["contract"]["paths"]["start_receipt_root"] = str(root)
+            fixed = (inputs, install_receipt, b"install-receipt")
+            with mock.patch.object(
+                start, "observe_fixed_replacement_first_slot",
+                return_value=observer,
+            ), mock.patch.object(
+                start, "_load_fixed_successful_install_receipt",
+                return_value=fixed,
+            ), mock.patch.object(
+                start, "_load_fixed_observation_sources",
+                return_value=sources,
+            ), mock.patch.object(
+                start, "_now",
+                return_value=datetime(
+                    2026, 8, 22, 4, 11, tzinfo=timezone.utc
+                ),
+            ):
+                start.publish_fixed_replacement_start_receipt()
+
+            mismatched = observation_sources(
+                {**successful_projection(), "last_event_hash": "d" * 64},
+                stdout=runtime_stdout(),
+            )
+            with mock.patch.object(
+                start, "observe_fixed_replacement_first_slot",
+                side_effect=AssertionError("must not re-observe"),
+            ), mock.patch.object(
+                start, "_load_fixed_successful_install_receipt",
+                return_value=fixed,
+            ), mock.patch.object(
+                start, "_load_fixed_observation_sources",
+                return_value=mismatched,
+            ), self.assertRaisesRegex(
+                start.ChallengerReplacementStartError,
+                "FIRST_SLOT_SOURCE_CHANGED",
+            ):
+                start.publish_fixed_replacement_start_receipt()
+        mismatched["event_root"].close.assert_called_once()
+
     def test_start_receipt_publication_is_exact_idempotent_and_conflict_closed(self):
         import json
         import crypto_quant.challenger_replacement_start as start
 
         inputs, install_receipt, observer = self._inputs()
+        retained = observation_sources(
+            successful_projection(), stdout=runtime_stdout()
+        )
         with temporary_workspace() as directory:
             root = Path(directory) / "start-receipts"
             root.mkdir(mode=0o700)
@@ -571,6 +681,9 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
             ), mock.patch.object(
                 start, "_load_fixed_successful_install_receipt",
                 return_value=(inputs, install_receipt, b"install-receipt"),
+            ), mock.patch.object(
+                start, "_load_fixed_observation_sources",
+                return_value=retained,
             ), mock.patch.object(
                 start, "_now",
                 return_value=datetime(
@@ -596,6 +709,9 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
         import crypto_quant.challenger_replacement_start as start
 
         inputs, install_receipt, observer = self._inputs()
+        retained = observation_sources(
+            successful_projection(), stdout=runtime_stdout()
+        )
         with temporary_workspace() as directory:
             root = Path(directory) / "start-receipts"
             root.mkdir(mode=0o700)
@@ -607,6 +723,9 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
             ), mock.patch.object(
                 start, "_load_fixed_successful_install_receipt",
                 return_value=sources,
+            ), mock.patch.object(
+                start, "_load_fixed_observation_sources",
+                return_value=retained,
             ), mock.patch.object(
                 start, "_now",
                 return_value=datetime(2026, 8, 22, 4, 11,
@@ -621,6 +740,9 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
                 start, "_load_fixed_successful_install_receipt",
                 return_value=sources,
             ), mock.patch.object(
+                start, "_load_fixed_observation_sources",
+                return_value=retained,
+            ), mock.patch.object(
                 start, "_now",
                 return_value=datetime(2026, 8, 22, 4, 12,
                                       tzinfo=timezone.utc),
@@ -630,6 +752,47 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
             self.assertEqual(second["publication_outcome"], "ALREADY_PUBLISHED")
             self.assertEqual(second["receipt"], first["receipt"])
             self.assertEqual(second["receipt_path"], first["receipt_path"])
+
+    def test_existing_start_receipt_requires_directory_durability_confirmation(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        inputs, install_receipt, observer = self._inputs()
+        with temporary_workspace() as directory:
+            root = Path(directory) / "start-receipts"
+            root.mkdir(mode=0o700)
+            inputs["contract"]["paths"]["start_receipt_root"] = str(root)
+            receipt = start._build_replacement_start_receipt(
+                observer=observer, contract=inputs["contract"],
+                contract_bytes=inputs["contract_bytes"],
+                install_receipt=install_receipt,
+                install_receipt_bytes=b"install-receipt",
+                published_at=datetime(
+                    2026, 8, 22, 4, 11, tzinfo=timezone.utc
+                ),
+            )
+            start._publish_contract_exact(
+                root, receipt["receipt_id"] + ".json",
+                canonical_json(receipt).encode(),
+            )
+            with mock.patch.object(
+                start, "_fsync_retry", create=True
+            ) as confirm:
+                loaded = start._load_existing_start_receipt(
+                    inputs, install_receipt, b"install-receipt"
+                )
+            self.assertEqual(loaded[0], receipt)
+            confirm.assert_called_once()
+
+            with mock.patch.object(
+                start, "_fsync_retry", create=True,
+                side_effect=OSError("directory fsync failed"),
+            ), self.assertRaisesRegex(
+                start.ChallengerReplacementStartError,
+                "START_RECEIPT_PUBLICATION_FAILED",
+            ):
+                start._load_existing_start_receipt(
+                    inputs, install_receipt, b"install-receipt"
+                )
 
     def test_start_receipt_schema_mirror_is_strict_and_valid(self):
         import json

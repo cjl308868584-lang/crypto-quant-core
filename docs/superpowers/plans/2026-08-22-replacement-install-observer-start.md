@@ -413,7 +413,7 @@ Expected: FAIL because observer code is absent.
 
 - [ ] **Step 4: Implement retained-capability observation**
 
-Open and retain the contract-bound trusted roots before replay. Load all upstream receipts and exact event chain, cross-check the first `SLOT_SUCCEEDED` with v0.67 capture/source/decision bytes, logs and launchctl output. Re-replay through the same retained event-root before return and bind terminal-event/source/decision hashes. Attempt every retained close once; preserve a primary error and otherwise return a fixed close failure. Derive the required slot only from install receipt `first_eligible_scheduled_for`. Return only canonical structural summary; do not expose PnL, return, win rate or gate result.
+Open and retain the contract-bound trusted roots before replay. Load all upstream receipts and exact event chain, cross-check the first `SLOT_SUCCEEDED` with v0.67 capture/source/decision bytes, logs and launchctl output. Re-read retained log/plist bytes and re-replay through the same retained event-root before return, requiring exact stat/attachment/projection equality, and bind terminal-event/source/decision hashes. Attempt every retained close once; preserve a primary error and otherwise return a fixed close failure. Derive the required slot only from install receipt `first_eligible_scheduled_for`. Return only canonical structural summary; do not expose PnL, return, win rate or gate result.
 
 - [ ] **Step 5: Run focused and adjacent GREEN tests**
 
@@ -473,7 +473,7 @@ Expected: FAIL because receipt publication is absent.
 
 - [ ] **Step 3: Implement strict start receipt codec and publisher**
 
-First replay the unique existing owner-only receipt and reconstruct its exact observer summary; an exact receipt returns idempotently before any new observation or timestamp. Only an empty receipt root may invoke the observer. Accept no dates/counts/paths. Publish canonical bytes with staging + same-fd readback + fsync + atomic no-replace. Return success only after final replay, parent fsync and retained-root revalidation.
+First replay the unique existing owner-only receipt and reconstruct its exact observer summary; before idempotent return, confirm receipt-directory fsync/attachment and revalidate current retained event/log/plist sources against that summary, without a new timestamp or launchctl observation. Only an empty receipt root may invoke the observer. After a verified observation, reacquire matching retained sources and hold them across publication. Accept no dates/counts/paths. Publish canonical bytes with staging + same-fd readback + fsync + atomic no-replace. Return success only after final replay, parent fsync and pre/post retained-source revalidation.
 
 - [ ] **Step 4: Add the fixed observer/start CLI**
 
@@ -525,7 +525,7 @@ Parametrize every write/readback/file-fsync/dir-fsync/no-replace/bootstrap/post-
 
 - [ ] **Step 3: Add static scope/YAGNI gates**
 
-Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert trust/preflight/installer/installed-adapter/observer production modules plus thin CLI modules together remain strictly below 3,520 physical lines；其中 install trust+CLI 不高于 1,700、preflight+CLI 不高于 345、installer+CLI 不高于 420、installed adapter+CLI 不高于 265、observer/start+CLI 不高于 810。原 2,850 行估算先遗漏 successful-install-receipt replay、snapshot strategy-core replay 和 retained event-root construction，后续 3,050/3,310 行修订仍遗漏 retained log/plist capability、严格 start-receipt codec/source binding、upstream source-error mapping、no-overwrite publisher，以及独立审查实证的 receipt 先重放幂等、pre-start 污染、event 二次重放和全量 close 安全边界。最终只把这些实证边界的估算误差分配回实际所属层，不得转成通用 Runner/storage/deployment 功能。已有 deployment plist renderer net production diff 不高于 25 行，bounded launchctl replacement parser net diff 不高于 25 行。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
+Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert trust/preflight/installer/installed-adapter/observer production modules plus thin CLI modules together remain strictly below 3,620 physical lines；其中 install trust+CLI 不高于 1,700、preflight+CLI 不高于 345、installer+CLI 不高于 420、installed adapter+CLI 不高于 290、observer/start+CLI 不高于 880。原 2,850 行估算先遗漏 successful-install-receipt replay、snapshot strategy-core replay 和 retained event-root construction，后续 3,050/3,310/3,520 行修订仍遗漏 retained log/plist capability、严格 start-receipt codec/source binding、upstream source-error mapping、no-overwrite publisher，以及独立审查实证的 receipt 先重放幂等、安装后首槽 durable-prefix 崩溃恢复、event 二次重放、receipt 目录耐久确认、跨 publication 的 retained event/log/plist 复核和全量 close 安全边界。最终只把这些实证边界的估算误差分配回实际所属层，不得转成通用 Runner/storage/deployment 功能。已有 deployment plist renderer net production diff 不高于 25 行，bounded launchctl replacement parser net diff 不高于 25 行。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
 
 - [ ] **Step 4: Run focused and full v0.68 tests**
 

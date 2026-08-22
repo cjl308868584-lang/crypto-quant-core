@@ -189,7 +189,8 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
         )
         install_receipt = {
             "status": "INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT",
-            "first_eligible_scheduled_for": "2026-08-22T04:00:00.000Z",
+            "installed_at": "2026-08-22T04:15:00.000Z",
+            "first_eligible_scheduled_for": "2026-08-22T08:00:00.000Z",
         }
         before = tuple(self.fixture._state().replay()["events"])
         with mock.patch.object(
@@ -212,6 +213,92 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
         acquire.assert_not_called()
         append.assert_not_called()
         self.assertEqual(tuple(self.fixture._state().replay()["events"]), before)
+
+    def test_first_slot_input_crash_resumes_without_start_receipt(self):
+        import crypto_quant.challenger_replacement_installed_runtime as runtime
+        import crypto_quant.challenger_replacement_runtime as core
+
+        state = self.fixture._state()
+        original = state.append
+
+        def crash_after_input(**kwargs):
+            event = original(**kwargs)
+            if kwargs["event_type"] == "INPUT_PREPARED":
+                raise SystemExit("test crash")
+            return event
+
+        with mock.patch.object(state, "append", side_effect=crash_after_input):
+            with self.assertRaises(SystemExit):
+                core.run_challenger_replacement_cohort_slot(
+                    state=state, live_capture=self.fixture.live_capture,
+                    worker_id="crash-worker",
+                )
+        inputs = self._install_inputs_for_fixture()
+        inputs["contract"]["strategy_core"].update(
+            self.fixture.build_identity
+        )
+        install_receipt = {
+            "status": "INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT",
+            "installed_at": "2026-08-22T00:15:00.000Z",
+            "first_eligible_scheduled_for": "2026-08-22T04:00:00.000Z",
+        }
+        with mock.patch.object(
+            runtime, "_load_fixed_successful_install_receipt",
+            return_value=(inputs, install_receipt, b"receipt"),
+        ), mock.patch.object(
+            runtime, "_load_snapshot_plan_and_strategy",
+            return_value=self.fixture.plan,
+        ), mock.patch.object(
+            runtime, "acquire_challenger_replacement_live_capture"
+        ) as acquire:
+            result = runtime.run_fixed_replacement_installed_invocation()
+
+        self.assertEqual(result["terminal_stage"], "SLOT_SUCCEEDED")
+        self.assertEqual(len(self.fixture._state().replay()["events"]), 3)
+        acquire.assert_not_called()
+
+    def test_first_slot_result_crash_resumes_without_start_receipt(self):
+        import crypto_quant.challenger_replacement_installed_runtime as runtime
+        import crypto_quant.challenger_replacement_runtime as core
+
+        state = self.fixture._state()
+        original = state.append
+
+        def crash_after_result(**kwargs):
+            event = original(**kwargs)
+            if kwargs["event_type"] == "RESULT_PREPARED":
+                raise SystemExit("test crash")
+            return event
+
+        with mock.patch.object(state, "append", side_effect=crash_after_result):
+            with self.assertRaises(SystemExit):
+                core.run_challenger_replacement_cohort_slot(
+                    state=state, live_capture=self.fixture.live_capture,
+                    worker_id="crash-worker",
+                )
+        inputs = self._install_inputs_for_fixture()
+        inputs["contract"]["strategy_core"].update(
+            self.fixture.build_identity
+        )
+        install_receipt = {
+            "status": "INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT",
+            "installed_at": "2026-08-22T00:15:00.000Z",
+            "first_eligible_scheduled_for": "2026-08-22T04:00:00.000Z",
+        }
+        with mock.patch.object(
+            runtime, "_load_fixed_successful_install_receipt",
+            return_value=(inputs, install_receipt, b"receipt"),
+        ), mock.patch.object(
+            runtime, "_load_snapshot_plan_and_strategy",
+            return_value=self.fixture.plan,
+        ), mock.patch.object(
+            runtime, "acquire_challenger_replacement_live_capture"
+        ) as acquire:
+            result = runtime.run_fixed_replacement_installed_invocation()
+
+        self.assertEqual(result["terminal_stage"], "SLOT_SUCCEEDED")
+        self.assertEqual(len(self.fixture._state().replay()["events"]), 3)
+        acquire.assert_not_called()
 
     def test_snapshot_plan_loader_replays_strategy_bytes_before_state(self):
         import crypto_quant.challenger_replacement_installed_runtime as runtime

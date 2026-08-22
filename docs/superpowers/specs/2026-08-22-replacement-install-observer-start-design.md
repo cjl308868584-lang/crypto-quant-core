@@ -298,8 +298,11 @@ receipt；以 receipt 中 identity 打开 event root；从 snapshot exact plan �
 `ChallengerReplacementRuntimeState`；执行现有单槽逻辑；在所有正常和异常路径关闭 retained
 event-root descriptor。receipt 不存在、重复、different/untrusted，或任一 identity 变化时，
 network/runtime state write/Broker/order 计数必须全为 0。
-在 start receipt 存在前，event root 必须仍为全空；任何 canonical event 或 orphan staging
-都在市场请求和 append 之前失败关闭。start receipt 存在后，adapter 必须将其
+在 start receipt 存在前，event root 只能为空，或恰好是 install receipt 所派生首个
+eligible slot 的合法 `INPUT_PREPARED` / `RESULT_PREPARED` / `SLOT_SUCCEEDED` durable
+prefix；后者允许自然进程在阶段边界崩溃后 fresh-process 恢复，不重新请求市场数据。
+错槽、早于安装的记录、多槽、失败事件或任何 orphan staging 都在市场请求和 append 前
+失败关闭。start receipt 存在后，adapter 必须将其
 终端 event/source/decision hash 与当前 event projection 的第一个成功槽交叉验证。
 
 ## 10. Read-only first-slot observer
@@ -332,10 +335,14 @@ bytes/stat/inode 必须不变。
 ## 11. Start receipt and 90-day boundary
 
 start publisher 先重放固定 owner-only root 中的唯一 receipt；已有 exact receipt 时从其
-observer binding 重建并验证 canonical summary，在新的时钟或观察之前直接幂等返回。
+observer binding 重建 canonical summary，在不重新读时钟或调用 launchctl 的前提下，
+仍必须重新打开并保留 event/log/plist capabilities，证明当前证据与 binding 一致，
+对 receipt 目录补做 fsync 并重验 attachment 后才可幂等返回。
 只有 root 为空且新 observer 为 `FIRST_NATURAL_SLOT_VERIFIED` 才可构建并 no-overwrite
 发布 start receipt。已有 different/untrusted
-对象失败关闭。发布前后重验所有 retained source。
+对象失败关闭。observer 返回后必须重新取得与 summary 匹配的 retained
+event/log/plist capabilities，持有它们跨越整个 publication，并在发布前后重验
+exact bytes/stat/attachment、event projection 与所有 upstream source。
 
 receipt 自动派生：
 
