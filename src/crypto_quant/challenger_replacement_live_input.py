@@ -742,6 +742,7 @@ def _validated_attempt_payload(document, *, request, trusted_completed, captured
             or len(body) > _MAX_RESPONSE_BYTES
             or attempt["body_size_bytes"] != len(body)
             or attempt["body_sha256"] != hashlib.sha256(body).hexdigest()
+            or attempt["response_body_base64"] != base64.b64encode(body).decode("ascii")
         ):
             _invalid_attempt()
         if attempt["outcome"] == "TRANSPORT_ERROR":
@@ -761,7 +762,7 @@ def _validated_attempt_payload(document, *, request, trusted_completed, captured
                 or not isinstance(status, int)
                 or isinstance(status, bool)
                 or attempt["final_url"] != request["url"]
-                or not body
+                or (index == selected and not body)
                 or (index < selected and status not in _TRANSIENT_STATUS)
                 or (index == selected and status != 200)
             ):

@@ -317,7 +317,7 @@
     "src/crypto_quant/challenger_replacement_deployment.py": "074cdc76ed79e24d5a86b375bf3e0b2b52e38b48f3b8ba74cd1ddbe839a64890",
     "src/crypto_quant/challenger_replacement_events.py": "a9a521b0d384be00126ac40f87d24f07369e1822d086504fc6e5b81029ec0456",
     "src/crypto_quant/challenger_replacement_evidence.py": "920e84a77138509f94b42b416b1ce57adc84daad0a855ab39e9ac6a44799002f",
-    "src/crypto_quant/challenger_replacement_live_input.py": "0181863ddf77db05559be2cdbfe23ca7691ce6c4477ff78b51a890092097bf94",
+    "src/crypto_quant/challenger_replacement_live_input.py": "84640cbf81659d05d8abdfa935e8340eb565db20bd3006641a77033d59263536",
     "src/crypto_quant/challenger_replacement_live_runtime_cli.py": "0d35fb91e01d4d1950b9e445d7d68231ed728b20f0a637c9365f36ead1748170",
     "src/crypto_quant/challenger_replacement_plan.py": "661abda1a956be2f607adbbf7af3435ed2baacfe8f5bf7864a08f2e23443d5ae",
     "src/crypto_quant/challenger_replacement_plan_supersession.py": "d1f051bd4b02c2954bf67bd8cdd9473e1188148106208da4b07f596056e6aa66",
@@ -496,7 +496,7 @@
     "tests/test_challenger_replacement_events.py": "fa1e463edb41f2fe09992d307b94e040b36434c8e10770d23eec6ec77ee8300d",
     "tests/test_challenger_replacement_evidence.py": "f6e104117241a739e265d62a3bd12f7e4c4c166689d8c627ce540adca9250c7d",
     "tests/test_challenger_replacement_live_documents.py": "8eace14e33b619b4f4b8882c49b65bd65ea1ddccb9d2ef15f51442c7114ba5a9",
-    "tests/test_challenger_replacement_live_input.py": "81c6537d2251aa5551e44dec194572b4443c36e3ae053b1e355afafbe38db6eb",
+    "tests/test_challenger_replacement_live_input.py": "c3c21b2eb76ca4a4961dc5a0786384edda89841098fc95c80e878422721200a3",
     "tests/test_challenger_replacement_live_runtime.py": "1ef44e5a21501771f7ccae3368fdc19181c8053c2d479bc46946f7a2e8414d0d",
     "tests/test_challenger_replacement_plan.py": "a9708ba025395d0d6da01ab404558908355c7f11b2008b7ecac377df0f4b1833",
     "tests/test_challenger_replacement_plan_supersession.py": "98a8250ac9128dc84d4f1a6aca79aa162ee4a10392ace7048cb25692eddf9ab1",
@@ -541,7 +541,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "e49eaff99fda72b60bb4a2e7bb112808bcd8891a0a9723fa531831a4c920c6d8",
+  "build_input_tree_hash": "837a2e75cacf6e37c8ad773564c34ef587a03af2d43dd86ff2656b8f3af80dff",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -549,5 +549,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "5f1942550143bce3adcf6bf175e7947e6d2d1e4626358d6b17974024885f4fde"
+  "manifest_hash": "34fc620b9a8dc7bbb0e8bd25f0504f4f422a016a36883778e969cf218e7f7ebc"
 }

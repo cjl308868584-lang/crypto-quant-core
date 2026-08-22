@@ -649,8 +649,9 @@ class LiveCaptureCodecTests(unittest.TestCase):
     def test_loader_maps_unsafe_integer_to_fixed_row_failure(self):
         document = self._structural_document()
         original = document["attempts"][0]["response_body_base64"]
-        first_open = str(json.loads(base64.b64decode(original))[0][0])
-        body = original.replace(first_open, str(2**53), 1).encode("utf-8")
+        raw = base64.b64decode(original).decode("utf-8")
+        first_open = str(json.loads(raw)[0][0])
+        body = raw.replace(first_open, str(2**53), 1).encode("utf-8")
         document["attempts"][0]["response_body_base64"] = base64.b64encode(body).decode("ascii")
         document["attempts"][0]["body_size_bytes"] = len(body)
         document["attempts"][0]["body_sha256"] = hashlib.sha256(body).hexdigest()
@@ -666,6 +667,20 @@ class LiveCaptureCodecTests(unittest.TestCase):
             caught.exception.reason_code,
             "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_ROWS_INVALID",
         )
+
+    def test_loader_rejects_noncanonical_base64_pad_bits(self):
+        document = self._structural_document()
+        encoded = document["attempts"][0]["response_body_base64"]
+        self.assertTrue(encoded.endswith("="))
+        document["attempts"][0]["response_body_base64"] = encoded[:-2] + "1="
+        document["capture_hash"] = artifact_self_hash(document, "capture_hash")
+        with self.assertRaisesRegex(
+            ChallengerReplacementLiveInputError,
+            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_ATTEMPT_INVALID",
+        ):
+            load_challenger_replacement_live_capture_bytes(
+                canonical_json(document).encode(), plan=self.plan,
+                build_identity=self.build_identity, previous_source_bundle=None)
 
 
 class LiveAcquisitionTests(unittest.TestCase):
@@ -778,6 +793,19 @@ class LiveAcquisitionTests(unittest.TestCase):
             + [
                 self._kline_response(
                     status=503, sequence=1, body=b"\xff", content_type="text/plain"
+                ),
+                self._kline_response(sequence=2),
+            ]
+        )
+        self.assertEqual(capture.document["authority"]["network_request_count"], 5)
+        self.assertEqual(self.sleeps, [1])
+
+    def test_empty_transient_body_is_recorded_and_retried(self):
+        capture = self._acquire_with(
+            _TimeTransport().responses
+            + [
+                self._kline_response(
+                    status=503, sequence=1, body=b"", content_type="text/plain"
                 ),
                 self._kline_response(sequence=2),
             ]
