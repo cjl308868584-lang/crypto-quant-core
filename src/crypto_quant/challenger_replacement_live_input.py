@@ -3,13 +3,14 @@
 import json
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from importlib import resources
 from typing import Any, Mapping
 
 from jsonschema import Draft202012Validator
 
-from .canonical import canonical_json
+from .canonical import canonical_json, stable_id, utc_datetime
 from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reasons
 
 
@@ -23,6 +24,14 @@ _BUILD_KEYS = {
     "build_input_tree_hash",
     "manifest_hash",
     "manifest_file_sha256",
+}
+_SLOT_KEYS = {"slot_id", "sequence", "scheduled_for", "captured_at"}
+_AUTHORITY_KEYS = {
+    "network_request_count",
+    "credentials_allowed",
+    "account_requests_allowed",
+    "broker_requests_allowed",
+    "orders_allowed",
 }
 
 
@@ -130,7 +139,67 @@ def load_challenger_replacement_live_capture_bytes(
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_BUILD_BINDING_INVALID"
         )
+    slot = document["slot"]
+    try:
+        scheduled = _utc_millis(slot["scheduled_for"])
+        captured = _utc_millis(slot["captured_at"])
+        expected_slot_id = stable_id(
+            "challenger_replacement_slot",
+            {
+                "plan_hash": plan["plan_hash"],
+                "scheduled_for": slot["scheduled_for"],
+            },
+        )
+    except (KeyError, TypeError, ValueError):
+        _invalid_slot()
+    if (
+        not isinstance(slot, Mapping)
+        or set(slot) != _SLOT_KEYS
+        or not isinstance(slot["sequence"], int)
+        or isinstance(slot["sequence"], bool)
+        or not 1 <= slot["sequence"] <= 2**53 - 1
+        or scheduled.minute != 0
+        or scheduled.second != 0
+        or scheduled.microsecond != 0
+        or scheduled.hour % 4
+        or not scheduled + timedelta(minutes=2)
+        <= captured
+        <= scheduled + timedelta(minutes=10)
+        or slot["slot_id"] != expected_slot_id
+    ):
+        _invalid_slot()
+    authority = document["authority"]
+    if (
+        not isinstance(authority, Mapping)
+        or set(authority) != _AUTHORITY_KEYS
+        or not isinstance(authority["network_request_count"], int)
+        or isinstance(authority["network_request_count"], bool)
+        or authority["network_request_count"] != 3 + len(document["attempts"])
+        or not 4 <= authority["network_request_count"] <= 6
+        or any(authority[name] is not False for name in _AUTHORITY_KEYS - {"network_request_count"})
+    ):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_AUTHORITY_INVALID"
+        )
     return deepcopy(dict(document))
+
+
+def _utc_millis(value):
+    if not isinstance(value, str):
+        raise ValueError("UTC millisecond text required")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("timezone required")
+    parsed = parsed.astimezone(timezone.utc)
+    if value != utc_datetime(parsed):
+        raise ValueError("canonical UTC milliseconds required")
+    return parsed
+
+
+def _invalid_slot():
+    raise ChallengerReplacementLiveInputError(
+        "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_SLOT_INVALID"
+    )
 
 
 def _lowerhex(value, length):

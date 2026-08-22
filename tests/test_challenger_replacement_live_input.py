@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import canonical_json, stable_id
 from crypto_quant.challenger_replacement_live_input import (
     ChallengerReplacementLiveCapture,
     ChallengerReplacementLiveInputError,
@@ -47,13 +47,30 @@ class LiveCaptureCodecTests(unittest.TestCase):
                 "plan_hash": self.plan["plan_hash"],
             },
             "build_identity": deepcopy(self.build_identity),
-            "slot": {},
+            "slot": {
+                "slot_id": stable_id(
+                    "challenger_replacement_slot",
+                    {
+                        "plan_hash": self.plan["plan_hash"],
+                        "scheduled_for": "2026-08-22T04:00:00.000Z",
+                    },
+                ),
+                "sequence": 1,
+                "scheduled_for": "2026-08-22T04:00:00.000Z",
+                "captured_at": "2026-08-22T04:05:00.000Z",
+            },
             "clock": {},
             "kline_request": {},
             "attempts": [{}],
             "selected_success_attempt_index": 0,
             "rows": [{} for _ in range(21)],
-            "authority": {},
+            "authority": {
+                "network_request_count": 4,
+                "credentials_allowed": False,
+                "account_requests_allowed": False,
+                "broker_requests_allowed": False,
+                "orders_allowed": False,
+            },
         }
 
     def test_live_capture_capability_cannot_be_constructed_directly(self):
@@ -100,6 +117,28 @@ class LiveCaptureCodecTests(unittest.TestCase):
             (
                 wrong_build,
                 "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_BUILD_BINDING_INVALID",
+            ),
+        ):
+            with self.subTest(reason=reason):
+                with self.assertRaises(ChallengerReplacementLiveInputError) as caught:
+                    load_challenger_replacement_live_capture_bytes(
+                        canonical_json(document).encode("utf-8"),
+                        plan=self.plan,
+                        build_identity=self.build_identity,
+                        previous_source_bundle=None,
+                    )
+                self.assertEqual(caught.exception.reason_code, reason)
+
+    def test_loader_rejects_forged_slot_and_authority(self):
+        wrong_slot = self._structural_document()
+        wrong_slot["slot"]["slot_id"] = "challenger_replacement_slot_" + "f" * 64
+        wrong_authority = self._structural_document()
+        wrong_authority["authority"]["credentials_allowed"] = True
+        for document, reason in (
+            (wrong_slot, "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_SLOT_INVALID"),
+            (
+                wrong_authority,
+                "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_AUTHORITY_INVALID",
             ),
         ):
             with self.subTest(reason=reason):
