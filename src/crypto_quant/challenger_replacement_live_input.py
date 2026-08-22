@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 
 from .canonical import canonical_json, stable_id, utc_datetime
 from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reasons
+from .evidence import artifact_self_hash
 
 
 _CAPABILITY_TOKEN = object()
@@ -111,6 +112,13 @@ def load_challenger_replacement_live_capture_bytes(
             "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_SCHEMA_INVALID"
         )
     if (
+        not _lowerhex(document["capture_hash"], 64)
+        or document["capture_hash"] != artifact_self_hash(document, "capture_hash")
+    ):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_HASH_INVALID"
+        )
+    if (
         not isinstance(plan, Mapping)
         or challenger_replacement_plan_v2_reasons(plan)
         or document["plan"]
@@ -180,6 +188,18 @@ def load_challenger_replacement_live_capture_bytes(
     ):
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_AUTHORITY_INVALID"
+        )
+    expected_capture_id = stable_id(
+        "challenger_replacement_live_capture",
+        {
+            "plan": document["plan"],
+            "build_identity": document["build_identity"],
+            "slot": document["slot"],
+        },
+    )
+    if document["capture_id"] != expected_capture_id:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_ID_INVALID"
         )
     return deepcopy(dict(document))
 
