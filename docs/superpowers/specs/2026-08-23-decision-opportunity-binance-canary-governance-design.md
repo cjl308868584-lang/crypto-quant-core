@@ -143,8 +143,40 @@ technical_leverage_cap   2x
 - 合法决策捕获窗口：闭区间
   `[scheduled_for + 2m, scheduled_for + 10m]`；
 - 不允许 CLI 传入 scheduled time、sequence、decision、price、PnL 或 outcome；
-- 研究策略的指标、warm-up、阈值若改变，必须另行形成新 hypothesis registration，不得在
-  v3 实现阶段暗改。
+- v3 本身是新的 hypothesis registration；本节之后的 exact 双向规则、指标、warm-up 与阈值
+  一经 plan artifact 生成便不得在实现阶段暗改。
+
+### 4.4 Exact 双向决策规则
+
+两种方向共用已冻结的 20-bar prior SMA、5-bar log return、0.5% distance、8 小时最短持有和
+24 小时 vertical exit，不引入 AI 或可训练参数：
+
+```text
+FLAT → SPOT_LONG
+  latest_close >= prior_sma20 * 1.005
+  AND eth_log_return_5 > 0
+
+FLAT → PERP_SHORT
+  latest_close <= prior_sma20 * 0.995
+  AND eth_log_return_5 < 0
+
+SPOT_LONG → FLAT（8 小时后）
+  latest_close <= prior_sma20
+  OR 24 小时 vertical exit
+
+PERP_SHORT → FLAT（8 小时后）
+  latest_close >= prior_sma20
+  OR 24 小时 vertical exit
+```
+
+同一 FLAT opportunity 不可能同时满足 long 与 short entry；如果输入、Decimal 运算或规则版本使
+两者同时为 true，固定为 `DECISION_POLICY_AMBIGUOUS` 并失败关闭。持仓期间相反 entry signal
+不能直接反手，只能触发原产品的退出判定。旧仓位、active order、late fill 和账本全部确认归零
+后，还必须等到下一个新的 DecisionOpportunity 才能建立反向风险；同一 opportunity 内
+close-and-reverse 禁止。
+
+v3 plan 必须绑定新的 decision policy hash 与 hypothesis registration hash，并显式引用 v0.64
+long-only policy/hash 作为 predecessor，而不是复用其 identity。
 
 ## 5. DecisionOpportunity 事实模型
 

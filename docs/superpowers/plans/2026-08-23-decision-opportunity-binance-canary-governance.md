@@ -171,6 +171,12 @@ assert plan["economic_evidence"]["interim_profitability_pass_allowed"] is False
 
 Assert exact E0/E1/E2 tables, mutual exclusion, one-way isolated perpetual, hard 2× technical cap, E1 inheritance of E0 absolute loss limits, exact safety failure reasons and all authority booleans false. Mutating any field, unknown key, hash, ID, predecessor identity or unlisted semantic diff must produce a fixed reason code.
 
+Also assert the literal dual-direction policy: long entry is close at least 0.5% above prior SMA20 with
+positive five-bar log return; short entry is close at least 0.5% below prior SMA20 with negative five-bar
+log return; after the eight-hour minimum, long exits at close <= prior SMA20 and short exits at close >=
+prior SMA20; both have a 24-hour vertical exit. Same-opportunity close-and-reverse is false and a verified
+FLAT state must precede the next opportunity that can open the opposite product.
+
 - [ ] **Step 2: Run RED**
 
 ```bash
