@@ -11,10 +11,11 @@ import secrets
 import stat
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Tuple
 
-from .canonical import canonical_json
+from .canonical import canonical_json, utc_datetime
 
 
 _MAX_CANONICAL_EVENT_BYTES = 4_194_304
@@ -105,6 +106,21 @@ def _hash_valid(value):
     return isinstance(value, str) and _HASH_PATTERN.fullmatch(value) is not None
 
 
+def _recorded_at_valid(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return (
+        parsed.tzinfo is not None
+        and parsed.utcoffset() is not None
+        and parsed.microsecond % 1000 == 0
+        and utc_datetime(parsed.astimezone(timezone.utc)) == value
+    )
+
+
 def _strict_pairs(pairs):
     result = {}
     for key, value in pairs:
@@ -152,7 +168,10 @@ def build_challenger_replacement_event(
             _event_bytes_invalid()
         event_root.validate()
         text_values = (event_type, slot_id, worker_id, recorded_at)
-        if any(not isinstance(value, str) or not value for value in text_values):
+        if (
+            any(not isinstance(value, str) or not value for value in text_values)
+            or not _recorded_at_valid(recorded_at)
+        ):
             _event_bytes_invalid()
         if (
             isinstance(sequence, bool)
@@ -222,6 +241,7 @@ def load_challenger_replacement_event_bytes(data):
                 not isinstance(parsed.get(key), str) or not parsed[key]
                 for key in ("event_type", "slot_id", "worker_id", "recorded_at")
             )
+            or not _recorded_at_valid(parsed.get("recorded_at"))
             or not all(
                 _hash_valid(parsed.get(key))
                 for key in (

@@ -120,6 +120,38 @@ class PublicEventSafetyContractTests(unittest.TestCase):
     def tearDown(self):
         self.workspace.close()
 
+    def test_recorded_at_requires_exact_canonical_utc_milliseconds(self):
+        root = open_challenger_replacement_event_root(self.workspace.identity())
+        try:
+            for invalid in (
+                "not-a-time", "2026-08-09T08:05:00Z",
+                "2026-08-09T08:05:00.000+00:00",
+                "2026-08-09T08:05:00.000001Z",
+            ):
+                with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                    ChallengerReplacementEventError,
+                    "CHALLENGER_REPLACEMENT_EVENT_BYTES_INVALID",
+                ):
+                    events_module.build_challenger_replacement_event(
+                        sequence=1, event_type="INPUT_PREPARED", slot_id="slot",
+                        worker_id="worker", recorded_at=invalid,
+                        previous_event_hash=_ZERO_HASH, payload_bytes=b"payload",
+                        plan_hash=_PLAN_HASH, build_identity_hash=_BUILD_HASH,
+                        event_root=root)
+            valid = fixture_event(root)
+            core = json.loads(valid.final_bytes)
+            core.pop("event_hash")
+            core["recorded_at"] = "not-a-time"
+            forged = events_module._event_from_core(core)
+            with self.assertRaisesRegex(
+                ChallengerReplacementEventError,
+                "CHALLENGER_REPLACEMENT_EVENT_BYTES_INVALID",
+            ):
+                events_module.load_challenger_replacement_event_bytes(
+                    forged.final_bytes)
+        finally:
+            root.close()
+
     def test_replaced_event_root_never_receives_a_write(self):
         identity = self.workspace.identity()
         displaced = self.workspace.base / "retained-events"

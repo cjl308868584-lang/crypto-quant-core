@@ -14,9 +14,9 @@
 
 ## 未安装、未启动
 
-`production_activation=false`  
-`runtime_install_authorized=false`  
-`replacement_start_authorized=false`  
+`production_activation=false`
+`runtime_install_authorized=false`
+`replacement_start_authorized=false`
 `real_orders_allowed=false`
 
 本版本没有创建 production root、LaunchAgent、service、Runner、scheduler、observer、

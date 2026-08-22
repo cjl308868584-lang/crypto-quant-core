@@ -495,4 +495,3 @@ def load_challenger_replacement_source_bundle_bytes(
     if reasons:
         raise ChallengerReplacementEvidenceError(reasons[0])
     return dict(value)
-

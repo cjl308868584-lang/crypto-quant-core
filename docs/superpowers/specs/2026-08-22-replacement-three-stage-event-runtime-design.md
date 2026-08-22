@@ -1,8 +1,8 @@
 # Replacement Challenger Three-Stage Event Runtime Design
 
-日期：2026-08-22  
-目标版本：`v0.66.0`  
-状态：设计冻结；仅代码与候选发布，未安装、未启动  
+日期：2026-08-22
+目标版本：`v0.66.0`
+状态：设计冻结；仅代码与候选发布，未安装、未启动
 权威基线：annotated `v0.65.1` peeled commit
 `9799a99823a1b3fbc33368357991b09ef7dc321b`
 

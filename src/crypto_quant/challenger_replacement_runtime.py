@@ -48,6 +48,14 @@ def _hash_valid(value):
     return isinstance(value, str) and len(value) == 64 and set(value) <= _HASH
 
 
+def _time(value):
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def _utc_now():
+    return utc_datetime(datetime.now(timezone.utc))
+
+
 def _payload(event):
     try:
         document = json.loads(event.final_bytes.decode("utf-8"))
@@ -116,7 +124,11 @@ def _apply_event(projection, event, plan, build_identity):
         _require_exact(payload, (
             "capture_sha256", "source_bundle_bytes_base64", "source_bundle_sha256",
         ))
-        if projection["active_slot_id"] is not None or not _hash_valid(payload["capture_sha256"]):
+        if (
+            projection["active_slot_id"] is not None
+            or projection["failed_slot_count"]
+            or not _hash_valid(payload["capture_sha256"])
+        ):
             _invalid()
         source_bytes = _decode_exact(
             payload["source_bundle_bytes_base64"], payload["source_bundle_sha256"])
@@ -156,6 +168,7 @@ def _apply_event(projection, event, plan, build_identity):
             or payload["input_event_sequence"] != slot["input_event_sequence"]
             or payload["source_bundle_sha256"] != slot["source_bundle_sha256"]
             or payload["previous_decision_hash_or_null"] != expected_previous
+            or _time(header["recorded_at"]) < _time(slot["input_recorded_at"])
         ):
             _invalid()
         decision_bytes = _decode_exact(
@@ -187,7 +200,11 @@ def _apply_event(projection, event, plan, build_identity):
             "source_bundle_sha256": slot.get("source_bundle_sha256"),
             "decision_sha256": slot.get("decision_sha256"),
         }
-        if slot["stage"] != "RESULT_PREPARED" or dict(payload) != expected:
+        if (
+            slot["stage"] != "RESULT_PREPARED"
+            or dict(payload) != expected
+            or _time(header["recorded_at"]) < _time(slot["result_recorded_at"])
+        ):
             _invalid()
         slot["stage"] = event_type
         projection["active_slot_id"] = None
@@ -206,12 +223,19 @@ def _apply_event(projection, event, plan, build_identity):
         }
         return
     _require_exact(payload, ("failed_after_event_hash", "failed_stage", "reason_code"))
+    boundary_time = (
+        slot["input_recorded_at"]
+        if slot["stage"] == "INPUT_PREPARED"
+        else slot.get("result_recorded_at")
+    )
     if (
         slot["stage"] not in {"INPUT_PREPARED", "RESULT_PREPARED"}
         or payload["failed_stage"] != slot["stage"]
         or payload["failed_after_event_hash"] != event.previous_event_hash
         or not isinstance(payload["reason_code"], str)
         or not payload["reason_code"]
+        or boundary_time is None
+        or _time(header["recorded_at"]) < _time(boundary_time)
     ):
         _invalid()
     slot["stage"] = _FAILURE
@@ -219,6 +243,7 @@ def _apply_event(projection, event, plan, build_identity):
     projection["active_slot_id"] = None
     projection["failed_slot_count"] += 1
     projection["_terminal_slots"].add(slot_id)
+    projection["next_required_slot"] = None
 
 
 def _public_projection(projection):
@@ -348,7 +373,7 @@ def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
             token = projection["last_event_hash"]
             state.append(
                 event_type=_FAILURE, slot_id=slot_id, worker_id=worker_id,
-                recorded_at=existing["input_recorded_at"],
+                recorded_at=_utc_now(),
                 payload={"failed_after_event_hash": token,
                          "failed_stage": "INPUT_PREPARED",
                          "reason_code": "CHALLENGER_REPLACEMENT_DECISION_BUILD_FAILED"},
@@ -358,7 +383,7 @@ def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
         decision_bytes = canonical_json(decision).encode("utf-8")
         state.append(
             event_type="RESULT_PREPARED", slot_id=slot_id, worker_id=worker_id,
-            recorded_at=existing["input_recorded_at"],
+            recorded_at=_utc_now(),
             payload={
                 "input_event_hash": existing["input_event_hash"],
                 "input_event_sequence": existing["input_event_sequence"],
@@ -374,7 +399,7 @@ def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
     if existing["stage"] == "RESULT_PREPARED":
         state.append(
             event_type="SLOT_SUCCEEDED", slot_id=slot_id, worker_id=worker_id,
-            recorded_at=existing["result_recorded_at"],
+            recorded_at=_utc_now(),
             payload={
                 "input_event_hash": existing["input_event_hash"],
                 "input_event_sequence": existing["input_event_sequence"],

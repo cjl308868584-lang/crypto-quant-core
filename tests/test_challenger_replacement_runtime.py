@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 import unittest
 from copy import deepcopy
 from unittest.mock import patch
@@ -57,13 +58,14 @@ class RuntimeWorkspace:
         }
         return input_payload, source_bytes, decision_bytes
 
-    def raw_append(self, event_type, payload, *, slot_id=None):
+    def raw_append(self, event_type, payload, *, slot_id=None,
+                   recorded_at="2026-08-22T04:05:00.000Z"):
         replay = ChallengerReplacementRuntimeState(
             event_root=self.root, plan=self.plan, build_identity=self.build).replay()
         event = build_challenger_replacement_event(
             sequence=replay["next_sequence"], event_type=event_type,
             slot_id=slot_id or self.slot_id, worker_id="fixture-worker",
-            recorded_at="2026-08-22T04:05:00.000Z",
+            recorded_at=recorded_at,
             previous_event_hash=replay["last_event_hash"],
             payload_bytes=canonical_json(payload).encode(), plan_hash=self.plan["plan_hash"],
             build_identity_hash=business_hash(self.build), event_root=self.root)
@@ -142,6 +144,33 @@ class ProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ChallengerReplacementRuntimeError, "STATE_EVENT_INVALID"):
             self._state().replay()
 
+    def test_result_timestamp_cannot_precede_input_boundary(self):
+        input_payload, source_bytes, decision_bytes = self.ws.payloads()
+        input_event = self.ws.raw_append("INPUT_PREPARED", input_payload)
+        result = {
+            "input_event_hash": input_event.event_hash, "input_event_sequence": 1,
+            "source_bundle_sha256": hashlib.sha256(source_bytes).hexdigest(),
+            "decision_bytes_base64": base64.b64encode(decision_bytes).decode(),
+            "decision_sha256": hashlib.sha256(decision_bytes).hexdigest(),
+            "previous_decision_hash_or_null": None,
+        }
+        self.ws.raw_append(
+            "RESULT_PREPARED", result,
+            recorded_at="2026-08-22T04:04:59.999Z")
+        with self.assertRaisesRegex(ChallengerReplacementRuntimeError, "STATE_EVENT_INVALID"):
+            self._state().replay()
+
+    def test_failure_timestamp_cannot_precede_durable_boundary(self):
+        input_payload, _, _ = self.ws.payloads()
+        input_event = self.ws.raw_append("INPUT_PREPARED", input_payload)
+        self.ws.raw_append(
+            "SLOT_FAILED_PERMANENT",
+            {"failed_after_event_hash": input_event.event_hash,
+             "failed_stage": "INPUT_PREPARED", "reason_code": "FIXTURE_FAILURE"},
+            recorded_at="2026-08-22T04:04:59.999Z")
+        with self.assertRaisesRegex(ChallengerReplacementRuntimeError, "STATE_EVENT_INVALID"):
+            self._state().replay()
+
     def test_accepts_failure_then_rejects_followup(self):
         input_payload, source_bytes, decision_bytes = self.ws.payloads()
         input_event = self.ws.raw_append("INPUT_PREPARED", input_payload)
@@ -210,13 +239,32 @@ class SlotRuntimeTests(unittest.TestCase):
             captured_at="2026-08-22T08:05:00.000Z", latest="102")
         successor["klines"] = deepcopy(previous_source["klines"][1:]) + [successor["klines"][-1]]
         with patch.object(runtime_module, "build_challenger_replacement_decision",
-                          wraps=runtime_module.build_challenger_replacement_decision) as build_decision:
+                          wraps=runtime_module.build_challenger_replacement_decision) as build_decision, \
+             patch.object(runtime_module, "_utc_now", side_effect=(
+                 "2026-08-22T08:05:00.001Z", "2026-08-22T08:05:00.002Z")):
             second = run_challenger_replacement_slot(
                 state=self.state, capture=successor,
                 observed_at=successor["captured_at"], worker_id="worker-b")
         self.assertIsNotNone(build_decision.call_args.kwargs["previous_decision"])
         self.assertEqual((second["stage"], len(self.state.replay()["events"])),
                          ("SLOT_SUCCEEDED", 6))
+
+    def test_each_stage_records_its_first_canonical_publication_time(self):
+        capture = fixture_capture()
+        stage_times = iter((
+            "2026-08-22T04:05:00.001Z",
+            "2026-08-22T04:05:00.002Z",
+        ))
+        with patch.object(runtime_module, "_utc_now", side_effect=stage_times):
+            run_challenger_replacement_slot(
+                state=self.state, capture=capture,
+                observed_at=capture["captured_at"], worker_id="worker")
+        headers = [json.loads(event.final_bytes) for event in self.state.replay()["events"]]
+        self.assertEqual(
+            [header["recorded_at"] for header in headers],
+            [capture["captured_at"], "2026-08-22T04:05:00.001Z",
+             "2026-08-22T04:05:00.002Z"],
+        )
 
     def test_invalid_unbound_capture_writes_nothing(self):
         with self.assertRaises(ChallengerReplacementRuntimeError):
@@ -265,6 +313,25 @@ class SlotRuntimeTests(unittest.TestCase):
                 state=self.state, capture=capture,
                 observed_at=capture["captured_at"], worker_id="retry")
         self.assertEqual(len(self.state.replay()["events"]), 2)
+
+    def test_permanent_failure_freezes_stream_against_new_genesis(self):
+        capture = fixture_capture()
+        with patch.object(runtime_module, "build_challenger_replacement_decision",
+                          side_effect=ValueError("fixture failure")), \
+             self.assertRaises(ChallengerReplacementRuntimeError):
+            run_challenger_replacement_slot(
+                state=self.state, capture=capture,
+                observed_at=capture["captured_at"], worker_id="worker")
+        before = tuple(self.state.replay()["events"])
+        self.assertIsNone(self.state.replay()["next_required_slot"])
+        later_genesis = fixture_capture(
+            sequence=1, scheduled_for="2026-08-22T12:00:00.000Z",
+            captured_at="2026-08-22T12:05:00.000Z")
+        with self.assertRaisesRegex(ChallengerReplacementRuntimeError, "STATE_EVENT_INVALID"):
+            run_challenger_replacement_slot(
+                state=self.state, capture=later_genesis,
+                observed_at=later_genesis["captured_at"], worker_id="reset-worker")
+        self.assertEqual(tuple(self.state.replay()["events"]), before)
 
 
 class CrashRecoveryTests(unittest.TestCase):

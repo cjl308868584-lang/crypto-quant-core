@@ -1,6 +1,6 @@
 # ADR-0066: Replacement Challenger Three-Stage Event Runtime
 
-Status: Accepted  
+Status: Accepted
 Release state: `RUNTIME_RELEASED_NOT_INSTALLED`
 
 ## Decision
