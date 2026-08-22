@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-install-preflight-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "status", "observed_at", "expires_at", "contract_binding", "authority", "reason_codes"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-install-preflight-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "receipt_id": {"type": "string", "pattern": "^challenger_replacement_install_preflight_[0-9a-f]{64}$"},
+    "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"enum": ["PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE", "PREFLIGHT_FAILED_CLOSED", "PREFLIGHT_PLATFORM_UNSUPPORTED"]},
+    "observed_at": {"type": "string", "minLength": 1}, "expires_at": {"type": "string", "minLength": 1},
+    "contract_binding": {"type": "object"}, "authority": {"type": "object"},
+    "reason_codes": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

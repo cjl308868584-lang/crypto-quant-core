@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-install-contract-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "predecessor_release", "candidate_release", "plan", "deployment", "snapshot", "python", "service", "paths", "runtime", "schedule", "authority", "warnings"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-install-contract-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "contract_id": {"type": "string", "pattern": "^challenger_replacement_install_contract_[0-9a-f]{64}$"},
+    "contract_hash": {"$ref": "#/$defs/hash"},
+    "predecessor_release": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_tag", "tag_object", "peeled_commit", "package_version", "manifest_version", "manifest_hash", "main_ci_run"],
+      "properties": {
+        "release_tag": {"const": "v0.67.0"},
+        "tag_object": {"const": "7c65c0a34cf37f4d46ed3cdd2a0278657aa3e8c5"},
+        "peeled_commit": {"const": "ca022edccdcbb2d28b1ea25002e5f19512795e3e"},
+        "package_version": {"const": "0.67.0"},
+        "manifest_version": {"const": "1.61.0"},
+        "manifest_hash": {"const": "2b72a470a2f210461a3a6753fd3d603fee9b90df76e825deea3b9bde61a26110"},
+        "main_ci_run": {"const": 32572208544}
+      }
+    },
+    "candidate_release": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_tag", "tag_object", "peeled_commit", "package_version", "manifest_version", "manifest_hash", "manifest_file_sha256", "build_input_tree_hash", "main_ci_run", "main_ci_jobs"],
+      "properties": {
+        "release_tag": {"const": "v0.68.0"}, "tag_object": {"$ref": "#/$defs/commit"},
+        "peeled_commit": {"$ref": "#/$defs/commit"}, "package_version": {"const": "0.68.0"},
+        "manifest_version": {"const": "1.62.0"}, "manifest_hash": {"$ref": "#/$defs/hash"},
+        "manifest_file_sha256": {"$ref": "#/$defs/hash"}, "build_input_tree_hash": {"$ref": "#/$defs/hash"},
+        "main_ci_run": {"type": "integer", "minimum": 1},
+        "main_ci_jobs": {"const": {"Python 3.9": "success", "Python 3.12": "success", "macOS 15 arm64": "success"}}
+      }
+    },
+    "plan": {"$ref": "#/$defs/binding"},
+    "deployment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "file_sha256", "deployment_id", "deployment_hash", "plist_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1}, "file_sha256": {"$ref": "#/$defs/hash"},
+        "deployment_id": {"type": "string", "minLength": 1}, "deployment_hash": {"$ref": "#/$defs/hash"},
+        "plist_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "snapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["root", "tree_hash", "file_count", "total_size_bytes", "root_device", "root_inode"],
+      "properties": {
+        "root": {"$ref": "#/$defs/path"}, "tree_hash": {"$ref": "#/$defs/hash"},
+        "file_count": {"type": "integer", "minimum": 1, "maximum": 1024},
+        "total_size_bytes": {"type": "integer", "minimum": 1, "maximum": 134217728},
+        "root_device": {"type": "integer", "minimum": 0}, "root_inode": {"type": "integer", "minimum": 1}
+      }
+    },
+    "python": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "device", "inode", "owner_uid", "mode", "size_bytes", "sha256", "sys_version", "import_stdout_sha256", "import_stderr_sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"}, "device": {"type": "integer", "minimum": 0},
+        "inode": {"type": "integer", "minimum": 1}, "owner_uid": {"type": "integer", "minimum": 0},
+        "mode": {"type": "integer", "minimum": 0, "maximum": 511}, "size_bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/hash"}, "sys_version": {"type": "string", "minLength": 1},
+        "import_stdout_sha256": {"$ref": "#/$defs/hash"}, "import_stderr_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "service": {
+      "type": "object", "additionalProperties": false, "required": ["label", "identity"],
+      "properties": {"label": {"const": "local.crypto-quant.challenger-replacement-v1"}, "identity": {"const": "gui/501/local.crypto-quant.challenger-replacement-v1"}}
+    },
+    "paths": {
+      "type": "object", "additionalProperties": false,
+      "required": ["runtime_root", "deployment_root", "contract", "preflight_root", "install_receipt_root", "start_receipt_root", "event_root", "stdout", "stderr", "target_plist"],
+      "properties": {
+        "runtime_root": {"$ref": "#/$defs/path"}, "deployment_root": {"$ref": "#/$defs/path"},
+        "contract": {"$ref": "#/$defs/path"}, "preflight_root": {"$ref": "#/$defs/path"},
+        "install_receipt_root": {"$ref": "#/$defs/path"}, "start_receipt_root": {"$ref": "#/$defs/path"},
+        "event_root": {"$ref": "#/$defs/path"}, "stdout": {"$ref": "#/$defs/path"},
+        "stderr": {"$ref": "#/$defs/path"}, "target_plist": {"$ref": "#/$defs/path"}
+      }
+    },
+    "runtime": {
+      "type": "object", "additionalProperties": false,
+      "required": ["module", "program_arguments", "working_directory", "environment"],
+      "properties": {
+        "module": {"const": "crypto_quant.challenger_replacement_live_runtime_cli"},
+        "program_arguments": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "string", "minLength": 1}},
+        "working_directory": {"$ref": "#/$defs/path"},
+        "environment": {
+          "type": "object", "additionalProperties": false,
+          "required": ["PATH", "PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE", "PYTHONPATH"],
+          "properties": {"PATH": {"const": "/usr/bin:/bin:/usr/sbin:/sbin"}, "PYTHONDONTWRITEBYTECODE": {"const": "1"}, "PYTHONNOUSERSITE": {"const": "1"}, "PYTHONPATH": {"$ref": "#/$defs/path"}}
+        }
+      }
+    },
+    "schedule": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"type": "object", "additionalProperties": false, "required": ["hour", "minute"], "properties": {"hour": {"enum": [0, 4, 8, 12, 16, 20]}, "minute": {"const": 2}}}},
+    "authority": {"const": {"production_activation": false, "real_orders_allowed": false, "replacement_start_authorized": false, "runtime_install_authorized": true}},
+    "warnings": {"const": ["INSTALL_AUTHORIZES_BOOTSTRAP_ONLY", "NO_KICKSTART_OR_MANUAL_RUNTIME", "NO_CREDENTIAL_BROKER_OR_ORDER_AUTHORITY", "START_RECEIPT_NOT_YET_AVAILABLE"]}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "path": {"type": "string", "pattern": "^/", "maxLength": 4096},
+    "binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "file_sha256", "plan_id", "plan_hash"],
+      "properties": {"path": {"type": "string", "minLength": 1}, "file_sha256": {"$ref": "#/$defs/hash"}, "plan_id": {"type": "string", "minLength": 1}, "plan_hash": {"$ref": "#/$defs/hash"}}
+    }
+  }
+}

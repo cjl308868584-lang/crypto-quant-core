@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-install-receipt-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "status", "installed_at", "contract_binding", "preflight_binding", "authority"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-install-receipt-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "receipt_id": {"type": "string", "pattern": "^challenger_replacement_install_receipt_[0-9a-f]{64}$"},
+    "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"enum": ["INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT", "INSTALL_STATE_UNKNOWN_FAILED_CLOSED"]},
+    "installed_at": {"type": "string", "minLength": 1}, "contract_binding": {"type": "object"},
+    "preflight_binding": {"type": "object"}, "authority": {"type": "object"}
+  }
+}

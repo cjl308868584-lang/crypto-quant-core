@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-start-receipt-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "published_at", "first_scheduled_for", "required_slot_count", "last_required_scheduled_for", "tail_end", "evaluation_not_before", "cohort_status", "authority"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-start-receipt-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "receipt_id": {"type": "string", "pattern": "^challenger_replacement_start_receipt_[0-9a-f]{64}$"},
+    "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "published_at": {"type": "string", "minLength": 1}, "first_scheduled_for": {"type": "string", "minLength": 1},
+    "required_slot_count": {"const": 540}, "last_required_scheduled_for": {"type": "string", "minLength": 1},
+    "tail_end": {"type": "string", "minLength": 1}, "evaluation_not_before": {"type": "string", "minLength": 1},
+    "cohort_status": {"const": "STARTED_COLLECTION_ONLY"}, "authority": {"type": "object"}
+  }
+}
