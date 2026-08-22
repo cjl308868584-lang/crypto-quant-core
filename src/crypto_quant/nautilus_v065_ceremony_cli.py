@@ -391,9 +391,16 @@ def _download_urls() -> Dict[str, str]:
 
 def _platform_identity() -> Dict[str, Any]:
     version = platform.mac_ver()[0]
-    if platform.system() != "Darwin" or platform.machine() != "arm64" or not version.startswith("15.") or sys.version_info[:2] != (3, 12):
+    implementation = platform.python_implementation()
+    if (
+        platform.system() != "Darwin"
+        or platform.machine() != "arm64"
+        or not version.startswith("15.")
+        or sys.version_info[:2] != (3, 12)
+        or implementation != "CPython"
+    ):
         raise NautilusV065SupplyChainError("NAUTILUS_V065_PLATFORM_MISMATCH")
-    return {"operating_system": "macOS", "operating_system_major": 15, "machine": "arm64", "python_implementation": platform.python_implementation(), "python_version": platform.python_version()}
+    return {"operating_system": "macOS", "operating_system_major": 15, "machine": "arm64", "python_implementation": implementation, "python_version": platform.python_version()}
 
 
 def _verify_license_transcript(record: Mapping[str, Any]) -> None:
@@ -896,25 +903,27 @@ def _invoke_fixed_runner(
         "LANG": "C",
         "LC_ALL": "C",
     }
-    result = subprocess.run(
-        [
-            str(python), "-P", "-m", "crypto_quant_nautilus_v065.runner",
-            "--request", str(request_path), "--receipt", str(receipt_path), "--result", str(result_path),
-        ],
-        cwd=root,
-        env=environment,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=120,
-        shell=False,
-        check=False,
-    )
+    argv = [
+        str(python), "-P", "-m", "crypto_quant_nautilus_v065.runner",
+        "--request", str(request_path), "--receipt", str(receipt_path), "--result", str(result_path),
+    ]
+    try:
+        returncode, stdout, stderr, timed_out = _run_bounded_command(
+            argv, cwd=root, environment=environment, timeout=120
+        )
+    except NautilusV065SupplyChainError as error:
+        if error.reason_code == "NAUTILUS_V065_COMMAND_OUTPUT_LIMIT":
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_FAILED") from error
+        raise
+    except OSError as error:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_FAILED") from error
     if _venv_python_identity(python, workspace) != expected:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID")
-    if result.returncode != 0 or result.stdout or result.stderr:
+    if timed_out:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_FAILED")
+    if returncode != 0 or stdout or stderr:
         raise NautilusV065SupplyChainError(
-            _runner_failure_reason(result.returncode, result.stdout, result.stderr)
+            _runner_failure_reason(returncode, stdout, stderr)
         )
     return load_nautilus_v065_result(result_path.resolve())
 

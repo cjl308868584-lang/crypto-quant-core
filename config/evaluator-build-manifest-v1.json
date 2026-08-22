@@ -323,7 +323,7 @@
     "src/crypto_quant/market_data_cli.py": "9e28048a6552e28172a579a54cbdfb2740d952b0cc8ea009d6881609022fe553",
     "src/crypto_quant/nautilus_evidence_adapter.py": "b74f3214a52fa49e0f64359a7d7dd2991d12fa8786d876b5e310f914bf095525",
     "src/crypto_quant/nautilus_sandbox_dependency.py": "ee956e34265255ec9a694060b896d1eab4b18580f7e678cede8ecac9b3d81735",
-    "src/crypto_quant/nautilus_v065_ceremony_cli.py": "449b2654bf9a84b84887f13264a888c82cb48cdeedae9985e479d38752906cf0",
+    "src/crypto_quant/nautilus_v065_ceremony_cli.py": "7a22a3fd3e4ac79e49002580327a4eb62483cf381fc225ee867ff07de69fe53c",
     "src/crypto_quant/nautilus_v065_contract.py": "13b20094e0f8d78b332276b7f924af6962c14fa092fa6894e07cb47e5a5cb025",
     "src/crypto_quant/nautilus_v065_evidence.py": "af345b82ab42f8909c615d5462e2c74fe0a68aca20c3d894fd34848936636a0f",
     "src/crypto_quant/nautilus_v065_plan.py": "53818c25d31badc7d188badb3ff602c9030f4062e770c4a7b8ceb3b4e2c44e5d",
@@ -464,7 +464,7 @@
     "tests/test_nautilus_evidence_adapter.py": "70dd0688ef9163320cbe241f9e86d47f46ac5401c407a92ce5c14c7f2529dbf1",
     "tests/test_nautilus_sandbox_artifacts.py": "d674cbdfc044c129f0017059d35b7c66562b252df3b96de3dd6a02d0fde77245",
     "tests/test_nautilus_sandbox_dependency.py": "5f5c5656ea79a6356a6a7f93f3830ad249e314542055535cd03f8b94c9b37cd0",
-    "tests/test_nautilus_v065_acquisition.py": "1becbb8eaff6269b83919458a546f0597ca8165ad14545c74734a4f8fa6d3ebc",
+    "tests/test_nautilus_v065_acquisition.py": "6e93740d11c36fdcafcaac642c6458227462b866b86e2c0bdb902cc6fc798ccd",
     "tests/test_nautilus_v065_artifacts.py": "b4cb2a9cec8839dda10b25b6467e25ed3140b9e385cdc0bdae263385984b1795",
     "tests/test_nautilus_v065_contract.py": "d0e96d84ee81ed2157456b79c3f47b01e16d6b9abc510d94d9ae734d664316b8",
     "tests/test_nautilus_v065_evidence.py": "1386551d3af2200d2e1a537ac39b557bf97e8576f72b97ba6f81de13e2eaabc0",
@@ -494,7 +494,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "d3fe3658c4b44014030ba5704d62ae5e96f9ec37b51659579bdb81a51d050647",
+  "build_input_tree_hash": "b93892970e41b41c9b83322d1a172b9b1099c66617d56818d55092905259e595",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -502,5 +502,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "5ee22db97ee5e7d52f5fa692af246fa0ac81377518d8d524a2aa79920741deef"
+  "manifest_hash": "60bf52987b06e9dbe37e8f3b97054570edc7d8e3637d9360f0d98d46fa9d00ee"
 }
