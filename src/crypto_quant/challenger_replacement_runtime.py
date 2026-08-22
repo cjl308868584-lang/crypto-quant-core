@@ -9,9 +9,11 @@ from typing import Any, Dict, Mapping
 
 from .canonical import business_hash, canonical_json, utc_datetime
 from .challenger_replacement_decision import load_challenger_replacement_decision_bytes
+from .challenger_replacement_decision import build_challenger_replacement_decision
 from .challenger_replacement_evidence import (
     _build_identity,
     _strict_json_bytes,
+    build_challenger_replacement_source_bundle,
     load_challenger_replacement_source_bundle_bytes,
 )
 from .challenger_replacement_events import (
@@ -133,6 +135,7 @@ def _apply_event(projection, event, plan, build_identity):
             "source_bundle_bytes": source_bytes,
             "source_bundle_sha256": payload["source_bundle_sha256"],
             "input_event_hash": event.event_hash, "input_event_sequence": event.sequence,
+            "input_recorded_at": header["recorded_at"],
         }
         projection["active_slot_id"] = slot_id
         return
@@ -168,7 +171,8 @@ def _apply_event(projection, event, plan, build_identity):
                     decision_bytes=decision_bytes,
                     decision_sha256=payload["decision_sha256"],
                     result_event_hash=event.event_hash,
-                    result_event_sequence=event.sequence)
+                    result_event_sequence=event.sequence,
+                    result_recorded_at=header["recorded_at"])
         return
     if event_type == "SLOT_SUCCEEDED":
         _require_exact(payload, (
@@ -276,3 +280,112 @@ class ChallengerReplacementRuntimeState:
             raise
         except ChallengerReplacementEventError as error:
             raise ChallengerReplacementRuntimeError(error.reason_code) from error
+
+
+def _runtime_input_invalid():
+    raise ChallengerReplacementRuntimeError(
+        "CHALLENGER_REPLACEMENT_RUNTIME_INPUT_INVALID")
+
+
+def _slot_result(slot):
+    return {
+        key: value for key, value in slot.items()
+        if key not in {"source_bundle_bytes", "decision_bytes"}
+    }
+
+
+def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
+    """Advance one bound slot through the exact three durable stages."""
+
+    if (
+        not isinstance(state, ChallengerReplacementRuntimeState)
+        or not isinstance(capture, Mapping)
+        or not isinstance(capture.get("slot_id"), str)
+        or not capture.get("slot_id")
+        or not isinstance(observed_at, str)
+        or not observed_at
+        or not isinstance(worker_id, str)
+        or not worker_id
+    ):
+        _runtime_input_invalid()
+    slot_id = capture["slot_id"]
+    projection = state._replay()
+    existing = projection["slots"].get(slot_id)
+    if existing is not None and existing["stage"] == "SLOT_SUCCEEDED":
+        return _slot_result(existing)
+    if projection["active_slot_id"] not in (None, slot_id):
+        raise ChallengerReplacementRuntimeError(
+            "CHALLENGER_REPLACEMENT_ACTIVE_SLOT_CONFLICT")
+    if existing is None:
+        try:
+            source = build_challenger_replacement_source_bundle(
+                plan=state.plan, build_identity=state.build_identity,
+                capture=capture, observed_at=observed_at,
+                previous_source_bundle=projection["_previous_source_bundle"],
+                previous_decision=projection["_previous_decision"])
+        except ValueError as error:
+            raise ChallengerReplacementRuntimeError(
+                "CHALLENGER_REPLACEMENT_SOURCE_BUILD_FAILED") from error
+        source_bytes = canonical_json(source).encode("utf-8")
+        capture_bytes = canonical_json(dict(capture)).encode("utf-8")
+        state.append(
+            event_type="INPUT_PREPARED", slot_id=slot_id, worker_id=worker_id,
+            recorded_at=observed_at,
+            payload={
+                "capture_sha256": hashlib.sha256(capture_bytes).hexdigest(),
+                "source_bundle_bytes_base64": base64.b64encode(source_bytes).decode("ascii"),
+                "source_bundle_sha256": hashlib.sha256(source_bytes).hexdigest(),
+            }, expected_last_event_hash=projection["last_event_hash"])
+        projection = state._replay()
+        existing = projection["slots"][slot_id]
+    if existing["stage"] == "INPUT_PREPARED":
+        try:
+            decision = build_challenger_replacement_decision(
+                plan=state.plan, source_bundle=existing["source_bundle"],
+                recorded_at=existing["input_recorded_at"],
+                previous_decision=projection["_previous_decision"])
+        except ValueError as error:
+            token = projection["last_event_hash"]
+            state.append(
+                event_type=_FAILURE, slot_id=slot_id, worker_id=worker_id,
+                recorded_at=existing["input_recorded_at"],
+                payload={"failed_after_event_hash": token,
+                         "failed_stage": "INPUT_PREPARED",
+                         "reason_code": "CHALLENGER_REPLACEMENT_DECISION_BUILD_FAILED"},
+                expected_last_event_hash=token)
+            raise ChallengerReplacementRuntimeError(
+                "CHALLENGER_REPLACEMENT_DECISION_BUILD_FAILED") from error
+        decision_bytes = canonical_json(decision).encode("utf-8")
+        state.append(
+            event_type="RESULT_PREPARED", slot_id=slot_id, worker_id=worker_id,
+            recorded_at=existing["input_recorded_at"],
+            payload={
+                "input_event_hash": existing["input_event_hash"],
+                "input_event_sequence": existing["input_event_sequence"],
+                "source_bundle_sha256": existing["source_bundle_sha256"],
+                "decision_bytes_base64": base64.b64encode(decision_bytes).decode("ascii"),
+                "decision_sha256": hashlib.sha256(decision_bytes).hexdigest(),
+                "previous_decision_hash_or_null": (
+                    None if projection["_previous_decision"] is None
+                    else projection["_previous_decision"]["decision_hash"]),
+            }, expected_last_event_hash=projection["last_event_hash"])
+        projection = state._replay()
+        existing = projection["slots"][slot_id]
+    if existing["stage"] == "RESULT_PREPARED":
+        state.append(
+            event_type="SLOT_SUCCEEDED", slot_id=slot_id, worker_id=worker_id,
+            recorded_at=existing["result_recorded_at"],
+            payload={
+                "input_event_hash": existing["input_event_hash"],
+                "input_event_sequence": existing["input_event_sequence"],
+                "result_event_hash": existing["result_event_hash"],
+                "result_event_sequence": existing["result_event_sequence"],
+                "source_bundle_sha256": existing["source_bundle_sha256"],
+                "decision_sha256": existing["decision_sha256"],
+            }, expected_last_event_hash=projection["last_event_hash"])
+        projection = state._replay()
+        existing = projection["slots"][slot_id]
+    if existing["stage"] != "SLOT_SUCCEEDED":
+        raise ChallengerReplacementRuntimeError(
+            "CHALLENGER_REPLACEMENT_SLOT_TERMINAL_FAILURE")
+    return _slot_result(existing)
