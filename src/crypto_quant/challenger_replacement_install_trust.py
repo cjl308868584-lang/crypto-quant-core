@@ -877,7 +877,7 @@ def _read_published_exact(parent_fd: int, name: str):
 
 
 def _publish_contract_exact(parent: Path, name: str, body: bytes, *, parent_mode=0o700):
-    parent_fd, _ = _open_directory(parent, exact_mode=parent_mode)
+    parent_fd, parent_opened = _open_directory(parent, exact_mode=parent_mode)
     primary_error = None
     try:
         existing = _read_published_exact(parent_fd, name)
@@ -887,6 +887,10 @@ def _publish_contract_exact(parent: Path, name: str, body: bytes, *, parent_mode
                     "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_CONFLICT"
                 )
             _fsync_retry(parent_fd)
+            _validate_directory_attachment(
+                parent, parent_fd, parent_opened,
+                "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_UNTRUSTED",
+            )
             return "ALREADY_PUBLISHED", existing[1]
         if any(
             candidate.startswith(".stage-contract-")
@@ -957,6 +961,10 @@ def _publish_contract_exact(parent: Path, name: str, body: bytes, *, parent_mode
                     "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_CONFLICT"
                 )
             _fsync_retry(parent_fd)
+            _validate_directory_attachment(
+                parent, parent_fd, parent_opened,
+                "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_UNTRUSTED",
+            )
             return "ALREADY_PUBLISHED", raced[1]
         except OSError as error:
             if error.errno in (errno.ENOSYS, errno.EINVAL, errno.ENOTSUP):
@@ -972,6 +980,10 @@ def _publish_contract_exact(parent: Path, name: str, body: bytes, *, parent_mode
             raise ReplacementInstallTrustError(
                 "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_UNTRUSTED"
             )
+        _validate_directory_attachment(
+            parent, parent_fd, parent_opened,
+            "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_UNTRUSTED",
+        )
         return "PUBLISHED", final[1]
     except BaseException as error:
         primary_error = error

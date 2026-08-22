@@ -300,7 +300,8 @@ event-root descriptor。receipt 不存在、重复、different/untrusted，或�
 network/runtime state write/Broker/order 计数必须全为 0。
 在 start receipt 存在前，event root 只能为空，或恰好是 install receipt 所派生首个
 eligible slot 的合法 `INPUT_PREPARED` / `RESULT_PREPARED` / `SLOT_SUCCEEDED` durable
-prefix；后者允许自然进程在阶段边界崩溃后 fresh-process 恢复，不重新请求市场数据。
+prefix，且前缀每个 event 的 worker identity 必须等于 contract 固定 natural
+worker；后者允许自然进程在阶段边界崩溃后 fresh-process 恢复，不重新请求市场数据。
 错槽、早于安装的记录、多槽、失败事件或任何 orphan staging 都在市场请求和 append 前
 失败关闭。start receipt 存在后，adapter 必须将其
 终端 event/source/decision hash 与当前 event projection 的第一个成功槽交叉验证。

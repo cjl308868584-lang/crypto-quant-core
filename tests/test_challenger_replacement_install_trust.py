@@ -1399,6 +1399,100 @@ raise SystemExit(9)
                 )
                 self.assertEqual(after, before)
 
+    def test_contract_publisher_rejects_parent_rename_and_recreation(self):
+        import crypto_quant.challenger_replacement_install_trust as trust
+
+        with temporary_workspace() as directory:
+            parent = Path(directory) / "deployment"
+            detached = Path(directory) / "detached"
+            parent.mkdir(mode=0o700)
+            original = trust._rename_noreplace
+
+            def publish_then_replace_parent(parent_fd, staging, final):
+                parent.rename(detached)
+                parent.mkdir(mode=0o700)
+                return original(parent_fd, staging, final)
+
+            with mock.patch.object(
+                trust, "_rename_noreplace",
+                side_effect=publish_then_replace_parent,
+            ), self.assertRaisesRegex(
+                trust.ReplacementInstallTrustError,
+                "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_UNTRUSTED",
+            ):
+                trust._publish_contract_exact(
+                    parent, "contract.json", b"trusted"
+                )
+            self.assertEqual(list(parent.iterdir()), [])
+            self.assertEqual(
+                (detached / "contract.json").read_bytes(), b"trusted"
+            )
+
+    def test_contract_existing_fast_path_revalidates_parent_attachment(self):
+        import crypto_quant.challenger_replacement_install_trust as trust
+
+        with temporary_workspace() as directory:
+            parent = Path(directory) / "deployment"
+            detached = Path(directory) / "detached"
+            parent.mkdir(mode=0o700)
+            trust._publish_contract_exact(
+                parent, "contract.json", b"trusted"
+            )
+
+            def fsync_then_replace(_descriptor):
+                parent.rename(detached)
+                parent.mkdir(mode=0o700)
+
+            with mock.patch.object(
+                trust, "_fsync_retry", side_effect=fsync_then_replace
+            ), self.assertRaisesRegex(
+                trust.ReplacementInstallTrustError,
+                "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_UNTRUSTED",
+            ):
+                trust._publish_contract_exact(
+                    parent, "contract.json", b"trusted"
+                )
+            self.assertEqual(list(parent.iterdir()), [])
+            self.assertEqual(
+                (detached / "contract.json").read_bytes(), b"trusted"
+            )
+
+    def test_contract_eexist_race_revalidates_parent_attachment(self):
+        import crypto_quant.challenger_replacement_install_trust as trust
+
+        with temporary_workspace() as directory:
+            parent = Path(directory) / "deployment"
+            detached = Path(directory) / "detached"
+            parent.mkdir(mode=0o700)
+
+            def race_then_replace(parent_fd, _staging, final):
+                descriptor = os.open(
+                    final, os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600, dir_fd=parent_fd,
+                )
+                try:
+                    os.write(descriptor, b"trusted")
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+                parent.rename(detached)
+                parent.mkdir(mode=0o700)
+                raise FileExistsError(final)
+
+            with mock.patch.object(
+                trust, "_rename_noreplace", side_effect=race_then_replace
+            ), self.assertRaisesRegex(
+                trust.ReplacementInstallTrustError,
+                "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_UNTRUSTED",
+            ):
+                trust._publish_contract_exact(
+                    parent, "contract.json", b"trusted"
+                )
+            self.assertEqual(list(parent.iterdir()), [])
+            self.assertEqual(
+                (detached / "contract.json").read_bytes(), b"trusted"
+            )
+
     def test_contract_partial_write_leaves_only_orphan_staging(self):
         import crypto_quant.challenger_replacement_install_trust as trust
 

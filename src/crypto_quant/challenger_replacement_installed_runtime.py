@@ -1,5 +1,6 @@
 """Fixed installed adapter for one natural replacement Challenger invocation."""
 
+import json
 from datetime import timedelta
 from pathlib import Path
 
@@ -39,7 +40,7 @@ class ReplacementInstalledRuntimeError(ValueError):
         self.reason_code = reason_code
 
 
-def _authorized_first_slot_prefix(projection, install_receipt):
+def _authorized_first_slot_prefix(projection, install_receipt, worker_id):
     """Recognize only the installed cohort's recoverable first-slot prefix."""
 
     if (
@@ -58,10 +59,15 @@ def _authorized_first_slot_prefix(projection, install_receipt):
         scheduled_for = slot["source_bundle"]["slot"]["scheduled_for"]
         recorded_at = _utc_millis(slot["input_recorded_at"])
         installed_at = _utc_millis(install_receipt["installed_at"])
-    except (KeyError, TypeError, ValueError):
+        workers_match = all(
+            json.loads(event.final_bytes)["worker_id"] == worker_id
+            for event in projection["events"]
+        )
+    except (KeyError, TypeError, ValueError, UnicodeError):
         return False
     return (
         slot["stage"] == expected_stage
+        and workers_match
         and projection["completed_slot_count"] == expected_completed
         and scheduled_for == install_receipt["first_eligible_scheduled_for"]
         and recorded_at >= installed_at
@@ -139,7 +145,9 @@ def _load_fixed_runtime_sources():
             if (
                 (projection["events"] or projection["orphan_staging_count"])
                 and existing is None
-                and not _authorized_first_slot_prefix(projection, receipt)
+                and not _authorized_first_slot_prefix(
+                    projection, receipt, contract["runtime"]["worker_id"]
+                )
             ):
                 raise ReplacementInstalledRuntimeError(
                     "CHALLENGER_REPLACEMENT_START_RECEIPT_REQUIRED"

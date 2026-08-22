@@ -473,7 +473,7 @@ Expected: FAIL because receipt publication is absent.
 
 - [ ] **Step 3: Implement strict start receipt codec and publisher**
 
-First replay the unique existing owner-only receipt and reconstruct its exact observer summary; before idempotent return, confirm receipt-directory fsync/attachment and revalidate current retained event/log/plist sources against that summary, without a new timestamp or launchctl observation. Only an empty receipt root may invoke the observer. After a verified observation, reacquire matching retained sources and hold them across publication. Accept no dates/counts/paths. Publish canonical bytes with staging + same-fd readback + fsync + atomic no-replace. Return success only after final replay, parent fsync and pre/post retained-source revalidation.
+First replay the unique existing owner-only receipt and reconstruct its exact observer summary; before idempotent return, confirm receipt-directory fsync/attachment and revalidate current retained event/log/plist sources against that summary, without a new timestamp or launchctl observation. Only an empty receipt root may invoke the observer. After a verified observation, reacquire matching retained sources and hold them across publication. Accept no dates/counts/paths. Publish canonical bytes with staging + same-fd readback + fsync + atomic no-replace. Existing, EEXIST-race and newly-published success branches must all revalidate the retained publication-root descriptor against the authorized pathname after directory fsync. Return success only after final replay, parent fsync and pre/post retained-source revalidation.
 
 - [ ] **Step 4: Add the fixed observer/start CLI**
 

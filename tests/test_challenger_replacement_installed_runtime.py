@@ -173,7 +173,7 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
         append.assert_not_called()
         self.assertEqual(orphan.read_bytes(), b"partial")
 
-    def test_prestart_completed_slot_cannot_be_replayed_as_installed_success(self):
+    def test_wrong_worker_first_slot_cannot_be_replayed_as_installed_success(self):
         import crypto_quant.challenger_replacement_installed_runtime as runtime
         from crypto_quant.challenger_replacement_runtime import (
             run_challenger_replacement_cohort_slot,
@@ -190,8 +190,8 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
         )
         install_receipt = {
             "status": "INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT",
-            "installed_at": "2026-08-22T04:15:00.000Z",
-            "first_eligible_scheduled_for": "2026-08-22T08:00:00.000Z",
+            "installed_at": "2026-08-22T00:15:00.000Z",
+            "first_eligible_scheduled_for": "2026-08-22T04:00:00.000Z",
         }
         before = tuple(self.fixture._state().replay()["events"])
         with mock.patch.object(
@@ -232,7 +232,7 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 core.run_challenger_replacement_cohort_slot(
                     state=state, live_capture=self.fixture.live_capture,
-                    worker_id="crash-worker",
+                    worker_id="challenger-replacement-natural-runner-v1",
                 )
         inputs = self._install_inputs_for_fixture()
         inputs["contract"]["strategy_core"].update(
@@ -275,7 +275,7 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 core.run_challenger_replacement_cohort_slot(
                     state=state, live_capture=self.fixture.live_capture,
-                    worker_id="crash-worker",
+                    worker_id="challenger-replacement-natural-runner-v1",
                 )
         inputs = self._install_inputs_for_fixture()
         inputs["contract"]["strategy_core"].update(
@@ -307,7 +307,7 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
 
         core.run_challenger_replacement_cohort_slot(
             state=self.fixture._state(), live_capture=self.fixture.live_capture,
-            worker_id="first-worker",
+            worker_id="challenger-replacement-natural-runner-v1",
         )
         inputs = self._install_inputs_for_fixture()
         inputs["contract"]["strategy_core"].update(
