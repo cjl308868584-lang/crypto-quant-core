@@ -4,7 +4,7 @@
 
 **Goal:** 发布 v0.68.0 的 replacement-specific、code-only 安装/观察/start-receipt 信任链，同时证明本版本没有安装、启动、网络、状态、Broker 或订单副作用。
 
-**Architecture:** 以 v0.67 deployment candidate、v0.64 replacement plan 和 v0.68 release identity 为固定输入，分别实现 owner-only snapshot、install contract、preflight、atomic installer、只读 observer 和 start receipt。每个生产入口均为无参数固定入口；文件系统测试只 patch 私有 OS 边界，真实 installation ceremony 不属于本计划。
+**Architecture:** 以 v0.67 strategy-core/deployment、v0.64 replacement plan 和 v0.68 adapter release identity 为固定输入，分别实现 owner-only snapshot、contract-bound 空 event-root capability、安全窗 preflight、atomic installer、installed runtime adapter、只读 observer 和 start receipt。每个生产入口均为无参数固定入口；文件系统测试只 patch 私有 OS 边界，真实 installation ceremony 不属于本计划。
 
 **Tech Stack:** Python 3.9/3.12、stdlib `os`/`ctypes`/`plistlib`/`subprocess`、`jsonschema`、现有 canonical JSON/event/live-input loaders、`unittest`。
 
@@ -19,6 +19,9 @@
 - 不执行真实 snapshot render、preflight、plist installation、`launchctl bootstrap` 或 start receipt publication。
 - 不接受 path、URL、time、slot、command、environment、credential、Broker、order 或 filename override。
 - 不引入 SQLite、scheduler、Broker、order lifecycle、交易所适配框架、第三方运行时依赖或 UI。
+- v0.67 decision/evidence/live-input/runtime 核心字节与 cohort build identity 不变；v0.68 installed adapter 由独立 snapshot/manifest identity 绑定，不冒充策略核心。
+- renderer 预创建并绑定空 event root 与固定目录能力；runtime 缺少唯一成功 install receipt 时必须在网络或 event append 前失败。
+- verified preflight 只允许 UTC 四小时边界后 10–30 分钟采集，30 分钟 expiry 不得跨越下一个 `boundary+4h+2m` trigger。
 - 所有 canonical artifact 最大 4 MiB；snapshot 最多 1,024 文件、单文件 4 MiB、总计 128 MiB。
 - Darwin/Linux 缺少 no-follow/nonblocking/directory/no-replace capability 时固定 fail closed，不降级到覆盖 rename。
 - 日常只运行 focused tests；最终代码状态本地 full suite 一次。
@@ -28,6 +31,8 @@
 - `src/crypto_quant/challenger_replacement_install_trust.py`: 固定身份、路径、secure descriptor helpers、snapshot 与 contract codec/loader。
 - `src/crypto_quant/challenger_replacement_install_preflight.py`: 固定只读机器检查、3 次 public time GET、receipt codec/loader。
 - `src/crypto_quant/challenger_replacement_install.py`: plist no-replace publication、唯一 bootstrap 序列、rollback 与 install receipt。
+- `src/crypto_quant/challenger_replacement_installed_runtime.py`: 固定 contract/install receipt/event-root 重放与现有 v0.67 策略核心调用。
+- `src/crypto_quant/challenger_replacement_installed_runtime_cli.py`: installed runtime 的零参数入口。
 - `src/crypto_quant/challenger_replacement_deployment.py`: 复用 deployment 领域并增加 v0.68 candidate plist renderer。
 - `src/crypto_quant/system_paper_launchctl.py`: 复用 bounded launchctl grammar，增加 replacement-specific semantic parser。
 - `src/crypto_quant/challenger_replacement_start.py`: 只读 observer、首个自然成功机会验证、start receipt codec/publisher。
@@ -157,7 +162,9 @@ Orphan staging is classified only by basename/stat and blocks that ceremony; nev
 
 - [ ] **Step 4: Build and load the fixed install contract**
 
-Bind release, plan, v0.67 deployment/plist ancestry, snapshot inventory/root identity, Python executable identity/import transcript, fixed schedule/paths and exact authority. Deterministically render and no-overwrite publish a separate v0.68 candidate plist from the contract; it must use `/usr/bin/python3` and the hash-addressed snapshot, while the v0.67 plist is never an install input. Release identity 只能通过固定 `gh api repos/cjl308868584-lang/crypto-quant-core`、exact HEAD 的 `gh run list` 和该 run 的 `gh run view` 三次只读查询获得；固定验证 PUBLIC/ADMIN、head SHA、conclusion 和 Python 3.9/3.12/macOS arm64 jobs。`/usr/bin/python3` 必须 regular/root-owned/group-world不可写，并绑定实际 device/inode/mode/nlink/size/hash；系统解释器的合法多 hardlink 不得冒充 owner-only evidence `nlink=1`。Canonical self-hash excludes only its own hash field using the existing `artifact_self_hash` convention. Reject any unknown key or different bytes.
+Bind release, plan, v0.67 deployment/plist ancestry, exact v0.67 strategy-core identity, v0.68 snapshot/adapter identity, pre-created empty event-root capability, Python executable identity/import transcript, fixed schedule/paths and exact authority. Deterministically render and no-overwrite publish a separate v0.68 candidate plist from the contract; it must use `/usr/bin/python3`, the hash-addressed snapshot and `crypto_quant.challenger_replacement_installed_runtime_cli`, while the v0.67 plist is never an install input. Release identity 只能通过固定 `gh api repos/cjl308868584-lang/crypto-quant-core`、exact HEAD 的 `gh run list` 和该 run 的 `gh run view` 三次只读查询获得；固定验证 PUBLIC/ADMIN、head SHA、conclusion 和 Python 3.9/3.12/macOS arm64 jobs。`/usr/bin/python3` 必须 regular/root-owned/group-world不可写，并绑定实际 device/inode/mode/nlink/size/hash；系统解释器的合法多 hardlink 不得冒充 owner-only evidence `nlink=1`。Canonical self-hash excludes only its own hash field using the existing `artifact_self_hash` convention. Reject any unknown key or different bytes.
+
+Renderer 在 retained runtime root 下创建并重放 `state/`、空 event root、`log/`、`evidence/`、空 start-receipt root；每层必须 owner-only `0700` 且 attachment 不变。contract 绑定 event root path/device/inode/uid/mode、固定 worker id，以及 v0.67 manifest `1.61.0` 的 tree/manifest/file hashes。stdout/stderr 与 canonical event 必须仍不存在。
 
 - [ ] **Step 5: Add the no-argument renderer CLI**
 
@@ -199,7 +206,7 @@ git commit -m "feat: build immutable replacement install snapshot"
 
 - [ ] **Step 1: Write platform, command and network-count RED tests**
 
-Test exact Darwin arm64/uid/home/timezone, fixed local origin/main/tag/clean checks, absent service/plist/root, old service not loaded, 10 GB/100,000 inode thresholds, `pmset`, Python import identity, credential scan and exactly three GETs to `https://data-api.binance.vision/api/v3/time`. GitHub visibility/ADMIN/main-CI 已由 contract renderer 的固定 transcript 绑定，preflight 只重放该 transcript，不重复 GitHub 网络。Unsupported platform must make command/network/write counts zero.
+Test exact Darwin arm64/uid/home/timezone, fixed local origin/main/tag/clean checks, absent service/plist/log files, exact empty event/start roots, old service not loaded, 10 GB/100,000 inode thresholds, `pmset`, Python import identity, credential scan and exactly three GETs to `https://data-api.binance.vision/api/v3/time`. GitHub visibility/ADMIN/main-CI 已由 contract renderer 的固定 transcript 绑定，preflight 只重放该 transcript，不重复 GitHub 网络。Unsupported platform must make command/network/write counts zero. Verified observation must be within 10–30 minutes after a UTC four-hour boundary; boundary−1 ms, +9:59.999, +30:00.001 and an expiry crossing the next `+4h+2m` trigger all fail closed.
 
 Add tests for oversized command output, timeout, non-UTF8 output, wrong Git identity, non-annotated tag, stale contract, clock skew, partial network success and receipt expiry.
 
@@ -288,7 +295,7 @@ Before bootstrap, replay every input and revalidate absent targets. Publish plis
 
 - [ ] **Step 4: Implement strict install receipt**
 
-Only a matching post-print with run count zero may produce `INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT`. Bind exact argv/exit/stdout/stderr hashes, source receipts, plist inode/stat/hash, snapshot root identity, `installed_at` and authority counters. Existing exact receipt is idempotent only after replay and parent fsync.
+Only a matching post-print with run count zero may produce `INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT`. Bind exact argv/exit/stdout/stderr hashes, source receipts, plist inode/stat/hash, snapshot root identity, event-root identity, strategy-core/adapter identities, derived next UTC four-hour `first_eligible_scheduled_for`, `installed_at` and authority counters. Existing exact receipt is idempotent only after replay and parent fsync.
 
 - [ ] **Step 5: Prove forbidden commands and zero runtime invocation**
 
@@ -314,6 +321,58 @@ git add src/crypto_quant/challenger_replacement_install.py \
   tests/test_challenger_replacement_install.py \
   tests/test_challenger_replacement_v068_release.py
 git commit -m "feat: install replacement launch agent atomically"
+```
+
+### Task 4A: Runtime Activation Bridge Safety Correction
+
+**Files:**
+- Modify: `src/crypto_quant/challenger_replacement_install_trust.py`
+- Modify: `src/crypto_quant/challenger_replacement_install_preflight.py`
+- Modify: `src/crypto_quant/challenger_replacement_install.py`
+- Modify: `src/crypto_quant/challenger_replacement_deployment.py`
+- Create: `src/crypto_quant/challenger_replacement_installed_runtime.py`
+- Create: `src/crypto_quant/challenger_replacement_installed_runtime_cli.py`
+- Modify: contract/install/preflight schemas and mirrors
+- Create: `tests/test_challenger_replacement_installed_runtime.py`
+- Modify: Task 2–4 tests and `tests/test_challenger_replacement_v068_release.py`
+
+**Interfaces:**
+- Produces: `load_fixed_replacement_runtime_state() -> Mapping[str, object]` with retained event-root capability.
+- Produces: `run_fixed_replacement_installed_invocation() -> Mapping[str, object]`.
+- Consumes: exact contract, unique successful install receipt, fixed plan bytes and v0.67 strategy-core identity.
+
+- [ ] **Step 1: Write activation-gap RED tests**
+
+Prove the current v0.67 CLI raises `RUNTIME_CONTRACT_UNAVAILABLE`, then require the candidate plist to target the new installed adapter. Require renderer fixtures to create one empty owner-only event root and bind its identity. Add safe-window boundary tests and require install receipt to bind the derived first eligible slot.
+
+- [ ] **Step 2: Write zero-write race and identity RED tests**
+
+Without a receipt, with duplicate/different/untrusted receipt, replaced event-root inode, changed v0.67 strategy file, or changed v0.68 snapshot, the installed adapter must perform zero clock/kline requests and zero event append. Every opened descriptor must have one close attempt. Existing canonical event/orphan staging before first start fails closed.
+
+- [ ] **Step 3: Implement the minimal two-layer bridge**
+
+Renderer creates/replays fixed empty capability directories and contract binds them. The installed adapter replays fixed contract/plist/snapshot, one successful install receipt, the exact plan and strategy identity; opens the bound event root; constructs `ChallengerReplacementRuntimeState`; delegates one invocation to existing decision/evidence/live-input/runtime APIs; closes the root on every path. Do not modify or duplicate decision policy.
+
+- [ ] **Step 4: Verify a natural fixture invocation**
+
+Patch only private time/HTTP boundaries and fixed production-path loaders. From an empty fixture root, the adapter must append exactly INPUT_PREPARED → RESULT_PREPARED → SLOT_SUCCEEDED and return the existing canonical summary. A fresh invocation replays without rebuilding the completed slot. This is not a real Runner invocation.
+
+- [ ] **Step 5: Run focused and adjacent GREEN tests**
+
+```bash
+PYTHONPATH=src python3 -m unittest \
+  tests.test_challenger_replacement_installed_runtime \
+  tests.test_challenger_replacement_install \
+  tests.test_challenger_replacement_install_preflight \
+  tests.test_challenger_replacement_install_trust \
+  tests.test_challenger_replacement_live_runtime \
+  tests.test_challenger_replacement_runtime -v
+```
+
+- [ ] **Step 6: Commit the correction**
+
+```bash
+git commit -m "fix: close replacement runtime activation bridge"
 ```
 
 ### Task 5: Read-only First-Natural-Slot Observer
@@ -354,7 +413,7 @@ Expected: FAIL because observer code is absent.
 
 - [ ] **Step 4: Implement retained-capability observation**
 
-Open and retain trusted roots before replay. Load all upstream receipts and exact event chain, cross-check the first `SLOT_SUCCEEDED` with v0.67 capture/source/decision bytes, logs and launchctl output. Return only canonical structural summary; do not expose PnL, return, win rate or gate result.
+Open and retain the contract-bound trusted roots before replay. Load all upstream receipts and exact event chain, cross-check the first `SLOT_SUCCEEDED` with v0.67 capture/source/decision bytes, logs and launchctl output. Derive the required slot only from install receipt `first_eligible_scheduled_for`. Return only canonical structural summary; do not expose PnL, return, win rate or gate result.
 
 - [ ] **Step 5: Run focused and adjacent GREEN tests**
 
@@ -426,6 +485,7 @@ The no-argument CLI performs one observe-and-publish attempt. Any argv fails bef
 PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_start \
   tests.test_challenger_replacement_install \
+  tests.test_challenger_replacement_installed_runtime \
   tests.test_challenger_replacement_install_preflight \
   tests.test_challenger_replacement_install_trust -v
 ```
@@ -465,7 +525,7 @@ Parametrize every write/readback/file-fsync/dir-fsync/no-replace/bootstrap/post-
 
 - [ ] **Step 3: Add static scope/YAGNI gates**
 
-Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert the four production modules plus four thin CLI modules together remain strictly below 2,600 physical lines；其中 install trust+CLI 不高于 1,575、preflight+CLI 不高于 300、installer+CLI 不高于 345、observer/start+CLI 不高于 385。allocation 调整只是将 candidate plist 的确定性渲染/绑定和 receipt 时间语义放入它们所属的 trust/install 层，四模块全局 2,600 上限不变；已有 deployment 模块只允许增加一个不超过 20 行的 replacement-specific plist renderer；已有 bounded launchctl parser 的 replacement 语义扩展 net diff 不高于 25 行。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
+Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert trust/preflight/installer/installed-adapter/observer production modules plus thin CLI modules together remain strictly below 2,850 physical lines；其中 install trust+CLI 不高于 1,650、preflight+CLI 不高于 330、installer+CLI 不高于 385、installed adapter+CLI 不高于 180、observer/start+CLI 不高于 385。新增 250 行预算只用于关闭已实证的 activation bridge，不得转成通用 Runner/storage/deployment 功能；已有 deployment plist renderer net production diff 不高于 25 行，bounded launchctl replacement parser net diff 不高于 25 行。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
 
 - [ ] **Step 4: Run focused and full v0.68 tests**
 

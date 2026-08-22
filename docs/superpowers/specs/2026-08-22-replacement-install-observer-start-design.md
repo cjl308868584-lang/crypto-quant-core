@@ -12,6 +12,10 @@ v0.68 只发布 replacement Challenger 的安装信任链代码与冻结合同�
 不启动 Runner，也不创建 install/start receipt。完成状态固定为
 `REPLACEMENT_INSTALL_TRUST_CHAIN_CODE_RELEASED_NOT_INSTALLED`。
 
+代码发布候选必须已经包含一个可验证但未执行的 runtime activation bridge。该 bridge
+不能依赖仍会固定返回 `CHALLENGER_REPLACEMENT_RUNTIME_CONTRACT_UNAVAILABLE` 的 v0.67
+测试入口，也不能在首次自然触发时临时创建 event root、猜测 inode 或补写安装证据。
+
 发布后的真实 ceremony 必须是独立动作：v0.68 annotated tag 先成为不可变的代码
 权威，然后才能生成绑定该 tag/main/CI 的 owner-only snapshot 和 preflight receipt。
 真实安装和首个自然槽位证据在下一证据版本逐字节封存。这避免“尚未
@@ -42,6 +46,15 @@ v0.68 代码必须冻结并测试以下已发布身份：
 - evaluator manifest version: `1.61.0`;
 - evaluator manifest hash:
 `2b72a470a2f210461a3a6753fd3d603fee9b90df76e825deea3b9bde61a26110`;
+- evaluator manifest file SHA-256:
+  `ec2ba2d48dd35676eb442ed80cd0e45a642a2b109626db2f54a25d25823a2bf8`;
+- build input tree hash:
+  `5c2a98492aa45f311cea75617745ac6d1e0afe0ea2ff36a5950a0f5c00c4efa1`;
+- strategy-core file SHA-256：decision
+  `a72a93a7aec50e6d5d8ffb9424b33eb05453fef2f9396b1dac05a665c7b6c6ec`、evidence
+  `920e84a77138509f94b42b416b1ce57adc84daad0a855ab39e9ac6a44799002f`、live input
+  `84640cbf81659d05d8abdfa935e8340eb565db20bd3006641a77033d59263536`、runtime
+  `fbaeb06894f0a3f0468c7382c411e4296fbc2b7e514dfcc26867a97a21eaa97f`;
 - main CI run: `32572208544`;
 - main CI jobs: Python 3.9, Python 3.12, macOS 15 arm64 均为 `success`;
 - deployment candidate:
@@ -85,6 +98,19 @@ Paper artifact 和不同槽位语义。复制会引入两套事实源和大量�
 安装代码在 tag 之前没有最终身份；真实 receipt 又只能在 tag 之后产生。
 两者合并会导致循环信任或修改已发布 tag，因此禁止。
 
+### 4.4 采用：两层 runtime 身份与薄 installed adapter
+
+v0.67 的 decision/evidence/live-input/runtime 四个策略核心文件保持 exact bytes，并由
+`v0.67.0` manifest 中的文件 hash 和既有 cohort `build_identity` 约束。v0.68 新增的
+installed adapter 只完成固定 contract/install receipt 重放、event-root capability 打开、
+调用既有策略核心和 descriptor 关闭；它由 v0.68 snapshot/tree/manifest 约束。两层身份
+必须同时进入 install contract/receipt，禁止用 v0.67 身份冒充 v0.68 adapter，也禁止用
+v0.68 安装版本改写已冻结的 v0.67 cohort evidence identity。
+
+拒绝三种替代：运行时按 pathname 猜测 event-root identity、通过 monkeypatch 注入
+`_load_fixed_runtime_contract`、复制一套策略/decision/runtime。installed adapter 是
+replacement-specific 固定入口，不是新的通用 Runner 或 deployment framework。
+
 ## 5. 固定 production 路径
 
 以下路径只能由冻结 builder 派生，production CLI 不接受 path override：
@@ -94,6 +120,7 @@ Paper artifact 和不同槽位语义。复制会引入两套事实源和大量�
 - deployment root: `<runtime>/deployment`;
 - snapshot root: `<deployment>/snapshots/<snapshot_tree_hash>`;
 - install contract: `<deployment>/challenger-replacement-install-contract-v1.json`;
+- candidate plist: `<deployment>/local.crypto-quant.challenger-replacement-v1.plist`;
 - preflight root: `<deployment>/preflight-receipts`;
 - install receipt root: `<deployment>/install-receipts`;
 - start receipt root: `<runtime>/evidence/start-receipts`;
@@ -105,6 +132,11 @@ Paper artifact 和不同槽位语义。复制会引入两套事实源和大量�
 runtime/deployment/evidence/state/log 目录 mode 固定 `0700`，普通证据文件和 plist
 固定 `0600`。所有路径边界拒绝 symlink、hardlink、wrong owner/mode、
 non-regular/non-directory 对象和验证后替换。
+
+renderer 在 contract 建立前安全创建并保留空的 `state/`、event root、`log/`、
+`evidence/` 和 start-receipt root。contract 绑定 event root 的 absolute path/device/inode/
+uid/mode；event root 必须为空且没有 orphan staging。stdout/stderr 普通文件在 renderer 与
+install 阶段仍必须不存在，由未来首次 LaunchAgent invocation 自然创建。
 
 ## 6. Owner-only immutable execution snapshot
 
@@ -146,7 +178,8 @@ device/inode/uid/mode/nlink/size/SHA-256、`sys.version`和 Python 3.9 compatibi
 不套用 owner-only evidence 的 `nlink=1`，而是绑定并在每次 replay 精确复核其实际
 `st_nlink`，同时要求 regular、uid=0 且 group/world 不可写。快照的
 `PYTHONPATH=<snapshot>/src`、`PYTHONDONTWRITEBYTECODE=1`，禁止 user site 和任意环境变量。
-安装前用新进程从 snapshot import runtime CLI 并打印唯一 canonical identity。
+安装前用新进程从 snapshot import installed runtime adapter 及策略核心，并打印唯一
+canonical identity。import 不得打开 event root、加载 receipt、访问网络或写文件。
 
 v0.67 deployment plist 仅作为 predecessor ancestry 保留，不得作为安装输入：它固定
 指向旧的 `deployment/snapshot/bin/python3`，与本节 v0.68 runtime identity 不同。
@@ -154,6 +187,8 @@ renderer 必须从 v0.68 contract 的 runtime/schedule/path 字段确定性生�
 plist，owner-only no-overwrite 发布到
 `<deployment>/local.crypto-quant.challenger-replacement-v1.plist`；contract 绑定其路径与
 SHA-256。preflight 和 installer 每次都重放这份 candidate bytes，绝不安装 v0.67 plist。
+candidate plist 的 module 固定为 v0.68 installed adapter；adapter 内部只调用未改字节的
+v0.67 策略核心，不调用 v0.67 unavailable provider。
 
 ## 7. Install contract
 
@@ -164,6 +199,8 @@ SHA-256。preflight 和 installer 每次都重放这份 candidate bytes，绝不
 - v0.67 deployment candidate/plist/v2 plan exact bytes/hash/id；
 - v0.68 独立 candidate plist exact path/hash；v0.67 plist 仅为 ancestry；
 - snapshot file inventory/tree hash/root identity；
+- event root retained identity、空目录证明和固定 worker identity；
+- v0.67 strategy-core identity（manifest/tree/file hashes）与 v0.68 adapter/snapshot identity；
 - Python identity/import transcript；
 - service label、schedule、ProgramArguments、working directory、environment；
 - 全部固定 path 及预期 owner/mode/device 合同；
@@ -189,11 +226,14 @@ preflight 在 installer 之外运行，除了一次固定 public clock gate 外�
 - v0.68 tag/main/CI/manifest/snapshot/contract/plist/Python import exact replay;
 - target service 未加载、target plist 不存在；
 - 旧 failed Challenger service 未加载；
-- runtime/event/log/evidence/deployment roots 不与旧 cohort/System Paper 交叉；
+- contract 已绑定的 event/evidence/log/deployment directories identity 完整、event/start
+  receipt roots 为空、stdout/stderr 不存在，且不与旧 cohort/System Paper 交叉；
 - owner/mode/device/symlink/hardlink/FIFO/socket 边界；
 - 本地文件系统、至少 10 GB 可用空间、100,000 inodes；
 - `pmset` 证据不会导致跨过 4h 槽位；
 - 3 次固定 Binance public time GET 的可信时钟门；
+- `observed_at` 必须位于 UTC 四小时边界后的 `[10m,30m]`；receipt 的 30 分钟有效期
+  最晚仍早于下一次 `boundary+4h+2m` 自然触发，installer 必须再次验证同一安全窗；
 - plist/environment 不含 Binance/exchange credential，Broker/order authority 为 0。
 
 GitHub token 不进入 LaunchAgent 环境，不冒充交易所凭据。preflight 只扫描固定
@@ -219,6 +259,11 @@ launchctl 序列只有：
 3. `launchctl bootstrap gui/501 <fixed-target-plist>`;
 4. 再次 `launchctl print` 验证 label/program/snapshot/path/schedule，并要求尚未自然运行。
 
+bootstrap 前必须重放 contract-bound 的空 event root 和目录能力。bootstrap 后、成功
+install receipt 发布前如果 LaunchAgent 意外运行，installed adapter 因缺少唯一 verified
+install receipt 必须在打开 event root 进行任何 append 或市场请求前失败。post-print 的
+`runs != 0` 随即使安装进入 UNKNOWN；不得把该早期失败回填为首槽。
+
 禁止 `kickstart/start/enable/submit/bootout`，禁止 shell，禁止直接调用 runtime CLI。
 
 - bootstrap 之前失败：零 launchctl mutation，不创建 plist。
@@ -230,8 +275,17 @@ launchctl 序列只有：
   `INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT` install receipt。
 
 install receipt 绑定所有源 receipt/hash、plist target inode/stat/hash、snapshot root identity、
-launchctl 命令 exact argv/exit/stdout/stderr bytes hash、installed_at 和权限计数。安装成功只表示
+event-root identity、strategy-core identity、adapter identity、首个 eligible UTC slot、
+launchctl 命令 exact argv/exit/stdout/stderr bytes hash、installed_at 和权限计数。首个
+eligible slot 只能从安全窗内的 `installed_at` 派生为下一个 UTC 四小时边界，禁止传入。
+安装成功只表示
 LaunchAgent 已加载且尚未运行，不表示 Paper 已开始。
+
+installed adapter 每次自然进程只允许：重放 fixed contract/candidate plist/唯一成功 install
+receipt；以 receipt 中 identity 打开 event root；从 snapshot exact plan 构造
+`ChallengerReplacementRuntimeState`；执行现有单槽逻辑；在所有正常和异常路径关闭 retained
+event-root descriptor。receipt 不存在、重复、different/untrusted，或任一 identity 变化时，
+network/runtime state write/Broker/order 计数必须全为 0。
 
 ## 10. Read-only first-slot observer
 
