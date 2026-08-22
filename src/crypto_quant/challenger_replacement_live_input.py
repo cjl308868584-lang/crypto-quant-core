@@ -29,6 +29,10 @@ from .canonical import (
     utc_datetime,
 )
 from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reasons
+from .challenger_replacement_plan import (
+    ChallengerReplacementPlanError,
+    _strict_json_bytes as _strict_mapping_bytes,
+)
 from .evidence import artifact_self_hash
 from .errors import CanonicalizationError
 from .runtime_health import server_time_probe_reasons, server_time_probe_trust_hash
@@ -44,51 +48,12 @@ _CAPTURE_SCHEMA = "./challenger-replacement-live-capture-v1.schema.json"
 _QUALIFICATION = "REPLACEMENT_CONFIRMATORY_COHORT_INPUT"
 _MAX_CAPTURE_BYTES = 2 * 1024 * 1024
 _MAX_RESPONSE_BYTES = 256 * 1024
-_BUILD_KEYS = {
-    "release_tag",
-    "peeled_commit",
-    "package_version",
-    "manifest_version",
-    "build_input_tree_hash",
-    "manifest_hash",
-    "manifest_file_sha256",
-}
+_BUILD_KEYS = {"release_tag", "peeled_commit", "package_version", "manifest_version", "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"}
 _SLOT_KEYS = {"slot_id", "sequence", "scheduled_for", "captured_at"}
-_AUTHORITY_KEYS = {
-    "network_request_count",
-    "credentials_allowed",
-    "account_requests_allowed",
-    "broker_requests_allowed",
-    "orders_allowed",
-}
-_REQUEST_KEYS = {
-    "request_id",
-    "method",
-    "url",
-    "symbol",
-    "interval",
-    "limit",
-    "end_time_ms",
-}
-_ATTEMPT_KEYS = {
-    "sequence",
-    "outcome",
-    "error_reason_or_null",
-    "request_started_at",
-    "response_received_at",
-    "status",
-    "final_url",
-    "selected_headers",
-    "body_size_bytes",
-    "body_sha256",
-    "response_body_utf8",
-}
-_HEADER_KEYS = {
-    "http_date_or_null",
-    "etag_or_null",
-    "last_modified_or_null",
-    "retry_after_or_null",
-}
+_AUTHORITY_KEYS = {"network_request_count", "credentials_allowed", "account_requests_allowed", "broker_requests_allowed", "orders_allowed"}
+_REQUEST_KEYS = {"request_id", "method", "url", "symbol", "interval", "limit", "end_time_ms"}
+_ATTEMPT_KEYS = {"sequence", "outcome", "error_reason_or_null", "request_started_at", "response_received_at", "status", "final_url", "selected_headers", "body_size_bytes", "body_sha256", "response_body_utf8"}
+_HEADER_KEYS = {"http_date_or_null", "etag_or_null", "last_modified_or_null", "retry_after_or_null"}
 _ROW_DESCRIPTOR = {
     "provider": "BINANCE_PUBLIC_DATA",
     "market": "SPOT",
@@ -559,39 +524,12 @@ def _strict_json(data):
             "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_SIZE_INVALID"
         )
 
-    def pairs(items):
-        result = {}
-        for key, value in items:
-            if key in result:
-                raise ChallengerReplacementLiveInputError(
-                    "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_JSON_INVALID"
-                )
-            result[key] = value
-        return result
-
-    def reject_number(_value):
-        raise ChallengerReplacementLiveInputError(
-            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_JSON_INVALID"
-        )
-
     try:
-        document = json.loads(
-            data.decode("utf-8"),
-            object_pairs_hook=pairs,
-            parse_float=reject_number,
-            parse_constant=reject_number,
-        )
-    except ChallengerReplacementLiveInputError:
-        raise
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        return _strict_mapping_bytes(data)
+    except ChallengerReplacementPlanError as error:
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_JSON_INVALID"
         ) from error
-    if not isinstance(document, Mapping):
-        raise ChallengerReplacementLiveInputError(
-            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_JSON_INVALID"
-        )
-    return document
 
 
 def load_challenger_replacement_live_capture_bytes(
@@ -855,30 +793,10 @@ def _validated_attempt_payload(document, *, request, trusted_completed, captured
 
 
 def _strict_response_json(data):
-    def pairs(items):
-        result = {}
-        for key, value in items:
-            if key in result:
-                _invalid_rows()
-            result[key] = value
-        return result
-
-    def reject_number(_value):
-        _invalid_rows()
-
     try:
-        value = json.loads(
-            data.decode("utf-8"),
-            object_pairs_hook=pairs,
-            parse_float=reject_number,
-            parse_constant=reject_number,
-        )
-    except ChallengerReplacementLiveInputError:
-        raise
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ChallengerReplacementLiveInputError(
-            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_ROWS_INVALID"
-        ) from error
+        value = _strict_mapping_bytes(b'{"rows":' + data + b"}")["rows"]
+    except (ChallengerReplacementPlanError, KeyError, TypeError):
+        _invalid_rows()
     try:
         canonical = canonical_json(value).encode("utf-8")
     except CanonicalizationError:
@@ -947,28 +865,15 @@ def _normalize_kline_payload(payload, *, scheduled, captured):
     return rows
 
 
-def _invalid_attempt():
+def _invalid(suffix):
     raise ChallengerReplacementLiveInputError(
-        "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_ATTEMPT_INVALID"
-    )
+        "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_" + suffix + "_INVALID")
 
 
-def _invalid_rows():
-    raise ChallengerReplacementLiveInputError(
-        "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_ROWS_INVALID"
-    )
-
-
-def _invalid_slot():
-    raise ChallengerReplacementLiveInputError(
-        "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_SLOT_INVALID"
-    )
-
-
-def _invalid_clock():
-    raise ChallengerReplacementLiveInputError(
-        "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_CLOCK_INVALID"
-    )
+def _invalid_attempt(): _invalid("ATTEMPT")
+def _invalid_rows(): _invalid("ROWS")
+def _invalid_slot(): _invalid("SLOT")
+def _invalid_clock(): _invalid("CLOCK")
 
 
 def _lowerhex(value, length):

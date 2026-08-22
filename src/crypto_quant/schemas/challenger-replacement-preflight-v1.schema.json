@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-preflight-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "receipt_id",
+    "receipt_hash",
+    "status",
+    "historical_qualification",
+    "observed_at",
+    "deployment_binding",
+    "machine",
+    "release",
+    "commands",
+    "paths_absent",
+    "disk",
+    "network",
+    "authority",
+    "reason_codes"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-preflight-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^challenger_replacement_preflight_[0-9a-f]{64}$"
+    },
+    "receipt_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "PREFLIGHT_CANDIDATE_VERIFIED_NOT_PUBLISHED",
+        "PREFLIGHT_CANDIDATE_INELIGIBLE",
+        "PREFLIGHT_PLATFORM_UNSUPPORTED"
+      ]
+    },
+    "historical_qualification": {
+      "enum": ["NO_OBSERVABLE_REPLACEMENT_INSTALLATION_AT_COLLECTION", "NOT_COLLECTED_PLATFORM_UNSUPPORTED"]
+    },
+    "observed_at": {
+      "type": "string"
+    },
+    "deployment_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deployment_id",
+        "deployment_hash",
+        "plist_sha256"
+      ],
+      "properties": {
+        "deployment_id": {
+          "type": "string"
+        },
+        "deployment_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "plist_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "machine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "system",
+        "machine",
+        "uid",
+        "home",
+        "timezone"
+      ],
+      "properties": {
+        "system": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "uid": {
+          "type": "integer"
+        },
+        "home": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "main",
+        "tag",
+        "admin",
+        "clean"
+      ],
+      "properties": {
+        "origin": {
+          "type": "string"
+        },
+        "main": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "admin": {
+          "type": "boolean"
+        },
+        "clean": {
+          "type": "boolean"
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "argv",
+          "exit_code",
+          "stdout_sha256",
+          "stderr_sha256"
+        ],
+        "properties": {
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "stdout_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "stderr_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "paths_absent": {
+      "type": "boolean"
+    },
+    "disk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "free_bytes",
+        "free_inodes"
+      ],
+      "properties": {
+        "free_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "free_inodes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_count",
+        "trust_hash"
+      ],
+      "properties": {
+        "request_count": {
+          "enum": [0, 3]
+        },
+        "trust_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_write_count",
+        "launchctl_mutation_count",
+        "credential_count",
+        "broker_request_count",
+        "order_count"
+      ],
+      "properties": {
+        "state_write_count": {
+          "const": 0
+        },
+        "launchctl_mutation_count": {
+          "const": 0
+        },
+        "credential_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "broker_request_count": {
+          "const": 0
+        },
+        "order_count": {
+          "const": 0
+        }
+      }
+    },
+    "reason_codes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
