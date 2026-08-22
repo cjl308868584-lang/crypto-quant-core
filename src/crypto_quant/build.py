@@ -348,6 +348,18 @@ _V066_RELEASE_PATHS = (
     "docs/implementation-status-v0.66.0.md",
 )
 
+_V067_RELEASE_PATHS = (
+    "config/challenger-replacement-live-capture-v1.schema.json", "config/challenger-replacement-source-bundle-v2.schema.json",
+    "config/challenger-replacement-decision-v2.schema.json", "config/challenger-replacement-deployment-v1.schema.json",
+    "config/challenger-replacement-preflight-v1.schema.json", "artifacts/challenger-replacement/challenger-replacement-deployment-v0.67.0.json",
+    "artifacts/challenger-replacement/local.crypto-quant.challenger-replacement-v1.plist", "tests/test_challenger_replacement_live_input.py",
+    "tests/test_challenger_replacement_live_documents.py", "tests/test_challenger_replacement_live_runtime.py",
+    "tests/test_challenger_replacement_deployment.py", "tests/test_challenger_replacement_preflight.py",
+    "tests/test_challenger_replacement_v067_safety.py", "tests/test_challenger_replacement_v067_release.py",
+    "docs/superpowers/specs/2026-08-22-replacement-live-input-deployment-design.md", "docs/superpowers/plans/2026-08-22-replacement-live-input-deployment.md",
+    "docs/adr/0067-replacement-live-input-deployment-candidate.md", "docs/implementation-status-v0.67.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -381,6 +393,7 @@ class EvaluatorBuild:
                 + list(_V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS)
                 + list(_V065_RELEASE_PATHS)
                 + list(_V066_RELEASE_PATHS)
+                + list(_V067_RELEASE_PATHS)
             )
         )
 

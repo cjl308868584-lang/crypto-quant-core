@@ -44,7 +44,7 @@ class NautilusV065ReleaseTests(unittest.TestCase):
     def test_release_identity_and_build_inputs_are_v065(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIsNotNone(
-            re.search(r'^version = "0\.66\.0"$', pyproject, re.MULTILINE)
+            re.search(r'^version = "0\.67\.0"$', pyproject, re.MULTILINE)
         )
         setup_tree = ast.parse((ROOT / "setup.py").read_text(encoding="utf-8"))
         setup_version = next(
@@ -56,15 +56,15 @@ class NautilusV065ReleaseTests(unittest.TestCase):
             for keyword in node.keywords
             if keyword.arg == "version"
         )
-        self.assertEqual(setup_version, "0.66.0")
-        self.assertEqual(crypto_quant.__version__, "0.66.0")
+        self.assertEqual(setup_version, "0.67.0")
+        self.assertEqual(crypto_quant.__version__, "0.67.0")
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual(manifest["manifest_version"], "1.60.0")
-        self.assertEqual(manifest["package_version"], "0.66.0")
+        self.assertEqual(manifest["manifest_version"], "1.61.0")
+        self.assertEqual(manifest["package_version"], "0.67.0")
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {
             "artifacts/nautilus-sandbox/nautilus-e2e-spike-plan-v0.65.0.json",
