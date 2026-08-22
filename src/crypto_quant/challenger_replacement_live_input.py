@@ -1,5 +1,6 @@
 """Strict live-input boundary for the replacement Challenger."""
 
+import base64
 import hashlib
 import json
 import os
@@ -51,7 +52,7 @@ _BUILD_KEYS = {"release_tag", "peeled_commit", "package_version", "manifest_vers
 _SLOT_KEYS = {"slot_id", "sequence", "scheduled_for", "captured_at"}
 _AUTHORITY_KEYS = {"network_request_count", "credentials_allowed", "account_requests_allowed", "broker_requests_allowed", "orders_allowed"}
 _REQUEST_KEYS = {"request_id", "method", "url", "symbol", "interval", "limit", "end_time_ms"}
-_ATTEMPT_KEYS = {"sequence", "outcome", "error_reason_or_null", "request_started_at", "response_received_at", "status", "final_url", "selected_headers", "body_size_bytes", "body_sha256", "response_body_utf8"}
+_ATTEMPT_KEYS = {"sequence", "outcome", "error_reason_or_null", "request_started_at", "response_received_at", "status", "final_url", "selected_headers", "body_size_bytes", "body_sha256", "response_body_base64"}
 _HEADER_KEYS = {"http_date_or_null", "etag_or_null", "last_modified_or_null", "retry_after_or_null"}
 _ROW_DESCRIPTOR = {
     "provider": "BINANCE_PUBLIC_DATA",
@@ -395,7 +396,7 @@ def acquire_challenger_replacement_live_capture(*, state):
     captured = _utc_millis(attempts[selected_index]["response_received_at"])
     try:
         payload = _strict_response_json(
-            attempts[selected_index]["response_body_utf8"].encode("utf-8")
+            base64.b64decode(attempts[selected_index]["response_body_base64"], validate=True)
         )
         rows = _normalize_kline_payload(
             payload, scheduled=scheduled, captured=captured
@@ -452,12 +453,6 @@ def _attempt_document(response, sequence):
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
         )
-    try:
-        body_text = body.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise ChallengerReplacementLiveInputError(
-            "CHALLENGER_REPLACEMENT_LIVE_INPUT_JSON_INVALID"
-        ) from error
     return {
         "sequence": sequence,
         "outcome": "HTTP_RESPONSE",
@@ -474,7 +469,7 @@ def _attempt_document(response, sequence):
         },
         "body_size_bytes": len(body),
         "body_sha256": hashlib.sha256(body).hexdigest(),
-        "response_body_utf8": body_text,
+        "response_body_base64": base64.b64encode(body).decode("ascii"),
     }
 
 def _transport_attempt_document(sequence, *, started, received):
@@ -501,7 +496,7 @@ def _transport_attempt_document(sequence, *, started, received):
         },
         "body_size_bytes": 0,
         "body_sha256": hashlib.sha256(b"").hexdigest(),
-        "response_body_utf8": "",
+        "response_body_base64": "",
     }
 
 @lru_cache(maxsize=1)
@@ -733,7 +728,7 @@ def _validated_attempt_payload(document, *, request, trusted_completed, captured
         try:
             started = _utc_millis(attempt["request_started_at"])
             received = _utc_millis(attempt["response_received_at"])
-            body = attempt["response_body_utf8"].encode("utf-8")
+            body = base64.b64decode(attempt["response_body_base64"], validate=True)
         except (AttributeError, TypeError, ValueError):
             _invalid_attempt()
         headers = attempt["selected_headers"]

@@ -1,10 +1,13 @@
 """Zero-business-argument entry point for the replacement live runtime."""
 
 import sys
+from datetime import timedelta
 
 from .canonical import canonical_json
 from .challenger_replacement_live_input import (
     ChallengerReplacementLiveInputError,
+    _utc_millis,
+    _wall_now,
     acquire_challenger_replacement_live_capture,
 )
 from .challenger_replacement_runtime import ChallengerReplacementRuntimeError
@@ -35,7 +38,13 @@ def _run_live_invocation():
         )
     state = contract["state"]
     projection = state.replay()
-    if projection["active_slot_id"] is not None:
+    next_slot = projection["next_required_slot"]
+    if projection["active_slot_id"] is not None or (
+        projection["events"] and (
+            next_slot is None
+            or _wall_now() < _utc_millis(next_slot["scheduled_for"]) + timedelta(minutes=2)
+        )
+    ):
         result = resume_challenger_replacement_slot(
             state=state, worker_id=contract["worker_id"]
         )

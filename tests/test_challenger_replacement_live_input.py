@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import os
@@ -307,7 +308,7 @@ class LiveCaptureCodecTests(unittest.TestCase):
                     },
                     "body_size_bytes": len(response_body),
                     "body_sha256": hashlib.sha256(response_body).hexdigest(),
-                    "response_body_utf8": response_body.decode("utf-8"),
+                    "response_body_base64": base64.b64encode(response_body).decode("ascii"),
                 }
             ],
             "selected_success_attempt_index": 0,
@@ -545,10 +546,10 @@ class LiveCaptureCodecTests(unittest.TestCase):
             wrong_selection, "capture_hash"
         )
         changed_body = self._structural_document()
-        raw = json.loads(changed_body["attempts"][0]["response_body_utf8"])
+        raw = json.loads(base64.b64decode(changed_body["attempts"][0]["response_body_base64"]))
         raw[-1][4] = "102"
         changed_bytes = canonical_json(raw).encode("utf-8")
-        changed_body["attempts"][0]["response_body_utf8"] = changed_bytes.decode()
+        changed_body["attempts"][0]["response_body_base64"] = base64.b64encode(changed_bytes).decode("ascii")
         changed_body["attempts"][0]["body_size_bytes"] = len(changed_bytes)
         changed_body["attempts"][0]["body_sha256"] = hashlib.sha256(
             changed_bytes
@@ -595,7 +596,7 @@ class LiveCaptureCodecTests(unittest.TestCase):
             },
             "body_size_bytes": 0,
             "body_sha256": hashlib.sha256(b"").hexdigest(),
-            "response_body_utf8": "",
+            "response_body_base64": "",
         }
         document["attempts"] = [transport, success]
         document["selected_success_attempt_index"] = 1
@@ -647,10 +648,10 @@ class LiveCaptureCodecTests(unittest.TestCase):
 
     def test_loader_maps_unsafe_integer_to_fixed_row_failure(self):
         document = self._structural_document()
-        original = document["attempts"][0]["response_body_utf8"]
-        first_open = str(json.loads(original)[0][0])
+        original = document["attempts"][0]["response_body_base64"]
+        first_open = str(json.loads(base64.b64decode(original))[0][0])
         body = original.replace(first_open, str(2**53), 1).encode("utf-8")
-        document["attempts"][0]["response_body_utf8"] = body.decode("utf-8")
+        document["attempts"][0]["response_body_base64"] = base64.b64encode(body).decode("ascii")
         document["attempts"][0]["body_size_bytes"] = len(body)
         document["attempts"][0]["body_sha256"] = hashlib.sha256(body).hexdigest()
         document["capture_hash"] = artifact_self_hash(document, "capture_hash")
@@ -770,6 +771,19 @@ class LiveAcquisitionTests(unittest.TestCase):
         self.assertEqual(capture.document["authority"]["network_request_count"], 6)
         self.assertEqual(len(self.requests), 6)
         self.assertEqual(self.sleeps, [1, 2])
+
+    def test_binary_transient_body_is_recorded_and_retried(self):
+        capture = self._acquire_with(
+            _TimeTransport().responses
+            + [
+                self._kline_response(
+                    status=503, sequence=1, body=b"\xff", content_type="text/plain"
+                ),
+                self._kline_response(sequence=2),
+            ]
+        )
+        self.assertEqual(capture.document["authority"]["network_request_count"], 5)
+        self.assertEqual(self.sleeps, [1])
 
     def test_transport_failure_is_recorded_and_retried_once(self):
         capture = self._acquire_with(

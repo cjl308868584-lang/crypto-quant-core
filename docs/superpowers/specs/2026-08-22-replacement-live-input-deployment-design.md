@@ -219,7 +219,7 @@ evidence_qualification = REPLACEMENT_CONFIRMATORY_COHORT_INPUT
 slot id/sequence/scheduled_for/captured_at
 clock probe exact normalized records + trust hash
 kline request exact method/url/request id
-all attempts: started/received time, status/final URL/selected headers/body SHA/body bytes
+all attempts: started/received time, status/final URL/selected headers/body SHA/body bytes (base64)
 selected_success_attempt_index
 normalized 21-bar rows + each normalized row hash
 network_request_count

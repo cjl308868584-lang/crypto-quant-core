@@ -240,11 +240,35 @@ class LiveRuntimeTests(unittest.TestCase):
             return_value={"state": state, "worker_id": "replacement-live-next-worker"},
         ), patch.object(
             cli, "acquire_challenger_replacement_live_capture", return_value=successor,
-        ) as acquire:
+        ) as acquire, patch.object(
+            cli, "_wall_now", return_value=scheduled.replace(minute=4)
+        ):
             summary = cli._run_live_invocation()
         self.assertEqual(acquire.call_count, 1)
         self.assertEqual(summary["scheduled_for"], "2026-08-22T08:00:00.000Z")
         self.assertEqual(summary["event_count"], 6)
+
+    def test_duplicate_success_before_successor_window_is_replay_only(self):
+        from crypto_quant import challenger_replacement_live_runtime_cli as cli
+
+        state = self._state()
+        first = runtime_module.run_challenger_replacement_cohort_slot(
+            state=state, live_capture=self.live_capture,
+            worker_id="replacement-live-first-worker")
+        with patch.object(
+            cli, "_load_fixed_runtime_contract",
+            return_value={"state": state, "worker_id": "replacement-live-duplicate-worker"},
+        ), patch.object(
+            cli, "_wall_now",
+            return_value=datetime(2026, 8, 22, 4, 5, tzinfo=timezone.utc),
+        ), patch.object(
+            cli, "acquire_challenger_replacement_live_capture",
+            side_effect=AssertionError("network forbidden"),
+        ) as acquire:
+            summary = cli._run_live_invocation()
+        self.assertEqual(acquire.call_count, 0)
+        self.assertEqual(summary["slot_id"], first["source_bundle"]["slot"]["slot_id"])
+        self.assertEqual(summary["event_count"], 3)
 
     def test_v2_input_event_binds_capture_hash_to_embedded_receipt_bytes(self):
         state = self._state()

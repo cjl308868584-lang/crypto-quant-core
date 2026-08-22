@@ -114,7 +114,7 @@
     "config/challenger-replacement-decision-v1.schema.json": "c5be2b73a38a53efe19c7abbcb0113cf5ffe62bc0f2c938118af29f0f88361d7",
     "config/challenger-replacement-decision-v2.schema.json": "1f4614892962b95e497b81a16c4524bf3a1bb0b28de31ef83fd88b08c1b4a7e1",
     "config/challenger-replacement-deployment-v1.schema.json": "10403324f32074c1f92f9d71e2bf1d55e45592dd7d183e7d3c56b59ee4929125",
-    "config/challenger-replacement-live-capture-v1.schema.json": "6098107e2d9df79a07aeaff104d54ea5ce4968788a21e28210644df982d3ef64",
+    "config/challenger-replacement-live-capture-v1.schema.json": "50c25f6190354dc5f51f432f31d2bba15839fe39b77c60e9c7200f26a3f9dd3d",
     "config/challenger-replacement-owner-attestation-v1.schema.json": "da2cbc953501d8fee52f41d278459042edebd76d18cf63fd248e9bb148958bd6",
     "config/challenger-replacement-plan-supersession-v1.schema.json": "16d9d665e7477130e6f5938ec091757d7276efec6d64d354507234d8a50e2a71",
     "config/challenger-replacement-plan-v1.schema.json": "93c12f9404516a3b01711f0ced72aa3eaf771c2c3531d767520da139147bbb12",
@@ -239,7 +239,7 @@
     "docs/superpowers/specs/2026-08-20-v064-public-ci-r3-interpreter-identity-design.md": "69dff502803a2ea2c50b66ee246dba5566674029aa22022c1907b10ad693ff2b",
     "docs/superpowers/specs/2026-08-21-v064-public-core-ci-umask-correction-design.md": "5b19d54e219a4b3d8fc98c5c4e8d72da4ca98e46a1893ade8533f924ca1ef6f3",
     "docs/superpowers/specs/2026-08-22-nautilus-end-to-end-spike-design.md": "2a1fa75f5700340efc0cbaca11a72911d5a3e37cbad09c694c201d788fd27e73",
-    "docs/superpowers/specs/2026-08-22-replacement-live-input-deployment-design.md": "f0f75f812b9c0291a91e0a434fbca23c97737ee3023c2eb557c2d768fca59af4",
+    "docs/superpowers/specs/2026-08-22-replacement-live-input-deployment-design.md": "3a047295af08907ba3fc4e14f06f2e01b0a2ef8db8385f5821490e251fc52c45",
     "docs/superpowers/specs/2026-08-22-replacement-three-stage-event-runtime-design.md": "0ed6ef6e77448ab98423bf502e512255f8fda7ce0eb02db7d3891839223a2264",
     "public_ci/v064/.github/workflows/ci.yml": "1c1d982c31eb348f5568464a7db40d9177bba8202b939ebc7e033a843eac5407",
     "public_ci/v064/.gitignore": "6feaded4e28ea86e001a6751b4e3d960e8b7c31b9616ff9936b79297086e809b",
@@ -317,8 +317,8 @@
     "src/crypto_quant/challenger_replacement_deployment.py": "074cdc76ed79e24d5a86b375bf3e0b2b52e38b48f3b8ba74cd1ddbe839a64890",
     "src/crypto_quant/challenger_replacement_events.py": "a9a521b0d384be00126ac40f87d24f07369e1822d086504fc6e5b81029ec0456",
     "src/crypto_quant/challenger_replacement_evidence.py": "920e84a77138509f94b42b416b1ce57adc84daad0a855ab39e9ac6a44799002f",
-    "src/crypto_quant/challenger_replacement_live_input.py": "fe7b5bf0ce3d2b04bc645b37fdb034b30e227b1049d6f466a0a82ed676f1387e",
-    "src/crypto_quant/challenger_replacement_live_runtime_cli.py": "fa4f7fd918489f22ef883b674ad76e014f308d9ff5bd36d48a9bd4918b2ef42a",
+    "src/crypto_quant/challenger_replacement_live_input.py": "0181863ddf77db05559be2cdbfe23ca7691ce6c4477ff78b51a890092097bf94",
+    "src/crypto_quant/challenger_replacement_live_runtime_cli.py": "0d35fb91e01d4d1950b9e445d7d68231ed728b20f0a637c9365f36ead1748170",
     "src/crypto_quant/challenger_replacement_plan.py": "661abda1a956be2f607adbbf7af3435ed2baacfe8f5bf7864a08f2e23443d5ae",
     "src/crypto_quant/challenger_replacement_plan_supersession.py": "d1f051bd4b02c2954bf67bd8cdd9473e1188148106208da4b07f596056e6aa66",
     "src/crypto_quant/challenger_replacement_plan_supersession_cli.py": "a97ccaf8ecedde4155417b738fc88cd656a1b7c6c99bcfc8260529397384dfd6",
@@ -408,7 +408,7 @@
     "src/crypto_quant/schemas/challenger-replacement-decision-v1.schema.json": "c5be2b73a38a53efe19c7abbcb0113cf5ffe62bc0f2c938118af29f0f88361d7",
     "src/crypto_quant/schemas/challenger-replacement-decision-v2.schema.json": "1f4614892962b95e497b81a16c4524bf3a1bb0b28de31ef83fd88b08c1b4a7e1",
     "src/crypto_quant/schemas/challenger-replacement-deployment-v1.schema.json": "10403324f32074c1f92f9d71e2bf1d55e45592dd7d183e7d3c56b59ee4929125",
-    "src/crypto_quant/schemas/challenger-replacement-live-capture-v1.schema.json": "6098107e2d9df79a07aeaff104d54ea5ce4968788a21e28210644df982d3ef64",
+    "src/crypto_quant/schemas/challenger-replacement-live-capture-v1.schema.json": "50c25f6190354dc5f51f432f31d2bba15839fe39b77c60e9c7200f26a3f9dd3d",
     "src/crypto_quant/schemas/challenger-replacement-owner-attestation-v1.schema.json": "da2cbc953501d8fee52f41d278459042edebd76d18cf63fd248e9bb148958bd6",
     "src/crypto_quant/schemas/challenger-replacement-plan-supersession-v1.schema.json": "16d9d665e7477130e6f5938ec091757d7276efec6d64d354507234d8a50e2a71",
     "src/crypto_quant/schemas/challenger-replacement-plan-v1.schema.json": "93c12f9404516a3b01711f0ced72aa3eaf771c2c3531d767520da139147bbb12",
@@ -496,8 +496,8 @@
     "tests/test_challenger_replacement_events.py": "fa1e463edb41f2fe09992d307b94e040b36434c8e10770d23eec6ec77ee8300d",
     "tests/test_challenger_replacement_evidence.py": "f6e104117241a739e265d62a3bd12f7e4c4c166689d8c627ce540adca9250c7d",
     "tests/test_challenger_replacement_live_documents.py": "8eace14e33b619b4f4b8882c49b65bd65ea1ddccb9d2ef15f51442c7114ba5a9",
-    "tests/test_challenger_replacement_live_input.py": "2cd79c82e8871dd3c05c4770b4589ff5640efefc88acd27f15202ec43d08efb3",
-    "tests/test_challenger_replacement_live_runtime.py": "926288e69bb4ea2878a1d300618a48af904028f4121337c3b05c8d5040da0422",
+    "tests/test_challenger_replacement_live_input.py": "81c6537d2251aa5551e44dec194572b4443c36e3ae053b1e355afafbe38db6eb",
+    "tests/test_challenger_replacement_live_runtime.py": "1ef44e5a21501771f7ccae3368fdc19181c8053c2d479bc46946f7a2e8414d0d",
     "tests/test_challenger_replacement_plan.py": "a9708ba025395d0d6da01ab404558908355c7f11b2008b7ecac377df0f4b1833",
     "tests/test_challenger_replacement_plan_supersession.py": "98a8250ac9128dc84d4f1a6aca79aa162ee4a10392ace7048cb25692eddf9ab1",
     "tests/test_challenger_replacement_plan_v2.py": "656e922601ba524d2779c15932bd622817d0d397ba0f50b0d0d62c6b35c7e289",
@@ -541,7 +541,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "71a5e8cd837d6b791876305460ababa21755293c1af6c85c3158f161621d6008",
+  "build_input_tree_hash": "e49eaff99fda72b60bb4a2e7bb112808bcd8891a0a9723fa531831a4c920c6d8",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -549,5 +549,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "e987207d925dd1fed4d704f69341982e8c00ce41289093ea149957f4bc8db414"
+  "manifest_hash": "5f1942550143bce3adcf6bf175e7947e6d2d1e4626358d6b17974024885f4fde"
 }
