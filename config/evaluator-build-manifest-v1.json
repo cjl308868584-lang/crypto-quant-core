@@ -510,7 +510,7 @@
     "tests/test_nautilus_evidence_adapter.py": "70dd0688ef9163320cbe241f9e86d47f46ac5401c407a92ce5c14c7f2529dbf1",
     "tests/test_nautilus_sandbox_artifacts.py": "d674cbdfc044c129f0017059d35b7c66562b252df3b96de3dd6a02d0fde77245",
     "tests/test_nautilus_sandbox_dependency.py": "5f5c5656ea79a6356a6a7f93f3830ad249e314542055535cd03f8b94c9b37cd0",
-    "tests/test_nautilus_v0651_hardening.py": "dd79036e2ab0247de7d45e247d50ee73ddad9b04da07889fb82ebdf421617c89",
+    "tests/test_nautilus_v0651_hardening.py": "681535b871be27e3255eec33eddb80964f014ac6a41cdd167c9e6f06aca2a753",
     "tests/test_nautilus_v065_acquisition.py": "84f5afcb106dd5e0186eaa316b7a310855b058cc6cf75845bb5ff1894f985dea",
     "tests/test_nautilus_v065_artifacts.py": "b4cb2a9cec8839dda10b25b6467e25ed3140b9e385cdc0bdae263385984b1795",
     "tests/test_nautilus_v065_contract.py": "d0e96d84ee81ed2157456b79c3f47b01e16d6b9abc510d94d9ae734d664316b8",
@@ -541,7 +541,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "837a2e75cacf6e37c8ad773564c34ef587a03af2d43dd86ff2656b8f3af80dff",
+  "build_input_tree_hash": "5c2a98492aa45f311cea75617745ac6d1e0afe0ea2ff36a5950a0f5c00c4efa1",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -549,5 +549,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "34fc620b9a8dc7bbb0e8bd25f0504f4f422a016a36883778e969cf218e7f7ebc"
+  "manifest_hash": "2b72a470a2f210461a3a6753fd3d603fee9b90df76e825deea3b9bde61a26110"
 }
