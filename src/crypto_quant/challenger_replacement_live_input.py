@@ -10,10 +10,20 @@ from typing import Any, Mapping
 from jsonschema import Draft202012Validator
 
 from .canonical import canonical_json
+from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reasons
 
 
 _CAPABILITY_TOKEN = object()
 _MAX_CAPTURE_BYTES = 2 * 1024 * 1024
+_BUILD_KEYS = {
+    "release_tag",
+    "peeled_commit",
+    "package_version",
+    "manifest_version",
+    "build_input_tree_hash",
+    "manifest_hash",
+    "manifest_file_sha256",
+}
 
 
 class ChallengerReplacementLiveInputError(ValueError):
@@ -81,7 +91,7 @@ def load_challenger_replacement_live_capture_bytes(
 ):
     """Load bounded canonical bytes without granting runtime authority."""
 
-    del plan, build_identity, previous_source_bundle
+    del previous_source_bundle
     document = _strict_json(data)
     if data != canonical_json(document).encode("utf-8"):
         raise ChallengerReplacementLiveInputError(
@@ -91,7 +101,44 @@ def load_challenger_replacement_live_capture_bytes(
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_SCHEMA_INVALID"
         )
+    if (
+        not isinstance(plan, Mapping)
+        or challenger_replacement_plan_v2_reasons(plan)
+        or document["plan"]
+        != {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]}
+    ):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_PLAN_BINDING_INVALID"
+        )
+    if (
+        not isinstance(build_identity, Mapping)
+        or set(build_identity) != _BUILD_KEYS
+        or document["build_identity"] != dict(build_identity)
+        or build_identity["release_tag"] != "v0.67.0"
+        or build_identity["package_version"] != "0.67.0"
+        or build_identity["manifest_version"] != "1.61.0"
+        or not _lowerhex(build_identity["peeled_commit"], 40)
+        or any(
+            not _lowerhex(build_identity[name], 64)
+            for name in (
+                "build_input_tree_hash",
+                "manifest_hash",
+                "manifest_file_sha256",
+            )
+        )
+    ):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_BUILD_BINDING_INVALID"
+        )
     return deepcopy(dict(document))
+
+
+def _lowerhex(value, length):
+    return (
+        isinstance(value, str)
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 @dataclass(frozen=True, init=False)
