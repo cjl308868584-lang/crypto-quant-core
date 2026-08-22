@@ -182,6 +182,10 @@ def _apply_event(projection, event, plan, build_identity):
                     source_bytes, plan=plan, build_identity=build_identity,
                     previous_source_bundle=projection["_previous_source_bundle"],
                     previous_decision=projection["_previous_decision"])
+                if hashlib.sha256(canonical_json(
+                    source["live_capture_receipt"]
+                ).encode("utf-8")).hexdigest() != payload["capture_sha256"]:
+                    _invalid()
             else:
                 source = load_challenger_replacement_source_bundle_bytes(
                     source_bytes, plan=plan, build_identity=build_identity,

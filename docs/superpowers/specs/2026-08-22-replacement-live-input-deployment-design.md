@@ -355,6 +355,12 @@ Git publisher 当作 production install primitive。
 preflight 只读验证并返回 canonical candidate receipt bytes；v0.67 release 时只运行 fixture
 和临时目录测试，不执行真实 production preflight receipt publication。
 
+v0.67 尚未安装 immutable snapshot，因此不能验证未来 deployment Python 的
+device/inode/hash。为避免把不完整观察升级为安装资格，v0.67 observer 对受支持机器也固定
+包含 `PREFLIGHT_INSTALL_SNAPSHOT_NOT_AVAILABLE` 并返回
+`PREFLIGHT_CANDIDATE_INELIGIBLE`；`PREFLIGHT_CANDIDATE_VERIFIED_NOT_PUBLISHED`
+保留在 Schema 中供后续独立版本完成 snapshot/install 信任链后使用，v0.67 不会产生它。
+
 目标 Mac 门至少包括：
 
 - Darwin arm64、当前 UID=501、HOME=`/Users/chenm4`；

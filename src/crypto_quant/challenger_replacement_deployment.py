@@ -6,7 +6,10 @@ import plistlib
 import stat
 from pathlib import Path
 
-from .canonical import canonical_json, stable_id
+from jsonschema import Draft202012Validator
+
+from .build import EvaluatorBuild
+from .canonical import business_hash, canonical_json, stable_id
 from .challenger_replacement_plan_v2 import load_challenger_replacement_plan_v2
 from .challenger_replacement_plan import _strict_json_bytes
 from .evidence import artifact_self_hash
@@ -15,11 +18,14 @@ _PLAN = _ROOT / "artifacts/challenger-replacement/challenger-replacement-plan-v0
 _RUNTIME = "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1"
 _SNAPSHOT = _RUNTIME + "/deployment/snapshot"
 _FOUNDATION = {
-    "release_tag": "v0.66.0", "peeled_commit": "12d835807580fb118f17942cd6a568e6b37818e3",
+    "release_tag": "v0.66.0", "tag_object": "3b7ee80d0b6eb5e57934bd5b6cecf837e0a562d6",
+    "peeled_commit": "12d835807580fb118f17942cd6a568e6b37818e3",
     "package_version": "0.66.0", "manifest_version": "1.60.0",
     "build_input_tree_hash": "f22df35dd1a2c9dbf0885406fa5f8f7f6167efde1ac9a4e71049bc2c01ea86ae",
     "manifest_hash": "c2f2288a69c2e370c62db2d58db9a241023f5c8edce87905d5d5e74d11e9fe3e",
     "manifest_file_sha256": "bff44edf8dd6025ad4683293380458d08e85e9b0f47377844dc5a86614e48ed6",
+    "main_ci_run": 32554406969,
+    "main_ci_jobs": {"Python 3.9": "success", "Python 3.12": "success", "macOS 15 arm64": "success"},
 }
 _SOURCES = [
     "src/crypto_quant/challenger_replacement_live_input.py", "src/crypto_quant/challenger_replacement_live_runtime_cli.py",
@@ -52,8 +58,10 @@ def _read_owner_exact(path):
                 raise OSError("short deployment read")
             chunks.append(chunk); remaining -= len(chunk)
         after = os.fstat(descriptor)
+        attached = Path(path).lstat()
         before_identity = (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns)
-        if before_identity != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+        if (before_identity != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+            or (opened.st_dev, opened.st_ino) != (attached.st_dev, attached.st_ino)):
             raise OSError("deployment file changed")
         return b"".join(chunks)
     except (OSError, ValueError) as error:
@@ -135,10 +143,8 @@ def build_challenger_replacement_deployment():
     deployment["deployment_hash"] = artifact_self_hash(deployment, "deployment_hash")
     return deployment
 
-
 def challenger_replacement_deployment_bytes():
     return canonical_json(build_challenger_replacement_deployment()).encode("utf-8") + b"\n"
-
 
 def load_challenger_replacement_deployment(path, *, manifest_path):
     expected = build_challenger_replacement_deployment()
@@ -147,19 +153,22 @@ def load_challenger_replacement_deployment(path, *, manifest_path):
         raise ChallengerReplacementDeploymentError("CHALLENGER_REPLACEMENT_DEPLOYMENT_BYTES_INVALID")
     try:
         manifest = _strict_json_bytes(_read_owner_exact(manifest_path))
+        workspace = Path(manifest_path).parent.parent
+        schema = _strict_json_bytes(_read_owner_exact(
+            workspace / "config/evaluator-build-manifest-v1.schema.json"))
+        if tuple(Draft202012Validator(schema).iter_errors(manifest)):
+            raise ValueError("manifest schema")
         files = manifest["file_hashes"]
-        required = set(expected["source_file_allowlist"]) | {
-            "artifacts/challenger-replacement/challenger-replacement-deployment-v0.67.0.json",
-            "artifacts/challenger-replacement/local.crypto-quant.challenger-replacement-v1.plist",
-            "config/challenger-replacement-deployment-v1.schema.json",
-            "src/crypto_quant/challenger_replacement_deployment.py",
-        }
+        expected_paths = EvaluatorBuild.expected_file_paths(workspace)
+        actual = {name: hashlib.sha256(_read_owner_exact(workspace / name)).hexdigest()
+                  for name in expected_paths}
+        plist_name = "artifacts/challenger-replacement/local.crypto-quant.challenger-replacement-v1.plist"
         if (manifest["manifest_version"] != "1.61.0"
-            or not required <= set(files)
-            or files["artifacts/challenger-replacement/challenger-replacement-deployment-v0.67.0.json"]
-            != hashlib.sha256(body).hexdigest()
-            or files["artifacts/challenger-replacement/local.crypto-quant.challenger-replacement-v1.plist"]
-            != expected["plist_sha256"]
+            or manifest["manifest_hash"] != artifact_self_hash(manifest, "manifest_hash")
+            or set(files) != set(expected_paths) or files != actual
+            or manifest["build_input_tree_hash"] != business_hash(actual)
+            or _read_owner_exact(workspace / plist_name) != render_challenger_replacement_plist(expected)
+            or files[plist_name] != expected["plist_sha256"]
         ):
             raise ValueError("manifest mismatch")
     except (KeyError, TypeError, ValueError) as error:

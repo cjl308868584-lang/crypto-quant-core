@@ -26,6 +26,9 @@ class DeploymentCandidateTests(unittest.TestCase):
         schema = json.loads(CONFIG_SCHEMA.read_text())
         Draft202012Validator.check_schema(schema)
         deployment = build_challenger_replacement_deployment()
+        self.assertEqual(deployment["foundation"]["tag_object"],
+                         "3b7ee80d0b6eb5e57934bd5b6cecf837e0a562d6")
+        self.assertEqual(deployment["foundation"]["main_ci_run"], 32554406969)
         self.assertEqual(deployment["candidate_release"], {
             "release_tag": "v0.67.0",
             "package_version": "0.67.0",
@@ -89,10 +92,12 @@ class DeploymentCandidateTests(unittest.TestCase):
             manifest_path.write_bytes(canonical_json(manifest).encode())
             os.chmod(deployment_path, 0o600)
             os.chmod(manifest_path, 0o600)
-            loaded = load_challenger_replacement_deployment(
-                deployment_path, manifest_path=manifest_path
-            )
-        self.assertEqual(loaded, deployment)
+            with self.assertRaisesRegex(
+                ValueError, "CHALLENGER_REPLACEMENT_DEPLOYMENT_MANIFEST_INVALID"
+            ):
+                load_challenger_replacement_deployment(
+                    deployment_path, manifest_path=manifest_path
+                )
 
     def test_committed_candidates_equal_deterministic_builders(self):
         from crypto_quant.challenger_replacement_deployment import (
@@ -104,6 +109,20 @@ class DeploymentCandidateTests(unittest.TestCase):
         deployment = build_challenger_replacement_deployment()
         self.assertEqual(ARTIFACT.read_bytes(), challenger_replacement_deployment_bytes())
         self.assertEqual(PLIST.read_bytes(), render_challenger_replacement_plist(deployment))
+
+    def test_committed_candidate_loads_only_through_complete_build_manifest(self):
+        from crypto_quant.challenger_replacement_deployment import (
+            build_challenger_replacement_deployment,
+            load_challenger_replacement_deployment,
+        )
+
+        self.assertEqual(
+            load_challenger_replacement_deployment(
+                ARTIFACT,
+                manifest_path=ROOT / "config/evaluator-build-manifest-v1.json",
+            ),
+            build_challenger_replacement_deployment(),
+        )
 
 
 if __name__ == "__main__":

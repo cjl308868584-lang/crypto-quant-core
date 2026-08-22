@@ -577,6 +577,9 @@ PREFLIGHT_PLATFORM_UNSUPPORTED
 ```
 
 Only the first is v0.68 design-eligible; none authorizes install or start.
+Because v0.67 has no installed immutable snapshot, its observer must add
+`PREFLIGHT_INSTALL_SNAPSHOT_NOT_AVAILABLE` and remain `PREFLIGHT_CANDIDATE_INELIGIBLE`;
+the verified status is reserved for the later snapshot/install trust-chain version.
 
 - [ ] **Step 4: Run GREEN and mutation tests**
 

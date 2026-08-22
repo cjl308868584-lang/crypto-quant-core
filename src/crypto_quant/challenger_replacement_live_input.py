@@ -42,7 +42,6 @@ from .runtime_health import (
     build_server_time_probe,
 )
 
-
 _CAPABILITY_TOKEN = object()
 _CAPTURE_SCHEMA = "./challenger-replacement-live-capture-v1.schema.json"
 _QUALIFICATION = "REPLACEMENT_CONFIRMATORY_COHORT_INPUT"
@@ -78,7 +77,6 @@ _FORBIDDEN_ENVIRONMENT_FRAGMENTS = {
     "binance_secret",
 }
 
-
 class ChallengerReplacementLiveInputError(ValueError):
     """The replacement live-input boundary failed closed."""
 
@@ -86,13 +84,11 @@ class ChallengerReplacementLiveInputError(ValueError):
         super().__init__(reason_code)
         self.reason_code = reason_code
 
-
 class _RejectRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_INPUT_REDIRECT_FORBIDDEN"
         )
-
 
 @dataclass(frozen=True)
 class _PublicKlineHttpResponse:
@@ -103,18 +99,14 @@ class _PublicKlineHttpResponse:
     request_started_at: str
     response_received_at: str
 
-
 def _wall_now():
     return datetime.now(timezone.utc)
-
 
 def _monotonic():
     return time.monotonic_ns()
 
-
 def _sleep(seconds):
     time.sleep(seconds)
-
 
 def _open_public_request(request):
     if not isinstance(request, Request) or request.get_method() != "GET":
@@ -167,7 +159,6 @@ def _open_public_request(request):
         )
     return _PublicKlineHttpResponse(**common)
 
-
 class _LiveTimeTransport:
     def get(self):
         response = _open_public_request(
@@ -177,6 +168,10 @@ class _LiveTimeTransport:
                 headers={"Accept": "application/json"},
             )
         )
+        if response.status in _TRANSIENT_STATUS:
+            raise ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE"
+            )
         try:
             headers = {key.lower(): value for key, value in response.headers.items()}
             content_type = headers.get("content-type")
@@ -189,7 +184,6 @@ class _LiveTimeTransport:
         ):
             raise RuntimeHealthError("PAPER_CLOCK_RESPONSE_INVALID")
         return response
-
 
 def _build_live_capture_document(
     *,
@@ -235,7 +229,6 @@ def _build_live_capture_document(
     document["capture_hash"] = artifact_self_hash(document, "capture_hash")
     return document
 
-
 def _grant_live_capture(*, document, canonical_bytes, token):
     if token is not _CAPABILITY_TOKEN:
         raise TypeError("live capture capability grant is private")
@@ -248,7 +241,6 @@ def _grant_live_capture(*, document, canonical_bytes, token):
         document=document,
         canonical_bytes=canonical_bytes,
     )
-
 
 def acquire_challenger_replacement_live_capture(*, state):
     """Acquire one fixed public ETH 4h input for the next natural slot."""
@@ -310,6 +302,8 @@ def acquire_challenger_replacement_live_capture(*, state):
         if server_time_probe_reasons(probe, trust_hash):
             raise RuntimeHealthError("clock probe replay failed")
         trusted = _utc_millis(probe["trusted_completed_at_or_null"])
+    except ChallengerReplacementLiveInputError:
+        raise
     except (RuntimeHealthError, TypeError, ValueError) as error:
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_INPUT_CLOCK_INVALID"
@@ -442,7 +436,6 @@ def acquire_challenger_replacement_live_capture(*, state):
         token=_CAPABILITY_TOKEN,
     )
 
-
 def _attempt_document(response, sequence):
     try:
         headers = {key.lower(): value for key, value in response.headers.items()}
@@ -452,13 +445,19 @@ def _attempt_document(response, sequence):
             "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
         ) from error
     content_type = headers.get("content-type")
-    if (
+    if response.status == 200 and (
         not isinstance(content_type, str)
         or content_type.split(";", 1)[0].strip().lower() != "application/json"
     ):
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
         )
+    try:
+        body_text = body.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_JSON_INVALID"
+        ) from error
     return {
         "sequence": sequence,
         "outcome": "HTTP_RESPONSE",
@@ -475,9 +474,8 @@ def _attempt_document(response, sequence):
         },
         "body_size_bytes": len(body),
         "body_sha256": hashlib.sha256(body).hexdigest(),
-        "response_body_utf8": body.decode("utf-8"),
+        "response_body_utf8": body_text,
     }
-
 
 def _transport_attempt_document(sequence, *, started, received):
     try:
@@ -506,7 +504,6 @@ def _transport_attempt_document(sequence, *, started, received):
         "response_body_utf8": "",
     }
 
-
 @lru_cache(maxsize=1)
 def _capture_validator():
     schema = json.loads(
@@ -516,7 +513,6 @@ def _capture_validator():
     )
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
-
 
 def _strict_json(data):
     if not isinstance(data, bytes) or not 0 < len(data) <= _MAX_CAPTURE_BYTES:
@@ -530,7 +526,6 @@ def _strict_json(data):
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_JSON_INVALID"
         ) from error
-
 
 def load_challenger_replacement_live_capture_bytes(
     data, *, plan, build_identity, previous_source_bundle
@@ -708,7 +703,6 @@ def load_challenger_replacement_live_capture_bytes(
         )
     return deepcopy(dict(document))
 
-
 def _utc_millis(value):
     if not isinstance(value, str):
         raise ValueError("UTC millisecond text required")
@@ -719,7 +713,6 @@ def _utc_millis(value):
     if value != utc_datetime(parsed):
         raise ValueError("canonical UTC milliseconds required")
     return parsed
-
 
 def _validated_attempt_payload(document, *, request, trusted_completed, captured):
     attempts = document["attempts"]
@@ -791,7 +784,6 @@ def _validated_attempt_payload(document, *, request, trusted_completed, captured
         _invalid_rows()
     return payload
 
-
 def _strict_response_json(data):
     try:
         value = _strict_mapping_bytes(b'{"rows":' + data + b"}")["rows"]
@@ -804,7 +796,6 @@ def _strict_response_json(data):
     if data != canonical:
         _invalid_rows()
     return value
-
 
 def _normalize_kline_payload(payload, *, scheduled, captured):
     rows = []
@@ -864,17 +855,14 @@ def _normalize_kline_payload(payload, *, scheduled, captured):
         _invalid_rows()
     return rows
 
-
 def _invalid(suffix):
     raise ChallengerReplacementLiveInputError(
         "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_" + suffix + "_INVALID")
-
 
 def _invalid_attempt(): _invalid("ATTEMPT")
 def _invalid_rows(): _invalid("ROWS")
 def _invalid_slot(): _invalid("SLOT")
 def _invalid_clock(): _invalid("CLOCK")
-
 
 def _lowerhex(value, length):
     return (
@@ -882,7 +870,6 @@ def _lowerhex(value, length):
         and len(value) == length
         and all(character in "0123456789abcdef" for character in value)
     )
-
 
 @dataclass(frozen=True, init=False)
 class ChallengerReplacementLiveCapture:

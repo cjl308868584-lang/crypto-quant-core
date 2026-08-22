@@ -14,15 +14,12 @@ from .challenger_replacement_runtime import (
     run_challenger_replacement_cohort_slot,
 )
 
-
 _ARGUMENTS_FORBIDDEN = "CHALLENGER_REPLACEMENT_LIVE_RUNTIME_ARGUMENTS_FORBIDDEN"
-
 
 def _load_fixed_runtime_contract():
     raise ChallengerReplacementRuntimeError(
         "CHALLENGER_REPLACEMENT_RUNTIME_CONTRACT_UNAVAILABLE"
     )
-
 
 def _run_live_invocation():
     contract = _load_fixed_runtime_contract()
@@ -38,7 +35,7 @@ def _run_live_invocation():
         )
     state = contract["state"]
     projection = state.replay()
-    if projection["events"]:
+    if projection["active_slot_id"] is not None:
         result = resume_challenger_replacement_slot(
             state=state, worker_id=contract["worker_id"]
         )
@@ -61,7 +58,6 @@ def _run_live_invocation():
         "terminal_stage": result["stage"],
     }
 
-
 def main(argv=None):
     arguments = tuple(sys.argv[1:] if argv is None else argv)
     if arguments:
@@ -71,15 +67,15 @@ def main(argv=None):
         summary = _run_live_invocation()
     except ChallengerReplacementLiveInputError as error:
         sys.stderr.write(error.reason_code + "\n")
-        return 75 if error.reason_code == (
-            "CHALLENGER_REPLACEMENT_LIVE_INPUT_RETRIES_EXHAUSTED"
-        ) else 1
+        return 75 if error.reason_code in {
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_RETRIES_EXHAUSTED",
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE",
+        } else 1
     except ChallengerReplacementRuntimeError as error:
         sys.stderr.write(error.reason_code + "\n")
         return 1
     sys.stdout.write(canonical_json(summary) + "\n")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

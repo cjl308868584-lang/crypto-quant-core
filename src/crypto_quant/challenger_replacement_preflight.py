@@ -49,7 +49,10 @@ def load_challenger_replacement_preflight_bytes(data,*,deployment,plist_bytes):
     try:
         receipt=dict(_strict_json_bytes(data)); schema=json.loads(resources.files("crypto_quant").joinpath("schemas","challenger-replacement-preflight-v1.schema.json").read_text())
         binding={key:deployment[key] for key in ("deployment_id","deployment_hash","plist_sha256")}; identity={key:receipt[key] for key in receipt if key not in ("receipt_id","receipt_hash")}
-        if data!=canonical_json(receipt).encode() or tuple(Draft202012Validator(schema).iter_errors(receipt)) or receipt["deployment_binding"]!=binding or hashlib.sha256(plist_bytes).hexdigest()!=deployment["plist_sha256"] or receipt["receipt_id"]!=stable_id("challenger_replacement_preflight",identity) or receipt["receipt_hash"]!=artifact_self_hash(receipt,"receipt_hash"): raise ValueError("invalid")
+        supported=receipt["machine"]=={"system":"Darwin","machine":"arm64","uid":501,"home":"/Users/chenm4","timezone":"Asia/Shanghai"}
+        expected_status="PREFLIGHT_CANDIDATE_INELIGIBLE" if supported else "PREFLIGHT_PLATFORM_UNSUPPORTED"
+        required_reason="PREFLIGHT_INSTALL_SNAPSHOT_NOT_AVAILABLE" if supported else "PREFLIGHT_PLATFORM_UNSUPPORTED"
+        if data!=canonical_json(receipt).encode() or tuple(Draft202012Validator(schema).iter_errors(receipt)) or receipt["status"]!=expected_status or required_reason not in receipt["reason_codes"] or receipt["deployment_binding"]!=binding or hashlib.sha256(plist_bytes).hexdigest()!=deployment["plist_sha256"] or receipt["receipt_id"]!=stable_id("challenger_replacement_preflight",identity) or receipt["receipt_hash"]!=artifact_self_hash(receipt,"receipt_hash"): raise ValueError("invalid")
         return receipt
     except (KeyError,TypeError,ValueError) as error:
         raise ValueError("CHALLENGER_REPLACEMENT_PREFLIGHT_BYTES_INVALID") from error
@@ -63,7 +66,7 @@ def observe_challenger_replacement_preflight(*,repository:Path,deployment_path:P
     results=[_run(argv,Path(repository)) for argv in _COMMANDS]
     text=[item[1].decode("utf-8","strict").strip() for item in results]
     release={"origin":text[0],"main":text[1],"tag":text[2],"admin":text[4]=="true","clean":text[3]==""}
-    paths_absent=_paths_absent(deployment); disk=_disk(); credentials=_credential_count(); network={"request_count":0,"trust_hash":"0"*64} if credentials else _time_probe(); reasons=[]; authority["credential_count"]=credentials
+    paths_absent=_paths_absent(deployment); disk=_disk(); credentials=_credential_count(); network={"request_count":0,"trust_hash":"0"*64} if credentials else _time_probe(); reasons=["PREFLIGHT_INSTALL_SNAPSHOT_NOT_AVAILABLE"]; authority["credential_count"]=credentials
     if credentials: reasons.append("PREFLIGHT_CREDENTIAL_BOUNDARY_PRESENT")
     if not (release["origin"]=="https://github.com/cjl308868584-lang/crypto-quant-core.git" and len(release["main"])==40 and release["main"]==release["tag"] and release["admin"] and release["clean"]): reasons.append("PREFLIGHT_RELEASE_IDENTITY_INVALID")
     if not (results[5][0]==113 and results[6][0]==113 and paths_absent): reasons.append("PREFLIGHT_REPLACEMENT_NOT_ABSENT")

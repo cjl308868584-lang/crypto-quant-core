@@ -7,7 +7,9 @@
 - 固定 3 次 public time + 1–3 次 ETHUSDT 4h kline GET；无代理、凭据、账户或订单；
 - live capture/source v2/decision v2 exact bytes 进入三阶段 append-only authority；
 - INPUT、RESULT、SUCCESS fresh-process 恢复不重复网络或计算；
-- 固定 deployment JSON、LaunchAgent plist 与只读 preflight；
+- 固定 deployment JSON、LaunchAgent plist 与只读、失败关闭的 preflight；因 immutable
+  install snapshot 尚不存在，v0.67 receipt 固定为
+  `PREFLIGHT_CANDIDATE_INELIGIBLE/PREFLIGHT_INSTALL_SNAPSHOT_NOT_AVAILABLE`，不伪报安装资格；
 - loopback-only v0.61 运维 UI 保留复用，不获得交易授权。
 
 ## 未安装、未启动

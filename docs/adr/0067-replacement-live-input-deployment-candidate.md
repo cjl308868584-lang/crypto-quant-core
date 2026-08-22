@@ -2,7 +2,7 @@
 
 状态：`DEPLOYMENT_CANDIDATE_RELEASED_NOT_INSTALLED`
 
-v0.67 采用固定 Binance public GET adapter，把 exact live-capture bytes 绑定到 source/decision v2，并继续使用 v0.66 的 append-only 三阶段事件事实源。部署合同和 LaunchAgent plist 只是 Git 内不可变候选；preflight 只读且不发布 receipt。
+v0.67 采用固定 Binance public GET adapter，把 exact live-capture bytes 绑定到 source/decision v2，并继续使用 v0.66 的 append-only 三阶段事件事实源。部署合同和 LaunchAgent plist 只是 Git 内不可变候选；preflight 只读且不发布 receipt。由于 immutable install snapshot 尚不存在，本版 preflight 永不返回 verified，固定以 `PREFLIGHT_INSTALL_SNAPSHOT_NOT_AVAILABLE` 失败关闭，完整 snapshot/Python identity 门留给后续独立安装信任链版本。
 
 拒绝通用交易所 adapter、通用 scheduler、Broker、订单生命周期和控制 UI。事件日志仍是唯一权威；exports 不是权威。candidate 不创建 production root、plist 或 service，也不启动 Runner。
 

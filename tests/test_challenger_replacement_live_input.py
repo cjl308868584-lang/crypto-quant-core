@@ -762,8 +762,8 @@ class LiveAcquisitionTests(unittest.TestCase):
         capture = self._acquire_with(
             _TimeTransport().responses
             + [
-                self._kline_response(status=503, sequence=1, body=b'{"code":-1}'),
-                self._kline_response(status=429, sequence=2, body=b'{"code":-2}'),
+                self._kline_response(status=503, sequence=1, body=b'{"code":-1}', content_type="text/plain"),
+                self._kline_response(status=429, sequence=2, body=b'{"code":-2}', content_type="text/plain"),
                 self._kline_response(sequence=3),
             ]
         )
@@ -804,6 +804,16 @@ class LiveAcquisitionTests(unittest.TestCase):
         self.assertEqual(len(self.requests), 4)
         self.assertEqual(self.sleeps, [])
 
+    def test_non_utf8_http_200_has_fixed_json_failure(self):
+        with self.assertRaises(ChallengerReplacementLiveInputError) as caught:
+            self._acquire_with(
+                _TimeTransport().responses + [self._kline_response(body=b"\xff")]
+            )
+        self.assertEqual(
+            caught.exception.reason_code,
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_JSON_INVALID",
+        )
+
     def test_non_json_http_200_is_not_retried(self):
         with self.assertRaises(ChallengerReplacementLiveInputError) as caught:
             self._acquire_with(
@@ -828,6 +838,19 @@ class LiveAcquisitionTests(unittest.TestCase):
         self.assertEqual(
             caught.exception.reason_code,
             "CHALLENGER_REPLACEMENT_LIVE_INPUT_CLOCK_INVALID",
+        )
+        self.assertEqual(len(self.requests), 1)
+
+    def test_transient_server_time_status_is_classified_transient(self):
+        responses = _TimeTransport().responses
+        responses[0] = replace(
+            responses[0], status=503, headers={"Content-Type": "text/plain"}
+        )
+        with self.assertRaises(ChallengerReplacementLiveInputError) as caught:
+            self._acquire_with(responses)
+        self.assertEqual(
+            caught.exception.reason_code,
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE",
         )
         self.assertEqual(len(self.requests), 1)
 

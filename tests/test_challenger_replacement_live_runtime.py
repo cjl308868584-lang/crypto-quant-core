@@ -1,6 +1,8 @@
 import json
 import io
+import base64
 import unittest
+from datetime import datetime, timezone
 from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
@@ -208,6 +210,70 @@ class LiveRuntimeTests(unittest.TestCase):
         self.assertEqual(summary["terminal_stage"], "SLOT_SUCCEEDED")
         self.assertEqual(len(state.replay()["events"]), 3)
 
+    def test_live_invocation_acquires_successor_after_completed_slot(self):
+        from crypto_quant import challenger_replacement_live_runtime_cli as cli
+
+        state = self._state()
+        runtime_module.run_challenger_replacement_cohort_slot(
+            state=state,
+            live_capture=self.live_capture,
+            worker_id="replacement-live-first-worker",
+        )
+        acquisition = live_fixture_module.LiveAcquisitionTests()
+        acquisition.setUp()
+        acquisition.state = state
+        scheduled = datetime(2026, 8, 22, 8, 0, tzinfo=timezone.utc)
+        rows = live_fixture_module.fixture_klines(
+            scheduled_for="2026-08-22T08:00:00.000Z", latest="102"
+        )
+        rows[:20] = state._replay()["_previous_source_bundle"]["klines"][1:]
+        successor = acquisition._acquire_with(
+            live_fixture_module._TimeTransport(base=scheduled.replace(minute=4)).responses
+            + [acquisition._kline_response(
+                scheduled=scheduled,
+                body=live_fixture_module._raw_kline_body(rows),
+            )],
+            wall=scheduled.replace(minute=4, second=2, microsecond=500000),
+        )
+        with patch.object(
+            cli, "_load_fixed_runtime_contract",
+            return_value={"state": state, "worker_id": "replacement-live-next-worker"},
+        ), patch.object(
+            cli, "acquire_challenger_replacement_live_capture", return_value=successor,
+        ) as acquire:
+            summary = cli._run_live_invocation()
+        self.assertEqual(acquire.call_count, 1)
+        self.assertEqual(summary["scheduled_for"], "2026-08-22T08:00:00.000Z")
+        self.assertEqual(summary["event_count"], 6)
+
+    def test_v2_input_event_binds_capture_hash_to_embedded_receipt_bytes(self):
+        state = self._state()
+        source = runtime_module.build_challenger_replacement_cohort_source_bundle(
+            plan=self.plan,
+            build_identity=self.build_identity,
+            live_capture=self.live_capture,
+            previous_source_bundle=None,
+            previous_decision=None,
+        )
+        source_bytes = runtime_module.canonical_json(source).encode("utf-8")
+        with self.assertRaisesRegex(
+            runtime_module.ChallengerReplacementRuntimeError,
+            "CHALLENGER_REPLACEMENT_STATE_EVENT_INVALID",
+        ):
+            state.append(
+                event_type="INPUT_PREPARED",
+                slot_id=source["slot"]["slot_id"],
+                worker_id="replacement-live-corrupt-worker",
+                recorded_at=source["slot"]["captured_at"],
+                payload={
+                    "capture_sha256": "f" * 64,
+                    "source_bundle_bytes_base64": base64.b64encode(source_bytes).decode("ascii"),
+                    "source_bundle_sha256": runtime_module.hashlib.sha256(source_bytes).hexdigest(),
+                },
+                expected_last_event_hash="0" * 64,
+            )
+        self.assertEqual(len(state.replay()["events"]), 0)
+
 
 class LiveRuntimeCliTests(unittest.TestCase):
     def test_every_argument_is_rejected_before_contract_or_network(self):
@@ -260,6 +326,8 @@ class LiveRuntimeCliTests(unittest.TestCase):
         cases = (
             (ChallengerReplacementLiveInputError(
                 "CHALLENGER_REPLACEMENT_LIVE_INPUT_RETRIES_EXHAUSTED"), 75),
+            (ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE"), 75),
             (ChallengerReplacementRuntimeError(
                 "CHALLENGER_REPLACEMENT_RUNTIME_CONTRACT_INVALID"), 1),
         )

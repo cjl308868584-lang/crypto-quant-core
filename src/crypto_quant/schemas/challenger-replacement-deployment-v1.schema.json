@@ -65,16 +65,22 @@
       "additionalProperties": false,
       "required": [
         "release_tag",
+        "tag_object",
         "peeled_commit",
         "package_version",
         "manifest_version",
         "build_input_tree_hash",
         "manifest_hash",
-        "manifest_file_sha256"
+        "manifest_file_sha256",
+        "main_ci_run",
+        "main_ci_jobs"
       ],
       "properties": {
         "release_tag": {
           "const": "v0.66.0"
+        },
+        "tag_object": {
+          "const": "3b7ee80d0b6eb5e57934bd5b6cecf837e0a562d6"
         },
         "peeled_commit": {
           "const": "12d835807580fb118f17942cd6a568e6b37818e3"
@@ -96,6 +102,10 @@
         "manifest_file_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "main_ci_run": {"const": 32554406969},
+        "main_ci_jobs": {
+          "const": {"Python 3.9": "success", "Python 3.12": "success", "macOS 15 arm64": "success"}
         }
       }
     },

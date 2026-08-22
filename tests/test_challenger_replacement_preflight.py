@@ -59,7 +59,8 @@ class ReplacementPreflightTests(unittest.TestCase):
                     manifest_path=repository / "manifest.json",
                 )
             after = sentinel.stat()
-        self.assertEqual(receipt["status"], "PREFLIGHT_CANDIDATE_VERIFIED_NOT_PUBLISHED")
+        self.assertEqual(receipt["status"], "PREFLIGHT_CANDIDATE_INELIGIBLE")
+        self.assertIn("PREFLIGHT_INSTALL_SNAPSHOT_NOT_AVAILABLE", receipt["reason_codes"])
         self.assertEqual(receipt["historical_qualification"], "NO_OBSERVABLE_REPLACEMENT_INSTALLATION_AT_COLLECTION")
         self.assertEqual(receipt["authority"], {"state_write_count": 0, "launchctl_mutation_count": 0, "credential_count": 0, "broker_request_count": 0, "order_count": 0})
         self.assertEqual(commands, list(outputs))
@@ -116,6 +117,18 @@ class ReplacementPreflightTests(unittest.TestCase):
             body, deployment=deployment,
             plist_bytes=render_challenger_replacement_plist(deployment))
         self.assertEqual(loaded, receipt)
+        forged = dict(receipt)
+        forged["status"] = "PREFLIGHT_CANDIDATE_VERIFIED_NOT_PUBLISHED"
+        forged["reason_codes"] = []
+        forged["receipt_id"] = preflight.stable_id(
+            "challenger_replacement_preflight",
+            {key: forged[key] for key in forged if key not in ("receipt_id", "receipt_hash")},
+        )
+        forged["receipt_hash"] = preflight.artifact_self_hash(forged, "receipt_hash")
+        with self.assertRaisesRegex(ValueError, "CHALLENGER_REPLACEMENT_PREFLIGHT_BYTES_INVALID"):
+            preflight.load_challenger_replacement_preflight_bytes(
+                canonical_json(forged).encode(), deployment=deployment,
+                plist_bytes=render_challenger_replacement_plist(deployment))
         mutated = dict(receipt); mutated["receipt_hash"] = "0" * 64
         with self.assertRaises(ValueError):
             preflight.load_challenger_replacement_preflight_bytes(
