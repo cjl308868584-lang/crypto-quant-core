@@ -333,6 +333,21 @@ _V065_RELEASE_PATHS = (
     "docs/implementation-status-v0.65.1.md",
 )
 
+_V066_RELEASE_PATHS = (
+    "config/challenger-replacement-source-bundle-v1.schema.json",
+    "config/challenger-replacement-decision-v1.schema.json",
+    "tests/challenger_replacement_v2_fixtures.py",
+    "tests/test_challenger_replacement_events.py",
+    "tests/test_challenger_replacement_evidence.py",
+    "tests/test_challenger_replacement_decision.py",
+    "tests/test_challenger_replacement_runtime.py",
+    "tests/test_challenger_replacement_v066_release.py",
+    "docs/superpowers/specs/2026-08-22-replacement-three-stage-event-runtime-design.md",
+    "docs/superpowers/plans/2026-08-22-replacement-three-stage-event-runtime.md",
+    "docs/adr/0066-replacement-three-stage-event-runtime.md",
+    "docs/implementation-status-v0.66.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -365,6 +380,7 @@ class EvaluatorBuild:
                 + list(_FROZEN_RELEASE_PATHS)
                 + list(_V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS)
                 + list(_V065_RELEASE_PATHS)
+                + list(_V066_RELEASE_PATHS)
             )
         )
 

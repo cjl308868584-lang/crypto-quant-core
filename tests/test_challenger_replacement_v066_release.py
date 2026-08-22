@@ -1,10 +1,14 @@
 """Static and YAGNI gates for the bounded v0.66 runtime candidate."""
 
 import inspect
+import json
+import re
 import unittest
 from pathlib import Path
 
 from crypto_quant.challenger_replacement_runtime import ChallengerReplacementRuntimeState
+import crypto_quant
+from crypto_quant.build import EvaluatorBuild
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +56,52 @@ class V066RuntimeScopeTests(unittest.TestCase):
             self.assertFalse(any(ROOT.rglob(name)), name)
         self.assertFalse((ROOT / "exports/source-bundles").exists())
         self.assertFalse((ROOT / "exports/decisions").exists())
+
+
+class V066ReleaseIdentityTests(unittest.TestCase):
+    def test_release_versions_and_build_inputs_are_frozen(self):
+        pyproject = (ROOT / "pyproject.toml").read_text()
+        self.assertIsNotNone(re.search(r'^version = "0\.66\.0"$', pyproject, re.MULTILINE))
+        manifest = json.loads((ROOT / "config/evaluator-build-manifest-v1.json").read_text())
+        self.assertEqual(crypto_quant.__version__, "0.66.0")
+        self.assertEqual(manifest["package_version"], "0.66.0")
+        self.assertEqual(manifest["manifest_version"], "1.60.0")
+        expected = set(EvaluatorBuild.expected_file_paths(ROOT))
+        required = {
+            "config/challenger-replacement-source-bundle-v1.schema.json",
+            "config/challenger-replacement-decision-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-source-bundle-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-decision-v1.schema.json",
+            "src/crypto_quant/challenger_replacement_events.py",
+            "src/crypto_quant/challenger_replacement_evidence.py",
+            "src/crypto_quant/challenger_replacement_decision.py",
+            "src/crypto_quant/challenger_replacement_runtime.py",
+            "tests/challenger_replacement_v2_fixtures.py",
+            "tests/test_challenger_replacement_events.py",
+            "tests/test_challenger_replacement_evidence.py",
+            "tests/test_challenger_replacement_decision.py",
+            "tests/test_challenger_replacement_runtime.py",
+            "tests/test_challenger_replacement_v066_release.py",
+            "docs/superpowers/specs/2026-08-22-replacement-three-stage-event-runtime-design.md",
+            "docs/superpowers/plans/2026-08-22-replacement-three-stage-event-runtime.md",
+            "docs/adr/0066-replacement-three-stage-event-runtime.md",
+            "docs/implementation-status-v0.66.0.md",
+        }
+        self.assertEqual(required - expected, set())
+
+    def test_release_docs_preserve_nonactivation_boundary(self):
+        documents = [
+            (ROOT / "docs/adr/0066-replacement-three-stage-event-runtime.md").read_text(),
+            (ROOT / "docs/implementation-status-v0.66.0.md").read_text(),
+        ]
+        required = (
+            "RUNTIME_RELEASED_NOT_INSTALLED", "production_activation=false",
+            "runtime_install_authorized=false", "replacement_start_authorized=false",
+            "no 90-day timer started", "no profitability or AI advantage claim",
+        )
+        for document in documents:
+            for text in required:
+                self.assertIn(text, document)
 
 
 if __name__ == "__main__":

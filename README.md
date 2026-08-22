@@ -232,6 +232,7 @@
 224. [NautilusTrader 端到端隔离 Spike ADR-0065](docs/adr/0065-nautilus-end-to-end-spike.md)
 225. [实施追踪 v0.65.0](docs/implementation-status-v0.65.0.md)
 226. [NautilusTrader v0.65.1 安全加固](docs/implementation-status-v0.65.1.md)
+227. [Replacement 三阶段事件 Runtime v0.66.0](docs/implementation-status-v0.66.0.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 
@@ -359,7 +360,7 @@ v0.65 对 NautilusTrader `1.230.0` 完成单次、不可选择的端到端隔离
 `runner_invocation_count=0`。该结果不证明 Nautilus 不适配，也不证明当前核心更优；没有执行
 Golden、成交、费用、持仓或 PnL 对照。公开 GitHub Actions 只重放该冻结结果，不重跑研究。
 
-仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的启动前代码批次现已覆盖 v0.59 evaluator、v0.60 Tail-Blind 运维投影和 v0.61 只读 Web/alerts/runbooks，但仍未 production 安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。replacement Challenger 现完成 v0.64 plan-only storage supersession，尚缺 event runtime、deployment/start trust chain、评估器与运维层；Nautilus v0.65 的正式重评因冻结 platform gate 保持 `INCONCLUSIVE_KEEP_CURRENT_CORE`，没有接管任何事实源。两条流都必须在启动前工程和真实机器门完成后，才能从各自首个自然成功槽的 start receipt 独立计时。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.65.0](docs/implementation-status-v0.65.0.md)，工程裁决见[ADR-0065](docs/adr/0065-nautilus-end-to-end-spike.md)。
+仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的启动前代码批次现已覆盖 v0.59 evaluator、v0.60 Tail-Blind 运维投影和 v0.61 只读 Web/alerts/runbooks，但仍未 production 安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。replacement Challenger 已完成 v0.64 plan-only storage supersession 与 v0.66 三阶段 append-only event runtime，但仍未安装/启动，且仍缺 deployment/start trust chain、评估器与运维接线；Nautilus v0.65 的正式重评因冻结 platform gate 保持 `INCONCLUSIVE_KEEP_CURRENT_CORE`，没有接管任何事实源。两条流都必须在启动前工程和真实机器门完成后，才能从各自首个自然成功槽的 start receipt 独立计时。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.66.0](docs/implementation-status-v0.66.0.md)，工程裁决见[ADR-0066](docs/adr/0066-replacement-three-stage-event-runtime.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：
