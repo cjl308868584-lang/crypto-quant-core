@@ -83,7 +83,7 @@ def test_v068_import_has_zero_production_side_effects(self):
 Run:
 
 ```bash
-python -m unittest \
+PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_install_trust \
   tests.test_challenger_replacement_v068_release -v
 ```
@@ -142,7 +142,7 @@ Use subprocess timeout for FIFO cases and patch only private wrappers such as `_
 - [ ] **Step 2: Verify the precise RED failures**
 
 ```bash
-python -m unittest tests.test_challenger_replacement_install_trust -v
+PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_install_trust -v
 ```
 
 Expected: security/crash tests fail because snapshot publication is absent.
@@ -164,7 +164,7 @@ Bind release, plan, deployment/plist, snapshot inventory/root identity, Python e
 - [ ] **Step 6: Run focused and adjacent GREEN tests**
 
 ```bash
-python -m unittest \
+PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_install_trust \
   tests.test_challenger_replacement_deployment \
   tests.test_challenger_replacement_v067_release -v
@@ -204,7 +204,7 @@ Add tests for oversized command output, timeout, non-UTF8 output, wrong Git iden
 - [ ] **Step 2: Run RED tests**
 
 ```bash
-python -m unittest tests.test_challenger_replacement_install_preflight -v
+PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_install_preflight -v
 ```
 
 Expected: FAIL because the preflight module is absent.
@@ -228,7 +228,7 @@ Reject all argv. Static tests scan production modules for credential literals, a
 - [ ] **Step 5: Run focused and adjacent GREEN tests**
 
 ```bash
-python -m unittest \
+PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_install_preflight \
   tests.test_challenger_replacement_install_trust \
   tests.test_challenger_replacement_preflight \
@@ -273,7 +273,7 @@ Cover: preflight expired, service/plist already exists, plist publish crash, boo
 - [ ] **Step 2: Verify RED failures**
 
 ```bash
-python -m unittest tests.test_challenger_replacement_install -v
+PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_install -v
 ```
 
 Expected: FAIL because installer behavior is absent.
@@ -293,7 +293,7 @@ Static and behavioral tests reject `kickstart`, `start`, `enable`, `submit`, `bo
 - [ ] **Step 6: Run focused and adjacent GREEN tests**
 
 ```bash
-python -m unittest \
+PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_install \
   tests.test_challenger_replacement_install_preflight \
   tests.test_challenger_replacement_install_trust \
@@ -343,7 +343,7 @@ Before and after each observer call, compare event root/log/plist/snapshot `byte
 - [ ] **Step 3: Run RED tests**
 
 ```bash
-python -m unittest tests.test_challenger_replacement_start -v
+PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_start -v
 ```
 
 Expected: FAIL because observer code is absent.
@@ -355,7 +355,7 @@ Open and retain trusted roots before replay. Load all upstream receipts and exac
 - [ ] **Step 5: Run focused and adjacent GREEN tests**
 
 ```bash
-python -m unittest \
+PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_start \
   tests.test_challenger_replacement_events \
   tests.test_challenger_replacement_runtime \
@@ -403,7 +403,7 @@ Cover existing exact/different/untrusted receipt, concurrent no-replace, file/di
 - [ ] **Step 2: Run RED tests**
 
 ```bash
-python -m unittest tests.test_challenger_replacement_start -v
+PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_start -v
 ```
 
 Expected: FAIL because receipt publication is absent.
@@ -419,7 +419,7 @@ The no-argument CLI performs one observe-and-publish attempt. Any argv fails bef
 - [ ] **Step 5: Run focused and adjacent GREEN tests**
 
 ```bash
-python -m unittest \
+PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_start \
   tests.test_challenger_replacement_install \
   tests.test_challenger_replacement_install_preflight \
@@ -466,7 +466,7 @@ Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credent
 - [ ] **Step 4: Run focused and full v0.68 tests**
 
 ```bash
-python -m unittest \
+PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_install_trust \
   tests.test_challenger_replacement_install_preflight \
   tests.test_challenger_replacement_install \
@@ -479,7 +479,7 @@ Expected: PASS.
 - [ ] **Step 5: Run adjacent replacement tests**
 
 ```bash
-python -m unittest \
+PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_plan_v2 \
   tests.test_challenger_replacement_events \
   tests.test_challenger_replacement_runtime \
@@ -529,7 +529,7 @@ Require package version equality across all three locations, manifest `1.62.0`, 
 - [ ] **Step 2: Run RED release test**
 
 ```bash
-python -m unittest tests.test_challenger_replacement_v068_release -v
+PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_v068_release -v
 ```
 
 Expected: FAIL on old versions/missing status/manifest inventory.
@@ -541,8 +541,8 @@ Set package `0.68.0`, manifest `1.62.0`, add exact source/schema/test/spec/plan/
 - [ ] **Step 4: Run focused release validation**
 
 ```bash
-python -m unittest tests.test_challenger_replacement_v068_release -v
-python -m compileall -q src tests
+PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_v068_release -v
+python3 -m compileall -q src tests
 git diff --check
 ```
 
@@ -551,7 +551,7 @@ Expected: PASS.
 - [ ] **Step 5: Run the one final local full suite**
 
 ```bash
-python -m unittest discover -s tests
+PYTHONPATH=src python3 -m unittest discover -s tests
 make validate
 ```
 
