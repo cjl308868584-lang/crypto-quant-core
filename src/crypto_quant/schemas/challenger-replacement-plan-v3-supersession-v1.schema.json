@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-plan-v3-supersession-v1.schema.json",
+  "title": "Replacement v3 preregistration supersession record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema","schema_version","record_id","record_hash","reason","previous_plan","superseding_plan","v068_foundation","machine_evidence","owner_attestation","semantic_diff_hash","prohibition","authority","status","warnings"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-plan-v3-supersession-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "record_id": {"type": "string", "pattern": "^challenger_replacement_plan_v3_supersession_[0-9a-f]{64}$"},
+    "record_hash": {"$ref": "#/$defs/hash"},
+    "reason": {"const": "SUPERSEDED_PRE_START_RESEARCH_AND_OPERATIONAL_POLICY_CHANGE"},
+    "previous_plan": {"$ref": "#/$defs/previousPlan"},
+    "superseding_plan": {"$ref": "#/$defs/planBinding"},
+    "v068_foundation": {"$ref": "#/$defs/foundation"},
+    "machine_evidence": {"$ref": "#/$defs/machineBinding"},
+    "owner_attestation": {"$ref": "#/$defs/ownerBinding"},
+    "semantic_diff_hash": {"$ref": "#/$defs/hash"},
+    "prohibition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supersession_forbidden_after","old_artifacts_mutable","post_start_reset_allowed"],
+      "properties": {
+        "supersession_forbidden_after": {"const": "FIRST_V3_START_RECEIPT_OR_CANONICAL_PRODUCTION_OPPORTUNITY_EVENT"},
+        "old_artifacts_mutable": {"const": false},
+        "post_start_reset_allowed": {"const": false}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credentials_allowed","broker_requests_allowed","real_orders_allowed","production_activation","runtime_install_authorized","replacement_start_authorized"],
+      "properties": {
+        "credentials_allowed": {"const": false},
+        "broker_requests_allowed": {"const": false},
+        "real_orders_allowed": {"const": false},
+        "production_activation": {"const": false},
+        "runtime_install_authorized": {"const": false},
+        "replacement_start_authorized": {"const": false}
+      }
+    },
+    "status": {"const": "PLAN_V3_SUPERSESSION_RECORDED_PRE_START"},
+    "warnings": {"const": ["MACHINE_OBSERVATION_IS_CURRENT_NOT_HISTORICAL_PROOF","OWNER_ATTESTATION_IS_ACCOUNTABLE_GOVERNANCE_CLAIM","NO_INSTALL_START_CREDENTIAL_ORDER_FUND_OR_CANARY_AUTHORITY"]}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"},
+    "previousPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_tag","path","file_sha256","plan_id","plan_hash"],
+      "properties": {
+        "release_tag": {"const": "v0.64.0"},
+        "path": {"const": "artifacts/challenger-replacement/challenger-replacement-plan-v0.64.0.json"},
+        "file_sha256": {"const": "5f1774fd912451d79c9efe13401e80f312fee3c707d9faa252933ef3e8810a8f"},
+        "plan_id": {"const": "challenger_replacement_plan_65d85d60a534a917f45a1ffa5fc9d3f74d6d24995b900d31b8c73cd26f0bd97b"},
+        "plan_hash": {"const": "c9a1e5f74c52fbf23be5a1d27fd23c25f3601ed58133178fc25480391ab65705"}
+      }
+    },
+    "foundation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_tag","peeled_commit","package_version","manifest_version","build_input_tree_hash","manifest_hash","manifest_file_sha256"],
+      "properties": {
+        "release_tag": {"const": "v0.68.0"},
+        "peeled_commit": {"const": "b65481cce9c8955f73da5b78ef2bd3c981f3be3c"},
+        "package_version": {"const": "0.68.0"},
+        "manifest_version": {"const": "1.62.0"},
+        "build_input_tree_hash": {"const": "c8419340b66e2b0405b19cda7eeed09114307deed0575249974cc6248743ddc9"},
+        "manifest_hash": {"const": "5e7646febc6f09261387d448dc6c5f4431c3fc53b06073af48539a2e020aa8a8"},
+        "manifest_file_sha256": {"const": "8830930b3a425b73aee8a24fc0d4b011aa9557dd34d6065e7f9b955097da25d8"}
+      }
+    },
+    "planBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path","file_sha256","plan_id","plan_hash"],
+      "properties": {
+        "path": {"const": "artifacts/challenger-replacement/challenger-replacement-plan-v0.69.0.json"},
+        "file_sha256": {"$ref": "#/$defs/hash"},
+        "plan_id": {"type": "string", "pattern": "^challenger_replacement_plan_v3_[0-9a-f]{64}$"},
+        "plan_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "machineBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path","file_sha256","evidence_id","evidence_hash","git_history_evidence_hash","collected_at"],
+      "properties": {
+        "path": {"const": "artifacts/challenger-replacement/challenger-replacement-v3-supersession-machine-evidence-v0.69.0.json"},
+        "file_sha256": {"$ref": "#/$defs/hash"},
+        "evidence_id": {"type": "string", "pattern": "^challenger_replacement_v3_machine_evidence_[0-9a-f]{64}$"},
+        "evidence_hash": {"$ref": "#/$defs/hash"},
+        "git_history_evidence_hash": {"$ref": "#/$defs/hash"},
+        "collected_at": {"$ref": "#/$defs/time"}
+      }
+    },
+    "ownerBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path","file_sha256","attestation_id","attestation_hash","signed_at","signer_uid"],
+      "properties": {
+        "path": {"const": "artifacts/challenger-replacement/challenger-replacement-v3-owner-attestation-v0.69.0.json"},
+        "file_sha256": {"$ref": "#/$defs/hash"},
+        "attestation_id": {"type": "string", "pattern": "^challenger_replacement_v3_owner_attestation_[0-9a-f]{64}$"},
+        "attestation_hash": {"$ref": "#/$defs/hash"},
+        "signed_at": {"$ref": "#/$defs/time"},
+        "signer_uid": {"const": 501}
+      }
+    }
+  }
+}
