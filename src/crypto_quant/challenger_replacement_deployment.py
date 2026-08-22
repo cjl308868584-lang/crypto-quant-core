@@ -36,7 +36,7 @@ def _read_owner_exact(path):
     if not all(hasattr(os, name) and getattr(os, name) for name in ("O_NOFOLLOW", "O_NONBLOCK")):
         raise ChallengerReplacementDeploymentError(
             "CHALLENGER_REPLACEMENT_DEPLOYMENT_PLATFORM_UNSUPPORTED")
-    descriptor = -1
+    descriptor = -1; primary = None
     try:
         descriptor = os.open(Path(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         opened = os.fstat(descriptor)
@@ -57,11 +57,16 @@ def _read_owner_exact(path):
             raise OSError("deployment file changed")
         return b"".join(chunks)
     except (OSError, ValueError) as error:
-        raise ChallengerReplacementDeploymentError(
-            "CHALLENGER_REPLACEMENT_DEPLOYMENT_PATH_UNTRUSTED") from error
+        primary = ChallengerReplacementDeploymentError("CHALLENGER_REPLACEMENT_DEPLOYMENT_PATH_UNTRUSTED")
+        raise primary from error
+    except BaseException as error:
+        primary = error; raise
     finally:
         if descriptor >= 0:
-            os.close(descriptor)
+            try: os.close(descriptor)
+            except OSError as error:
+                if primary is None: raise ChallengerReplacementDeploymentError("CHALLENGER_REPLACEMENT_DEPLOYMENT_PATH_UNTRUSTED") from error
+                setattr(primary,"close_failure",repr(error))
 
 def _plist_payload(deployment):
     paths = deployment["paths"]

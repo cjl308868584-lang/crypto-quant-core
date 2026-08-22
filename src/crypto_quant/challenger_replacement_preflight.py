@@ -19,7 +19,8 @@ def _machine():
     localtime=os.readlink("/etc/localtime") if Path("/etc/localtime").is_symlink() else ""
     return {"system":platform.system(),"machine":platform.machine(),"uid":os.getuid(),"home":str(Path.home()),"timezone":localtime.split("zoneinfo/")[-1] if "zoneinfo/" in localtime else getattr(zone,"key",str(zone))}
 def _run(argv, repository):
-    result = subprocess.run(tuple(argv),cwd=repository,env={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin"},stdin=subprocess.DEVNULL,capture_output=True,timeout=15,check=False)
+    try: result = subprocess.run(tuple(argv),cwd=repository,env={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin"},stdin=subprocess.DEVNULL,capture_output=True,timeout=15,check=False)
+    except (OSError,subprocess.SubprocessError) as error: raise ValueError("PREFLIGHT_COMMAND_FAILED") from error
     if len(result.stdout)>65536 or len(result.stderr)>65536: raise ValueError("PREFLIGHT_COMMAND_OUTPUT_OVERSIZED")
     return result.returncode,result.stdout,result.stderr
 def _paths_absent(deployment):
