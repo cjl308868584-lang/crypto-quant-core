@@ -333,11 +333,15 @@ class ReplacementInstallPreflightTests(unittest.TestCase):
                 (0, b"", b""), (113, b"", b""), (113, b"", b""),
                 (0, b" sleep 0\n", b""),
             ]
-            self.assertEqual(preflight._fixed_checks(contract, results),
-                             (True, True))
-            (event_root / "unexpected").write_bytes(b"x")
-            self.assertEqual(preflight._fixed_checks(contract, results),
-                             (True, False))
+            with mock.patch.object(
+                preflight, "_revalidate_fixed_python_identity"
+            ) as python_replay:
+                self.assertEqual(preflight._fixed_checks(contract, results),
+                                 (True, True))
+                (event_root / "unexpected").write_bytes(b"x")
+                self.assertEqual(preflight._fixed_checks(contract, results),
+                                 (True, False))
+            self.assertEqual(python_replay.call_count, 2)
 
     def test_observer_skips_commands_and_network_on_unsupported_platform(self):
         import crypto_quant.challenger_replacement_install_preflight as preflight

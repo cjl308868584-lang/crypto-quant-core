@@ -30,7 +30,7 @@
 
 - `src/crypto_quant/challenger_replacement_install_trust.py`: 固定身份、路径、secure descriptor helpers、snapshot 与 contract codec/loader。
 - `src/crypto_quant/challenger_replacement_install_preflight.py`: 固定只读机器检查、3 次 public time GET、receipt codec/loader。
-- `src/crypto_quant/challenger_replacement_install.py`: plist no-replace publication、唯一 bootstrap 序列、rollback 与 install receipt。
+- `src/crypto_quant/challenger_replacement_install.py`: plist no-replace publication、唯一 bootstrap 序列、失败现场保留与 install receipt。
 - `src/crypto_quant/challenger_replacement_installed_runtime.py`: 固定 contract/install receipt/event-root 重放与现有 v0.67 策略核心调用。
 - `src/crypto_quant/challenger_replacement_installed_runtime_cli.py`: installed runtime 的零参数入口。
 - `src/crypto_quant/challenger_replacement_deployment.py`: 复用 deployment 领域并增加 v0.68 candidate plist renderer。
@@ -47,7 +47,7 @@
 - `config/` 中四份同名字 schema: committed authoritative schema。
 - `tests/test_challenger_replacement_install_trust.py`: snapshot/contract/security/crash tests。
 - `tests/test_challenger_replacement_install_preflight.py`: preflight/clock/credential/expiry tests。
-- `tests/test_challenger_replacement_install.py`: launchctl/rollback/install receipt tests。
+- `tests/test_challenger_replacement_install.py`: launchctl/无破坏失败现场/install receipt tests。
 - `tests/test_challenger_replacement_start.py`: observer/start receipt/read-only tests。
 - `tests/test_challenger_replacement_v068_release.py`: no-production-change、CLI/static/release identity gates。
 - `docs/adr/0068-replacement-install-observer-start-trust-chain.md`: architecture decision。
@@ -206,7 +206,7 @@ git commit -m "feat: build immutable replacement install snapshot"
 
 - [ ] **Step 1: Write platform, command and network-count RED tests**
 
-Test exact Darwin arm64/uid/home/timezone, fixed local origin/main/tag/clean checks, absent service/plist/log files, exact empty event/start roots, old service not loaded, 10 GB/100,000 inode thresholds, `pmset`, Python import identity, credential scan and exactly three GETs to `https://data-api.binance.vision/api/v3/time`. GitHub visibility/ADMIN/main-CI 已由 contract renderer 的固定 transcript 绑定，preflight 只重放该 transcript，不重复 GitHub 网络。Unsupported platform must make command/network/write counts zero. Verified observation must be within 10–30 minutes after a UTC four-hour boundary; boundary−1 ms, +9:59.999, +30:00.001 and an expiry crossing the next `+4h+2m` trigger all fail closed.
+Test exact Darwin arm64/uid/home/timezone, fixed local origin/main/tag/clean checks, absent service/plist/log files, exact empty event/start roots, old service not loaded, 10 GB/100,000 inode thresholds, `pmset`, Python executable identity plus installed-adapter/runtime/decision/evidence import replay, credential scan and exactly three GETs to `https://data-api.binance.vision/api/v3/time`. GitHub visibility/ADMIN/main-CI 已由 contract renderer 的固定 transcript 绑定，preflight 只重放该 transcript，不重复 GitHub 网络。Unsupported platform must make command/network/write counts zero. Verified observation must be within 10–30 minutes after a UTC four-hour boundary; boundary−1 ms, +9:59.999, +30:00.001 and an expiry crossing the next `+4h+2m` trigger all fail closed.
 
 Add tests for oversized command output, timeout, non-UTF8 output, wrong Git identity, non-annotated tag, stale contract, clock skew, partial network success and receipt expiry.
 
@@ -279,7 +279,7 @@ Assert the only mutation command is:
 /bin/launchctl bootstrap gui/501 /Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-replacement-v1.plist
 ```
 
-Cover: preflight expired, service/plist already exists, plist publish crash, bootstrap failure, rollback inode replacement, post-print mismatch and successful run-count-zero verification. Patch fixed private command/file wrappers; do not add a production command seam.
+Cover: preflight expired, service/plist already exists, plist publish crash, bootstrap failure with exact plist retained, pathname replacement safety, post-print mismatch and successful run-count-zero verification. Patch fixed private command/file wrappers; do not add a production command seam.
 
 - [ ] **Step 2: Verify RED failures**
 
@@ -291,7 +291,7 @@ Expected: FAIL because installer behavior is absent.
 
 - [ ] **Step 3: Implement no-replace plist publication and bootstrap state machine**
 
-Before bootstrap, replay every input and revalidate absent targets. Publish plist using staging + same-fd readback + fsync + atomic no-replace. On bootstrap failure, unlink only if descriptor/path identity still matches this invocation, then fsync the parent. After successful bootstrap, never call `bootout`; a failed post-print produces `INSTALL_STATE_UNKNOWN_FAILED_CLOSED`.
+Before bootstrap, replay every input and revalidate absent targets. Publish plist using staging + same-fd readback + fsync + atomic no-replace. On bootstrap failure, retain the exact plist and fail closed; never perform pathname-based unlink/rollback because validation and unlink cannot be made atomic with the supported Python/macOS boundary. Recovery belongs to a separate incident-unlock workflow. After successful bootstrap, never call `bootout`; a failed post-print produces `INSTALL_STATE_UNKNOWN_FAILED_CLOSED`.
 
 - [ ] **Step 4: Implement strict install receipt**
 
@@ -347,7 +347,7 @@ Prove the current v0.67 CLI raises `RUNTIME_CONTRACT_UNAVAILABLE`, then require 
 
 - [ ] **Step 2: Write zero-write race and identity RED tests**
 
-Without a receipt, with duplicate/different/untrusted receipt, replaced event-root inode, changed v0.67 strategy file, or changed v0.68 snapshot, the installed adapter must perform zero clock/kline requests and zero event append. Every opened descriptor must have one close attempt. Existing canonical event/orphan staging before first start fails closed.
+Without a receipt, with duplicate/different/untrusted receipt, replaced event-root inode, changed v0.67 strategy file, or changed v0.68 snapshot, the installed adapter must perform zero clock/kline requests and zero event append. Every opened descriptor must have one close attempt. Existing canonical event/orphan staging before first start fails closed; after start, the unique receipt terminal/source/decision hashes must match the first successful projection.
 
 - [ ] **Step 3: Implement the minimal two-layer bridge**
 
@@ -413,7 +413,7 @@ Expected: FAIL because observer code is absent.
 
 - [ ] **Step 4: Implement retained-capability observation**
 
-Open and retain the contract-bound trusted roots before replay. Load all upstream receipts and exact event chain, cross-check the first `SLOT_SUCCEEDED` with v0.67 capture/source/decision bytes, logs and launchctl output. Derive the required slot only from install receipt `first_eligible_scheduled_for`. Return only canonical structural summary; do not expose PnL, return, win rate or gate result.
+Open and retain the contract-bound trusted roots before replay. Load all upstream receipts and exact event chain, cross-check the first `SLOT_SUCCEEDED` with v0.67 capture/source/decision bytes, logs and launchctl output. Re-replay through the same retained event-root before return and bind terminal-event/source/decision hashes. Attempt every retained close once; preserve a primary error and otherwise return a fixed close failure. Derive the required slot only from install receipt `first_eligible_scheduled_for`. Return only canonical structural summary; do not expose PnL, return, win rate or gate result.
 
 - [ ] **Step 5: Run focused and adjacent GREEN tests**
 
@@ -473,7 +473,7 @@ Expected: FAIL because receipt publication is absent.
 
 - [ ] **Step 3: Implement strict start receipt codec and publisher**
 
-Internally invoke the observer; accept no dates/counts/paths. Publish canonical bytes with staging + same-fd readback + fsync + atomic no-replace. Return success only after final replay, parent fsync and retained-root revalidation.
+First replay the unique existing owner-only receipt and reconstruct its exact observer summary; an exact receipt returns idempotently before any new observation or timestamp. Only an empty receipt root may invoke the observer. Accept no dates/counts/paths. Publish canonical bytes with staging + same-fd readback + fsync + atomic no-replace. Return success only after final replay, parent fsync and retained-root revalidation.
 
 - [ ] **Step 4: Add the fixed observer/start CLI**
 
@@ -525,7 +525,7 @@ Parametrize every write/readback/file-fsync/dir-fsync/no-replace/bootstrap/post-
 
 - [ ] **Step 3: Add static scope/YAGNI gates**
 
-Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert trust/preflight/installer/installed-adapter/observer production modules plus thin CLI modules together remain strictly below 3,310 physical lines；其中 install trust+CLI 不高于 1,675、preflight+CLI 不高于 335、installer+CLI 不高于 415、installed adapter+CLI 不高于 220、observer/start+CLI 不高于 630。原 2,850 行估算先遗漏 successful-install-receipt replay、snapshot strategy-core replay 和 retained event-root construction，后续 3,050 行修订仍遗漏 retained log/plist capability、严格 start-receipt codec/source binding、upstream source-error mapping 和 no-overwrite publisher；最终只把这些实证边界的估算误差分配回 observer/start 实际所属层，不得转成通用 Runner/storage/deployment 功能。已有 deployment plist renderer net production diff 不高于 25 行，bounded launchctl replacement parser net diff 不高于 25 行。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
+Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert trust/preflight/installer/installed-adapter/observer production modules plus thin CLI modules together remain strictly below 3,520 physical lines；其中 install trust+CLI 不高于 1,700、preflight+CLI 不高于 345、installer+CLI 不高于 420、installed adapter+CLI 不高于 265、observer/start+CLI 不高于 810。原 2,850 行估算先遗漏 successful-install-receipt replay、snapshot strategy-core replay 和 retained event-root construction，后续 3,050/3,310 行修订仍遗漏 retained log/plist capability、严格 start-receipt codec/source binding、upstream source-error mapping、no-overwrite publisher，以及独立审查实证的 receipt 先重放幂等、pre-start 污染、event 二次重放和全量 close 安全边界。最终只把这些实证边界的估算误差分配回实际所属层，不得转成通用 Runner/storage/deployment 功能。已有 deployment plist renderer net production diff 不高于 25 行，bounded launchctl replacement parser net diff 不高于 25 行。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
 
 - [ ] **Step 4: Run focused and full v0.68 tests**
 
@@ -642,4 +642,4 @@ Before remote writes, recheck public target repository, origin, ADMIN, clean bra
 
 - [ ] **Step 9: Preserve the installation approval boundary**
 
-After release, assemble one exact approval package listing production paths, renderer 三次 GitHub 只读查询、preflight 三次 public time GET、fixed launchctl argv, rollback/unknown-state rules and the first-natural-slot observation window. Do not render/install/start until that package is explicitly approved.
+After release, assemble one exact approval package listing production paths, renderer 三次 GitHub 只读查询、preflight 三次 public time GET、fixed launchctl argv, plist-preservation/unknown-state rules and the first-natural-slot observation window. Do not render/install/start until that package is explicitly approved.

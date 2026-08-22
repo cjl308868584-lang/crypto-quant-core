@@ -78,7 +78,7 @@ def _load_snapshot_plan_and_strategy(contract):
 
 def _load_fixed_runtime_sources():
     try:
-        inputs, receipt, _ = _load_fixed_successful_install_receipt()
+        inputs, receipt, receipt_bytes = _load_fixed_successful_install_receipt()
         contract = inputs["contract"]
         plan = _load_snapshot_plan_and_strategy(contract)
         event = contract["event_root"]
@@ -100,6 +100,46 @@ def _load_fixed_runtime_sources():
             state = ChallengerReplacementRuntimeState(
                 event_root=root, plan=plan, build_identity=build
             )
+            projection = state.replay()
+            from .challenger_replacement_start import (
+                _load_existing_start_receipt,
+            )
+            existing = _load_existing_start_receipt(
+                inputs, receipt, receipt_bytes
+            )
+            if (
+                (projection["events"] or projection["orphan_staging_count"])
+                and existing is None
+            ):
+                raise ReplacementInstalledRuntimeError(
+                    "CHALLENGER_REPLACEMENT_START_RECEIPT_REQUIRED"
+                )
+            if projection["orphan_staging_count"]:
+                raise ReplacementInstalledRuntimeError(
+                    "CHALLENGER_REPLACEMENT_EVENT_ROOT_INVALID"
+                )
+            if existing is not None:
+                start_receipt, observer = existing
+                successful = [
+                    slot for slot in projection["slots"].values()
+                    if slot["stage"] == "SLOT_SUCCEEDED"
+                ]
+                if (
+                    not projection["events"]
+                    or not successful
+                    or len(projection["events"]) < 3
+                    or projection["events"][2].event_hash
+                    != observer["terminal_event_hash"]
+                    or successful[0]["source_bundle_sha256"]
+                    != observer["source_bundle_sha256"]
+                    or successful[0]["decision_sha256"]
+                    != observer["decision_sha256"]
+                    or successful[0]["source_bundle"]["slot"]["scheduled_for"]
+                    != start_receipt["first_scheduled_for"]
+                ):
+                    raise ReplacementInstalledRuntimeError(
+                        "CHALLENGER_REPLACEMENT_START_RECEIPT_INVALID"
+                    )
         except BaseException:
             root.close()
             raise

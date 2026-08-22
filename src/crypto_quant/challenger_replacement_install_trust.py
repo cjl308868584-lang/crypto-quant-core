@@ -1418,7 +1418,12 @@ def _fixed_python_identity(snapshot_root: str):
     }
     command = (
         "/usr/bin/python3", "-s", "-c",
-        "import crypto_quant,json,sys;print(json.dumps({"
+        "import crypto_quant,"
+        "crypto_quant.challenger_replacement_installed_runtime_cli,"
+        "crypto_quant.challenger_replacement_runtime,"
+        "crypto_quant.challenger_replacement_decision,"
+        "crypto_quant.challenger_replacement_evidence,json,sys;"
+        "print(json.dumps({"
         "'package_version':crypto_quant.__version__,'sys_version':sys.version},"
         "separators=(',',':'),sort_keys=True))",
     )
@@ -1454,6 +1459,20 @@ def _fixed_python_identity(snapshot_root: str):
         "import_stdout_sha256": hashlib.sha256(stdout).hexdigest(),
         "import_stderr_sha256": hashlib.sha256(stderr).hexdigest(),
     }
+
+
+def _revalidate_fixed_python_identity(contract):
+    try:
+        if _fixed_python_identity(contract["snapshot"]["root"]) != contract[
+            "python"
+        ]:
+            raise ValueError("identity")
+    except ReplacementInstallTrustError:
+        raise
+    except (KeyError, TypeError, ValueError) as error:
+        raise ReplacementInstallTrustError(
+            "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_CHANGED"
+        ) from error
 
 
 def render_fixed_replacement_snapshot_and_contract():

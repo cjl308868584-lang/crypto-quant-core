@@ -191,10 +191,12 @@ candidate plist 的 module 固定为 v0.68 installed adapter；adapter 内部只
 v0.67 策略核心，不调用 v0.67 unavailable provider。
 
 activation bridge 的最终静态预算以实际 fail-closed 边界为准：trust/preflight/installer/
-installed-adapter/observer 连同薄 CLI 总计严格少于 3,310 行。早期两次估算合计遗漏了
+installed-adapter/observer 连同薄 CLI 总计严格少于 3,520 行。早期两次估算合计遗漏了
 successful install receipt 重放、snapshot strategy-core 重放、retained event/log/plist
-capability、严格 start-receipt codec/source binding、source-error mapping 和 no-overwrite publisher；新增预算只
-纠正这些安全边界估算，不授权通用 Runner、storage、Broker、order、scheduler、
+capability、严格 start-receipt codec/source binding、source-error mapping 和 no-overwrite publisher。
+最终独立审查又实证了 start receipt 在新时间戳下重复发布、pre-start event
+污染、observer 未二次重放和 close 中断等必需边界；本次修订只纳入这些
+已有路径的安全校正，不授权通用 Runner、storage、Broker、order、scheduler、
 deployment framework 或 UI 扩建。
 
 ## 7. Install contract
@@ -266,7 +268,8 @@ launchctl 序列只有：
 3. `launchctl bootstrap gui/501 <fixed-target-plist>`;
 4. 再次 `launchctl print` 验证 label/program/snapshot/path/schedule，并要求尚未自然运行。
 
-bootstrap 前必须重放 contract-bound 的空 event root 和目录能力。bootstrap 后、成功
+bootstrap 前必须重放 Python/import identity、contract-bound 的空 event root 和目录能力，
+且 installer 当下时间仍必须位于同一 UTC 四小时边界后 `[10m,30m]`。bootstrap 后、成功
 install receipt 发布前如果 LaunchAgent 意外运行，installed adapter 因缺少唯一 verified
 install receipt 必须在打开 event root 进行任何 append 或市场请求前失败。post-print 的
 `runs != 0` 随即使安装进入 UNKNOWN；不得把该早期失败回填为首槽。
@@ -274,8 +277,10 @@ install receipt 必须在打开 event root 进行任何 append 或市场请求�
 禁止 `kickstart/start/enable/submit/bootout`，禁止 shell，禁止直接调用 runtime CLI。
 
 - bootstrap 之前失败：零 launchctl mutation，不创建 plist。
-- plist 创建后 bootstrap 失败：仅当目标 inode 仍等于本次新建 inode 时删除它，
-  fsync parent；不删除 snapshot/contract/preflight。
+- plist 创建后 bootstrap 失败：保留 exact plist 作为失败现场并 fail closed；
+  不执行基于 pathname 的 unlink/rollback，因为在当前 Python/macOS 能力边界下无法
+  将 inode 校验与 unlink 原子绑定，并可能误删验证后替换进来的目标。
+  不删除 snapshot/contract/preflight；恢复只能进入独立事故解锁流程。
 - bootstrap 已成功但 post-print 失败：不声称回滚，不自动 bootout；封存
   `INSTALL_STATE_UNKNOWN_FAILED_CLOSED` 并进入事故解锁门。
 - 只有 post-print 全部匹配且 run count=0 才发布
@@ -293,6 +298,9 @@ receipt；以 receipt 中 identity 打开 event root；从 snapshot exact plan �
 `ChallengerReplacementRuntimeState`；执行现有单槽逻辑；在所有正常和异常路径关闭 retained
 event-root descriptor。receipt 不存在、重复、different/untrusted，或任一 identity 变化时，
 network/runtime state write/Broker/order 计数必须全为 0。
+在 start receipt 存在前，event root 必须仍为全空；任何 canonical event 或 orphan staging
+都在市场请求和 append 之前失败关闭。start receipt 存在后，adapter 必须将其
+终端 event/source/decision hash 与当前 event projection 的第一个成功槽交叉验证。
 
 ## 10. Read-only first-slot observer
 
@@ -301,7 +309,11 @@ stderr 的 descriptor/capability，并只执行一次固定 `launchctl print`。
 state write、Broker、order 计数全为 0。
 
 它使用 v0.66 event loader 重放全链，并使用 v0.67 source/decision/live-capture loader 交叉
-验证首槽 exact bytes。不读取或输出 PnL、收益率、胜率或提前 gate。
+验证首槽 exact bytes。在返回前必须通过同一 retained event-root 再重放一次并要求
+projection exact 相等；summary 绑定 terminal event、source bundle 和 decision 的 SHA-256。
+所有 retained path 与 event-root 的 close 都必须各尝试一次；close 失败不得覆盖已有
+主失败，无主失败时转为固定 `FIRST_SLOT_CLOSE_FAILED`。不读取或输出 PnL、
+收益率、胜率或提前 gate。
 
 状态机：
 
@@ -319,8 +331,10 @@ bytes/stat/inode 必须不变。
 
 ## 11. Start receipt and 90-day boundary
 
-start publisher 内部调用只读 observer；只有 `FIRST_NATURAL_SLOT_VERIFIED` 可构建并
-no-overwrite 发布 start receipt。已有 exact receipt 幂等返回；已有 different/untrusted
+start publisher 先重放固定 owner-only root 中的唯一 receipt；已有 exact receipt 时从其
+observer binding 重建并验证 canonical summary，在新的时钟或观察之前直接幂等返回。
+只有 root 为空且新 observer 为 `FIRST_NATURAL_SLOT_VERIFIED` 才可构建并 no-overwrite
+发布 start receipt。已有 different/untrusted
 对象失败关闭。发布前后重验所有 retained source。
 
 receipt 自动派生：
@@ -372,7 +386,7 @@ v0.68 不声称抵抗可持续以同 UID 改写 runtime root 内容的恶意进�
 1. v0.67 foundation 与 no-production-change 回归；
 2. snapshot/contract codec 和 secure publication RED→GREEN；
 3. preflight loader/collector/publication RED→GREEN；
-4. installer/rollback/install receipt RED→GREEN；
+4. installer/无破坏失败现场/install receipt RED→GREEN；
 5. observer 状态机与只读无副作用 RED→GREEN；
 6. start receipt/540-slot derivation/no-overwrite RED→GREEN；
 7. CLI 静态权限、schema mirrors、committed fixture/golden/failure matrix；
@@ -408,7 +422,7 @@ v0.68 发布后，真实 ceremony 需要一个合并审批包，精确列出：
 
 1. 将写入的 production roots/plist/receipt paths；
 2. renderer 固定 3 次 GitHub 只读查询、preflight 固定 3 次 public time GET；
-3. rollback 与 post-bootstrap unknown-state 事故边界；
+3. plist 保留与 post-bootstrap unknown-state 事故边界；
 4. 首个自然槽位和第二槽前的 observer 时间门；
 5. 不含 kickstart、手工 Runner、凭据、Broker、order 的声明。
 

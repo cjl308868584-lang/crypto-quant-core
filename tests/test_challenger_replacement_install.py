@@ -56,6 +56,13 @@ def launchctl_print_bytes(contract):
 
 
 class ReplacementInstallTests(unittest.TestCase):
+    def setUp(self):
+        import crypto_quant.challenger_replacement_install as install
+
+        patcher = mock.patch.object(install, "_revalidate_fixed_python_identity")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_fixed_successful_receipt_loader_requires_exactly_one_verified_receipt(self):
         import crypto_quant.challenger_replacement_install as install
 
@@ -176,6 +183,8 @@ class ReplacementInstallTests(unittest.TestCase):
         ), mock.patch.object(
             install, "_publish_plist", return_value=("PUBLISHED", record)
         ), mock.patch.object(
+            install, "_revalidate_empty_event_root"
+        ), mock.patch.object(
             install, "_command",
             side_effect=[command(113), command(0), command(0, post)]
         ) as runner, mock.patch.object(
@@ -227,7 +236,55 @@ class ReplacementInstallTests(unittest.TestCase):
         plist.assert_not_called()
         receipt.assert_not_called()
 
-    def test_bootstrap_failure_rolls_back_only_new_plist_and_writes_no_receipt(self):
+    def test_installer_rechecks_fixed_post_boundary_safe_window(self):
+        import crypto_quant.challenger_replacement_install as install
+
+        inputs = install_inputs()
+        with mock.patch.object(
+            install, "_load_fixed_install_inputs", return_value=inputs
+        ), mock.patch.object(
+            install, "_now", return_value=OBSERVED + timedelta(minutes=25)
+        ), mock.patch.object(install, "_command") as command_call, \
+             mock.patch.object(install, "_publish_plist") as plist, \
+             mock.patch.object(install, "_publish_install_receipt") as receipt:
+            with self.assertRaisesRegex(
+                install.ReplacementInstallError,
+                "CHALLENGER_REPLACEMENT_INSTALL_PREFLIGHT_EXPIRED",
+            ):
+                install.install_fixed_replacement_launch_agent()
+
+        command_call.assert_not_called()
+        plist.assert_not_called()
+        receipt.assert_not_called()
+
+    def test_python_identity_change_stops_before_launchctl_or_write(self):
+        import crypto_quant.challenger_replacement_install as install
+        from crypto_quant.challenger_replacement_install_trust import (
+            ReplacementInstallTrustError,
+        )
+
+        inputs = install_inputs()
+        with mock.patch.object(
+            install, "_load_fixed_install_inputs", return_value=inputs
+        ), mock.patch.object(
+            install, "_now", return_value=OBSERVED + timedelta(minutes=5)
+        ), mock.patch.object(
+            install, "_revalidate_fixed_python_identity",
+            side_effect=ReplacementInstallTrustError(
+                "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_CHANGED"
+            ),
+        ), mock.patch.object(install, "_command") as command_call, \
+             mock.patch.object(install, "_publish_plist") as plist:
+            with self.assertRaisesRegex(
+                install.ReplacementInstallError,
+                "CHALLENGER_REPLACEMENT_INSTALL_PYTHON_IDENTITY_CHANGED",
+            ):
+                install.install_fixed_replacement_launch_agent()
+
+        command_call.assert_not_called()
+        plist.assert_not_called()
+
+    def test_bootstrap_failure_preserves_new_plist_and_writes_no_receipt(self):
         import crypto_quant.challenger_replacement_install as install
 
         inputs = install_inputs()
@@ -241,16 +298,48 @@ class ReplacementInstallTests(unittest.TestCase):
         ), mock.patch.object(
             install, "_publish_plist", return_value=("PUBLISHED", record)
         ), mock.patch.object(
+            install, "_revalidate_empty_event_root"
+        ), mock.patch.object(
             install, "_command", side_effect=[command(113), command(9, b"", b"failed")]
-        ), mock.patch.object(install, "_rollback_plist") as rollback, \
-             mock.patch.object(install, "_publish_install_receipt") as receipt:
+        ), mock.patch.object(install, "_publish_install_receipt") as receipt:
             with self.assertRaisesRegex(
                 install.ReplacementInstallError,
                 "CHALLENGER_REPLACEMENT_INSTALL_BOOTSTRAP_FAILED",
             ):
                 install.install_fixed_replacement_launch_agent()
-        rollback.assert_called_once_with(record)
         receipt.assert_not_called()
+
+    def test_bootstrap_failure_preserves_published_plist_as_failure_evidence(self):
+        """Removing a pathname after identity validation can delete a replacement."""
+        import crypto_quant.challenger_replacement_install as install
+
+        with temporary_workspace() as directory:
+            inputs = install_inputs()
+            parent = Path(directory) / "LaunchAgents"
+            parent.mkdir(mode=0o755)
+            target = parent / "replacement.plist"
+            inputs["contract"]["paths"]["target_plist"] = str(target)
+            with mock.patch.object(
+                install, "_load_fixed_install_inputs", return_value=inputs
+            ), mock.patch.object(
+                install, "_now", return_value=OBSERVED + timedelta(minutes=5)
+            ), mock.patch.object(
+                install, "_command",
+                side_effect=[command(113), command(9, b"", b"failed")],
+            ), mock.patch.object(
+                install, "_revalidate_empty_event_root"
+            ), mock.patch.object(
+                install, "_publish_install_receipt"
+            ) as receipt:
+                with self.assertRaisesRegex(
+                    install.ReplacementInstallError,
+                    "CHALLENGER_REPLACEMENT_INSTALL_BOOTSTRAP_FAILED",
+                ):
+                    install.install_fixed_replacement_launch_agent()
+
+            self.assertTrue(target.exists())
+            self.assertEqual(target.read_bytes(), inputs["plist_bytes"])
+            receipt.assert_not_called()
 
     def test_inputs_are_replayed_after_plist_publish_before_bootstrap(self):
         import crypto_quant.challenger_replacement_install as install
@@ -265,17 +354,59 @@ class ReplacementInstallTests(unittest.TestCase):
             install, "_now", return_value=OBSERVED + timedelta(minutes=5)
         ), mock.patch.object(install, "_target_absent", return_value=True), \
              mock.patch.object(install, "_publish_plist", return_value=("PUBLISHED", record)), \
-             mock.patch.object(install, "_command", return_value=command(113)) as runner, \
-             mock.patch.object(install, "_rollback_plist") as rollback:
+             mock.patch.object(install, "_revalidate_empty_event_root"), \
+             mock.patch.object(install, "_command", return_value=command(113)) as runner:
             with self.assertRaisesRegex(
                 install.ReplacementInstallError,
                 "CHALLENGER_REPLACEMENT_INSTALL_SOURCE_CHANGED",
             ):
                 install.install_fixed_replacement_launch_agent()
         runner.assert_called_once()
-        rollback.assert_called_once_with(record)
 
-    def test_same_bytes_new_inode_plist_never_reaches_bootstrap_or_rollback(self):
+    def test_event_root_change_after_preflight_stops_before_bootstrap(self):
+        import crypto_quant.challenger_replacement_install as install
+
+        with temporary_workspace() as directory:
+            inputs = install_inputs()
+            base = Path(directory)
+            parent = base / "LaunchAgents"
+            parent.mkdir(mode=0o755)
+            inputs["contract"]["paths"]["target_plist"] = str(
+                parent / "replacement.plist"
+            )
+            event_root = base / "events"
+            event_root.mkdir(mode=0o700)
+            entry = event_root.stat()
+            inputs["contract"]["paths"]["event_root"] = str(event_root)
+            inputs["contract"]["event_root"].update({
+                "path": str(event_root), "device": entry.st_dev,
+                "inode": entry.st_ino, "owner_uid": entry.st_uid,
+                "mode": 0o700, "initial_event_count": 0,
+                "initial_orphan_staging_count": 0,
+            })
+            (event_root / "unexpected").write_bytes(b"preloaded")
+            with mock.patch.object(
+                install, "_load_fixed_install_inputs", return_value=inputs
+            ), mock.patch.object(
+                install, "_now", return_value=OBSERVED + timedelta(minutes=5)
+            ), mock.patch.object(
+                install, "_command", return_value=command(113)
+            ) as runner, mock.patch.object(
+                install, "_publish_install_receipt"
+            ) as receipt:
+                with self.assertRaisesRegex(
+                    install.ReplacementInstallError,
+                    "CHALLENGER_REPLACEMENT_INSTALL_EVENT_ROOT_CHANGED",
+                ):
+                    install.install_fixed_replacement_launch_agent()
+
+            self.assertEqual(runner.call_count, 1)
+            receipt.assert_not_called()
+            self.assertEqual(
+                (event_root / "unexpected").read_bytes(), b"preloaded"
+            )
+
+    def test_same_bytes_new_inode_plist_never_reaches_bootstrap(self):
         import crypto_quant.challenger_replacement_install as install
 
         inputs = install_inputs()
@@ -289,17 +420,16 @@ class ReplacementInstallTests(unittest.TestCase):
              mock.patch.object(install, "_publish_plist",
                                side_effect=[("PUBLISHED", record),
                                             ("ALREADY_PUBLISHED", replacement)]), \
-             mock.patch.object(install, "_command", return_value=command(113)) as runner, \
-             mock.patch.object(install, "_rollback_plist") as rollback:
+             mock.patch.object(install, "_revalidate_empty_event_root"), \
+             mock.patch.object(install, "_command", return_value=command(113)) as runner:
             with self.assertRaisesRegex(
                 install.ReplacementInstallError,
                 "CHALLENGER_REPLACEMENT_INSTALL_TARGET_IDENTITY_CHANGED",
             ):
                 install.install_fixed_replacement_launch_agent()
         runner.assert_called_once()
-        rollback.assert_not_called()
 
-    def test_plist_publication_and_rollback_bind_exact_inode_under_0755_parent(self):
+    def test_plist_publication_binds_exact_inode_under_0755_parent(self):
         import crypto_quant.challenger_replacement_install as install
 
         with temporary_workspace() as directory:
@@ -317,11 +447,11 @@ class ReplacementInstallTests(unittest.TestCase):
             target.write_bytes(body)
             target.chmod(0o600)
             self.assertNotEqual(target.stat().st_ino, old_inode)
-            with self.assertRaisesRegex(
-                install.ReplacementInstallError,
-                "CHALLENGER_REPLACEMENT_INSTALL_ROLLBACK_IDENTITY_MISMATCH",
-            ):
-                install._rollback_plist(record)
+            replay_outcome, replacement_record = install._publish_plist(
+                contract, body
+            )
+            self.assertEqual(replay_outcome, "ALREADY_PUBLISHED")
+            self.assertNotEqual(replacement_record["inode"], record["inode"])
             self.assertEqual(target.read_bytes(), body)
 
             sentinel = Path(directory) / "sentinel"
@@ -354,12 +484,11 @@ class ReplacementInstallTests(unittest.TestCase):
             install, "_now", return_value=OBSERVED + timedelta(minutes=5)
         ), mock.patch.object(install, "_target_absent", return_value=True), \
              mock.patch.object(install, "_publish_plist", return_value=("PUBLISHED", record)), \
+             mock.patch.object(install, "_revalidate_empty_event_root"), \
              mock.patch.object(install, "_command",
                                side_effect=[command(113), TimeoutError("unknown")]), \
-             mock.patch.object(install, "_rollback_plist") as rollback, \
              mock.patch.object(install, "_publish_install_receipt", return_value="PUBLISHED"):
             result = install.install_fixed_replacement_launch_agent()
-        rollback.assert_not_called()
         self.assertEqual(result["receipt"]["status"], "INSTALL_STATE_UNKNOWN_FAILED_CLOSED")
         self.assertIn("INSTALL_BOOTSTRAP_STATE_UNKNOWN", result["receipt"]["reason_codes"])
         self.assertEqual(result["receipt"]["authority"]["launchctl_read_count"], 1)
@@ -384,6 +513,7 @@ class ReplacementInstallTests(unittest.TestCase):
         ), mock.patch.object(install, "_target_absent", return_value=True), \
              mock.patch.object(install, "_publish_plist",
                                return_value=("PUBLISHED", record)), \
+             mock.patch.object(install, "_revalidate_empty_event_root"), \
              mock.patch.object(install, "_command",
                                side_effect=[command(113), command(0),
                                             command(0, launchctl_print_bytes(inputs["contract"]))]), \
@@ -411,6 +541,7 @@ class ReplacementInstallTests(unittest.TestCase):
             install, "_now", return_value=OBSERVED + timedelta(minutes=5)
         ), mock.patch.object(install, "_target_absent", return_value=True), \
              mock.patch.object(install, "_publish_plist", return_value=("PUBLISHED", record)), \
+             mock.patch.object(install, "_revalidate_empty_event_root"), \
              mock.patch.object(install, "_command",
                                side_effect=[command(113), command(0), command(1, b"", b"bad")]), \
              mock.patch.object(install, "_publish_install_receipt", return_value="PUBLISHED"):

@@ -16,6 +16,7 @@ from .challenger_replacement_install_trust import (
     _load_fixed_published_contract,
     _open_directory,
     _publish_contract_exact,
+    _revalidate_fixed_python_identity,
     replacement_install_paths,
 )
 from .challenger_replacement_preflight import (
@@ -234,6 +235,11 @@ def _fixed_checks(contract, results):
         and text[0] == "https://github.com/cjl308868584-lang/crypto-quant-core.git"
         and text[1] == text[2] == text[3] == expected and text[4] == ""
     )
+    if release:
+        try:
+            _revalidate_fixed_python_identity(contract)
+        except ReplacementInstallTrustError:
+            release = False
     paths = contract["paths"]
     descriptor = -1
     try:

@@ -14,14 +14,17 @@
     "install_receipt_binding": {"$ref": "#/$defs/binding"},
     "observer_binding": {
       "type": "object", "additionalProperties": false,
-      "required": ["summary_sha256", "observed_at", "first_eligible_scheduled_for", "first_scheduled_for", "event_count", "completed_slot_count"],
+      "required": ["summary_sha256", "observed_at", "first_eligible_scheduled_for", "first_scheduled_for", "event_count", "completed_slot_count", "terminal_event_hash", "source_bundle_sha256", "decision_sha256"],
       "properties": {
         "summary_sha256": {"$ref": "#/$defs/hash"},
         "observed_at": {"$ref": "#/$defs/time"},
         "first_eligible_scheduled_for": {"$ref": "#/$defs/time"},
         "first_scheduled_for": {"$ref": "#/$defs/time"},
         "event_count": {"const": 3},
-        "completed_slot_count": {"const": 1}
+        "completed_slot_count": {"const": 1},
+        "terminal_event_hash": {"$ref": "#/$defs/hash"},
+        "source_bundle_sha256": {"$ref": "#/$defs/hash"},
+        "decision_sha256": {"$ref": "#/$defs/hash"}
       }
     },
     "event_root_binding": {"type": "object"},

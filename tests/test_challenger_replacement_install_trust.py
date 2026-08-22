@@ -1103,11 +1103,34 @@ raise SystemExit(9)
         }, separators=(",", ":"), sort_keys=True).encode() + b"\n"
         with mock.patch.object(
             trust, "_run_fixed_command", return_value=(stdout, b"")
-        ):
+        ) as command:
             identity = trust._fixed_python_identity("/private/fixed-snapshot")
         self.assertEqual(identity["path"], "/usr/bin/python3")
         self.assertEqual(identity["link_count"], Path("/usr/bin/python3").stat().st_nlink)
         self.assertGreaterEqual(identity["link_count"], 1)
+        script = command.call_args.args[0][3]
+        self.assertIn("crypto_quant.challenger_replacement_installed_runtime_cli", script)
+        self.assertIn("crypto_quant.challenger_replacement_runtime", script)
+        self.assertIn("crypto_quant.challenger_replacement_decision", script)
+        self.assertIn("crypto_quant.challenger_replacement_evidence", script)
+
+    def test_python_identity_replay_rejects_any_runtime_change(self):
+        import crypto_quant.challenger_replacement_install_trust as trust
+
+        contract = valid_contract()
+        with mock.patch.object(
+            trust, "_fixed_python_identity", return_value=contract["python"]
+        ):
+            trust._revalidate_fixed_python_identity(contract)
+
+        changed = {**contract["python"], "inode": contract["python"]["inode"] + 1}
+        with mock.patch.object(
+            trust, "_fixed_python_identity", return_value=changed
+        ), self.assertRaisesRegex(
+            trust.ReplacementInstallTrustError,
+            "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_CHANGED",
+        ):
+            trust._revalidate_fixed_python_identity(contract)
 
     def test_snapshot_replay_rejects_inventory_extra_file(self):
         import crypto_quant.challenger_replacement_install_trust as trust

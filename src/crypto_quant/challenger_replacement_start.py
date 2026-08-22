@@ -22,6 +22,7 @@ from .challenger_replacement_install_trust import (
     _open_directory,
     _publish_contract_exact,
     _read_exact,
+    _read_published_exact,
     _require_open_flag,
     _same_file_identity,
     _validate_directory_attachment,
@@ -239,15 +240,42 @@ def _load_fixed_observation_sources():
             "contract": contract, "install_receipt": receipt,
             "install_inputs": inputs,
             "install_receipt_bytes": receipt_bytes, "plan": plan,
-            "event_root": root, "projection": state.replay(),
+            "event_root": root, "state": state, "projection": state.replay(),
             "stdout": stdout.body, "stderr": stderr.body,
             "retained_paths": tuple(retained),
         }
-    except BaseException:
-        for capability in reversed(retained):
-            capability.close()
-        root.close()
+    except BaseException as error:
+        _close_observation_sources({
+            "retained_paths": tuple(retained), "event_root": root,
+        }, error)
         raise
+
+
+def _close_observation_sources(sources, primary_error=None):
+    failures = []
+    for capability in reversed(sources.get("retained_paths", ())):
+        try:
+            capability.close()
+        except BaseException as error:
+            failures.append(error)
+    if "event_root" in sources:
+        try:
+            sources["event_root"].close()
+        except BaseException as error:
+            failures.append(error)
+    if not failures:
+        return
+    if primary_error is not None:
+        try:
+            primary_error.close_failures = tuple(
+                repr(error) for error in failures
+            )
+        except BaseException:
+            pass
+        return
+    raise ChallengerReplacementStartError(
+        "CHALLENGER_REPLACEMENT_FIRST_SLOT_CLOSE_FAILED"
+    ) from failures[0]
 
 
 def _revalidate_sources(sources):
@@ -358,6 +386,24 @@ def _authority(launchctl_reads):
     }
 
 
+def _terminal_evidence(projection):
+    successful = [
+        slot for slot in projection.get("slots", {}).values()
+        if slot.get("stage") == "SLOT_SUCCEEDED"
+    ]
+    if len(successful) != 1:
+        return {
+            "terminal_event_hash": None,
+            "source_bundle_sha256": None,
+            "decision_sha256": None,
+        }
+    return {
+        "terminal_event_hash": projection.get("last_event_hash"),
+        "source_bundle_sha256": successful[0].get("source_bundle_sha256"),
+        "decision_sha256": successful[0].get("decision_sha256"),
+    }
+
+
 def _failed_summary(observed, error, *, launchctl_reads, sources=None):
     projection = {} if sources is None else sources.get("projection", {})
     receipt = {} if sources is None else sources.get("install_receipt", {})
@@ -369,6 +415,7 @@ def _failed_summary(observed, error, *, launchctl_reads, sources=None):
         "first_scheduled_for": None,
         "event_count": len(projection.get("events", ())),
         "completed_slot_count": projection.get("completed_slot_count", 0),
+        **_terminal_evidence(projection),
         "reason_codes": [getattr(
             error, "reason_code",
             "CHALLENGER_REPLACEMENT_FIRST_SLOT_EVIDENCE_INVALID",
@@ -391,6 +438,7 @@ _EXPECTED_OBSERVATION_ERRORS = (
 
 def observe_fixed_replacement_first_slot():
     observed = _now()
+    body_error = None
     try:
         sources = _load_fixed_observation_sources()
     except _EXPECTED_OBSERVATION_ERRORS as error:
@@ -419,25 +467,38 @@ def observe_fixed_replacement_first_slot():
             "completed_slot_count": sources["projection"][
                 "completed_slot_count"
             ],
+            **_terminal_evidence(sources["projection"]),
             "reason_codes": sorted(set(reasons)),
             "authority": _authority(1),
         }
         for capability in sources.get("retained_paths", ()):
             capability.validate()
         sources["event_root"].validate()
+        if (
+            "state" in sources
+            and sources["state"].replay() != sources["projection"]
+        ):
+            raise ChallengerReplacementStartError(
+                "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED"
+            )
+        sources["event_root"].validate()
         if "install_inputs" in sources:
             _revalidate_sources(sources)
-        return result
     except _EXPECTED_OBSERVATION_ERRORS as error:
+        body_error = error
+        result = _failed_summary(
+            observed, error, launchctl_reads=1, sources=sources
+        )
+    except BaseException as error:
+        _close_observation_sources(sources, error)
+        raise
+    try:
+        _close_observation_sources(sources, body_error)
+    except ChallengerReplacementStartError as error:
         return _failed_summary(
             observed, error, launchctl_reads=1, sources=sources
         )
-    finally:
-        if isinstance(sources, dict):
-            for capability in reversed(sources.get("retained_paths", ())):
-                capability.close()
-            if "event_root" in sources:
-                sources["event_root"].close()
+    return result
 
 
 def _source_binding(value, data, prefix):
@@ -459,7 +520,33 @@ def _observer_binding(observer):
         "first_scheduled_for": observer["first_scheduled_for"],
         "event_count": observer["event_count"],
         "completed_slot_count": observer["completed_slot_count"],
+        "terminal_event_hash": observer["terminal_event_hash"],
+        "source_bundle_sha256": observer["source_bundle_sha256"],
+        "decision_sha256": observer["decision_sha256"],
     }
+
+
+def _observer_from_binding(binding):
+    observer = {
+        "status": "FIRST_NATURAL_SLOT_VERIFIED",
+        "observed_at": binding["observed_at"],
+        "first_eligible_scheduled_for": binding[
+            "first_eligible_scheduled_for"
+        ],
+        "first_scheduled_for": binding["first_scheduled_for"],
+        "event_count": binding["event_count"],
+        "completed_slot_count": binding["completed_slot_count"],
+        "terminal_event_hash": binding["terminal_event_hash"],
+        "source_bundle_sha256": binding["source_bundle_sha256"],
+        "decision_sha256": binding["decision_sha256"],
+        "reason_codes": [],
+        "authority": _authority(1),
+    }
+    if _observer_binding(observer) != binding:
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_INVALID"
+        )
+    return observer
 
 
 def _build_replacement_start_receipt(
@@ -555,6 +642,74 @@ def load_replacement_start_receipt_bytes(
         ) from error
 
 
+def _load_start_receipt_source_bytes(
+    data, *, install_receipt, install_receipt_bytes, contract, contract_bytes,
+):
+    try:
+        receipt = dict(_strict_json_bytes(data))
+        observer = _observer_from_binding(receipt["observer_binding"])
+        loaded = load_replacement_start_receipt_bytes(
+            data, install_receipt=install_receipt,
+            install_receipt_bytes=install_receipt_bytes,
+            contract=contract, contract_bytes=contract_bytes,
+            observer=observer,
+        )
+        return loaded, observer
+    except (KeyError, TypeError, ValueError) as error:
+        if isinstance(error, ChallengerReplacementStartError):
+            raise
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_INVALID"
+        ) from error
+
+
+def _load_existing_start_receipt(inputs, install_receipt, install_bytes):
+    root = Path(inputs["contract"]["paths"]["start_receipt_root"])
+    root_fd = -1
+    primary = None
+    try:
+        root_fd, _ = _open_directory(root, exact_mode=0o700)
+        names = sorted(os.listdir(root_fd))
+        if not names:
+            return None
+        if len(names) != 1 or not names[0].endswith(".json"):
+            raise ChallengerReplacementStartError(
+                "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
+            )
+        loaded = _read_published_exact(root_fd, names[0])
+        if loaded is None:
+            raise ChallengerReplacementStartError(
+                "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
+            )
+        receipt, observer = _load_start_receipt_source_bytes(
+            loaded[0], install_receipt=install_receipt,
+            install_receipt_bytes=install_bytes,
+            contract=inputs["contract"],
+            contract_bytes=inputs["contract_bytes"],
+        )
+        if names[0] != receipt["receipt_id"] + ".json":
+            raise ChallengerReplacementStartError(
+                "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
+            )
+        return receipt, observer
+    except ChallengerReplacementStartError as error:
+        if error.reason_code == (
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
+        ):
+            primary = error
+            raise
+        primary = ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
+        )
+        raise primary from error
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        if root_fd >= 0:
+            _close_descriptor(root_fd, primary)
+
+
 def _load_start_install_sources():
     try:
         return _load_fixed_successful_install_receipt()
@@ -565,12 +720,29 @@ def _load_start_install_sources():
 
 
 def publish_fixed_replacement_start_receipt():
+    inputs, install_receipt, install_bytes = _load_start_install_sources()
+    existing = _load_existing_start_receipt(
+        inputs, install_receipt, install_bytes
+    )
+    if existing is not None:
+        receipt, observer = existing
+        if _load_start_install_sources() != (
+            inputs, install_receipt, install_bytes
+        ):
+            raise ChallengerReplacementStartError(
+                "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED"
+            )
+        root = Path(inputs["contract"]["paths"]["start_receipt_root"])
+        return {
+            "publication_outcome": "ALREADY_PUBLISHED",
+            "observer": observer, "receipt": receipt,
+            "receipt_path": str(root / (receipt["receipt_id"] + ".json")),
+        }
     observer = observe_fixed_replacement_first_slot()
     if observer["status"] != "FIRST_NATURAL_SLOT_VERIFIED":
         return {
             "publication_outcome": "NOT_PUBLISHED", "observer": observer,
         }
-    inputs, install_receipt, install_bytes = _load_start_install_sources()
     receipt = _build_replacement_start_receipt(
         observer=observer, contract=inputs["contract"],
         contract_bytes=inputs["contract_bytes"],

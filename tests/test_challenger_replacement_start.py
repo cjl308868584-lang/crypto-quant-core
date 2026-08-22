@@ -19,6 +19,14 @@ ELIGIBLE = "2026-08-22T04:00:00.000Z"
 
 def observation_sources(projection=None, stdout=b"", stderr=b""):
     root = mock.Mock()
+    projected = projection or {
+        "events": [], "slots": {}, "active_slot_id": None,
+        "completed_slot_count": 0, "failed_slot_count": 0,
+        "orphan_staging_count": 0, "orphan_staging_bytes": 0,
+        "last_event_hash": "0" * 64,
+    }
+    state = mock.Mock()
+    state.replay.return_value = projected
     return {
         "contract": {
             "service": {
@@ -28,12 +36,7 @@ def observation_sources(projection=None, stdout=b"", stderr=b""):
         "install_receipt": {
             "first_eligible_scheduled_for": ELIGIBLE,
         },
-        "event_root": root,
-        "projection": projection or {
-            "events": [], "slots": {}, "active_slot_id": None,
-            "completed_slot_count": 0, "failed_slot_count": 0,
-            "orphan_staging_count": 0, "orphan_staging_bytes": 0,
-        },
+        "event_root": root, "state": state, "projection": projected,
         "stdout": stdout,
         "stderr": stderr,
     }
@@ -60,6 +63,7 @@ def successful_projection(count=1, scheduled_for=ELIGIBLE):
         "active_slot_id": None, "completed_slot_count": count,
         "failed_slot_count": 0, "orphan_staging_count": 0,
         "orphan_staging_bytes": 0,
+        "last_event_hash": "c" * 64 if count else "0" * 64,
         "next_required_slot": {
             "sequence": count + 1,
             "scheduled_for": "2026-08-22T08:00:00.000Z",
@@ -334,8 +338,86 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "FIRST_NATURAL_SLOT_VERIFIED")
         self.assertEqual(result["first_scheduled_for"], ELIGIBLE)
+        self.assertEqual(result["terminal_event_hash"], "c" * 64)
+        self.assertEqual(result["source_bundle_sha256"], "a" * 64)
+        self.assertEqual(result["decision_sha256"], "b" * 64)
         forbidden = {"pnl", "return", "win_rate", "profit", "gate"}
         self.assertFalse(forbidden.intersection(result))
+
+    def test_observer_replays_event_chain_again_before_return(self):
+        sources = observation_sources(
+            successful_projection(), stdout=runtime_stdout()
+        )
+        changed = {**sources["projection"], "last_event_hash": "d" * 64}
+        sources["state"].replay.return_value = changed
+        result = self._observe(
+            sources, datetime(2026, 8, 22, 4, 10, tzinfo=timezone.utc)
+        )
+        self.assertEqual(result["status"], "FAILED_CLOSED")
+        self.assertIn(
+            "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED",
+            result["reason_codes"],
+        )
+
+    def test_observer_attempts_every_close_and_reports_fixed_close_failure(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        sources = observation_sources(
+            successful_projection(), stdout=runtime_stdout()
+        )
+        first = mock.Mock()
+        second = mock.Mock()
+        first.close.side_effect = OSError("first close")
+        second.close.side_effect = OSError("second close")
+        sources["retained_paths"] = (first, second)
+        sources["event_root"].close.side_effect = OSError("root close")
+        with mock.patch.object(
+            start, "_load_fixed_observation_sources", return_value=sources
+        ), mock.patch.object(
+            start, "_now",
+            return_value=datetime(2026, 8, 22, 4, 10,
+                                  tzinfo=timezone.utc),
+        ), mock.patch.object(
+            start, "_command", return_value=(0, b"launch", b"")
+        ), mock.patch.object(
+            start, "_launchctl_observation_valid", return_value=True
+        ):
+            result = start.observe_fixed_replacement_first_slot()
+
+        self.assertEqual(result["status"], "FAILED_CLOSED")
+        self.assertEqual(
+            result["reason_codes"],
+            ["CHALLENGER_REPLACEMENT_FIRST_SLOT_CLOSE_FAILED"],
+        )
+        first.close.assert_called_once()
+        second.close.assert_called_once()
+        sources["event_root"].close.assert_called_once()
+
+    def test_close_failures_never_override_unexpected_primary_error(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        sources = observation_sources()
+        retained = mock.Mock()
+        retained.close.side_effect = OSError("retained close")
+        sources["retained_paths"] = (retained,)
+        sources["event_root"].close.side_effect = OSError("root close")
+        primary = KeyboardInterrupt("primary")
+        with mock.patch.object(
+            start, "_load_fixed_observation_sources", return_value=sources
+        ), mock.patch.object(
+            start, "_now",
+            return_value=datetime(2026, 8, 22, 4, 10,
+                                  tzinfo=timezone.utc),
+        ), mock.patch.object(
+            start, "_command", side_effect=primary
+        ):
+            with self.assertRaises(KeyboardInterrupt) as raised:
+                start.observe_fixed_replacement_first_slot()
+
+        self.assertIs(raised.exception, primary)
+        self.assertEqual(len(primary.close_failures), 2)
+        retained.close.assert_called_once()
+        sources["event_root"].close.assert_called_once()
 
     def test_success_stdout_must_bind_exact_first_slot_and_event_count(self):
         for stdout in (
@@ -365,6 +447,9 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
             "first_scheduled_for": ELIGIBLE,
             "event_count": 3,
             "completed_slot_count": 1,
+            "terminal_event_hash": "c" * 64,
+            "source_bundle_sha256": "a" * 64,
+            "decision_sha256": "b" * 64,
             "reason_codes": [],
             "authority": {
                 "launchctl_read_count": 1, "market_request_count": 0,
@@ -401,6 +486,12 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
         self.assertEqual(receipt["strategy_core_binding"],
                          inputs["contract"]["strategy_core"])
         self.assertEqual(receipt["cohort_status"], "STARTED_COLLECTION_ONLY")
+        self.assertEqual(receipt["observer_binding"]["terminal_event_hash"],
+                         "c" * 64)
+        self.assertEqual(receipt["observer_binding"]["source_bundle_sha256"],
+                         "a" * 64)
+        self.assertEqual(receipt["observer_binding"]["decision_sha256"],
+                         "b" * 64)
 
         body = canonical_json(receipt).encode()
         self.assertEqual(
@@ -422,21 +513,27 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
                 contract_bytes=inputs["contract_bytes"], observer=observer,
             )
 
-    def test_nonverified_observation_never_loads_or_publishes_receipt(self):
+    def test_nonverified_observation_scans_once_but_never_publishes_receipt(self):
         import crypto_quant.challenger_replacement_start as start
 
-        waiting = self._inputs()[2]
+        inputs, install_receipt, waiting = self._inputs()
         waiting = {**waiting, "status": "WAITING_FOR_FIRST_NATURAL_SLOT"}
-        with mock.patch.object(
-            start, "observe_fixed_replacement_first_slot", return_value=waiting
-        ), mock.patch.object(
-            start, "_load_fixed_successful_install_receipt"
-        ) as load, mock.patch.object(
-            start, "_publish_contract_exact"
-        ) as publish:
-            result = start.publish_fixed_replacement_start_receipt()
+        with temporary_workspace() as directory:
+            root = Path(directory) / "start-receipts"
+            root.mkdir(mode=0o700)
+            inputs["contract"]["paths"]["start_receipt_root"] = str(root)
+            with mock.patch.object(
+                start, "observe_fixed_replacement_first_slot",
+                return_value=waiting,
+            ), mock.patch.object(
+                start, "_load_fixed_successful_install_receipt",
+                return_value=(inputs, install_receipt, b"install-receipt"),
+            ) as load, mock.patch.object(
+                start, "_publish_contract_exact"
+            ) as publish:
+                result = start.publish_fixed_replacement_start_receipt()
         self.assertEqual(result["publication_outcome"], "NOT_PUBLISHED")
-        load.assert_not_called()
+        load.assert_called_once()
         publish.assert_not_called()
 
     def test_verified_observation_with_changed_install_source_fails_closed(self):
@@ -494,6 +591,45 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
                     "START_RECEIPT_PUBLICATION_FAILED",
                 ):
                     start.publish_fixed_replacement_start_receipt()
+
+    def test_existing_start_receipt_replays_before_new_observation_or_time(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        inputs, install_receipt, observer = self._inputs()
+        with temporary_workspace() as directory:
+            root = Path(directory) / "start-receipts"
+            root.mkdir(mode=0o700)
+            inputs["contract"]["paths"]["start_receipt_root"] = str(root)
+            sources = (inputs, install_receipt, b"install-receipt")
+            with mock.patch.object(
+                start, "observe_fixed_replacement_first_slot",
+                return_value=observer,
+            ), mock.patch.object(
+                start, "_load_fixed_successful_install_receipt",
+                return_value=sources,
+            ), mock.patch.object(
+                start, "_now",
+                return_value=datetime(2026, 8, 22, 4, 11,
+                                      tzinfo=timezone.utc),
+            ):
+                first = start.publish_fixed_replacement_start_receipt()
+
+            with mock.patch.object(
+                start, "observe_fixed_replacement_first_slot",
+                side_effect=AssertionError("must not re-observe"),
+            ), mock.patch.object(
+                start, "_load_fixed_successful_install_receipt",
+                return_value=sources,
+            ), mock.patch.object(
+                start, "_now",
+                return_value=datetime(2026, 8, 22, 4, 12,
+                                      tzinfo=timezone.utc),
+            ):
+                second = start.publish_fixed_replacement_start_receipt()
+
+            self.assertEqual(second["publication_outcome"], "ALREADY_PUBLISHED")
+            self.assertEqual(second["receipt"], first["receipt"])
+            self.assertEqual(second["receipt_path"], first["receipt_path"])
 
     def test_start_receipt_schema_mirror_is_strict_and_valid(self):
         import json

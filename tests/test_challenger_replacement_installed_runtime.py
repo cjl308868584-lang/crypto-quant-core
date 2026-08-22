@@ -28,6 +28,20 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
             ]["scheduled_for"],
         }
 
+    def _install_inputs_for_fixture(self):
+        from tests.test_challenger_replacement_install import install_inputs
+
+        inputs = install_inputs()
+        identity = self.fixture.workspace.identity()
+        inputs["contract"]["event_root"].update({
+            "path": identity.absolute_path, "device": identity.device,
+            "inode": identity.inode, "owner_uid": identity.uid,
+        })
+        start_root = self.fixture.workspace.base / "start-receipts"
+        start_root.mkdir(mode=0o700)
+        inputs["contract"]["paths"]["start_receipt_root"] = str(start_root)
+        return inputs
+
     def test_missing_verified_install_receipt_stops_before_capture_or_append(self):
         import crypto_quant.challenger_replacement_installed_runtime as runtime
 
@@ -97,9 +111,8 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
 
     def test_fixed_source_loader_opens_only_receipt_bound_event_root(self):
         import crypto_quant.challenger_replacement_installed_runtime as runtime
-        from tests.test_challenger_replacement_install import install_inputs
 
-        inputs = install_inputs()
+        inputs = self._install_inputs_for_fixture()
         identity = self.fixture.workspace.identity()
         inputs["contract"]["event_root"].update({
             "path": identity.absolute_path, "device": identity.device,
@@ -122,6 +135,83 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
                              "2026-08-22T04:00:00.000Z")
         finally:
             sources["event_root"].close()
+
+    def test_prestart_orphan_staging_stops_before_network_or_append(self):
+        import crypto_quant.challenger_replacement_installed_runtime as runtime
+
+        inputs = self._install_inputs_for_fixture()
+        orphan = self.fixture.workspace.event_root / (
+            ".stage-00000000000000000001-{}-{}.tmp".format(
+                "a" * 64, "b" * 32
+            )
+        )
+        orphan.write_bytes(b"partial")
+        orphan.chmod(0o600)
+        install_receipt = {
+            "status": "INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT",
+            "first_eligible_scheduled_for": "2026-08-22T04:00:00.000Z",
+        }
+        with mock.patch.object(
+            runtime, "_load_fixed_successful_install_receipt",
+            return_value=(inputs, install_receipt, b"receipt"),
+        ), mock.patch.object(
+            runtime, "_load_snapshot_plan_and_strategy",
+            return_value=self.fixture.plan,
+        ), mock.patch.object(
+            runtime, "acquire_challenger_replacement_live_capture"
+        ) as acquire, mock.patch.object(
+            runtime.ChallengerReplacementRuntimeState, "append"
+        ) as append:
+            with self.assertRaisesRegex(
+                runtime.ReplacementInstalledRuntimeError,
+                "CHALLENGER_REPLACEMENT_START_RECEIPT_REQUIRED",
+            ):
+                runtime.run_fixed_replacement_installed_invocation()
+
+        acquire.assert_not_called()
+        append.assert_not_called()
+        self.assertEqual(orphan.read_bytes(), b"partial")
+
+    def test_prestart_completed_slot_cannot_be_replayed_as_installed_success(self):
+        import crypto_quant.challenger_replacement_installed_runtime as runtime
+        from crypto_quant.challenger_replacement_runtime import (
+            run_challenger_replacement_cohort_slot,
+        )
+
+        run_challenger_replacement_cohort_slot(
+            state=self.fixture._state(),
+            live_capture=self.fixture.live_capture,
+            worker_id="preloaded-worker",
+        )
+        inputs = self._install_inputs_for_fixture()
+        inputs["contract"]["strategy_core"].update(
+            self.fixture.build_identity
+        )
+        install_receipt = {
+            "status": "INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT",
+            "first_eligible_scheduled_for": "2026-08-22T04:00:00.000Z",
+        }
+        before = tuple(self.fixture._state().replay()["events"])
+        with mock.patch.object(
+            runtime, "_load_fixed_successful_install_receipt",
+            return_value=(inputs, install_receipt, b"receipt"),
+        ), mock.patch.object(
+            runtime, "_load_snapshot_plan_and_strategy",
+            return_value=self.fixture.plan,
+        ), mock.patch.object(
+            runtime, "acquire_challenger_replacement_live_capture"
+        ) as acquire, mock.patch.object(
+            runtime.ChallengerReplacementRuntimeState, "append"
+        ) as append:
+            with self.assertRaisesRegex(
+                runtime.ReplacementInstalledRuntimeError,
+                "CHALLENGER_REPLACEMENT_START_RECEIPT_REQUIRED",
+            ):
+                runtime.run_fixed_replacement_installed_invocation()
+
+        acquire.assert_not_called()
+        append.assert_not_called()
+        self.assertEqual(tuple(self.fixture._state().replay()["events"]), before)
 
     def test_snapshot_plan_loader_replays_strategy_bytes_before_state(self):
         import crypto_quant.challenger_replacement_installed_runtime as runtime

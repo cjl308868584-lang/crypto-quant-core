@@ -8,11 +8,17 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 from .canonical import canonical_json, stable_id, utc_datetime
-from .challenger_replacement_install_preflight import load_replacement_install_preflight_bytes
+from .challenger_replacement_install_preflight import (
+    _install_window_safe,
+    load_replacement_install_preflight_bytes,
+)
 from .challenger_replacement_install_trust import (
-    _close_descriptor, _fsync_retry, _open_directory,
+    ReplacementInstallTrustError,
+    _close_descriptor, _open_directory,
+    _fixed_empty_event_root_identity,
     _publish_contract_exact, _read_published_exact,
-    _validate_directory_attachment, _load_fixed_published_contract,
+    _revalidate_fixed_python_identity,
+    _load_fixed_published_contract,
     replacement_install_paths,
 )
 from .challenger_replacement_plan import _strict_json_bytes
@@ -276,28 +282,16 @@ def _publish_plist(contract, body):
     return outcome, _plist_record(path, entry, body)
 
 
-def _rollback_plist(record):
-    path = Path(record["path"])
-    parent_fd, opened = _open_directory(path.parent, exact_mode=None)
-    primary = None
+def _revalidate_empty_event_root(contract):
     try:
-        loaded = _read_published_exact(parent_fd, path.name)
-        if loaded is None or (loaded[1].st_dev, loaded[1].st_ino) != (
-            record["device"], record["inode"]
-        ):
-            raise ReplacementInstallError(
-                "CHALLENGER_REPLACEMENT_INSTALL_ROLLBACK_IDENTITY_MISMATCH")
-        os.unlink(path.name, dir_fd=parent_fd)
-        _fsync_retry(parent_fd)
-        _validate_directory_attachment(
-            path.parent, parent_fd, opened,
-            "CHALLENGER_REPLACEMENT_INSTALL_ROLLBACK_FAILED",
-        )
-    except BaseException as error:
-        primary = error
-        raise
-    finally:
-        _close_descriptor(parent_fd, primary)
+        if _fixed_empty_event_root_identity(contract["paths"]) != contract[
+            "event_root"
+        ]:
+            raise ValueError("identity")
+    except (KeyError, TypeError, ValueError, ReplacementInstallTrustError) as error:
+        raise ReplacementInstallError(
+            "CHALLENGER_REPLACEMENT_INSTALL_EVENT_ROOT_CHANGED"
+        ) from error
 
 
 def _command(argv):
@@ -351,9 +345,16 @@ def install_fixed_replacement_launch_agent():
     )
     expires = datetime.fromisoformat(preflight["expires_at"].replace("Z", "+00:00"))
     if (preflight["status"] != "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE"
-            or not observed <= now < expires):
+            or not observed <= now < expires
+            or not _install_window_safe(now)):
         raise ReplacementInstallError(
             "CHALLENGER_REPLACEMENT_INSTALL_PREFLIGHT_EXPIRED")
+    try:
+        _revalidate_fixed_python_identity(contract)
+    except ReplacementInstallTrustError as error:
+        raise ReplacementInstallError(
+            "CHALLENGER_REPLACEMENT_INSTALL_PYTHON_IDENTITY_CHANGED"
+        ) from error
     target = contract["paths"]["target_plist"]
     identity = contract["service"]["identity"]
     print_argv = ("/bin/launchctl", "print", identity)
@@ -367,9 +368,9 @@ def install_fixed_replacement_launch_agent():
             "CHALLENGER_REPLACEMENT_INSTALL_EXISTING_STATE_CONFLICT")
     bootstrap_argv = ("/bin/launchctl", "bootstrap", "gui/501", target)
     if _load_fixed_install_inputs() != inputs:
-        _rollback_plist(record)
         raise ReplacementInstallError(
             "CHALLENGER_REPLACEMENT_INSTALL_SOURCE_CHANGED")
+    _revalidate_empty_event_root(contract)
     _, replayed_record = _publish_plist(contract, inputs["plist_bytes"])
     if replayed_record != record:
         raise ReplacementInstallError(
@@ -384,7 +385,6 @@ def install_fixed_replacement_launch_agent():
             ["INSTALL_BOOTSTRAP_STATE_UNKNOWN"],
         )
     if bootstrap[0] != 0:
-        _rollback_plist(record)
         raise ReplacementInstallError(
             "CHALLENGER_REPLACEMENT_INSTALL_BOOTSTRAP_FAILED")
     try:
