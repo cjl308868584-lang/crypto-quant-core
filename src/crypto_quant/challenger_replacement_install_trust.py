@@ -17,6 +17,9 @@ from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_json, stable_id
 from .challenger_replacement_events import _rename_noreplace
+from .challenger_replacement_deployment import (
+    render_challenger_replacement_install_plist as render_replacement_install_plist,
+)
 from .challenger_replacement_plan import _strict_json_bytes
 from .evidence import artifact_self_hash
 
@@ -66,6 +69,8 @@ def replacement_install_paths() -> Mapping[str, str]:
         "deployment_root": deployment,
         "contract": deployment
         + "/challenger-replacement-install-contract-v1.json",
+        "candidate_plist": deployment
+        + "/local.crypto-quant.challenger-replacement-v1.plist",
         "preflight_root": deployment + "/preflight-receipts",
         "install_receipt_root": deployment + "/install-receipts",
         "start_receipt_root": _RUNTIME_ROOT + "/evidence/start-receipts",
@@ -847,8 +852,8 @@ def _read_published_exact(parent_fd: int, name: str):
             _close_descriptor(descriptor, primary_error)
 
 
-def _publish_contract_exact(parent: Path, name: str, body: bytes):
-    parent_fd, _ = _open_directory(parent, exact_mode=0o700)
+def _publish_contract_exact(parent: Path, name: str, body: bytes, *, parent_mode=0o700):
+    parent_fd, _ = _open_directory(parent, exact_mode=parent_mode)
     primary_error = None
     try:
         existing = _read_published_exact(parent_fd, name)
@@ -1026,6 +1031,7 @@ def _build_install_contract(
         "github_verification": dict(github_verification),
         "plan": plan,
         "deployment": deployment,
+        "plist": {"path": paths["candidate_plist"], "file_sha256": "0" * 64},
         "snapshot": {
             key: snapshot[key]
             for key in (
@@ -1074,6 +1080,9 @@ def _build_install_contract(
             "START_RECEIPT_NOT_YET_AVAILABLE",
         ],
     }
+    contract["plist"]["file_sha256"] = hashlib.sha256(
+        render_replacement_install_plist(contract)
+    ).hexdigest()
     identity = {
         key: value
         for key, value in contract.items()
@@ -1269,7 +1278,7 @@ def _ensure_fixed_snapshot_directories(paths):
             if current != anchor_fd:
                 _close_descriptor(current)
             current = following
-        for name in ("snapshots", "preflight-receipts"):
+        for name in ("snapshots", "preflight-receipts", "install-receipts"):
             child = _open_relative_directory(current, name, create=True)
             _fsync_retry(current)
             _close_descriptor(child)
@@ -1385,12 +1394,18 @@ def render_fixed_replacement_snapshot_and_contract():
     )
     body = canonical_json(contract).encode("utf-8")
     load_replacement_install_contract_bytes(body)
+    plist_body = render_replacement_install_plist(contract)
+    plist_outcome, _ = _publish_contract_exact(
+        Path(paths["deployment_root"]), Path(paths["candidate_plist"]).name,
+        plist_body,
+    )
     outcome, _ = _publish_contract_exact(
         Path(paths["deployment_root"]), Path(paths["contract"]).name, body
     )
     return {
         "snapshot": snapshot,
         "contract": contract,
+        "plist_outcome": plist_outcome,
         "contract_outcome": outcome,
     }
 
@@ -1429,6 +1444,13 @@ def load_replacement_install_contract_bytes(data: bytes) -> Mapping[str, Any]:
             raise ValueError("predecessor")
         if contract["paths"] != replacement_install_paths():
             raise ValueError("paths")
+        if contract["plist"] != {
+            "path": replacement_install_paths()["candidate_plist"],
+            "file_sha256": hashlib.sha256(
+                render_replacement_install_plist(contract)
+            ).hexdigest(),
+        }:
+            raise ValueError("plist")
         if contract["authority"] != {
             "production_activation": False,
             "runtime_install_authorized": True,
@@ -1461,7 +1483,13 @@ def _load_fixed_published_contract():
             )
         contract = load_replacement_install_contract_bytes(loaded[0])
         replay_replacement_snapshot(contract)
-        return contract, loaded[0]
+        plist = _read_published_exact(
+            parent_fd, Path(contract["plist"]["path"]).name
+        )
+        if plist is None or hashlib.sha256(plist[0]).hexdigest() != contract["plist"]["file_sha256"]:
+            raise ReplacementInstallTrustError(
+                "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_INVALID")
+        return contract, loaded[0], plist[0]
     except BaseException as error:
         primary = error
         raise

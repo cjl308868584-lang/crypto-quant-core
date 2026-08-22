@@ -93,6 +93,22 @@ def _plist_payload(deployment):
 def render_challenger_replacement_plist(deployment):
     return plistlib.dumps(_plist_payload(deployment), fmt=plistlib.FMT_XML, sort_keys=True)
 
+def render_challenger_replacement_install_plist(contract):
+    paths = contract["paths"]
+    payload = {
+        "Label": contract["service"]["label"],
+        "ProgramArguments": contract["runtime"]["program_arguments"],
+        "WorkingDirectory": contract["runtime"]["working_directory"],
+        "StandardOutPath": paths["stdout"], "StandardErrorPath": paths["stderr"],
+        "RunAtLoad": False, "KeepAlive": False, "ProcessType": "Background",
+        "Umask": 0o077, "EnvironmentVariables": contract["runtime"]["environment"],
+        "StartCalendarInterval": [
+            {"Hour": item["hour"], "Minute": item["minute"]}
+            for item in contract["schedule"]
+        ],
+    }
+    return plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=True)
+
 def build_challenger_replacement_deployment():
     plan = load_challenger_replacement_plan_v2(_PLAN)
     paths = {

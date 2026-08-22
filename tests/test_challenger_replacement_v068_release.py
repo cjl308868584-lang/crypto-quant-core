@@ -26,6 +26,34 @@ class V068ReleaseTests(unittest.TestCase):
         self.assertNotIn("import Order", text)
         self.assertLessEqual(sum(len(path.read_text().splitlines()) for path in paths), 300)
 
+    def test_installer_has_one_bootstrap_and_no_forbidden_mutation_surface(self):
+        paths = [
+            ROOT / "src/crypto_quant/challenger_replacement_install.py",
+            ROOT / "src/crypto_quant/challenger_replacement_install_cli.py",
+        ]
+        text = "\n".join(path.read_text() for path in paths)
+        self.assertEqual(text.count('"bootstrap"'), 3)
+        for forbidden in ('"kickstart"', '"bootout"', '"enable"',
+                          '"submit"', "shell=True", "live_runtime_cli"):
+            self.assertNotIn(forbidden, text)
+        self.assertLessEqual(sum(len(path.read_text().splitlines()) for path in paths), 345)
+
+    def test_trust_and_shared_plist_renderer_keep_reallocated_yagni_gate(self):
+        import ast
+
+        trust_paths = [
+            ROOT / "src/crypto_quant/challenger_replacement_install_trust.py",
+            ROOT / "src/crypto_quant/challenger_replacement_install_trust_cli.py",
+        ]
+        self.assertLessEqual(
+            sum(len(path.read_text().splitlines()) for path in trust_paths), 1575
+        )
+        deployment = ROOT / "src/crypto_quant/challenger_replacement_deployment.py"
+        tree = ast.parse(deployment.read_text())
+        renderer = next(node for node in tree.body if getattr(node, "name", "")
+                        == "render_challenger_replacement_install_plist")
+        self.assertLessEqual(renderer.end_lineno - renderer.lineno + 1, 20)
+
 
 if __name__ == "__main__":
     unittest.main()

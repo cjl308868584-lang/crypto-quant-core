@@ -77,14 +77,12 @@ def _ignored_block(lines, start):
     raise SystemPaperLaunchctlParseError()
 
 
-def parse_system_paper_launchctl_print(data: bytes) -> Mapping[str, Any]:
-    """Parse one exact System Paper service print without substring trust."""
-
+def _parse_launchctl_structure(data: bytes, label: str):
     lines = _text(data).splitlines()
     if len(lines) < 3 or lines[-1] != "}":
         raise SystemPaperLaunchctlParseError()
-    service_match = _SERVICE.fullmatch(lines[0])
-    if service_match is None:
+    pattern = re.compile(r"^(gui/[0-9]+)/(" + re.escape(label) + r") = \{$")
+    if pattern.fullmatch(lines[0]) is None:
         raise SystemPaperLaunchctlParseError()
     service = lines[0][:-4]
     scalars: Dict[str, str] = {}
@@ -101,40 +99,32 @@ def parse_system_paper_launchctl_print(data: bytes) -> Mapping[str, Any]:
         block_match = _BLOCK.fullmatch(line)
         if block_match is not None:
             name = block_match.group(1)
-            if _FIELD_NAME.fullmatch(name) is None:
-                raise SystemPaperLaunchctlParseError()
-            if name in seen_names:
+            if _FIELD_NAME.fullmatch(name) is None or name in seen_names:
                 raise SystemPaperLaunchctlParseError()
             seen_names.add(name)
             if name in ("arguments", "environment"):
-                values, index = _block(lines, index)
-                blocks[name] = values
+                blocks[name], index = _block(lines, index)
             else:
                 index = _ignored_block(lines, index)
             continue
         scalar_match = _SCALAR.fullmatch(line)
         if scalar_match is not None:
             name, value = scalar_match.groups()
-            if _FIELD_NAME.fullmatch(name) is None:
-                raise SystemPaperLaunchctlParseError()
-            if name in seen_names:
+            if _FIELD_NAME.fullmatch(name) is None or name in seen_names:
                 raise SystemPaperLaunchctlParseError()
             seen_names.add(name)
-            if name in {
-                "path",
-                "state",
-                "program",
-                "working directory",
-                "runs",
-                "last exit code",
-                "last exit status",
-            }:
+            if name in {"path", "state", "program", "working directory",
+                        "runs", "last exit code", "last exit status"}:
                 scalars[name] = value
             index += 1
             continue
-        if line.lstrip().startswith("#"):
-            raise SystemPaperLaunchctlParseError()
         raise SystemPaperLaunchctlParseError()
+    return service, scalars, blocks
+
+
+def parse_system_paper_launchctl_print(data: bytes) -> Mapping[str, Any]:
+    """Parse one exact System Paper service print without substring trust."""
+    service, scalars, blocks = _parse_launchctl_structure(data, _LABEL)
 
     required = {"path", "state", "program", "working directory", "runs"}
     if set(scalars).intersection(required) != required:
@@ -197,3 +187,35 @@ def parse_system_paper_launchctl_print(data: bytes) -> Mapping[str, Any]:
         "state": state,
         "last_exit_status": last_exit_status,
     }
+
+
+def parse_challenger_replacement_launchctl_print(
+    data: bytes, contract: Mapping[str, Any]
+) -> Mapping[str, Any]:
+    label = contract["service"]["label"]
+    service, scalars, blocks = _parse_launchctl_structure(data, label)
+    required = {"path", "state", "program", "working directory", "runs"}
+    environment = {}
+    for line in blocks.get("environment", ()):
+        match = _ENVIRONMENT.fullmatch("\t\t" + line)
+        if match is None or match.group(1) in environment:
+            raise SystemPaperLaunchctlParseError()
+        environment[match.group(1)] = match.group(2)
+    expected_environment = {
+        **contract["runtime"]["environment"], "XPC_SERVICE_NAME": label,
+    }
+    if (
+        set(scalars).intersection(required) != required
+        or set(blocks) != {"arguments", "environment"}
+        or scalars["path"] != contract["paths"]["target_plist"]
+        or scalars["state"] != "not running"
+        or scalars["program"] != contract["runtime"]["program_arguments"][0]
+        or blocks["arguments"] != contract["runtime"]["program_arguments"]
+        or scalars["working directory"] != contract["runtime"]["working_directory"]
+        or environment != expected_environment
+        or _integer(scalars["runs"], maximum=_MAX_RUNS) != 0
+        or scalars.get("last exit code", scalars.get("last exit status"))
+        != "(never exited)"
+    ):
+        raise SystemPaperLaunchctlParseError()
+    return {"service": service, "label": label, "runs": 0}

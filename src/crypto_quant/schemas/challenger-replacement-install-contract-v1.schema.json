@@ -3,7 +3,7 @@
   "$id": "https://crypto-quant.local/schemas/challenger-replacement-install-contract-v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "predecessor_release", "candidate_release", "github_verification", "plan", "deployment", "snapshot", "python", "service", "paths", "runtime", "schedule", "authority", "warnings"],
+  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "predecessor_release", "candidate_release", "github_verification", "plan", "deployment", "plist", "snapshot", "python", "service", "paths", "runtime", "schedule", "authority", "warnings"],
   "properties": {
     "$schema": {"const": "./challenger-replacement-install-contract-v1.schema.json"},
     "schema_version": {"const": "1.0.0"},
@@ -70,6 +70,11 @@
         "plist_sha256": {"$ref": "#/$defs/hash"}
       }
     },
+    "plist": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "file_sha256"],
+      "properties": {"path": {"$ref": "#/$defs/path"}, "file_sha256": {"$ref": "#/$defs/hash"}}
+    },
     "snapshot": {
       "type": "object", "additionalProperties": false,
       "required": ["root", "tree_hash", "file_count", "total_size_bytes", "root_device", "root_inode"],
@@ -97,10 +102,10 @@
     },
     "paths": {
       "type": "object", "additionalProperties": false,
-      "required": ["runtime_root", "deployment_root", "contract", "preflight_root", "install_receipt_root", "start_receipt_root", "event_root", "stdout", "stderr", "target_plist"],
+      "required": ["runtime_root", "deployment_root", "contract", "candidate_plist", "preflight_root", "install_receipt_root", "start_receipt_root", "event_root", "stdout", "stderr", "target_plist"],
       "properties": {
         "runtime_root": {"$ref": "#/$defs/path"}, "deployment_root": {"$ref": "#/$defs/path"},
-        "contract": {"$ref": "#/$defs/path"}, "preflight_root": {"$ref": "#/$defs/path"},
+        "contract": {"$ref": "#/$defs/path"}, "candidate_plist": {"$ref": "#/$defs/path"}, "preflight_root": {"$ref": "#/$defs/path"},
         "install_receipt_root": {"$ref": "#/$defs/path"}, "start_receipt_root": {"$ref": "#/$defs/path"},
         "event_root": {"$ref": "#/$defs/path"}, "stdout": {"$ref": "#/$defs/path"},
         "stderr": {"$ref": "#/$defs/path"}, "target_plist": {"$ref": "#/$defs/path"}

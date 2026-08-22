@@ -148,6 +148,13 @@ device/inode/uid/mode/nlink/size/SHA-256、`sys.version`和 Python 3.9 compatibi
 `PYTHONPATH=<snapshot>/src`、`PYTHONDONTWRITEBYTECODE=1`，禁止 user site 和任意环境变量。
 安装前用新进程从 snapshot import runtime CLI 并打印唯一 canonical identity。
 
+v0.67 deployment plist 仅作为 predecessor ancestry 保留，不得作为安装输入：它固定
+指向旧的 `deployment/snapshot/bin/python3`，与本节 v0.68 runtime identity 不同。
+renderer 必须从 v0.68 contract 的 runtime/schedule/path 字段确定性生成独立 candidate
+plist，owner-only no-overwrite 发布到
+`<deployment>/local.crypto-quant.challenger-replacement-v1.plist`；contract 绑定其路径与
+SHA-256。preflight 和 installer 每次都重放这份 candidate bytes，绝不安装 v0.67 plist。
+
 ## 7. Install contract
 
 `challenger-replacement-install-contract-v1` 绑定：
@@ -155,6 +162,7 @@ device/inode/uid/mode/nlink/size/SHA-256、`sys.version`和 Python 3.9 compatibi
 - v0.67 predecessor 全部身份；
 - v0.68 release/tag/main/CI/manifest 全部身份；
 - v0.67 deployment candidate/plist/v2 plan exact bytes/hash/id；
+- v0.68 独立 candidate plist exact path/hash；v0.67 plist 仅为 ancestry；
 - snapshot file inventory/tree hash/root identity；
 - Python identity/import transcript；
 - service label、schedule、ProgramArguments、working directory、environment；

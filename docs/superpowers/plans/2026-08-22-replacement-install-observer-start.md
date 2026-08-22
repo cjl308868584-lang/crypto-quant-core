@@ -28,6 +28,8 @@
 - `src/crypto_quant/challenger_replacement_install_trust.py`: 固定身份、路径、secure descriptor helpers、snapshot 与 contract codec/loader。
 - `src/crypto_quant/challenger_replacement_install_preflight.py`: 固定只读机器检查、3 次 public time GET、receipt codec/loader。
 - `src/crypto_quant/challenger_replacement_install.py`: plist no-replace publication、唯一 bootstrap 序列、rollback 与 install receipt。
+- `src/crypto_quant/challenger_replacement_deployment.py`: 复用 deployment 领域并增加 v0.68 candidate plist renderer。
+- `src/crypto_quant/system_paper_launchctl.py`: 复用 bounded launchctl grammar，增加 replacement-specific semantic parser。
 - `src/crypto_quant/challenger_replacement_start.py`: 只读 observer、首个自然成功机会验证、start receipt codec/publisher。
 - `src/crypto_quant/challenger_replacement_install_trust_cli.py`: 固定 snapshot/contract renderer 入口。
 - `src/crypto_quant/challenger_replacement_install_preflight_cli.py`: 固定 preflight receipt 入口。
@@ -155,7 +157,7 @@ Orphan staging is classified only by basename/stat and blocks that ceremony; nev
 
 - [ ] **Step 4: Build and load the fixed install contract**
 
-Bind release, plan, deployment/plist, snapshot inventory/root identity, Python executable identity/import transcript, fixed schedule/paths and exact authority. Release identity 只能通过固定 `gh api repos/cjl308868584-lang/crypto-quant-core`、exact HEAD 的 `gh run list` 和该 run 的 `gh run view` 三次只读查询获得；固定验证 PUBLIC/ADMIN、head SHA、conclusion 和 Python 3.9/3.12/macOS arm64 jobs。`/usr/bin/python3` 必须 regular/root-owned/group-world不可写，并绑定实际 device/inode/mode/nlink/size/hash；系统解释器的合法多 hardlink 不得冒充 owner-only evidence `nlink=1`。Canonical self-hash excludes only its own hash field using the existing `artifact_self_hash` convention. Reject any unknown key or different bytes.
+Bind release, plan, v0.67 deployment/plist ancestry, snapshot inventory/root identity, Python executable identity/import transcript, fixed schedule/paths and exact authority. Deterministically render and no-overwrite publish a separate v0.68 candidate plist from the contract; it must use `/usr/bin/python3` and the hash-addressed snapshot, while the v0.67 plist is never an install input. Release identity 只能通过固定 `gh api repos/cjl308868584-lang/crypto-quant-core`、exact HEAD 的 `gh run list` 和该 run 的 `gh run view` 三次只读查询获得；固定验证 PUBLIC/ADMIN、head SHA、conclusion 和 Python 3.9/3.12/macOS arm64 jobs。`/usr/bin/python3` 必须 regular/root-owned/group-world不可写，并绑定实际 device/inode/mode/nlink/size/hash；系统解释器的合法多 hardlink 不得冒充 owner-only evidence `nlink=1`。Canonical self-hash excludes only its own hash field using the existing `artifact_self_hash` convention. Reject any unknown key or different bytes.
 
 - [ ] **Step 5: Add the no-argument renderer CLI**
 
@@ -252,6 +254,8 @@ git commit -m "feat: add replacement install preflight receipt"
 **Files:**
 - Create: `src/crypto_quant/challenger_replacement_install.py`
 - Create: `src/crypto_quant/challenger_replacement_install_cli.py`
+- Modify: `src/crypto_quant/challenger_replacement_deployment.py`
+- Modify: `src/crypto_quant/system_paper_launchctl.py`
 - Create: `tests/test_challenger_replacement_install.py`
 - Modify: `tests/test_challenger_replacement_v068_release.py`
 
@@ -302,7 +306,7 @@ PYTHONPATH=src python3 -m unittest \
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 4**
+- [x] **Step 7: Commit Task 4**
 
 ```bash
 git add src/crypto_quant/challenger_replacement_install.py \
@@ -461,7 +465,7 @@ Parametrize every write/readback/file-fsync/dir-fsync/no-replace/bootstrap/post-
 
 - [ ] **Step 3: Add static scope/YAGNI gates**
 
-Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert the four production modules plus four thin CLI modules together remain strictly below 2,600 physical lines；其中 install trust+CLI 不高于 1,550、preflight+CLI 不高于 300、installer+CLI 不高于 350、observer/start+CLI 不高于 400。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
+Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert the four production modules plus four thin CLI modules together remain strictly below 2,600 physical lines；其中 install trust+CLI 不高于 1,575、preflight+CLI 不高于 300、installer+CLI 不高于 345、observer/start+CLI 不高于 385。allocation 调整只是将 candidate plist 的确定性渲染/绑定和 receipt 时间语义放入它们所属的 trust/install 层，四模块全局 2,600 上限不变；已有 deployment 模块只允许增加一个不超过 20 行的 replacement-specific plist renderer；已有 bounded launchctl parser 的 replacement 语义扩展 net diff 不高于 25 行。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
 
 - [ ] **Step 4: Run focused and full v0.68 tests**
 

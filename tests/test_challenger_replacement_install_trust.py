@@ -2,6 +2,7 @@ import copy
 import hashlib
 import json
 import os
+import plistlib
 import subprocess
 import sys
 import tempfile
@@ -102,6 +103,10 @@ def valid_contract():
             "deployment_hash": HASH,
             "plist_sha256": HASH,
         },
+        "plist": {
+            "path": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment/local.crypto-quant.challenger-replacement-v1.plist",
+            "file_sha256": "0" * 64,
+        },
         "snapshot": {
             "root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment/snapshots/" + HASH,
             "tree_hash": HASH,
@@ -131,6 +136,7 @@ def valid_contract():
             "runtime_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1",
             "deployment_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment",
             "contract": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment/challenger-replacement-install-contract-v1.json",
+            "candidate_plist": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment/local.crypto-quant.challenger-replacement-v1.plist",
             "preflight_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment/preflight-receipts",
             "install_receipt_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment/install-receipts",
             "start_receipt_root": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/evidence/start-receipts",
@@ -168,6 +174,12 @@ def valid_contract():
             "START_RECEIPT_NOT_YET_AVAILABLE",
         ],
     }
+    from crypto_quant.challenger_replacement_deployment import (
+        render_challenger_replacement_install_plist,
+    )
+    contract["plist"]["file_sha256"] = hashlib.sha256(
+        render_challenger_replacement_install_plist(contract)
+    ).hexdigest()
     identity = {key: value for key, value in contract.items()
                 if key not in ("contract_id", "contract_hash")}
     contract["contract_id"] = stable_id(
@@ -256,6 +268,32 @@ class ReplacementInstallTrustTests(unittest.TestCase):
             "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_INVALID",
         ):
             load_replacement_install_contract_bytes(body + b"\n")
+
+    def test_v068_candidate_plist_is_derived_from_contract_not_v067_plist(self):
+        import crypto_quant.challenger_replacement_install_trust as trust
+
+        contract = valid_contract()
+        body = trust.render_replacement_install_plist(contract)
+        value = plistlib.loads(body)
+        self.assertEqual(
+            value["ProgramArguments"], contract["runtime"]["program_arguments"]
+        )
+        self.assertEqual(
+            value["WorkingDirectory"], contract["runtime"]["working_directory"]
+        )
+        self.assertEqual(
+            value["EnvironmentVariables"], contract["runtime"]["environment"]
+        )
+        self.assertEqual(value["StartCalendarInterval"], [
+            {"Hour": item["hour"], "Minute": item["minute"]}
+            for item in contract["schedule"]
+        ])
+        self.assertEqual(
+            hashlib.sha256(body).hexdigest(), contract["plist"]["file_sha256"]
+        )
+        self.assertNotEqual(
+            contract["plist"]["file_sha256"], contract["deployment"]["plist_sha256"]
+        )
 
     def test_import_does_not_create_fixed_production_paths(self):
         script = r'''
@@ -692,6 +730,10 @@ raise SystemExit(9)
             )
             contract["contract_hash"] = artifact_self_hash(contract, "contract_hash")
             body = canonical_json(contract).encode()
+            plist_body = trust.render_replacement_install_plist(contract)
+            trust._publish_contract_exact(
+                deployment, Path(paths["candidate_plist"]).name, plist_body
+            )
             trust._publish_contract_exact(deployment, "contract.json", body)
             with mock.patch.object(
                 trust, "replacement_install_paths", return_value=paths
@@ -831,6 +873,7 @@ raise SystemExit(9)
             collect.assert_called_once_with(repository)
             ensure.assert_called_once_with(paths)
             python_identity.assert_called_once_with(result["snapshot"]["root"])
+            self.assertEqual(result["plist_outcome"], "PUBLISHED")
             self.assertEqual(result["contract_outcome"], "PUBLISHED")
 
     def test_release_input_collector_uses_exact_three_github_reads(self):

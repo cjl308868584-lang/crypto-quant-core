@@ -5,7 +5,6 @@ import os
 from datetime import datetime, timedelta, timezone
 from importlib import resources
 from pathlib import Path
-
 from jsonschema import Draft202012Validator
 from .canonical import canonical_json, stable_id, utc_datetime
 from .challenger_replacement_plan import _strict_json_bytes
@@ -206,7 +205,8 @@ def _run_fixed_commands():
 
 
 def _load_fixed_contract():
-    return _load_fixed_published_contract()
+    contract, contract_bytes, _ = _load_fixed_published_contract()
+    return contract, contract_bytes
 
 
 def _fixed_checks(contract, results):
