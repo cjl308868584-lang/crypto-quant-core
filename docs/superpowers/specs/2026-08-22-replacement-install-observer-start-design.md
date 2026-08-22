@@ -41,7 +41,7 @@ v0.68 代码必须冻结并测试以下已发布身份：
 - package version: `0.67.0`;
 - evaluator manifest version: `1.61.0`;
 - evaluator manifest hash:
-  `2b72a470a2f210461a3a6753fd3d603fee9b90df76e825deea3b9bde61a26110`;
+`2b72a470a2f210461a3a6753fd3d603fee9b90df76e825deea3b9bde61a26110`;
 - main CI run: `32572208544`;
 - main CI jobs: Python 3.9, Python 3.12, macOS 15 arm64 均为 `success`;
 - deployment candidate:
@@ -53,7 +53,10 @@ v0.68 代码必须冻结并测试以下已发布身份：
 ### 3.2 v0.68 最终发布身份
 
 代码不硬编码尚未存在的 v0.68 commit 或 tag object。未来 ceremony 中的固定
-renderer 必须从受审核的固定 repository 路径只读验证：
+renderer 必须从受审核的固定 repository 路径只读验证，并只允许 3 次固定、
+只读 GitHub 查询：仓库 visibility/ADMIN、exact HEAD 的 main workflow run、该 run
+的三个 jobs。GitHub 查询与市场请求分开计数：
+`github_request_count=3`、`market_request_count=0`：
 
 1. `HEAD == origin/main == v0.68.0^{}`;
 2. `v0.68.0` 对象类型为 annotated `tag`;
@@ -138,7 +141,10 @@ snapshot 在相同 retained parent dirfd 下使用非规范 nonce staging direct
 ### 6.3 Python 身份
 
 plist 固定使用 `/usr/bin/python3`，同时在 contract 中绑定 executable 的
-device/inode/uid/mode/size/SHA-256、`sys.version`和 Python 3.9 compatibility。快照的
+device/inode/uid/mode/nlink/size/SHA-256、`sys.version`和 Python 3.9 compatibility。
+`/usr/bin/python3` 是 root-owned 系统文件，目标机实证可有多个系统 hardlink；因此
+不套用 owner-only evidence 的 `nlink=1`，而是绑定并在每次 replay 精确复核其实际
+`st_nlink`，同时要求 regular、uid=0 且 group/world 不可写。快照的
 `PYTHONPATH=<snapshot>/src`、`PYTHONDONTWRITEBYTECODE=1`，禁止 user site 和任意环境变量。
 安装前用新进程从 snapshot import runtime CLI 并打印唯一 canonical identity。
 
@@ -273,8 +279,11 @@ production CLI 分为四个无参数入口：
 order 或 receipt filename 覆盖。测试通过私有低层 wrapper/mock 建立 fixture，不在生产
 API 暴露 arbitrary callback/fault injector。
 
-网络仅存在于未来 preflight 的 3 次固定 public Binance time GET，以及安装后
-自然 Runner 的 v0.67 固定 public GET。renderer/installer/observer/start publisher 网络计数为 0。
+发布后的 renderer 只允许上文 3 次固定只读 GitHub 查询；preflight 只允许 3 次
+固定 public Binance time GET；安装后自然 Runner 只允许 v0.67 固定 public GET。
+installer/observer/start publisher 的 GitHub/市场网络计数均为 0。GitHub token
+只能由 `gh` 进程读取，不进入 snapshot、contract、plist 或 LaunchAgent 环境；
+任何交易所 private/account/credential 请求始终为 0。
 
 ## 13. 威胁模型
 
@@ -329,7 +338,7 @@ v0.68 发布前必须证明：
 v0.68 发布后，真实 ceremony 需要一个合并审批包，精确列出：
 
 1. 将写入的 production roots/plist/receipt paths；
-2. 固定 command 和唯一允许的 3 次 public time GET；
+2. renderer 固定 3 次 GitHub 只读查询、preflight 固定 3 次 public time GET；
 3. rollback 与 post-bootstrap unknown-state 事故边界；
 4. 首个自然槽位和第二槽前的 observer 时间门；
 5. 不含 kickstart、手工 Runner、凭据、Broker、order 的声明。

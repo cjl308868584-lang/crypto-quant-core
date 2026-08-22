@@ -15,7 +15,7 @@
 - 基线必须为 annotated `v0.67.0` peeled commit `ca022edccdcbb2d28b1ea25002e5f19512795e3e`。
 - v0.68 最终状态固定为 `REPLACEMENT_INSTALL_TRUST_CHAIN_CODE_RELEASED_NOT_INSTALLED`。
 - `production_activation=false`、`replacement_start_authorized=false`、`real_orders_allowed=false`。
-- 本版本 production root/plist/service/network/state-write/Broker/order 计数全部为 0。
+- 本版本不执行 ceremony，因此 production root/plist/service/network/state-write/Broker/order 计数全部为 0。未来 renderer 仅允许 3 次固定 GitHub 只读查询；未来 preflight 仅允许 3 次固定 Binance public time GET。
 - 不执行真实 snapshot render、preflight、plist installation、`launchctl bootstrap` 或 start receipt publication。
 - 不接受 path、URL、time、slot、command、environment、credential、Broker、order 或 filename override。
 - 不引入 SQLite、scheduler、Broker、order lifecycle、交易所适配框架、第三方运行时依赖或 UI。
@@ -128,7 +128,7 @@ git commit -m "feat: define replacement install trust contracts"
 - Create: `src/crypto_quant/challenger_replacement_install_trust_cli.py`
 
 **Interfaces:**
-- Produces: `render_fixed_replacement_snapshot_and_contract() -> Mapping[str, object]` with no public arguments.
+- Produces: `render_fixed_replacement_snapshot_and_contract() -> Mapping[str, object]` with no public arguments；未来 ceremony 固定 `github_request_count=3`、`market_request_count=0`。
 - Produces: `replay_replacement_snapshot(contract: Mapping[str, object]) -> Mapping[str, object]`.
 - Produces: CLI `main(argv: Optional[Sequence[str]] = None) -> int`; only empty argv is valid.
 - Consumes: exact v0.68 evaluator manifest inventory at ceremony time; code tests use private patched repo/root boundaries.
@@ -155,7 +155,7 @@ Orphan staging is classified only by basename/stat and blocks that ceremony; nev
 
 - [ ] **Step 4: Build and load the fixed install contract**
 
-Bind release, plan, deployment/plist, snapshot inventory/root identity, Python executable identity/import transcript, fixed schedule/paths and exact authority. Canonical self-hash excludes only its own hash field using the existing `artifact_self_hash` convention. Reject any unknown key or different bytes.
+Bind release, plan, deployment/plist, snapshot inventory/root identity, Python executable identity/import transcript, fixed schedule/paths and exact authority. Release identity 只能通过固定 `gh api repos/cjl308868584-lang/crypto-quant-core`、exact HEAD 的 `gh run list` 和该 run 的 `gh run view` 三次只读查询获得；固定验证 PUBLIC/ADMIN、head SHA、conclusion 和 Python 3.9/3.12/macOS arm64 jobs。`/usr/bin/python3` 必须 regular/root-owned/group-world不可写，并绑定实际 device/inode/mode/nlink/size/hash；系统解释器的合法多 hardlink 不得冒充 owner-only evidence `nlink=1`。Canonical self-hash excludes only its own hash field using the existing `artifact_self_hash` convention. Reject any unknown key or different bytes.
 
 - [ ] **Step 5: Add the no-argument renderer CLI**
 
@@ -197,7 +197,7 @@ git commit -m "feat: build immutable replacement install snapshot"
 
 - [ ] **Step 1: Write platform, command and network-count RED tests**
 
-Test exact Darwin arm64/uid/home/timezone, fixed origin/main/tag/admin/clean checks, absent service/plist/root, old service not loaded, 10 GB/100,000 inode thresholds, `pmset`, Python import identity, credential scan and exactly three GETs to `https://data-api.binance.vision/api/v3/time`. Unsupported platform must make command/network/write counts zero.
+Test exact Darwin arm64/uid/home/timezone, fixed local origin/main/tag/clean checks, absent service/plist/root, old service not loaded, 10 GB/100,000 inode thresholds, `pmset`, Python import identity, credential scan and exactly three GETs to `https://data-api.binance.vision/api/v3/time`. GitHub visibility/ADMIN/main-CI 已由 contract renderer 的固定 transcript 绑定，preflight 只重放该 transcript，不重复 GitHub 网络。Unsupported platform must make command/network/write counts zero.
 
 Add tests for oversized command output, timeout, non-UTF8 output, wrong Git identity, non-annotated tag, stale contract, clock skew, partial network success and receipt expiry.
 
@@ -461,7 +461,7 @@ Parametrize every write/readback/file-fsync/dir-fsync/no-replace/bootstrap/post-
 
 - [ ] **Step 3: Add static scope/YAGNI gates**
 
-Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert the new production modules together remain below 2,000 physical lines; if the limit is exceeded, stop and simplify before release.
+Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert the four production modules plus four thin CLI modules together remain strictly below 2,600 physical lines；其中 install trust+CLI 不高于 1,550、preflight+CLI 不高于 300、installer+CLI 不高于 350、observer/start+CLI 不高于 400。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
 
 - [ ] **Step 4: Run focused and full v0.68 tests**
 
@@ -578,4 +578,4 @@ Before remote writes, recheck public target repository, origin, ADMIN, clean bra
 
 - [ ] **Step 9: Preserve the installation approval boundary**
 
-After release, assemble one exact approval package listing production paths, three public time GETs, fixed launchctl argv, rollback/unknown-state rules and the first-natural-slot observation window. Do not render/install/start until that package is explicitly approved.
+After release, assemble one exact approval package listing production paths, renderer 三次 GitHub 只读查询、preflight 三次 public time GET、fixed launchctl argv, rollback/unknown-state rules and the first-natural-slot observation window. Do not render/install/start until that package is explicitly approved.

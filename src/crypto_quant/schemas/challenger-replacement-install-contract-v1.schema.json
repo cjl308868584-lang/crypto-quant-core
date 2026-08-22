@@ -3,7 +3,7 @@
   "$id": "https://crypto-quant.local/schemas/challenger-replacement-install-contract-v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "predecessor_release", "candidate_release", "plan", "deployment", "snapshot", "python", "service", "paths", "runtime", "schedule", "authority", "warnings"],
+  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "predecessor_release", "candidate_release", "github_verification", "plan", "deployment", "snapshot", "python", "service", "paths", "runtime", "schedule", "authority", "warnings"],
   "properties": {
     "$schema": {"const": "./challenger-replacement-install-contract-v1.schema.json"},
     "schema_version": {"const": "1.0.0"},
@@ -34,6 +34,32 @@
         "main_ci_jobs": {"const": {"Python 3.9": "success", "Python 3.12": "success", "macOS 15 arm64": "success"}}
       }
     },
+    "github_verification": {
+      "type": "object", "additionalProperties": false,
+      "required": ["request_count", "repository", "main_run", "jobs", "transcripts"],
+      "properties": {
+        "request_count": {"const": 3},
+        "repository": {
+          "type": "object", "additionalProperties": false,
+          "required": ["name_with_owner", "visibility", "admin"],
+          "properties": {"name_with_owner": {"const": "cjl308868584-lang/crypto-quant-core"}, "visibility": {"const": "PUBLIC"}, "admin": {"const": true}}
+        },
+        "main_run": {
+          "type": "object", "additionalProperties": false,
+          "required": ["run_id", "head_sha", "conclusion"],
+          "properties": {"run_id": {"type": "integer", "minimum": 1}, "head_sha": {"$ref": "#/$defs/commit"}, "conclusion": {"const": "success"}}
+        },
+        "jobs": {"const": {"Python 3.9": "success", "Python 3.12": "success", "macOS 15 arm64": "success"}},
+        "transcripts": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["argv", "exit_code", "stdout_sha256", "stderr_sha256"],
+            "properties": {"argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "exit_code": {"const": 0}, "stdout_sha256": {"$ref": "#/$defs/hash"}, "stderr_sha256": {"$ref": "#/$defs/hash"}}
+          }
+        }
+      }
+    },
     "plan": {"$ref": "#/$defs/binding"},
     "deployment": {
       "type": "object", "additionalProperties": false,
@@ -56,11 +82,11 @@
     },
     "python": {
       "type": "object", "additionalProperties": false,
-      "required": ["path", "device", "inode", "owner_uid", "mode", "size_bytes", "sha256", "sys_version", "import_stdout_sha256", "import_stderr_sha256"],
+      "required": ["path", "device", "inode", "owner_uid", "mode", "link_count", "size_bytes", "sha256", "sys_version", "import_stdout_sha256", "import_stderr_sha256"],
       "properties": {
         "path": {"$ref": "#/$defs/path"}, "device": {"type": "integer", "minimum": 0},
         "inode": {"type": "integer", "minimum": 1}, "owner_uid": {"type": "integer", "minimum": 0},
-        "mode": {"type": "integer", "minimum": 0, "maximum": 511}, "size_bytes": {"type": "integer", "minimum": 1},
+        "mode": {"type": "integer", "minimum": 0, "maximum": 511}, "link_count": {"type": "integer", "minimum": 1}, "size_bytes": {"type": "integer", "minimum": 1},
         "sha256": {"$ref": "#/$defs/hash"}, "sys_version": {"type": "string", "minLength": 1},
         "import_stdout_sha256": {"$ref": "#/$defs/hash"}, "import_stderr_sha256": {"$ref": "#/$defs/hash"}
       }
