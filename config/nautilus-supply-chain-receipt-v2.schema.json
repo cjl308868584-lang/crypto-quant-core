@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/nautilus-supply-chain-receipt-v2.schema.json",
+  "title": "Nautilus v0.65 Supply Chain Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "plan_id", "plan_hash", "dependency_lock", "transcripts", "authority_counters", "status"],
+  "properties": {
+    "$schema": {"const": "./nautilus-supply-chain-receipt-v2.schema.json"},
+    "schema_version": {"const": "2.0.0"},
+    "receipt_id": {"pattern": "^nautilus_v065_supply_chain_(failure_)?[0-9a-f]{64}$"},
+    "receipt_hash": {"$ref": "#/$defs/hash"},
+    "plan_id": {"pattern": "^nautilus_v065_plan_[0-9a-f]{64}$"},
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "dependency_lock": {"$ref": "#/$defs/lock"},
+    "platform": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operating_system", "operating_system_major", "machine", "python_implementation", "python_version"],
+      "properties": {
+        "operating_system": {"const": "macOS"},
+        "operating_system_major": {"const": 15},
+        "machine": {"const": "arm64"},
+        "python_implementation": {"const": "CPython"},
+        "python_version": {"pattern": "^3\\.12\\.[0-9]+$"}
+      }
+    },
+    "tools": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "version", "executable_sha256_before", "executable_sha256_after"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "version": {"type": "string", "minLength": 1},
+          "executable_sha256_before": {"$ref": "#/$defs/hash"},
+          "executable_sha256_after": {"$ref": "#/$defs/hash"}
+        }
+      }
+    },
+    "transcripts": {
+      "type": "array", "minItems": 0,
+      "items": {"$ref": "#/$defs/transcript"}
+    },
+    "verified_files": {
+      "type": "array", "minItems": 2,
+      "items": {"$ref": "#/$defs/distribution"}
+    },
+    "license": {
+      "type": "object", "additionalProperties": false,
+      "required": ["expression", "size", "sha256"],
+      "properties": {
+        "expression": {"const": "LGPL-3.0-or-later"},
+        "size": {"const": 7651},
+        "sha256": {"const": "ee907919ec88c9c017b1f8b608db20960b6598aefcc4fe58820bde955d65ed3c"}
+      }
+    },
+    "official_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tag", "tag_object", "peeled_commit"],
+      "properties": {
+        "tag": {"const": "v1.230.0"},
+        "tag_object": {"const": "112d335088ec11cdd1d60038b16c8fe56406aead"},
+        "peeled_commit": {"const": "8160730c7c550480b0a439fb11086a4c4de15f0b"}
+      }
+    },
+    "slsa": {
+      "type": "object", "additionalProperties": false,
+      "required": ["verified", "subject_filename", "subject_sha256"],
+      "properties": {
+        "verified": {"const": true},
+        "subject_filename": {"const": "nautilus_trader-1.230.0-cp312-cp312-macosx_15_0_arm64.whl"},
+        "subject_sha256": {"const": "033f6207d1c52095d64a7644f43b90cab939c2038044db70a4165f2acef3d079"}
+      }
+    },
+    "authority_counters": {
+      "type": "object", "additionalProperties": false,
+      "required": ["credential_reads", "market_requests", "account_requests", "broker_requests", "orders", "production_state_writes"],
+      "properties": {
+        "credential_reads": {"const": 0},
+        "market_requests": {"const": 0},
+        "account_requests": {"const": 0},
+        "broker_requests": {"const": 0},
+        "orders": {"const": 0},
+        "production_state_writes": {"const": 0}
+      }
+    },
+    "failure": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reason_code", "failed_stage", "completed_transcript_count", "failed_command"],
+      "properties": {
+        "reason_code": {"type": "string", "minLength": 1},
+        "failed_stage": {"type": "string", "minLength": 1},
+        "completed_transcript_count": {"type": "integer", "minimum": 0, "maximum": 25},
+        "failed_command": {"type": ["object", "null"]}
+      }
+    },
+    "status": {"enum": ["SUPPLY_CHAIN_VERIFIED_SANDBOX_READY", "SUPPLY_CHAIN_ACQUISITION_FAILED"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "SUPPLY_CHAIN_VERIFIED_SANDBOX_READY"}}, "required": ["status"]},
+      "then": {
+        "required": ["platform", "tools", "verified_files", "license", "official_source", "slsa"],
+        "not": {"required": ["failure"]},
+        "properties": {"transcripts": {"minItems": 25, "maxItems": 25}}
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "SUPPLY_CHAIN_ACQUISITION_FAILED"}}, "required": ["status"]},
+      "then": {
+        "required": ["failure"],
+        "not": {"anyOf": [{"required": ["platform"]}, {"required": ["tools"]}, {"required": ["verified_files"]}, {"required": ["license"]}, {"required": ["official_source"]}, {"required": ["slsa"]}]}
+      }
+    }
+  ],
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "distribution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "version", "filename", "size", "sha256", "source_origin"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "filename": {"type": "string", "pattern": "^[A-Za-z0-9_.+\\-]+\\.whl$"},
+        "size": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "source_origin": {"const": "https://files.pythonhosted.org"}
+      }
+    },
+    "lock": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format", "version", "revision", "requires_python", "path", "file_sha256", "distributions"],
+      "properties": {
+        "format": {"const": "uv.lock"},
+        "version": {"const": 1},
+        "revision": {"type": "integer", "minimum": 1},
+        "requires_python": {"const": "==3.12.*"},
+        "path": {"const": "sandboxes/nautilus-v065/uv.lock"},
+        "file_sha256": {"$ref": "#/$defs/hash"},
+        "distributions": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/distribution"}}
+      }
+    },
+    "transcript": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "argv", "exit_code", "environment", "started_at", "completed_at", "executable_path", "executable_device_before", "executable_inode_before", "executable_mode_before", "executable_size_before", "executable_sha256_before", "executable_device_after", "executable_inode_after", "executable_mode_after", "executable_size_after", "executable_sha256_after", "stdout_encoding", "stdout_bytes", "stdout_size", "stdout_sha256", "stderr_encoding", "stderr_bytes", "stderr_size", "stderr_sha256"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "exit_code": {"const": 0},
+        "environment": {
+          "type": "object", "additionalProperties": false,
+          "required": ["HOME", "LANG", "LC_ALL", "PATH", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"],
+          "properties": {
+            "HOME": {"type": "string", "pattern": "^/"},
+            "LANG": {"const": "C"},
+            "LC_ALL": {"const": "C"},
+            "PATH": {"const": "/usr/bin:/bin:/usr/sbin:/sbin"},
+            "GIT_CONFIG_GLOBAL": {"const": "/dev/null"},
+            "GIT_CONFIG_NOSYSTEM": {"const": "1"},
+            "GIT_TERMINAL_PROMPT": {"const": "0"}
+          }
+        },
+        "started_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"},
+        "completed_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"},
+        "executable_path": {"type": "string", "pattern": "^/"},
+        "executable_device_before": {"type": "integer", "minimum": 1},
+        "executable_inode_before": {"type": "integer", "minimum": 1},
+        "executable_mode_before": {"type": "integer", "minimum": 0},
+        "executable_size_before": {"type": "integer", "minimum": 1},
+        "executable_sha256_before": {"$ref": "#/$defs/hash"},
+        "executable_device_after": {"type": "integer", "minimum": 1},
+        "executable_inode_after": {"type": "integer", "minimum": 1},
+        "executable_mode_after": {"type": "integer", "minimum": 0},
+        "executable_size_after": {"type": "integer", "minimum": 1},
+        "executable_sha256_after": {"$ref": "#/$defs/hash"},
+        "stdout_encoding": {"enum": ["utf-8", "base64"]},
+        "stdout_bytes": {"type": "string"},
+        "stdout_size": {"type": "integer", "minimum": 0, "maximum": 4194304},
+        "stdout_sha256": {"$ref": "#/$defs/hash"},
+        "stderr_encoding": {"enum": ["utf-8", "base64"]},
+        "stderr_bytes": {"type": "string"},
+        "stderr_size": {"type": "integer", "minimum": 0, "maximum": 4194304},
+        "stderr_sha256": {"$ref": "#/$defs/hash"}
+      }
+    }
+  }
+}

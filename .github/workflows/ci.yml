@@ -19,15 +19,16 @@ jobs:
       matrix:
         python-version: ["3.9", "3.12"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Configure Asia/Shanghai runtime timezone
         run: |
           sudo ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
           echo Asia/Shanghai | sudo tee /etc/timezone >/dev/null
           test "$(readlink /etc/localtime)" = "/usr/share/zoneinfo/Asia/Shanghai"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -63,3 +64,41 @@ jobs:
           test_challenger_replacement_plan_supersession.FixedSupersessionPublisherTests
           test_challenger_replacement_plan_supersession.SupersessionCliBoundaryTests.test_temporary_git_ceremony_transitions_c0_through_c4_exactly
       - run: make test
+
+  nautilus-sandbox-replay:
+    name: nautilus-sandbox (3.12, macos-15 arm64)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Verify frozen macOS arm64 Python identity
+        run: |
+          test "$(uname -m)" = "arm64"
+          test "$(sw_vers -productVersion | cut -d. -f1)" = "15"
+          python -c 'import platform,sys; assert platform.system()=="Darwin"; assert platform.machine()=="arm64"; assert sys.version_info[:2]==(3,12)'
+      - name: Install deterministic core only
+        run: |
+          python -m pip install --upgrade pip setuptools==82.0.0 wheel==0.47.0
+          python -m pip install -r requirements.lock
+          python -m pip install -e . --no-deps
+      - name: Replay committed v0.65 inconclusive evidence
+        run: |
+          PYTHONPATH=src:tests python -m unittest -v test_nautilus_v065_artifacts
+          PYTHONPATH=src python - <<'PY'
+          from pathlib import Path
+          from crypto_quant.nautilus_v065_plan import load_nautilus_v065_plan
+          from crypto_quant.nautilus_v065_ceremony_cli import load_nautilus_v065_formal_completion
+          root = Path.cwd()
+          plan = load_nautilus_v065_plan((root / "artifacts/nautilus-sandbox/nautilus-e2e-spike-plan-v0.65.0.json").resolve())
+          result = load_nautilus_v065_formal_completion((root / "artifacts/nautilus-sandbox/v0.65.0").resolve(), expected_plan=plan)
+          comparison = result["comparison"]
+          assert comparison["conclusion"] == "INCONCLUSIVE_KEEP_CURRENT_CORE"
+          assert comparison["reason_code_or_null"] == "NAUTILUS_V065_PLATFORM_MISMATCH"
+          assert comparison["runner_invocation_count"] == 0
+          PY

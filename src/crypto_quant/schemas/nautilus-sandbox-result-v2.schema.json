@@ -1,0 +1,24 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://crypto-quant.local/schemas/nautilus-sandbox-result-v2.schema.json",
+  "type":"object","additionalProperties":false,
+  "required":["$schema","schema_version","result_id","result_hash","request_id","request_hash","engine","scenario_results","fresh_process_replay_verified","safety_counters"],
+  "properties":{
+    "$schema":{"const":"./nautilus-sandbox-result-v2.schema.json"},
+    "schema_version":{"const":"2.0.0"},
+    "result_id":{"pattern":"^nautilus_v065_result_[0-9a-f]{64}$"},
+    "result_hash":{"$ref":"#/$defs/hash"},
+    "request_id":{"pattern":"^nautilus_v065_request_[0-9a-f]{64}$"},
+    "request_hash":{"$ref":"#/$defs/hash"},
+    "engine":{"enum":["CURRENT_CORE_REFERENCE_V1","NAUTILUS_TRADER_1.230.0"]},
+    "scenario_results":{"type":"array","minItems":4,"maxItems":4,"items":{"$ref":"#/$defs/scenario_result"}},
+    "fresh_process_replay_verified":{"const":true},
+    "safety_counters":{"type":"object","additionalProperties":false,"required":["credential_reads","network_requests","live_adapter_imports","broker_requests","real_orders","production_state_writes","second_engine_creations"],"properties":{"credential_reads":{"type":"integer","minimum":0,"maximum":9007199254740991},"network_requests":{"type":"integer","minimum":0,"maximum":9007199254740991},"live_adapter_imports":{"type":"integer","minimum":0,"maximum":9007199254740991},"broker_requests":{"type":"integer","minimum":0,"maximum":9007199254740991},"real_orders":{"type":"integer","minimum":0,"maximum":9007199254740991},"production_state_writes":{"type":"integer","minimum":0,"maximum":9007199254740991},"second_engine_creations":{"type":"integer","minimum":0,"maximum":9007199254740991}}}
+  },
+  "$defs":{
+    "hash":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "decimal":{"type":"string","pattern":"^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
+    "result_event":{"type":"object","additionalProperties":false,"required":["sequence","kind","event_hash"],"properties":{"sequence":{"type":"integer","minimum":1,"maximum":3},"kind":{"enum":["ORDER_ACCEPTED","ORDER_REJECTED","FILL"]},"status":{"enum":["FILLED","REJECTED_MIN_NOTIONAL"]},"price":{"$ref":"#/$defs/decimal"},"quantity":{"$ref":"#/$defs/decimal"},"fee_usdt":{"$ref":"#/$defs/decimal"},"event_hash":{"$ref":"#/$defs/hash"}}},
+    "scenario_result":{"type":"object","additionalProperties":false,"required":["scenario","scenario_hash","status","requested_quantity","filled_quantity","average_price","fee_usdt","ending_cash_usdt","ending_position_eth","realized_pnl_usdt","unrealized_pnl_usdt","net_pnl_usdt","events"],"properties":{"scenario":{"enum":["IMMEDIATE_FULL","PARTIAL_THEN_FULL","BELOW_MINIMUM_REJECTED","FRESH_PROCESS_REPLAY"]},"scenario_hash":{"$ref":"#/$defs/hash"},"status":{"enum":["FILLED","REJECTED_MIN_NOTIONAL"]},"requested_quantity":{"$ref":"#/$defs/decimal"},"filled_quantity":{"$ref":"#/$defs/decimal"},"average_price":{"$ref":"#/$defs/decimal"},"fee_usdt":{"$ref":"#/$defs/decimal"},"ending_cash_usdt":{"$ref":"#/$defs/decimal"},"ending_position_eth":{"$ref":"#/$defs/decimal"},"realized_pnl_usdt":{"$ref":"#/$defs/decimal"},"unrealized_pnl_usdt":{"$ref":"#/$defs/decimal"},"net_pnl_usdt":{"$ref":"#/$defs/decimal"},"events":{"type":"array","minItems":1,"maxItems":3,"items":{"$ref":"#/$defs/result_event"}}}}
+  }
+}
