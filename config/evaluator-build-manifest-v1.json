@@ -309,7 +309,7 @@
     "src/crypto_quant/challenger_replacement_plan_supersession.py": "d1f051bd4b02c2954bf67bd8cdd9473e1188148106208da4b07f596056e6aa66",
     "src/crypto_quant/challenger_replacement_plan_supersession_cli.py": "a97ccaf8ecedde4155417b738fc88cd656a1b7c6c99bcfc8260529397384dfd6",
     "src/crypto_quant/challenger_replacement_plan_v2.py": "897f3abe1c51953c05ac71bf139c72feb2770c72e88625d911e2986dc2de098f",
-    "src/crypto_quant/challenger_replacement_runtime.py": "5005eeeb3acb4c82915adee8a38b1a48db8adb015692096efd8517db83467b54",
+    "src/crypto_quant/challenger_replacement_runtime.py": "e155b6e6ec9d14d403ae25b5e210992708be494b4d8b0ba823d2d81531cd3e87",
     "src/crypto_quant/challenger_replacement_supersession_publish.py": "70b1fbf5f129c3136381a13f5e5787b8a7ebe88cb42358cbbb790ed80b8778ea",
     "src/crypto_quant/contemporaneous_capture.py": "dd1ee4d7e7ad1033d7a641d2a2666ed478bcc49c4e77c04b1399a259827dabf3",
     "src/crypto_quant/context_cycle_orchestrator.py": "b4172ca6a1ca23bb91083188082f909246f6d4e6f6605748b802b9908c254639",
@@ -477,7 +477,7 @@
     "tests/test_challenger_replacement_plan.py": "a9708ba025395d0d6da01ab404558908355c7f11b2008b7ecac377df0f4b1833",
     "tests/test_challenger_replacement_plan_supersession.py": "98a8250ac9128dc84d4f1a6aca79aa162ee4a10392ace7048cb25692eddf9ab1",
     "tests/test_challenger_replacement_plan_v2.py": "656e922601ba524d2779c15932bd622817d0d397ba0f50b0d0d62c6b35c7e289",
-    "tests/test_challenger_replacement_runtime.py": "944bbbb4bca35aba8ce2d9c835232142c2eb1d991a473d9fc615d2320abf44f0",
+    "tests/test_challenger_replacement_runtime.py": "ad37b577bab22baea5902db44117d2bb81bb6ab859279d3af68a2ea4a500823b",
     "tests/test_challenger_replacement_v066_release.py": "ff12bc35e6d337092385451fa4d0106a147d3e71cba3a2382812b6bcdead5519",
     "tests/test_estimators.py": "507054d2818a8b767a84fbec6d9344302cdc6a91122d966669a097acc844673f",
     "tests/test_nautilus_evidence_adapter.py": "70dd0688ef9163320cbe241f9e86d47f46ac5401c407a92ce5c14c7f2529dbf1",
@@ -514,7 +514,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "47c3d674c8eb0d787ce88cc7c28b69b4c7ce10368c68eea29efa8d1d939dec4f",
+  "build_input_tree_hash": "f22df35dd1a2c9dbf0885406fa5f8f7f6167efde1ac9a4e71049bc2c01ea86ae",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -522,5 +522,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "c5af2d2305fcc2afe4dc9d534f036bf340db2f87ef788d8b7834d652f4e9c2f8"
+  "manifest_hash": "c2f2288a69c2e370c62db2d58db9a241023f5c8edce87905d5d5e74d11e9fe3e"
 }

@@ -56,6 +56,11 @@ def _utc_now():
     return utc_datetime(datetime.now(timezone.utc))
 
 
+def _stage_time(durable_boundary):
+    now = _utc_now()
+    return durable_boundary if _time(now) < _time(durable_boundary) else now
+
+
 def _payload(event):
     try:
         document = json.loads(event.final_bytes.decode("utf-8"))
@@ -373,7 +378,7 @@ def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
             token = projection["last_event_hash"]
             state.append(
                 event_type=_FAILURE, slot_id=slot_id, worker_id=worker_id,
-                recorded_at=_utc_now(),
+                recorded_at=_stage_time(existing["input_recorded_at"]),
                 payload={"failed_after_event_hash": token,
                          "failed_stage": "INPUT_PREPARED",
                          "reason_code": "CHALLENGER_REPLACEMENT_DECISION_BUILD_FAILED"},
@@ -383,7 +388,7 @@ def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
         decision_bytes = canonical_json(decision).encode("utf-8")
         state.append(
             event_type="RESULT_PREPARED", slot_id=slot_id, worker_id=worker_id,
-            recorded_at=_utc_now(),
+            recorded_at=_stage_time(existing["input_recorded_at"]),
             payload={
                 "input_event_hash": existing["input_event_hash"],
                 "input_event_sequence": existing["input_event_sequence"],
@@ -399,7 +404,7 @@ def run_challenger_replacement_slot(*, state, capture, observed_at, worker_id):
     if existing["stage"] == "RESULT_PREPARED":
         state.append(
             event_type="SLOT_SUCCEEDED", slot_id=slot_id, worker_id=worker_id,
-            recorded_at=_utc_now(),
+            recorded_at=_stage_time(existing["result_recorded_at"]),
             payload={
                 "input_event_hash": existing["input_event_hash"],
                 "input_event_sequence": existing["input_event_sequence"],

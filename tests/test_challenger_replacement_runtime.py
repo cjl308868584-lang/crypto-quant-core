@@ -333,6 +333,37 @@ class SlotRuntimeTests(unittest.TestCase):
                 observed_at=later_genesis["captured_at"], worker_id="reset-worker")
         self.assertEqual(tuple(self.state.replay()["events"]), before)
 
+    def test_clock_rollback_uses_durable_boundary_for_failure_terminal(self):
+        capture = fixture_capture()
+        with patch.object(runtime_module, "build_challenger_replacement_decision",
+                          side_effect=ValueError("fixture failure")), \
+             patch.object(runtime_module, "_utc_now",
+                          return_value="2026-08-22T04:04:59.999Z"), \
+             self.assertRaisesRegex(ChallengerReplacementRuntimeError,
+                                     "DECISION_BUILD_FAILED"):
+            run_challenger_replacement_slot(
+                state=self.state, capture=capture,
+                observed_at=capture["captured_at"], worker_id="worker")
+        projection = self.state.replay()
+        self.assertEqual((len(projection["events"]), projection["failed_slot_count"]),
+                         (2, 1))
+        failure_header = json.loads(projection["events"][-1].final_bytes)
+        self.assertEqual(failure_header["recorded_at"], capture["captured_at"])
+
+    def test_clock_rollback_floors_result_and_success_at_durable_boundary(self):
+        capture = fixture_capture()
+        with patch.object(runtime_module, "_utc_now", side_effect=(
+            "2026-08-22T04:04:59.999Z", "2026-08-22T04:04:59.998Z")):
+            result = run_challenger_replacement_slot(
+                state=self.state, capture=capture,
+                observed_at=capture["captured_at"], worker_id="worker")
+        self.assertEqual(result["stage"], "SLOT_SUCCEEDED")
+        headers = [json.loads(event.final_bytes) for event in self.state.replay()["events"]]
+        self.assertEqual(
+            [header["recorded_at"] for header in headers],
+            [capture["captured_at"]] * 3,
+        )
+
 
 class CrashRecoveryTests(unittest.TestCase):
     def setUp(self):
