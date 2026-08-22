@@ -5,9 +5,12 @@ import hashlib
 import os
 import stat
 from datetime import datetime, timedelta, timezone
+from importlib import resources
 from pathlib import Path
 
-from .canonical import canonical_json, utc_datetime
+from jsonschema import Draft202012Validator
+
+from .canonical import canonical_json, stable_id, utc_datetime
 from .challenger_replacement_live_input import (
     _utc_millis,
     acquire_challenger_replacement_live_capture,
@@ -17,6 +20,7 @@ from .challenger_replacement_install_trust import (
     ReplacementInstallTrustError,
     _close_descriptor,
     _open_directory,
+    _publish_contract_exact,
     _read_exact,
     _require_open_flag,
     _same_file_identity,
@@ -24,6 +28,7 @@ from .challenger_replacement_install_trust import (
 )
 from .challenger_replacement_install import (
     ReplacementInstallError,
+    _adapter_binding,
     _load_fixed_successful_install_receipt,
 )
 from .challenger_replacement_installed_runtime import (
@@ -38,6 +43,8 @@ from .challenger_replacement_runtime import (
     ChallengerReplacementRuntimeError,
     ChallengerReplacementRuntimeState,
 )
+from .challenger_replacement_plan import _strict_json_bytes
+from .evidence import artifact_self_hash
 from .system_paper_launchctl import (
     SystemPaperLaunchctlParseError,
     parse_challenger_replacement_launchctl_print,
@@ -60,6 +67,11 @@ def _now():
 
 def _command(argv):
     return _run(argv, _REPOSITORY)
+
+
+def _start_schema():
+    name = "schemas/challenger-replacement-start-receipt-v1.schema.json"
+    return json.loads(resources.files("crypto_quant").joinpath(name).read_text())
 
 
 class _RetainedPath:
@@ -426,3 +438,162 @@ def observe_fixed_replacement_first_slot():
                 capability.close()
             if "event_root" in sources:
                 sources["event_root"].close()
+
+
+def _source_binding(value, data, prefix):
+    return {
+        "id": value[prefix + "_id"], "hash": value[prefix + "_hash"],
+        "file_sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def _observer_binding(observer):
+    return {
+        "summary_sha256": hashlib.sha256(
+            canonical_json(observer).encode("utf-8")
+        ).hexdigest(),
+        "observed_at": observer["observed_at"],
+        "first_eligible_scheduled_for": observer[
+            "first_eligible_scheduled_for"
+        ],
+        "first_scheduled_for": observer["first_scheduled_for"],
+        "event_count": observer["event_count"],
+        "completed_slot_count": observer["completed_slot_count"],
+    }
+
+
+def _build_replacement_start_receipt(
+    *, observer, contract, contract_bytes, install_receipt,
+    install_receipt_bytes, published_at,
+):
+    first = _utc_millis(observer["first_scheduled_for"])
+    observed = _utc_millis(observer["observed_at"])
+    if (
+        observer.get("status") != "FIRST_NATURAL_SLOT_VERIFIED"
+        or observer.get("reason_codes")
+        or observer.get("first_eligible_scheduled_for")
+        != install_receipt.get("first_eligible_scheduled_for")
+        or first != _utc_millis(
+            install_receipt["first_eligible_scheduled_for"]
+        )
+        or published_at < observed
+    ):
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_INVALID"
+        )
+    receipt = {
+        "$schema": "./challenger-replacement-start-receipt-v1.schema.json",
+        "schema_version": "1.0.0",
+        "receipt_id": "challenger_replacement_start_receipt_" + "0" * 64,
+        "receipt_hash": "0" * 64,
+        "published_at": utc_datetime(published_at),
+        "contract_binding": _source_binding(
+            contract, contract_bytes, "contract"
+        ),
+        "install_receipt_binding": _source_binding(
+            install_receipt, install_receipt_bytes, "receipt"
+        ),
+        "observer_binding": _observer_binding(observer),
+        "event_root_binding": dict(contract["event_root"]),
+        "strategy_core_binding": dict(contract["strategy_core"]),
+        "adapter_binding": _adapter_binding(contract),
+        "first_scheduled_for": utc_datetime(first),
+        "required_slot_count": 540,
+        "last_required_scheduled_for": utc_datetime(
+            first + timedelta(hours=4 * 539)
+        ),
+        "tail_end": utc_datetime(first + timedelta(hours=4 * 540)),
+        "evaluation_not_before": utc_datetime(
+            first + timedelta(hours=4 * 540, minutes=5)
+        ),
+        "cohort_status": "STARTED_COLLECTION_ONLY",
+        "authority": {
+            "github_request_count": 0, "market_request_count": 0,
+            "launchctl_read_count": 1, "launchctl_mutation_count": 0,
+            "runtime_invocation_count": 0, "state_write_count": 0,
+            "receipt_write_count": 1, "credential_count": 0,
+            "broker_request_count": 0, "order_count": 0,
+        },
+    }
+    identity = {
+        key: value for key, value in receipt.items()
+        if key not in ("receipt_id", "receipt_hash")
+    }
+    receipt["receipt_id"] = stable_id(
+        "challenger_replacement_start_receipt", identity
+    )
+    receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
+    if tuple(Draft202012Validator(_start_schema()).iter_errors(receipt)):
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_INVALID"
+        )
+    return receipt
+
+
+def load_replacement_start_receipt_bytes(
+    data, *, install_receipt, install_receipt_bytes, contract,
+    contract_bytes, observer,
+):
+    try:
+        receipt = dict(_strict_json_bytes(data))
+        if data != canonical_json(receipt).encode("utf-8"):
+            raise ValueError("canonical")
+        rebuilt = _build_replacement_start_receipt(
+            observer=observer, contract=contract,
+            contract_bytes=contract_bytes, install_receipt=install_receipt,
+            install_receipt_bytes=install_receipt_bytes,
+            published_at=_utc_millis(receipt["published_at"]),
+        )
+        if receipt != rebuilt:
+            raise ValueError("semantic")
+        return receipt
+    except (KeyError, TypeError, ValueError) as error:
+        if isinstance(error, ChallengerReplacementStartError):
+            raise
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_INVALID"
+        ) from error
+
+
+def _load_start_install_sources():
+    try:
+        return _load_fixed_successful_install_receipt()
+    except (ReplacementInstallError, ReplacementInstallTrustError) as error:
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_SOURCE_INVALID"
+        ) from error
+
+
+def publish_fixed_replacement_start_receipt():
+    observer = observe_fixed_replacement_first_slot()
+    if observer["status"] != "FIRST_NATURAL_SLOT_VERIFIED":
+        return {
+            "publication_outcome": "NOT_PUBLISHED", "observer": observer,
+        }
+    inputs, install_receipt, install_bytes = _load_start_install_sources()
+    receipt = _build_replacement_start_receipt(
+        observer=observer, contract=inputs["contract"],
+        contract_bytes=inputs["contract_bytes"],
+        install_receipt=install_receipt,
+        install_receipt_bytes=install_bytes, published_at=_now(),
+    )
+    root = Path(inputs["contract"]["paths"]["start_receipt_root"])
+    try:
+        outcome, _ = _publish_contract_exact(
+            root, receipt["receipt_id"] + ".json",
+            canonical_json(receipt).encode("utf-8"),
+        )
+    except ReplacementInstallTrustError as error:
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_START_RECEIPT_PUBLICATION_FAILED"
+        ) from error
+    replayed = _load_start_install_sources()
+    if replayed != (inputs, install_receipt, install_bytes):
+        raise ChallengerReplacementStartError(
+            "CHALLENGER_REPLACEMENT_FIRST_SLOT_SOURCE_CHANGED"
+        )
+    return {
+        "publication_outcome": outcome, "observer": observer,
+        "receipt": receipt,
+        "receipt_path": str(root / (receipt["receipt_id"] + ".json")),
+    }

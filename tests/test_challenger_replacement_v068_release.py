@@ -69,6 +69,30 @@ class V068ReleaseTests(unittest.TestCase):
             sum(len(path.read_text().splitlines()) for path in paths), 220
         )
 
+    def test_observer_start_and_global_trust_chain_keep_yagni_gate(self):
+        groups = [
+            [ROOT / "src/crypto_quant/challenger_replacement_install_trust.py",
+             ROOT / "src/crypto_quant/challenger_replacement_install_trust_cli.py"],
+            [ROOT / "src/crypto_quant/challenger_replacement_install_preflight.py",
+             ROOT / "src/crypto_quant/challenger_replacement_install_preflight_cli.py"],
+            [ROOT / "src/crypto_quant/challenger_replacement_install.py",
+             ROOT / "src/crypto_quant/challenger_replacement_install_cli.py"],
+            [ROOT / "src/crypto_quant/challenger_replacement_installed_runtime.py",
+             ROOT / "src/crypto_quant/challenger_replacement_installed_runtime_cli.py"],
+            [ROOT / "src/crypto_quant/challenger_replacement_start.py",
+             ROOT / "src/crypto_quant/challenger_replacement_start_cli.py"],
+        ]
+        start_text = "\n".join(path.read_text() for path in groups[-1])
+        for forbidden in (
+            "sqlite3", "fault_injector", "shell=True", "kickstart",
+            "bootstrap", "Broker", "Order", "api_key", "secret_key",
+        ):
+            self.assertNotIn(forbidden, start_text)
+        counts = [sum(len(path.read_text().splitlines()) for path in group)
+                  for group in groups]
+        self.assertLessEqual(counts[-1], 630)
+        self.assertLess(sum(counts), 3310)
+
 
 if __name__ == "__main__":
     unittest.main()

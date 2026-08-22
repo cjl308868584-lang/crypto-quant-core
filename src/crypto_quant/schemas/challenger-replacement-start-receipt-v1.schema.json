@@ -3,15 +3,64 @@
   "$id": "https://crypto-quant.local/schemas/challenger-replacement-start-receipt-v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "published_at", "first_scheduled_for", "required_slot_count", "last_required_scheduled_for", "tail_end", "evaluation_not_before", "cohort_status", "authority"],
+  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "published_at", "contract_binding", "install_receipt_binding", "observer_binding", "event_root_binding", "strategy_core_binding", "adapter_binding", "first_scheduled_for", "required_slot_count", "last_required_scheduled_for", "tail_end", "evaluation_not_before", "cohort_status", "authority"],
   "properties": {
     "$schema": {"const": "./challenger-replacement-start-receipt-v1.schema.json"},
     "schema_version": {"const": "1.0.0"},
     "receipt_id": {"type": "string", "pattern": "^challenger_replacement_start_receipt_[0-9a-f]{64}$"},
-    "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "published_at": {"type": "string", "minLength": 1}, "first_scheduled_for": {"type": "string", "minLength": 1},
-    "required_slot_count": {"const": 540}, "last_required_scheduled_for": {"type": "string", "minLength": 1},
-    "tail_end": {"type": "string", "minLength": 1}, "evaluation_not_before": {"type": "string", "minLength": 1},
-    "cohort_status": {"const": "STARTED_COLLECTION_ONLY"}, "authority": {"type": "object"}
+    "receipt_hash": {"$ref": "#/$defs/hash"},
+    "published_at": {"$ref": "#/$defs/time"},
+    "contract_binding": {"$ref": "#/$defs/binding"},
+    "install_receipt_binding": {"$ref": "#/$defs/binding"},
+    "observer_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["summary_sha256", "observed_at", "first_eligible_scheduled_for", "first_scheduled_for", "event_count", "completed_slot_count"],
+      "properties": {
+        "summary_sha256": {"$ref": "#/$defs/hash"},
+        "observed_at": {"$ref": "#/$defs/time"},
+        "first_eligible_scheduled_for": {"$ref": "#/$defs/time"},
+        "first_scheduled_for": {"$ref": "#/$defs/time"},
+        "event_count": {"const": 3},
+        "completed_slot_count": {"const": 1}
+      }
+    },
+    "event_root_binding": {"type": "object"},
+    "strategy_core_binding": {"type": "object"},
+    "adapter_binding": {"type": "object"},
+    "first_scheduled_for": {"$ref": "#/$defs/time"},
+    "required_slot_count": {"const": 540},
+    "last_required_scheduled_for": {"$ref": "#/$defs/time"},
+    "tail_end": {"$ref": "#/$defs/time"},
+    "evaluation_not_before": {"$ref": "#/$defs/time"},
+    "cohort_status": {"const": "STARTED_COLLECTION_ONLY"},
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["github_request_count", "market_request_count", "launchctl_read_count", "launchctl_mutation_count", "runtime_invocation_count", "state_write_count", "receipt_write_count", "credential_count", "broker_request_count", "order_count"],
+      "properties": {
+        "github_request_count": {"const": 0},
+        "market_request_count": {"const": 0},
+        "launchctl_read_count": {"const": 1},
+        "launchctl_mutation_count": {"const": 0},
+        "runtime_invocation_count": {"const": 0},
+        "state_write_count": {"const": 0},
+        "receipt_write_count": {"const": 1},
+        "credential_count": {"const": 0},
+        "broker_request_count": {"const": 0},
+        "order_count": {"const": 0}
+      }
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+    "binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "hash", "file_sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "hash": {"$ref": "#/$defs/hash"},
+        "file_sha256": {"$ref": "#/$defs/hash"}
+      }
+    }
   }
 }

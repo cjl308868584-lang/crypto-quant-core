@@ -191,10 +191,11 @@ candidate plist 的 module 固定为 v0.68 installed adapter；adapter 内部只
 v0.67 策略核心，不调用 v0.67 unavailable provider。
 
 activation bridge 的最终静态预算以实际 fail-closed 边界为准：trust/preflight/installer/
-installed-adapter/observer 连同薄 CLI 总计严格少于 3,050 行。早期 2,850 行估算遗漏了
-successful install receipt 重放、snapshot strategy-core 重放和 retained event-root
-construction；增加的 200 行只纠正这三项安全边界估算，不授权通用 Runner、storage、
-Broker、order、scheduler、deployment framework 或 UI 扩建。
+installed-adapter/observer 连同薄 CLI 总计严格少于 3,310 行。早期两次估算合计遗漏了
+successful install receipt 重放、snapshot strategy-core 重放、retained event/log/plist
+capability、严格 start-receipt codec/source binding、source-error mapping 和 no-overwrite publisher；新增预算只
+纠正这些安全边界估算，不授权通用 Runner、storage、Broker、order、scheduler、
+deployment framework 或 UI 扩建。
 
 ## 7. Install contract
 

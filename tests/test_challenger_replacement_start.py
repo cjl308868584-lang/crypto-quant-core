@@ -350,6 +350,173 @@ class ReplacementFirstSlotObserverTests(unittest.TestCase):
                 )
                 self.assertEqual(result["status"], "FAILED_CLOSED")
 
+
+    def _inputs(self):
+        inputs = install_inputs()
+        install_receipt = {
+            "receipt_id": "challenger_replacement_install_receipt_" + "a" * 64,
+            "receipt_hash": "b" * 64,
+            "first_eligible_scheduled_for": ELIGIBLE,
+        }
+        observer = {
+            "status": "FIRST_NATURAL_SLOT_VERIFIED",
+            "observed_at": "2026-08-22T04:10:00.000Z",
+            "first_eligible_scheduled_for": ELIGIBLE,
+            "first_scheduled_for": ELIGIBLE,
+            "event_count": 3,
+            "completed_slot_count": 1,
+            "reason_codes": [],
+            "authority": {
+                "launchctl_read_count": 1, "market_request_count": 0,
+                "runtime_invocation_count": 0, "state_write_count": 0,
+                "credential_count": 0, "broker_request_count": 0,
+                "order_count": 0,
+            },
+        }
+        return inputs, install_receipt, observer
+
+    def test_builder_derives_exact_540_slot_90_day_boundary_and_bindings(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        inputs, install_receipt, observer = self._inputs()
+        receipt = start._build_replacement_start_receipt(
+            observer=observer, contract=inputs["contract"],
+            contract_bytes=inputs["contract_bytes"],
+            install_receipt=install_receipt,
+            install_receipt_bytes=b"install-receipt",
+            published_at=datetime(2026, 8, 22, 4, 11, tzinfo=timezone.utc),
+        )
+        self.assertEqual(receipt["first_scheduled_for"], ELIGIBLE)
+        self.assertEqual(receipt["required_slot_count"], 540)
+        self.assertEqual(
+            receipt["last_required_scheduled_for"],
+            "2026-11-20T00:00:00.000Z",
+        )
+        self.assertEqual(receipt["tail_end"], "2026-11-20T04:00:00.000Z")
+        self.assertEqual(
+            receipt["evaluation_not_before"], "2026-11-20T04:05:00.000Z"
+        )
+        self.assertEqual(receipt["event_root_binding"],
+                         inputs["contract"]["event_root"])
+        self.assertEqual(receipt["strategy_core_binding"],
+                         inputs["contract"]["strategy_core"])
+        self.assertEqual(receipt["cohort_status"], "STARTED_COLLECTION_ONLY")
+
+        body = canonical_json(receipt).encode()
+        self.assertEqual(
+            start.load_replacement_start_receipt_bytes(
+                body, install_receipt=install_receipt,
+                install_receipt_bytes=b"install-receipt",
+                contract=inputs["contract"],
+                contract_bytes=inputs["contract_bytes"], observer=observer,
+            ), receipt,
+        )
+        altered = dict(receipt)
+        altered["tail_end"] = "2026-11-19T00:00:00.000Z"
+        with self.assertRaises(start.ChallengerReplacementStartError):
+            start.load_replacement_start_receipt_bytes(
+                canonical_json(altered).encode(),
+                install_receipt=install_receipt,
+                install_receipt_bytes=b"install-receipt",
+                contract=inputs["contract"],
+                contract_bytes=inputs["contract_bytes"], observer=observer,
+            )
+
+    def test_nonverified_observation_never_loads_or_publishes_receipt(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        waiting = self._inputs()[2]
+        waiting = {**waiting, "status": "WAITING_FOR_FIRST_NATURAL_SLOT"}
+        with mock.patch.object(
+            start, "observe_fixed_replacement_first_slot", return_value=waiting
+        ), mock.patch.object(
+            start, "_load_fixed_successful_install_receipt"
+        ) as load, mock.patch.object(
+            start, "_publish_contract_exact"
+        ) as publish:
+            result = start.publish_fixed_replacement_start_receipt()
+        self.assertEqual(result["publication_outcome"], "NOT_PUBLISHED")
+        load.assert_not_called()
+        publish.assert_not_called()
+
+    def test_verified_observation_with_changed_install_source_fails_closed(self):
+        import crypto_quant.challenger_replacement_start as start
+        from crypto_quant.challenger_replacement_install import (
+            ReplacementInstallError,
+        )
+
+        observer = self._inputs()[2]
+        with mock.patch.object(
+            start, "observe_fixed_replacement_first_slot", return_value=observer
+        ), mock.patch.object(
+            start, "_load_fixed_successful_install_receipt",
+            side_effect=ReplacementInstallError(
+                "CHALLENGER_REPLACEMENT_INSTALL_RECEIPT_REQUIRED"
+            ),
+        ), self.assertRaisesRegex(
+            start.ChallengerReplacementStartError,
+            "START_RECEIPT_SOURCE_INVALID",
+        ):
+            start.publish_fixed_replacement_start_receipt()
+
+    def test_start_receipt_publication_is_exact_idempotent_and_conflict_closed(self):
+        import json
+        import crypto_quant.challenger_replacement_start as start
+
+        inputs, install_receipt, observer = self._inputs()
+        with temporary_workspace() as directory:
+            root = Path(directory) / "start-receipts"
+            root.mkdir(mode=0o700)
+            inputs["contract"]["paths"]["start_receipt_root"] = str(root)
+            with mock.patch.object(
+                start, "observe_fixed_replacement_first_slot",
+                return_value=observer,
+            ), mock.patch.object(
+                start, "_load_fixed_successful_install_receipt",
+                return_value=(inputs, install_receipt, b"install-receipt"),
+            ), mock.patch.object(
+                start, "_now",
+                return_value=datetime(
+                    2026, 8, 22, 4, 11, tzinfo=timezone.utc
+                ),
+            ):
+                first = start.publish_fixed_replacement_start_receipt()
+                second = start.publish_fixed_replacement_start_receipt()
+                self.assertEqual(first["publication_outcome"], "PUBLISHED")
+                self.assertEqual(second["publication_outcome"], "ALREADY_PUBLISHED")
+                self.assertEqual(first["receipt"], second["receipt"])
+                path = Path(first["receipt_path"])
+                self.assertEqual(json.loads(path.read_bytes()), first["receipt"])
+                path.write_bytes(b"{}")
+                path.chmod(0o600)
+                with self.assertRaisesRegex(
+                    start.ChallengerReplacementStartError,
+                    "START_RECEIPT_PUBLICATION_FAILED",
+                ):
+                    start.publish_fixed_replacement_start_receipt()
+
+    def test_start_receipt_schema_mirror_is_strict_and_valid(self):
+        import json
+        from jsonschema import Draft202012Validator
+        from tests.test_challenger_replacement_install_trust import ROOT
+
+        name = "challenger-replacement-start-receipt-v1.schema.json"
+        config = ROOT / "config" / name
+        package = ROOT / "src/crypto_quant/schemas" / name
+        self.assertEqual(config.read_bytes(), package.read_bytes())
+        schema = json.loads(config.read_text())
+        self.assertFalse(schema["additionalProperties"])
+        Draft202012Validator.check_schema(schema)
+
+    def test_cli_rejects_arguments_before_observe_or_publish(self):
+        import crypto_quant.challenger_replacement_start_cli as cli
+
+        with mock.patch.object(
+            cli, "publish_fixed_replacement_start_receipt"
+        ) as publish:
+            self.assertEqual(cli.main(["--date", ELIGIBLE]), 2)
+        publish.assert_not_called()
+
     def test_second_slot_or_elapsed_second_boundary_is_missed(self):
         two = self._observe(
             observation_sources(successful_projection(2), stdout=b"ok\n"),
