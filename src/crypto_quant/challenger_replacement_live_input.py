@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import os
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -9,6 +11,13 @@ from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from importlib import resources
 from typing import Any, Mapping
+from urllib.error import HTTPError, URLError
+from urllib.request import (
+    HTTPRedirectHandler,
+    ProxyHandler,
+    Request,
+    build_opener,
+)
 
 from jsonschema import Draft202012Validator
 
@@ -23,6 +32,11 @@ from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reaso
 from .evidence import artifact_self_hash
 from .errors import CanonicalizationError
 from .runtime_health import server_time_probe_reasons, server_time_probe_trust_hash
+from .runtime_health import (
+    PublicServerTimeHttpResponse,
+    RuntimeHealthError,
+    build_server_time_probe,
+)
 
 
 _CAPABILITY_TOKEN = object()
@@ -58,6 +72,8 @@ _REQUEST_KEYS = {
 }
 _ATTEMPT_KEYS = {
     "sequence",
+    "outcome",
+    "error_reason_or_null",
     "request_started_at",
     "response_received_at",
     "status",
@@ -81,6 +97,21 @@ _ROW_DESCRIPTOR = {
     "interval": "4h",
 }
 _TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504}
+_TIME_URL = "https://data-api.binance.vision/api/v3/time"
+_CAPTURE_OPEN = timedelta(minutes=2)
+_CAPTURE_CLOSE = timedelta(minutes=10)
+_HTTP_TIMEOUT_SECONDS = 15
+_FORBIDDEN_ENVIRONMENT_FRAGMENTS = {
+    "proxy",
+    "credential",
+    "api_key",
+    "secret",
+    "token",
+    "authorization",
+    "cookie",
+    "binance_key",
+    "binance_secret",
+}
 
 
 class ChallengerReplacementLiveInputError(ValueError):
@@ -89,6 +120,110 @@ class ChallengerReplacementLiveInputError(ValueError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
         self.reason_code = reason_code
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_REDIRECT_FORBIDDEN"
+        )
+
+
+@dataclass(frozen=True)
+class _PublicKlineHttpResponse:
+    status: int
+    final_url: str
+    headers: Mapping[str, str]
+    body: bytes
+    request_started_at: str
+    response_received_at: str
+
+
+def _wall_now():
+    return datetime.now(timezone.utc)
+
+
+def _monotonic():
+    return time.monotonic_ns()
+
+
+def _sleep(seconds):
+    time.sleep(seconds)
+
+
+def _open_public_request(request):
+    if not isinstance(request, Request) or request.get_method() != "GET":
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_REQUEST_INVALID"
+        )
+    opener = build_opener(ProxyHandler({}), _RejectRedirects())
+    started = _wall_now()
+    monotonic_started = _monotonic()
+    try:
+        with opener.open(request, timeout=_HTTP_TIMEOUT_SECONDS) as response:
+            body = response.read(_MAX_RESPONSE_BYTES + 1)
+            status = response.getcode()
+            final_url = response.geturl()
+            headers = dict(response.headers.items())
+    except HTTPError as error:
+        status = error.code
+        final_url = error.geturl()
+        headers = dict(error.headers.items()) if error.headers else {}
+        body = error.read(_MAX_RESPONSE_BYTES + 1)
+    except ChallengerReplacementLiveInputError:
+        raise
+    except (OSError, TimeoutError, URLError) as error:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE"
+        ) from error
+    received = _wall_now()
+    monotonic_received = _monotonic()
+    if (
+        len(body) > _MAX_RESPONSE_BYTES
+        or monotonic_received < monotonic_started
+        or received < started
+    ):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
+        )
+    common = {
+        "status": status,
+        "final_url": final_url,
+        "headers": headers,
+        "body": body,
+        "request_started_at": utc_datetime(started),
+        "response_received_at": utc_datetime(received),
+    }
+    if request.full_url == _TIME_URL:
+        return PublicServerTimeHttpResponse(
+            **common,
+            monotonic_rtt_ms=(monotonic_received - monotonic_started + 999_999)
+            // 1_000_000,
+        )
+    return _PublicKlineHttpResponse(**common)
+
+
+class _LiveTimeTransport:
+    def get(self):
+        response = _open_public_request(
+            Request(
+                _TIME_URL,
+                method="GET",
+                headers={"Accept": "application/json"},
+            )
+        )
+        try:
+            headers = {key.lower(): value for key, value in response.headers.items()}
+            content_type = headers.get("content-type")
+        except (AttributeError, TypeError, ValueError) as error:
+            raise RuntimeHealthError("PAPER_CLOCK_RESPONSE_INVALID") from error
+        if (
+            not isinstance(content_type, str)
+            or content_type.split(";", 1)[0].strip().lower()
+            != "application/json"
+        ):
+            raise RuntimeHealthError("PAPER_CLOCK_RESPONSE_INVALID")
+        return response
 
 
 def _build_live_capture_document(
@@ -148,6 +283,263 @@ def _grant_live_capture(*, document, canonical_bytes, token):
         document=document,
         canonical_bytes=canonical_bytes,
     )
+
+
+def acquire_challenger_replacement_live_capture(*, state):
+    """Acquire one fixed public ETH 4h input for the next natural slot."""
+
+    from .challenger_replacement_runtime import ChallengerReplacementRuntimeState
+
+    if not isinstance(state, ChallengerReplacementRuntimeState):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_STATE_INVALID"
+        )
+    if any(
+        fragment in name.lower()
+        for name in os.environ
+        for fragment in _FORBIDDEN_ENVIRONMENT_FRAGMENTS
+    ):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_ENVIRONMENT_FORBIDDEN"
+        )
+    projection = state._replay()
+    if projection.get("failed_slot_count"):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_STREAM_FAILED"
+        )
+    if projection.get("active_slot_id") is not None:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_ACTIVE_SLOT_REQUIRES_RESUME"
+        )
+    next_required = projection.get("next_required_slot")
+    if not isinstance(next_required, Mapping):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_STREAM_TERMINAL"
+        )
+    scheduled_text = next_required.get("scheduled_for")
+    if scheduled_text is not None:
+        try:
+            scheduled = _utc_millis(scheduled_text)
+            local_now = _wall_now().astimezone(timezone.utc)
+        except (AttributeError, TypeError, ValueError) as error:
+            raise ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_STATE_INVALID"
+            ) from error
+        latest_boundary = local_now.replace(
+            hour=(local_now.hour // 4) * 4,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        if scheduled < latest_boundary:
+            raise ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_CONTINUITY_GAP"
+            )
+        if not scheduled + _CAPTURE_OPEN <= local_now <= scheduled + _CAPTURE_CLOSE:
+            raise ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_WINDOW_INVALID"
+            )
+    try:
+        probe = build_server_time_probe(transport=_LiveTimeTransport())
+        trust_hash = server_time_probe_trust_hash(probe)
+        if server_time_probe_reasons(probe, trust_hash):
+            raise RuntimeHealthError("clock probe replay failed")
+        trusted = _utc_millis(probe["trusted_completed_at_or_null"])
+    except (RuntimeHealthError, TypeError, ValueError) as error:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_CLOCK_INVALID"
+        ) from error
+    sequence = next_required.get("sequence")
+    if scheduled_text is None:
+        scheduled = trusted.replace(
+            hour=(trusted.hour // 4) * 4,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        scheduled_text = utc_datetime(scheduled)
+    else:
+        try:
+            scheduled = _utc_millis(scheduled_text)
+        except (TypeError, ValueError) as error:
+            raise ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_STATE_INVALID"
+            ) from error
+    if (
+        not isinstance(sequence, int)
+        or isinstance(sequence, bool)
+        or not 1 <= sequence <= 2**53 - 1
+        or not scheduled + _CAPTURE_OPEN <= trusted <= scheduled + _CAPTURE_CLOSE
+    ):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_WINDOW_INVALID"
+        )
+    end_time_ms = int(scheduled.timestamp() * 1000) - 1
+    request_identity = {
+        "method": "GET",
+        "url": (
+            "https://data-api.binance.vision/api/v3/klines?"
+            f"endTime={end_time_ms}&interval=4h&limit=21&symbol=ETHUSDT"
+        ),
+        "symbol": "ETHUSDT",
+        "interval": "4h",
+        "limit": 21,
+        "end_time_ms": end_time_ms,
+    }
+    request_document = {
+        "request_id": stable_id(
+            "challenger_replacement_kline_request", request_identity
+        ),
+        **request_identity,
+    }
+    attempts = []
+    selected_index = None
+    for index in range(3):
+        transport_started = _wall_now()
+        try:
+            response = _open_public_request(
+                Request(
+                    request_identity["url"],
+                    method="GET",
+                    headers={"Accept": "application/json"},
+                )
+            )
+        except ChallengerReplacementLiveInputError as error:
+            if error.reason_code != "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE":
+                raise
+            attempts.append(
+                _transport_attempt_document(
+                    index + 1,
+                    started=transport_started,
+                    received=_wall_now(),
+                )
+            )
+            if index < 2:
+                _sleep(index + 1)
+                continue
+            break
+        attempt = _attempt_document(response, index + 1)
+        attempts.append(attempt)
+        if response.status == 200:
+            selected_index = index
+            break
+        if response.status not in _TRANSIENT_STATUS:
+            raise ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
+            )
+        if index < 2:
+            _sleep(index + 1)
+    if selected_index is None:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_RETRIES_EXHAUSTED"
+        )
+    captured = _utc_millis(attempts[selected_index]["response_received_at"])
+    try:
+        payload = _strict_response_json(
+            attempts[selected_index]["response_body_utf8"].encode("utf-8")
+        )
+        rows = _normalize_kline_payload(
+            payload, scheduled=scheduled, captured=captured
+        )
+    except ChallengerReplacementLiveInputError as error:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_JSON_INVALID"
+        ) from error
+    slot = {
+        "slot_id": stable_id(
+            "challenger_replacement_slot",
+            {"plan_hash": state.plan["plan_hash"], "scheduled_for": scheduled_text},
+        ),
+        "sequence": sequence,
+        "scheduled_for": scheduled_text,
+        "captured_at": utc_datetime(captured),
+    }
+    document = _build_live_capture_document(
+        plan=state.plan,
+        build_identity=state.build_identity,
+        slot=slot,
+        clock_records={"probe": probe, "trust_hash": trust_hash},
+        kline_request=request_document,
+        attempts=attempts,
+        selected_attempt_index=selected_index,
+        rows=rows,
+    )
+    canonical_bytes = canonical_json(document).encode("utf-8")
+    loaded = load_challenger_replacement_live_capture_bytes(
+        canonical_bytes,
+        plan=state.plan,
+        build_identity=state.build_identity,
+        previous_source_bundle=projection.get("_previous_source_bundle"),
+    )
+    return _grant_live_capture(
+        document=loaded,
+        canonical_bytes=canonical_bytes,
+        token=_CAPABILITY_TOKEN,
+    )
+
+
+def _attempt_document(response, sequence):
+    try:
+        headers = {key.lower(): value for key, value in response.headers.items()}
+        body = bytes(response.body)
+    except (AttributeError, TypeError, ValueError) as error:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
+        ) from error
+    content_type = headers.get("content-type")
+    if (
+        not isinstance(content_type, str)
+        or content_type.split(";", 1)[0].strip().lower() != "application/json"
+    ):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
+        )
+    return {
+        "sequence": sequence,
+        "outcome": "HTTP_RESPONSE",
+        "error_reason_or_null": None,
+        "request_started_at": response.request_started_at,
+        "response_received_at": response.response_received_at,
+        "status": response.status,
+        "final_url": response.final_url,
+        "selected_headers": {
+            "http_date_or_null": headers.get("date"),
+            "etag_or_null": headers.get("etag"),
+            "last_modified_or_null": headers.get("last-modified"),
+            "retry_after_or_null": headers.get("retry-after"),
+        },
+        "body_size_bytes": len(body),
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "response_body_utf8": body.decode("utf-8"),
+    }
+
+
+def _transport_attempt_document(sequence, *, started, received):
+    try:
+        started_text = utc_datetime(started)
+        received_text = utc_datetime(received)
+    except (AttributeError, TypeError, ValueError) as error:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_INPUT_CLOCK_INVALID"
+        ) from error
+    return {
+        "sequence": sequence,
+        "outcome": "TRANSPORT_ERROR",
+        "error_reason_or_null": "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE",
+        "request_started_at": started_text,
+        "response_received_at": received_text,
+        "status": None,
+        "final_url": None,
+        "selected_headers": {
+            "http_date_or_null": None,
+            "etag_or_null": None,
+            "last_modified_or_null": None,
+            "retry_after_or_null": None,
+        },
+        "body_size_bytes": 0,
+        "body_sha256": hashlib.sha256(b"").hexdigest(),
+        "response_body_utf8": "",
+    }
 
 
 @lru_cache(maxsize=1)
@@ -417,19 +809,38 @@ def _validated_attempt_payload(document, *, request, trusted_completed, captured
         status = attempt["status"]
         if (
             attempt["sequence"] != index + 1
-            or not isinstance(status, int)
-            or isinstance(status, bool)
-            or attempt["final_url"] != request["url"]
             or not isinstance(headers, Mapping)
             or set(headers) != _HEADER_KEYS
             or any(value is not None and not isinstance(value, str) for value in headers.values())
             or not previous_received <= started <= received <= captured
-            or not 0 < len(body) <= _MAX_RESPONSE_BYTES
+            or len(body) > _MAX_RESPONSE_BYTES
             or attempt["body_size_bytes"] != len(body)
             or attempt["body_sha256"] != hashlib.sha256(body).hexdigest()
-            or (index < selected and status not in _TRANSIENT_STATUS)
-            or (index == selected and status != 200)
         ):
+            _invalid_attempt()
+        if attempt["outcome"] == "TRANSPORT_ERROR":
+            if (
+                index >= selected
+                or attempt["error_reason_or_null"]
+                != "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE"
+                or status is not None
+                or attempt["final_url"] is not None
+                or any(value is not None for value in headers.values())
+                or body
+            ):
+                _invalid_attempt()
+        elif attempt["outcome"] == "HTTP_RESPONSE":
+            if (
+                attempt["error_reason_or_null"] is not None
+                or not isinstance(status, int)
+                or isinstance(status, bool)
+                or attempt["final_url"] != request["url"]
+                or not body
+                or (index < selected and status not in _TRANSIENT_STATUS)
+                or (index == selected and status != 200)
+            ):
+                _invalid_attempt()
+        else:
             _invalid_attempt()
         previous_received = received
         if index == selected:

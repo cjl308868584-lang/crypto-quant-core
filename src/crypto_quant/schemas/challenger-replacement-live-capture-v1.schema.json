@@ -85,14 +85,16 @@
     },
     "attempt": {
       "type": "object", "additionalProperties": false,
-      "required": ["sequence", "request_started_at", "response_received_at", "status", "final_url", "selected_headers", "body_size_bytes", "body_sha256", "response_body_utf8"],
+      "required": ["sequence", "outcome", "error_reason_or_null", "request_started_at", "response_received_at", "status", "final_url", "selected_headers", "body_size_bytes", "body_sha256", "response_body_utf8"],
       "properties": {
         "sequence": {"type": "integer", "minimum": 1, "maximum": 3},
+        "outcome": {"enum": ["HTTP_RESPONSE", "TRANSPORT_ERROR"]},
+        "error_reason_or_null": {"$ref": "#/$defs/nullableString"},
         "request_started_at": {"$ref": "#/$defs/time"},
         "response_received_at": {"$ref": "#/$defs/time"},
-        "status": {"type": "integer", "minimum": 100, "maximum": 599},
-        "final_url": {"type": "string"}, "selected_headers": {"$ref": "#/$defs/headers"},
-        "body_size_bytes": {"type": "integer", "minimum": 1, "maximum": 262144},
+        "status": {"oneOf": [{"type": "integer", "minimum": 100, "maximum": 599}, {"type": "null"}]},
+        "final_url": {"$ref": "#/$defs/nullableString"}, "selected_headers": {"$ref": "#/$defs/headers"},
+        "body_size_bytes": {"type": "integer", "minimum": 0, "maximum": 262144},
         "body_sha256": {"$ref": "#/$defs/hash"},
         "response_body_utf8": {"type": "string", "maxLength": 262144}
       }
