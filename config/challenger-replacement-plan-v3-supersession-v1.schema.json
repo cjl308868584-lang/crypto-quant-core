@@ -64,12 +64,12 @@
       "required": ["release_tag","peeled_commit","package_version","manifest_version","build_input_tree_hash","manifest_hash","manifest_file_sha256"],
       "properties": {
         "release_tag": {"const": "v0.68.0"},
-        "peeled_commit": {"const": "b65481cce9c8955f73da5b78ef2bd3c981f3be3c"},
+        "peeled_commit": {"const": "1371997d61679609804d58753ae79147d60e1c01"},
         "package_version": {"const": "0.68.0"},
         "manifest_version": {"const": "1.62.0"},
-        "build_input_tree_hash": {"const": "c8419340b66e2b0405b19cda7eeed09114307deed0575249974cc6248743ddc9"},
-        "manifest_hash": {"const": "5e7646febc6f09261387d448dc6c5f4431c3fc53b06073af48539a2e020aa8a8"},
-        "manifest_file_sha256": {"const": "8830930b3a425b73aee8a24fc0d4b011aa9557dd34d6065e7f9b955097da25d8"}
+        "build_input_tree_hash": {"const": "0e6bde43eff304bc42cab90895da47296a9c6b8996b0d99a0d1ca4009a71083e"},
+        "manifest_hash": {"const": "f4ce2f0a67b04541b850f5841897927e2886a339fecb3f11356ad96b2d7370b5"},
+        "manifest_file_sha256": {"const": "d7c70074fef46f28d028cc330a8726755fe999bba5af90af90a24f285df37a79"}
       }
     },
     "planBinding": {

@@ -29,7 +29,7 @@
       "properties": {
         "previous_plan": {"$ref": "#/$defs/previousPlan"},
         "v068_release_tag": {"const": "v0.68.0"},
-        "v068_peeled_commit": {"const": "b65481cce9c8955f73da5b78ef2bd3c981f3be3c"},
+        "v068_peeled_commit": {"const": "1371997d61679609804d58753ae79147d60e1c01"},
         "v3_plan": {"$ref": "#/$defs/planBinding"}
       }
     },

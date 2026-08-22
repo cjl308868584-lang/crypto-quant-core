@@ -189,6 +189,28 @@ class ChallengerReplacementPlanV3SchemaTests(unittest.TestCase):
         ]
         self.assertEqual(missing, [])
 
+    def test_foundation_binds_the_released_v068_identity(self):
+        self.assertEqual(
+            build_challenger_replacement_plan_v3()["foundation"],
+            {
+                "release_tag": "v0.68.0",
+                "peeled_commit": (
+                    "1371997d61679609804d58753ae79147d60e1c01"
+                ),
+                "package_version": "0.68.0",
+                "manifest_version": "1.62.0",
+                "build_input_tree_hash": (
+                    "0e6bde43eff304bc42cab90895da47296a9c6b8996b0d99a0d1ca4009a71083e"
+                ),
+                "manifest_hash": (
+                    "f4ce2f0a67b04541b850f5841897927e2886a339fecb3f11356ad96b2d7370b5"
+                ),
+                "manifest_file_sha256": (
+                    "d7c70074fef46f28d028cc330a8726755fe999bba5af90af90a24f285df37a79"
+                ),
+            },
+        )
+
     def test_schema_freezes_decision_opportunity_and_dual_track_boundaries(self):
         properties = self._schema()["properties"]
         self.assertEqual(

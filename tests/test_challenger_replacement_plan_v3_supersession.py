@@ -121,7 +121,7 @@ def _machine():
         _transcript(
             "git_v068_peeled",
             ["/usr/bin/git", "-C", str(ROOT), "rev-parse", "v0.68.0^{}"],
-            b"b65481cce9c8955f73da5b78ef2bd3c981f3be3c\n",
+            b"1371997d61679609804d58753ae79147d60e1c01\n",
         ),
         _transcript(
             "launchctl_service",
@@ -152,7 +152,7 @@ def _machine():
             "previous_plan": copy.deepcopy(PREVIOUS_PLAN),
             "v068_release_tag": "v0.68.0",
             "v068_peeled_commit": (
-                "b65481cce9c8955f73da5b78ef2bd3c981f3be3c"
+                "1371997d61679609804d58753ae79147d60e1c01"
             ),
             "v3_plan": plan,
         },
@@ -782,8 +782,8 @@ class V3SupersessionCliTests(unittest.TestCase):
         ).encode("utf-8")
         results = [
             self._completed(stdout=b"c4f6ea213077850a8fc8b9bd3392f1a4bac466f9\n"),
-            self._completed(stdout=b"b65481cce9c8955f73da5b78ef2bd3c981f3be3c\n"),
-            self._completed(stdout=b"b65481cce9c8955f73da5b78ef2bd3c981f3be3c\n"),
+            self._completed(stdout=b"1371997d61679609804d58753ae79147d60e1c01\n"),
+            self._completed(stdout=b"1371997d61679609804d58753ae79147d60e1c01\n"),
             self._completed(stdout=b"a" * 40 + b"\n"),
             self._completed(),
             self._completed(stdout=b"tag\n"),

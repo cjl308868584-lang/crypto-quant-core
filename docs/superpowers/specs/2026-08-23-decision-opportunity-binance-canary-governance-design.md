@@ -4,8 +4,8 @@
 
 目标版本：`v0.69.0`（governance / plan-only）
 
-基线候选：`v0.68.0` 本地 release candidate
-`b65481cce9c8955f73da5b78ef2bd3c981f3be3c`
+发布基线：annotated `v0.68.0`
+`1371997d61679609804d58753ae79147d60e1c01`
 
 适用分支：`codex/v0.69-decision-opportunity-canary-governance`
 
@@ -68,8 +68,8 @@ capability、observer 和只读 UI 组件只在新合同下复用，不复制通
   `321087e3af1ab854d41519252c77710462eee85b1a96a4b2910962e4f046baaf`。
 - v0.67 deployment artifact file SHA-256
   `8e7e073e2bb23d1509884f53d19fac299d96f38e15f9773e3a0b7d0ff103bea0`。
-- v0.68 release candidate commit
-  `b65481cce9c8955f73da5b78ef2bd3c981f3be3c`，包括其 install/observer/start trust-chain
+- v0.68 released commit
+  `1371997d61679609804d58753ae79147d60e1c01`，包括其 install/observer/start trust-chain
   设计、测试与失败关闭修订。
 
 不得 amend、force-move、删除、重生成或把旧 artifact 重新解释为 v3。旧 v0.64 plan 的最终
@@ -79,9 +79,10 @@ disposition 只能是 `SUPERSEDED_BEFORE_START_RESEARCH_AND_OPERATIONAL_POLICY_C
 ### 3.2 v0.68 release foundation 门
 
 正式 v3 plan artifact 不得在 v0.68 annotated tag、peeled commit、origin/main、PR/main CI 和
-manifest identity 全部一致前生成。设计/测试可以基于上述 local candidate 开展，但 builder
-必须从最终 v0.68 release identity 读取常量；若 tag 最终未指向 `b65481c...`，停止并重新审查
-foundation，不自动改 hash。
+manifest identity 全部一致前生成。该门已由 PR CI `32598189394`、main CI
+`32600209967`和 annotated tag object `02b3490961a6267fb2ef1cc19273cde8261887df`
+证实；peeled commit 固定为 `1371997d61679609804d58753ae79147d60e1c01`。builder 只读取
+该最终 release identity 常量，不自动改 hash。
 
 ### 3.3 Pre-start 资格
 

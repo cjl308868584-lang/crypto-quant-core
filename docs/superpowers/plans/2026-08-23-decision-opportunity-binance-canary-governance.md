@@ -12,10 +12,10 @@
 
 ## Global Constraints
 
-- Work only in `.worktrees/v0.69-decision-opportunity-canary-governance` on branch `codex/v0.69-decision-opportunity-canary-governance` based on `b65481cce9c8955f73da5b78ef2bd3c981f3be3c`.
+- Work only in `.worktrees/v0.69-decision-opportunity-canary-governance` on branch `codex/v0.69-decision-opportunity-canary-governance`; design work began from the v0.68 candidate and the formal foundation is released commit `1371997d61679609804d58753ae79147d60e1c01`.
 - v0.69 is governance/plan-only. Do not add or execute runtime events, scheduler, market/account network, Binance SDK, credential reads, Broker/order/fill, production root/plist, launchctl, UI changes, funds, seven-day timer or 90-day timer.
 - Never modify or regenerate committed v0.64 plan, machine evidence, owner attestation, supersession record, v0.67 deployment artifact or v0.68 code history.
-- Formal v3 artifacts require annotated `v0.68.0`, origin/main, PR/main CI and build-manifest identities to agree exactly on `b65481c...`; if they do not, stop before artifact generation.
+- Formal v3 artifacts require annotated `v0.68.0`, origin/main, PR CI `32598189394`, main CI `32600209967` and build-manifest identities to agree exactly on `1371997d...`; if they do not, stop before artifact generation.
 - Treat this as a research and operational policy re-registration. Never assert that v0.64 research-bearing subtrees remain byte-equal.
 - Preserve old-cohort failure, no-backfill, no-AI-authority, no-interim-profitability, owner-only roots, append-only event authority, no-overwrite and failure-closed guarantees.
 - The v3 plan must freeze four-hour opportunities, `OBSERVED|MISSED`, 95% observed coverage gates, minimum seven-day operational qualification, independent minimum 90-day economics, Binance Spot-long/perpetual-short mutual exclusion, E0/E1/E2 amounts/exposure/durations/cycles and exact loss boundaries from the spec.
@@ -377,9 +377,9 @@ Run fixed read-only GitHub/`git` checks and require:
 
 ```text
 v0.68.0 annotated tag
-v0.68.0^{} == origin/main == b65481cce9c8955f73da5b78ef2bd3c981f3be3c
-PR Python 3.9/3.12 and macOS arm64 CI success
-merged-main CI success
+v0.68.0^{} == origin/main == 1371997d61679609804d58753ae79147d60e1c01
+PR CI 32598189394: Python 3.9/3.12 and macOS arm64 success
+main CI 32600209967: Python 3.9/3.12 and macOS arm64 success
 manifest_version 1.62.0, package_version 0.68.0
 ```
 
