@@ -255,15 +255,25 @@ def _run_bounded_command(
     timed_out = False
     drain_deadline: Optional[float] = None
 
-    def terminate() -> None:
+    def terminate() -> Optional[OSError]:
         if process.poll() is None:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
-                pass
+                return None
+            except OSError as group_error:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    return None
+                except OSError as direct_error:
+                    return direct_error
+                return group_error
+        return None
 
+    primary_error: Optional[BaseException] = None
     try:
-        while selector.get_map():
+        while selector.get_map() or process.poll() is None:
             now = time.monotonic()
             remaining = deadline - now
             if remaining <= 0 and not timed_out:
@@ -277,7 +287,12 @@ def _run_bounded_command(
                 if not timed_out
                 else max(0.0, min(0.1, drain_deadline - now))
             )
-            for key, _mask in selector.select(wait_for):
+            if selector.get_map():
+                ready = selector.select(wait_for)
+            else:
+                time.sleep(wait_for)
+                ready = ()
+            for key, _mask in ready:
                 stream = key.fileobj
                 chunk = os.read(stream.fileno(), 65536)
                 if not chunk:
@@ -285,22 +300,49 @@ def _run_bounded_command(
                     continue
                 buffer = streams[stream]
                 if len(buffer) + len(chunk) > _MAX_OUTPUT:
-                    terminate()
-                    process.wait()
                     raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_OUTPUT_LIMIT")
                 buffer.extend(chunk)
-        returncode = process.wait()
+        try:
+            returncode = process.wait(timeout=1)
+        except subprocess.TimeoutExpired as error:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_FAILED") from error
         return returncode, bytes(streams[process.stdout]), bytes(streams[process.stderr]), timed_out
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
-        terminate()
+        cleanup_errors: list[BaseException] = []
+        termination_error = terminate()
+        if termination_error is not None:
+            cleanup_errors.append(termination_error)
         try:
             process.wait(timeout=1)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-        selector.close()
-        process.stdout.close()
-        process.stderr.close()
+        except (OSError, subprocess.TimeoutExpired) as error:
+            cleanup_errors.append(error)
+            try:
+                process.kill()
+            except OSError as kill_error:
+                cleanup_errors.append(kill_error)
+            try:
+                process.wait(timeout=1)
+            except (OSError, subprocess.TimeoutExpired) as wait_error:
+                cleanup_errors.append(wait_error)
+        try:
+            selector.close()
+        except OSError as error:
+            cleanup_errors.append(error)
+        for stream in (process.stdout, process.stderr):
+            try:
+                stream.close()
+            except OSError as error:
+                cleanup_errors.append(error)
+        if cleanup_errors and primary_error is None:
+            raise NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_FAILED") from cleanup_errors[0]
+        if cleanup_errors and primary_error is not None:
+            try:
+                setattr(primary_error, "cleanup_errors", tuple(str(error) for error in cleanup_errors))
+            except (AttributeError, TypeError):
+                pass
 
 
 def _capture_fixed_command(name: str, *, workspace: Optional[Path] = None) -> Dict[str, Any]:
@@ -391,9 +433,16 @@ def _download_urls() -> Dict[str, str]:
 
 def _platform_identity() -> Dict[str, Any]:
     version = platform.mac_ver()[0]
-    if platform.system() != "Darwin" or platform.machine() != "arm64" or not version.startswith("15.") or sys.version_info[:2] != (3, 12):
+    implementation = platform.python_implementation()
+    if (
+        platform.system() != "Darwin"
+        or platform.machine() != "arm64"
+        or not version.startswith("15.")
+        or sys.version_info[:2] != (3, 12)
+        or implementation != "CPython"
+    ):
         raise NautilusV065SupplyChainError("NAUTILUS_V065_PLATFORM_MISMATCH")
-    return {"operating_system": "macOS", "operating_system_major": 15, "machine": "arm64", "python_implementation": platform.python_implementation(), "python_version": platform.python_version()}
+    return {"operating_system": "macOS", "operating_system_major": 15, "machine": "arm64", "python_implementation": implementation, "python_version": platform.python_version()}
 
 
 def _verify_license_transcript(record: Mapping[str, Any]) -> None:
@@ -896,25 +945,31 @@ def _invoke_fixed_runner(
         "LANG": "C",
         "LC_ALL": "C",
     }
-    result = subprocess.run(
-        [
-            str(python), "-P", "-m", "crypto_quant_nautilus_v065.runner",
-            "--request", str(request_path), "--receipt", str(receipt_path), "--result", str(result_path),
-        ],
-        cwd=root,
-        env=environment,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=120,
-        shell=False,
-        check=False,
-    )
+    argv = [
+        str(python), "-P", "-m", "crypto_quant_nautilus_v065.runner",
+        "--request", str(request_path), "--receipt", str(receipt_path), "--result", str(result_path),
+    ]
+    runner_failure: Optional[NautilusV065SupplyChainError] = None
+    try:
+        returncode, stdout, stderr, timed_out = _run_bounded_command(
+            argv, cwd=root, environment=environment, timeout=120
+        )
+    except NautilusV065SupplyChainError as error:
+        if error.reason_code == "NAUTILUS_V065_COMMAND_OUTPUT_LIMIT":
+            runner_failure = NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_FAILED")
+        else:
+            runner_failure = error
+    except OSError as error:
+        runner_failure = NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_FAILED")
     if _venv_python_identity(python, workspace) != expected:
         raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID")
-    if result.returncode != 0 or result.stdout or result.stderr:
+    if runner_failure is not None:
+        raise runner_failure
+    if timed_out:
+        raise NautilusV065SupplyChainError("NAUTILUS_V065_RUNNER_FAILED")
+    if returncode != 0 or stdout or stderr:
         raise NautilusV065SupplyChainError(
-            _runner_failure_reason(result.returncode, result.stdout, result.stderr)
+            _runner_failure_reason(returncode, stdout, stderr)
         )
     return load_nautilus_v065_result(result_path.resolve())
 

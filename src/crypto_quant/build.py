@@ -325,10 +325,12 @@ _V065_RELEASE_PATHS = (
     "tests/test_nautilus_v065_evidence.py",
     "tests/test_nautilus_v065_artifacts.py",
     "tests/test_nautilus_v065_release.py",
+    "tests/test_nautilus_v0651_hardening.py",
     "docs/superpowers/specs/2026-08-22-nautilus-end-to-end-spike-design.md",
     "docs/superpowers/plans/2026-08-22-nautilus-end-to-end-spike.md",
     "docs/adr/0065-nautilus-end-to-end-spike.md",
     "docs/implementation-status-v0.65.0.md",
+    "docs/implementation-status-v0.65.1.md",
 )
 
 
