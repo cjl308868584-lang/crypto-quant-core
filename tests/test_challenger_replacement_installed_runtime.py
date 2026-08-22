@@ -23,6 +23,7 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
             "state": self.fixture._state(),
             "event_root": self.fixture.root,
             "worker_id": "challenger-replacement-natural-runner-v1",
+            "start_receipt_published": True,
             "first_eligible_scheduled_for": self.fixture.live_capture.document[
                 "slot"
             ]["scheduled_for"],
@@ -293,6 +294,42 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
             return_value=self.fixture.plan,
         ), mock.patch.object(
             runtime, "acquire_challenger_replacement_live_capture"
+        ) as acquire:
+            result = runtime.run_fixed_replacement_installed_invocation()
+
+        self.assertEqual(result["terminal_stage"], "SLOT_SUCCEEDED")
+        self.assertEqual(len(self.fixture._state().replay()["events"]), 3)
+        acquire.assert_not_called()
+
+    def test_completed_first_slot_without_receipt_cannot_start_second_slot(self):
+        import crypto_quant.challenger_replacement_installed_runtime as runtime
+        import crypto_quant.challenger_replacement_runtime as core
+
+        core.run_challenger_replacement_cohort_slot(
+            state=self.fixture._state(), live_capture=self.fixture.live_capture,
+            worker_id="first-worker",
+        )
+        inputs = self._install_inputs_for_fixture()
+        inputs["contract"]["strategy_core"].update(
+            self.fixture.build_identity
+        )
+        install_receipt = {
+            "status": "INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT",
+            "installed_at": "2026-08-22T00:15:00.000Z",
+            "first_eligible_scheduled_for": "2026-08-22T04:00:00.000Z",
+        }
+        with mock.patch.object(
+            runtime, "_load_fixed_successful_install_receipt",
+            return_value=(inputs, install_receipt, b"receipt"),
+        ), mock.patch.object(
+            runtime, "_load_snapshot_plan_and_strategy",
+            return_value=self.fixture.plan,
+        ), mock.patch.object(
+            runtime, "_wall_now",
+            return_value=datetime(2026, 8, 22, 8, 5, tzinfo=timezone.utc),
+        ), mock.patch.object(
+            runtime, "acquire_challenger_replacement_live_capture",
+            side_effect=AssertionError("second slot forbidden before receipt"),
         ) as acquire:
             result = runtime.run_fixed_replacement_installed_invocation()
 

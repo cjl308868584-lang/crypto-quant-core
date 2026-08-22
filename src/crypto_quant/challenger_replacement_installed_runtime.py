@@ -176,6 +176,7 @@ def _load_fixed_runtime_sources():
         return {
             "state": state, "event_root": root,
             "worker_id": contract["runtime"]["worker_id"],
+            "start_receipt_published": existing is not None,
             "first_eligible_scheduled_for": receipt[
                 "first_eligible_scheduled_for"
             ],
@@ -200,12 +201,13 @@ def run_fixed_replacement_installed_invocation():
             not isinstance(sources, dict)
             or set(sources) != {
                 "state", "event_root", "worker_id",
-                "first_eligible_scheduled_for",
+                "start_receipt_published", "first_eligible_scheduled_for",
             }
             or not isinstance(sources["state"], ChallengerReplacementRuntimeState)
             or sources["state"].event_root is not sources["event_root"]
             or not isinstance(sources["worker_id"], str)
             or not sources["worker_id"]
+            or not isinstance(sources["start_receipt_published"], bool)
         ):
             raise ReplacementInstalledRuntimeError(
                 "CHALLENGER_REPLACEMENT_RUNTIME_CONTRACT_INVALID"
@@ -227,7 +229,8 @@ def run_fixed_replacement_installed_invocation():
         next_slot = projection["next_required_slot"]
         if projection["active_slot_id"] is not None or (
             projection["events"] and (
-                next_slot is None
+                not sources["start_receipt_published"]
+                or next_slot is None
                 or _wall_now()
                 < _utc_millis(next_slot["scheduled_for"]) + timedelta(minutes=2)
             )
