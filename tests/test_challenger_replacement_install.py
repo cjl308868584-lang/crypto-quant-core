@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import os
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -442,14 +443,18 @@ class ReplacementInstallTests(unittest.TestCase):
             outcome, record = install._publish_plist(contract, body)
             self.assertEqual(outcome, "PUBLISHED")
             self.assertEqual(target.read_bytes(), body)
-            old_inode = target.stat().st_ino
-            target.unlink()
-            target.write_bytes(body)
-            target.chmod(0o600)
-            self.assertNotEqual(target.stat().st_ino, old_inode)
-            replay_outcome, replacement_record = install._publish_plist(
-                contract, body
-            )
+            old_fd = os.open(target, os.O_RDONLY)
+            try:
+                old_inode = os.fstat(old_fd).st_ino
+                target.unlink()
+                target.write_bytes(body)
+                target.chmod(0o600)
+                self.assertNotEqual(target.stat().st_ino, old_inode)
+                replay_outcome, replacement_record = install._publish_plist(
+                    contract, body
+                )
+            finally:
+                os.close(old_fd)
             self.assertEqual(replay_outcome, "ALREADY_PUBLISHED")
             self.assertNotEqual(replacement_record["inode"], record["inode"])
             self.assertEqual(target.read_bytes(), body)
