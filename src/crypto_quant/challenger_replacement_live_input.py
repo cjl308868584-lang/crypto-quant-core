@@ -13,6 +13,7 @@ from jsonschema import Draft202012Validator
 from .canonical import canonical_json, stable_id, utc_datetime
 from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reasons
 from .evidence import artifact_self_hash
+from .runtime_health import server_time_probe_reasons, server_time_probe_trust_hash
 
 
 _CAPABILITY_TOKEN = object()
@@ -176,6 +177,27 @@ def load_challenger_replacement_live_capture_bytes(
         or slot["slot_id"] != expected_slot_id
     ):
         _invalid_slot()
+    clock = document["clock"]
+    if not isinstance(clock, Mapping) or set(clock) != {"probe", "trust_hash"}:
+        _invalid_clock()
+    probe = clock["probe"]
+    trust_hash = clock["trust_hash"]
+    try:
+        trusted_completed = _utc_millis(probe["trusted_completed_at_or_null"])
+    except (KeyError, TypeError, ValueError):
+        _invalid_clock()
+    if (
+        not _lowerhex(trust_hash, 64)
+        or server_time_probe_trust_hash(probe) != trust_hash
+        or server_time_probe_reasons(probe, trust_hash)
+        or probe.get("health_status")
+        not in {"HEALTHY_ALIGNED", "HEALTHY_CORRECTED"}
+        or probe.get("sample_count") != 3
+        or probe.get("valid_sample_count") != 3
+        or trusted_completed < scheduled + timedelta(minutes=2)
+        or trusted_completed > captured
+    ):
+        _invalid_clock()
     authority = document["authority"]
     if (
         not isinstance(authority, Mapping)
@@ -219,6 +241,12 @@ def _utc_millis(value):
 def _invalid_slot():
     raise ChallengerReplacementLiveInputError(
         "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_SLOT_INVALID"
+    )
+
+
+def _invalid_clock():
+    raise ChallengerReplacementLiveInputError(
+        "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_CLOCK_INVALID"
     )
 
 

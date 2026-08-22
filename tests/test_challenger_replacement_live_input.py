@@ -1,6 +1,7 @@
 import json
 import unittest
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -12,6 +13,11 @@ from crypto_quant.challenger_replacement_live_input import (
     load_challenger_replacement_live_capture_bytes,
 )
 from crypto_quant.evidence import artifact_self_hash
+from crypto_quant.runtime_health import (
+    PublicServerTimeHttpResponse,
+    build_server_time_probe,
+    server_time_probe_trust_hash,
+)
 from tests.challenger_replacement_v2_fixtures import fixture_plan
 
 
@@ -21,6 +27,38 @@ PACKAGE_SCHEMA = (
     ROOT
     / "src/crypto_quant/schemas/challenger-replacement-live-capture-v1.schema.json"
 )
+
+
+def _utc(value):
+    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    )
+
+
+class _TimeTransport:
+    def __init__(self):
+        base = datetime(2026, 8, 22, 4, 4, tzinfo=timezone.utc)
+        self.responses = []
+        for index, rtt in enumerate((50, 60, 55)):
+            started = base + timedelta(seconds=index)
+            received = started + timedelta(milliseconds=rtt)
+            midpoint = int((started.timestamp() + received.timestamp()) * 500)
+            self.responses.append(
+                PublicServerTimeHttpResponse(
+                    status=200,
+                    final_url="https://data-api.binance.vision/api/v3/time",
+                    headers={"Date": "Sat, 22 Aug 2026 04:04:00 GMT"},
+                    body=json.dumps(
+                        {"serverTime": midpoint + 100}, separators=(",", ":")
+                    ).encode("utf-8"),
+                    request_started_at=_utc(started),
+                    response_received_at=_utc(received),
+                    monotonic_rtt_ms=rtt,
+                )
+            )
+
+    def get(self):
+        return self.responses.pop(0)
 
 
 class LiveCaptureCodecTests(unittest.TestCase):
@@ -35,6 +73,7 @@ class LiveCaptureCodecTests(unittest.TestCase):
             "manifest_hash": "b" * 64,
             "manifest_file_sha256": "d" * 64,
         }
+        self.clock_probe = build_server_time_probe(transport=_TimeTransport())
 
     def _structural_document(self):
         document = {
@@ -60,7 +99,10 @@ class LiveCaptureCodecTests(unittest.TestCase):
                 "scheduled_for": "2026-08-22T04:00:00.000Z",
                 "captured_at": "2026-08-22T04:05:00.000Z",
             },
-            "clock": {},
+            "clock": {
+                "probe": deepcopy(self.clock_probe),
+                "trust_hash": server_time_probe_trust_hash(self.clock_probe),
+            },
             "kline_request": {},
             "attempts": [{}],
             "selected_success_attempt_index": 0,
@@ -191,6 +233,32 @@ class LiveCaptureCodecTests(unittest.TestCase):
                         previous_source_bundle=None,
                     )
                 self.assertEqual(caught.exception.reason_code, reason)
+
+    def test_loader_rejects_untrusted_or_mutated_clock_probe(self):
+        wrong_trust = self._structural_document()
+        wrong_trust["clock"]["trust_hash"] = "f" * 64
+        wrong_trust["capture_hash"] = artifact_self_hash(wrong_trust, "capture_hash")
+        mutated_probe = self._structural_document()
+        mutated_probe["clock"]["probe"]["samples"][0]["status"] = 503
+        mutated_probe["clock"]["trust_hash"] = server_time_probe_trust_hash(
+            mutated_probe["clock"]["probe"]
+        )
+        mutated_probe["capture_hash"] = artifact_self_hash(
+            mutated_probe, "capture_hash"
+        )
+        for document in (wrong_trust, mutated_probe):
+            with self.subTest(document=document["clock"]):
+                with self.assertRaises(ChallengerReplacementLiveInputError) as caught:
+                    load_challenger_replacement_live_capture_bytes(
+                        canonical_json(document).encode("utf-8"),
+                        plan=self.plan,
+                        build_identity=self.build_identity,
+                        previous_source_bundle=None,
+                    )
+                self.assertEqual(
+                    caught.exception.reason_code,
+                    "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_CLOCK_INVALID",
+                )
 
 
 if __name__ == "__main__":
