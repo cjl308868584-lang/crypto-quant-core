@@ -231,6 +231,7 @@
 223. [NautilusTrader v0.65 正式完成标记](artifacts/nautilus-sandbox/v0.65.0/nautilus-sandbox-complete-v0.65.0.json)
 224. [NautilusTrader 端到端隔离 Spike ADR-0065](docs/adr/0065-nautilus-end-to-end-spike.md)
 225. [实施追踪 v0.65.0](docs/implementation-status-v0.65.0.md)
+226. [NautilusTrader v0.65.1 安全加固](docs/implementation-status-v0.65.1.md)
 
 如果文档之间出现冲突，以《系统计划 v1.1》的产品目标和硬风险约束为最高优先级；运行数据字段以《核心数据契约》为准，各发布对象字段以对应Schema为准；机制解释以《AI 研究与模型治理》和《开发路线与验收门槛》为准；发布数值、比较运算符、必需性和样本不足结果以 `ReleaseGatePolicy` 为准，指标单位/估计器以Metric Catalog为准，条件聚合和证据作用域以《发布评估与证据规范》为准。
 

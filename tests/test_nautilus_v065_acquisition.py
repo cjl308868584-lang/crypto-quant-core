@@ -718,8 +718,8 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             "crypto_quant.nautilus_v065_ceremony_cli._venv_python_identity",
             side_effect=[expected, expected, expected, expected],
         ) as identity, mock.patch(
-            "crypto_quant.nautilus_v065_ceremony_cli.subprocess.run",
-            return_value=mock.Mock(returncode=0, stdout=b"", stderr=b""),
+            "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command",
+            return_value=(0, b"", b"", False),
         ) as run, mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli.load_nautilus_v065_result",
             return_value={"verified": True},
@@ -733,7 +733,7 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 ),
                 {"verified": True},
             )
-            run.return_value = mock.Mock(returncode=0, stdout=b"", stderr=b"unexpected-warning")
+            run.return_value = (0, b"", b"unexpected-warning", False)
             with self.assertRaisesRegex(
                 NautilusV065SupplyChainError,
                 "NAUTILUS_V065_RUNNER_FAILED",
@@ -747,14 +747,14 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                 )
         self.assertEqual(identity.call_count, 4)
         self.assertEqual(run.call_args.args[0][0:4], [str(python), "-P", "-m", "crypto_quant_nautilus_v065.runner"])
-        self.assertEqual(set(run.call_args.kwargs["env"]), {"HOME", "PATH", "PYTHONPATH", "LANG", "LC_ALL"})
+        self.assertEqual(set(run.call_args.kwargs["environment"]), {"HOME", "PATH", "PYTHONPATH", "LANG", "LC_ALL"})
 
         changed = dict(expected, inode=expected["inode"] + 1)
         with tempfile.TemporaryDirectory() as raw, mock.patch(
             "crypto_quant.nautilus_v065_ceremony_cli._venv_python_identity",
             return_value=changed,
         ), mock.patch(
-            "crypto_quant.nautilus_v065_ceremony_cli.subprocess.run"
+            "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command"
         ) as run:
             workspace = Path(raw)
             workspace.chmod(0o700)
@@ -764,6 +764,113 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
                     receipt=receipt, invocation="first",
                 )
         run.assert_not_called()
+
+    def test_platform_gate_rejects_non_cpython_before_acquisition(self):
+        module = __import__(
+            "crypto_quant.nautilus_v065_ceremony_cli",
+            fromlist=["_platform_identity"],
+        )
+        with mock.patch.object(module.platform, "system", return_value="Darwin"), mock.patch.object(
+            module.platform, "machine", return_value="arm64"
+        ), mock.patch.object(
+            module.platform, "mac_ver", return_value=("15.7.5", ("", "", ""), "")
+        ), mock.patch.object(
+            module.platform, "python_implementation", return_value="PyPy"
+        ), mock.patch.object(module.sys, "version_info", (3, 12, 1)):
+            with self.assertRaisesRegex(
+                NautilusV065SupplyChainError, "NAUTILUS_V065_PLATFORM_MISMATCH"
+            ):
+                module._platform_identity()
+
+    def test_runner_uses_bounded_capture_and_maps_resource_failures(self):
+        receipt = __import__(
+            "test_nautilus_v065_supply_chain"
+        ).NautilusV065SupplyChainTests().receipt()
+        request = build_nautilus_v065_request(
+            plan_id=receipt["plan_id"],
+            plan_hash=receipt["plan_hash"],
+            supply_chain_receipt_id=receipt["receipt_id"],
+            supply_chain_receipt_hash=receipt["receipt_hash"],
+        )
+        transcript = next(
+            item for item in receipt["transcripts"] if item["name"] == "offline_import"
+        )
+        python = Path(transcript["executable_path"])
+        expected = {
+            field: transcript[f"executable_{field}_before"]
+            for field in ("device", "inode", "mode", "size", "sha256")
+        }
+        for bounded_result in (
+            (-9, b"partial-out", b"partial-err", True),
+            NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_OUTPUT_LIMIT"),
+        ):
+            with self.subTest(bounded_result=repr(bounded_result)), tempfile.TemporaryDirectory() as raw, mock.patch(
+                "crypto_quant.nautilus_v065_ceremony_cli._venv_python_identity",
+                return_value=expected,
+            ), mock.patch(
+                "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command",
+                return_value=bounded_result if isinstance(bounded_result, tuple) else mock.DEFAULT,
+                side_effect=bounded_result if isinstance(bounded_result, Exception) else None,
+            ) as bounded:
+                workspace = Path(raw)
+                workspace.chmod(0o700)
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError, "NAUTILUS_V065_RUNNER_FAILED"
+                ):
+                    _invoke_fixed_runner(
+                        python=python,
+                        workspace=workspace,
+                        request=request,
+                        receipt=receipt,
+                        invocation="first",
+                    )
+                bounded.assert_called_once()
+                self.assertEqual(bounded.call_args.kwargs["timeout"], 120)
+
+    def test_runner_revalidates_python_identity_after_resource_failure(self):
+        receipt = __import__(
+            "test_nautilus_v065_supply_chain"
+        ).NautilusV065SupplyChainTests().receipt()
+        request = build_nautilus_v065_request(
+            plan_id=receipt["plan_id"],
+            plan_hash=receipt["plan_hash"],
+            supply_chain_receipt_id=receipt["receipt_id"],
+            supply_chain_receipt_hash=receipt["receipt_hash"],
+        )
+        transcript = next(
+            item for item in receipt["transcripts"] if item["name"] == "offline_import"
+        )
+        python = Path(transcript["executable_path"])
+        expected = {
+            field: transcript[f"executable_{field}_before"]
+            for field in ("device", "inode", "mode", "size", "sha256")
+        }
+        changed = dict(expected, inode=expected["inode"] + 1)
+        for runner_failure in (
+            NautilusV065SupplyChainError("NAUTILUS_V065_COMMAND_OUTPUT_LIMIT"),
+            OSError("runner spawn failed"),
+        ):
+            with self.subTest(runner_failure=type(runner_failure).__name__), tempfile.TemporaryDirectory() as raw, mock.patch(
+                "crypto_quant.nautilus_v065_ceremony_cli._venv_python_identity",
+                side_effect=[expected, changed],
+            ) as identity, mock.patch(
+                "crypto_quant.nautilus_v065_ceremony_cli._run_bounded_command",
+                side_effect=runner_failure,
+            ):
+                workspace = Path(raw)
+                workspace.chmod(0o700)
+                with self.assertRaisesRegex(
+                    NautilusV065SupplyChainError,
+                    "NAUTILUS_V065_RUNNER_PYTHON_IDENTITY_INVALID",
+                ):
+                    _invoke_fixed_runner(
+                        python=python,
+                        workspace=workspace,
+                        request=request,
+                        receipt=receipt,
+                        invocation="first",
+                    )
+                self.assertEqual(identity.call_count, 2)
 
     def test_failed_acquisition_publishes_failure_receipt_and_inconclusive_with_zero_runner(self):
         plan = self.plan()
@@ -1181,6 +1288,74 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
             )
         self.assertLess(time.monotonic() - started, 5)
 
+    def test_bounded_command_preserves_primary_when_all_termination_calls_fail(self):
+        stdout = mock.Mock()
+        stderr = mock.Mock()
+        stdout.fileno.return_value = 10
+        stderr.fileno.return_value = 11
+        process = mock.Mock(stdout=stdout, stderr=stderr, pid=12345)
+        process.poll.return_value = None
+        process.wait.side_effect = OSError("wait failed")
+        process.kill.side_effect = PermissionError("direct kill denied")
+        selector = mock.Mock()
+        selector.get_map.return_value = {10: stdout, 11: stderr}
+        selector.select.return_value = [(mock.Mock(fileobj=stdout), 1)]
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli.subprocess.Popen",
+            return_value=process,
+        ), mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli.selectors.DefaultSelector",
+            return_value=selector,
+        ), mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli.os.read",
+            return_value=b"x" * (5 * 1024 * 1024),
+        ), mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli.os.killpg",
+            side_effect=PermissionError("group kill denied"),
+        ):
+            with self.assertRaisesRegex(
+                NautilusV065SupplyChainError,
+                "NAUTILUS_V065_COMMAND_OUTPUT_LIMIT",
+            ):
+                _run_bounded_command(
+                    ["/fixed/runner"],
+                    cwd=ROOT,
+                    environment={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+                    timeout=1,
+                )
+        selector.close.assert_called_once_with()
+        stdout.close.assert_called_once_with()
+        stderr.close.assert_called_once_with()
+
+    def test_bounded_command_maps_cleanup_wait_error_without_primary(self):
+        stdout = mock.Mock()
+        stderr = mock.Mock()
+        process = mock.Mock(stdout=stdout, stderr=stderr, pid=12345)
+        process.poll.return_value = 0
+        process.wait.side_effect = [0, OSError("cleanup wait failed"), 0]
+        selector = mock.Mock()
+        selector.get_map.return_value = {}
+        with mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli.subprocess.Popen",
+            return_value=process,
+        ), mock.patch(
+            "crypto_quant.nautilus_v065_ceremony_cli.selectors.DefaultSelector",
+            return_value=selector,
+        ):
+            with self.assertRaisesRegex(
+                NautilusV065SupplyChainError,
+                "NAUTILUS_V065_COMMAND_FAILED",
+            ):
+                _run_bounded_command(
+                    ["/fixed/runner"],
+                    cwd=ROOT,
+                    environment={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+                    timeout=1,
+                )
+        selector.close.assert_called_once_with()
+        stdout.close.assert_called_once_with()
+        stderr.close.assert_called_once_with()
+
     def test_bounded_command_timeout_does_not_wait_for_escaped_pipe_holder(self):
         code = (
             "import os,time;pid=os.fork();"
@@ -1195,6 +1370,20 @@ class NautilusV065AcquisitionTests(unittest.TestCase):
         )
         self.assertTrue(timed_out)
         self.assertNotEqual(returncode, 0)
+        self.assertLess(time.monotonic() - started, 2)
+
+    def test_bounded_command_timeout_survives_child_closing_both_pipes(self):
+        code = "import os,time;os.close(1);os.close(2);time.sleep(4)"
+        started = time.monotonic()
+        returncode, stdout, stderr, timed_out = _run_bounded_command(
+            [sys.executable, "-c", code],
+            cwd=ROOT,
+            environment={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+            timeout=1,
+        )
+        self.assertTrue(timed_out)
+        self.assertNotEqual(returncode, 0)
+        self.assertEqual((stdout, stderr), (b"", b""))
         self.assertLess(time.monotonic() - started, 2)
 
     def test_nonzero_command_error_retains_exact_failure_record(self):
