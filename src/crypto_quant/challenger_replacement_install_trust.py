@@ -1086,41 +1086,6 @@ def _build_install_contract(
     return contract
 
 
-def _render_snapshot_and_contract(
-    *,
-    repository: Path,
-    snapshot_parent: Path,
-    inventory: Mapping[str, str],
-    candidate_release: Mapping[str, Any],
-    github_verification: Mapping[str, Any],
-    python_identity: Mapping[str, Any],
-):
-    snapshot = _publish_snapshot_from_inventory(
-        repository, snapshot_parent, inventory
-    )
-    contract = _build_install_contract(
-        snapshot=snapshot,
-        inventory=inventory,
-        candidate_release=candidate_release,
-        github_verification=github_verification,
-        python_identity=python_identity,
-    )
-    body = canonical_json(contract).encode("utf-8")
-    load_replacement_install_contract_bytes(body)
-    paths = replacement_install_paths()
-    outcome, _ = _publish_contract_exact(
-        Path(paths["deployment_root"]), Path(paths["contract"]).name, body
-    )
-    loaded = load_replacement_install_contract_bytes(
-        Path(paths["contract"]).read_bytes()
-    )
-    return {
-        "snapshot": snapshot,
-        "contract": loaded,
-        "contract_outcome": outcome,
-    }
-
-
 def _run_fixed_command(argv, *, cwd: Path, environment=None):
     try:
         result = subprocess.run(
@@ -1298,12 +1263,16 @@ def _ensure_fixed_snapshot_directories(paths):
     primary_error = None
     current = anchor_fd
     try:
-        for name in (runtime.name, "deployment", "snapshots"):
+        for name in (runtime.name, "deployment"):
             following = _open_relative_directory(current, name, create=True)
             _fsync_retry(current)
             if current != anchor_fd:
                 _close_descriptor(current)
             current = following
+        for name in ("snapshots", "preflight-receipts"):
+            child = _open_relative_directory(current, name, create=True)
+            _fsync_retry(current)
+            _close_descriptor(child)
         return runtime / "deployment" / "snapshots"
     except BaseException as error:
         primary_error = error
@@ -1478,3 +1447,74 @@ def load_replacement_install_contract_bytes(data: bytes) -> Mapping[str, Any]:
         raise ReplacementInstallTrustError(
             "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_INVALID"
         ) from error
+
+
+def _load_fixed_published_contract():
+    path = Path(replacement_install_paths()["contract"])
+    parent_fd, _ = _open_directory(path.parent, exact_mode=0o700)
+    primary = None
+    try:
+        loaded = _read_published_exact(parent_fd, path.name)
+        if loaded is None:
+            raise ReplacementInstallTrustError(
+                "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_INVALID"
+            )
+        contract = load_replacement_install_contract_bytes(loaded[0])
+        replay_replacement_snapshot(contract)
+        return contract, loaded[0]
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        _close_descriptor(parent_fd, primary)
+
+
+def replay_replacement_snapshot(contract: Mapping[str, Any]):
+    snapshot = contract["snapshot"]
+    root = Path(snapshot["root"])
+    if root != (Path(contract["paths"]["deployment_root"]) / "snapshots"
+                / snapshot["tree_hash"]):
+        raise ReplacementInstallTrustError(
+            "CHALLENGER_REPLACEMENT_SNAPSHOT_FINAL_UNTRUSTED"
+        )
+    parent_fd, _ = _open_directory(root.parent, exact_mode=0o700)
+    root_fd = -1
+    primary = None
+    manifest_name = "config/evaluator-build-manifest-v1.json"
+    try:
+        root_fd = _open_relative_directory(
+            parent_fd, snapshot["tree_hash"], create=False
+        )
+        opened = os.fstat(root_fd)
+        body = _read_snapshot_file(
+            root_fd, manifest_name,
+            contract["candidate_release"]["manifest_file_sha256"],
+        )
+        inventory = dict(_strict_json_bytes(body)["file_hashes"])
+        inventory[manifest_name] = hashlib.sha256(body).hexdigest()
+        replayed = _replay_snapshot(parent_fd, snapshot["tree_hash"], inventory)
+        if replayed is None or (
+            replayed[0].st_dev, replayed[0].st_ino, len(inventory), replayed[1]
+        ) != (
+            snapshot["root_device"], snapshot["root_inode"],
+            snapshot["file_count"], snapshot["total_size_bytes"],
+        ) or (opened.st_dev, opened.st_ino) != (replayed[0].st_dev, replayed[0].st_ino):
+            raise ReplacementInstallTrustError(
+                "CHALLENGER_REPLACEMENT_SNAPSHOT_FINAL_UNTRUSTED"
+            )
+        return {"file_count": len(inventory), "total_size_bytes": replayed[1]}
+    except (KeyError, TypeError, ValueError) as error:
+        if isinstance(error, ReplacementInstallTrustError):
+            primary = error
+            raise
+        primary = ReplacementInstallTrustError(
+            "CHALLENGER_REPLACEMENT_SNAPSHOT_FINAL_UNTRUSTED"
+        )
+        raise primary from error
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        if root_fd >= 0:
+            _close_descriptor(root_fd, primary)
+        _close_descriptor(parent_fd, primary)

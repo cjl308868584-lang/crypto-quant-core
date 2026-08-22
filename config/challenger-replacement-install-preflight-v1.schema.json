@@ -3,15 +3,38 @@
   "$id": "https://crypto-quant.local/schemas/challenger-replacement-install-preflight-v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "status", "observed_at", "expires_at", "contract_binding", "authority", "reason_codes"],
+  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "status", "observed_at", "expires_at", "contract_binding", "machine", "release_replayed", "paths_verified", "power_safe", "disk", "clock", "commands", "authority", "reason_codes"],
   "properties": {
     "$schema": {"const": "./challenger-replacement-install-preflight-v1.schema.json"},
     "schema_version": {"const": "1.0.0"},
     "receipt_id": {"type": "string", "pattern": "^challenger_replacement_install_preflight_[0-9a-f]{64}$"},
-    "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "receipt_hash": {"$ref": "#/$defs/hash"},
     "status": {"enum": ["PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE", "PREFLIGHT_FAILED_CLOSED", "PREFLIGHT_PLATFORM_UNSUPPORTED"]},
-    "observed_at": {"type": "string", "minLength": 1}, "expires_at": {"type": "string", "minLength": 1},
-    "contract_binding": {"type": "object"}, "authority": {"type": "object"},
-    "reason_codes": {"type": "array", "items": {"type": "string", "minLength": 1}}
+    "observed_at": {"$ref": "#/$defs/time"}, "expires_at": {"$ref": "#/$defs/time"},
+    "contract_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_id", "contract_hash", "file_sha256"],
+      "properties": {"contract_id": {"type": "string", "pattern": "^challenger_replacement_install_contract_[0-9a-f]{64}$"}, "contract_hash": {"$ref": "#/$defs/hash"}, "file_sha256": {"$ref": "#/$defs/hash"}}
+    },
+    "machine": {
+      "type": "object", "additionalProperties": false,
+      "required": ["system", "machine", "uid", "home", "timezone"],
+      "properties": {"system": {"type": "string", "minLength": 1}, "machine": {"type": "string", "minLength": 1}, "uid": {"type": "integer", "minimum": 0}, "home": {"type": "string", "minLength": 1}, "timezone": {"type": "string", "minLength": 1}}
+    },
+    "release_replayed": {"type": "boolean"}, "paths_verified": {"type": "boolean"}, "power_safe": {"type": "boolean"},
+    "disk": {"type": "object", "additionalProperties": false, "required": ["free_bytes", "free_inodes"], "properties": {"free_bytes": {"type": "integer", "minimum": 0}, "free_inodes": {"type": "integer", "minimum": 0}}},
+    "clock": {"type": "object", "additionalProperties": false, "required": ["endpoint", "request_count", "trust_hash"], "properties": {"endpoint": {"const": "https://data-api.binance.vision/api/v3/time"}, "request_count": {"enum": [0, 3]}, "trust_hash": {"$ref": "#/$defs/hash"}}},
+    "commands": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/command"}},
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["github_request_count", "market_request_count", "launchctl_read_count", "launchctl_mutation_count", "runtime_invocation_count", "state_write_count", "credential_count", "broker_request_count", "order_count"],
+      "properties": {"github_request_count": {"const": 0}, "market_request_count": {"enum": [0, 3]}, "launchctl_read_count": {"enum": [0, 2]}, "launchctl_mutation_count": {"const": 0}, "runtime_invocation_count": {"const": 0}, "state_write_count": {"const": 0}, "credential_count": {"type": "integer", "minimum": 0}, "broker_request_count": {"const": 0}, "order_count": {"const": 0}}
+    },
+    "reason_codes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+    "command": {"type": "object", "additionalProperties": false, "required": ["argv", "exit_code", "stdout_sha256", "stderr_sha256"], "properties": {"argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "exit_code": {"type": "integer", "minimum": 0, "maximum": 255}, "stdout_sha256": {"$ref": "#/$defs/hash"}, "stderr_sha256": {"$ref": "#/$defs/hash"}}}
   }
 }

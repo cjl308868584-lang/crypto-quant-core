@@ -177,6 +177,32 @@ def valid_contract():
     return contract
 
 
+def render_fixture_contract(
+    trust, *, repository, snapshot_parent, inventory, candidate_release,
+    github_verification, python_identity,
+):
+    snapshot = trust._publish_snapshot_from_inventory(
+        repository, snapshot_parent, inventory
+    )
+    contract = trust._build_install_contract(
+        snapshot=snapshot, inventory=inventory,
+        candidate_release=candidate_release,
+        github_verification=github_verification,
+        python_identity=python_identity,
+    )
+    body = canonical_json(contract).encode()
+    trust.load_replacement_install_contract_bytes(body)
+    paths = trust.replacement_install_paths()
+    outcome, _ = trust._publish_contract_exact(
+        Path(paths["deployment_root"]), Path(paths["contract"]).name, body
+    )
+    loaded = trust.load_replacement_install_contract_bytes(
+        Path(paths["contract"]).read_bytes()
+    )
+    return {"snapshot": snapshot, "contract": loaded,
+            "contract_outcome": outcome}
+
+
 class ReplacementInstallTrustTests(unittest.TestCase):
     def test_fixed_foundation_and_paths(self):
         from crypto_quant.challenger_replacement_install_trust import (
@@ -599,7 +625,7 @@ raise SystemExit(9)
             with mock.patch.object(
                 trust, "replacement_install_paths", return_value=paths
             ):
-                first = trust._render_snapshot_and_contract(
+                first = render_fixture_contract(trust,
                     repository=repository,
                     snapshot_parent=snapshots,
                     inventory=inventory,
@@ -607,7 +633,7 @@ raise SystemExit(9)
                     github_verification=fixture["github_verification"],
                     python_identity=fixture["python"],
                 )
-                second = trust._render_snapshot_and_contract(
+                second = render_fixture_contract(trust,
                     repository=repository,
                     snapshot_parent=snapshots,
                     inventory=inventory,
@@ -624,6 +650,60 @@ raise SystemExit(9)
             self.assertEqual(first["contract"], second["contract"])
             self.assertEqual(first["snapshot"]["tree_hash"],
                              second["snapshot"]["tree_hash"])
+
+    def test_fixed_contract_load_replays_snapshot_before_returning(self):
+        import crypto_quant.challenger_replacement_install_trust as trust
+
+        with temporary_workspace() as directory:
+            root = Path(directory)
+            repository = root / "repository"
+            deployment = root / "deployment"
+            snapshots = deployment / "snapshots"
+            repository.mkdir(mode=0o700)
+            deployment.mkdir(mode=0o700)
+            snapshots.mkdir(mode=0o700)
+            manifest_name = "config/evaluator-build-manifest-v1.json"
+            manifest = canonical_json({"file_hashes": {}}).encode()
+            target = repository / manifest_name
+            target.parent.mkdir(mode=0o700)
+            target.write_bytes(manifest)
+            target.chmod(0o600)
+            inventory = {manifest_name: hashlib.sha256(manifest).hexdigest()}
+            snapshot = trust._publish_snapshot_from_inventory(
+                repository, snapshots, inventory
+            )
+            contract = valid_contract()
+            paths = dict(contract["paths"])
+            paths.update({
+                "runtime_root": str(root),
+                "deployment_root": str(deployment),
+                "contract": str(deployment / "contract.json"),
+            })
+            contract["paths"] = paths
+            contract["snapshot"] = {key: snapshot[key] for key in (
+                "root", "tree_hash", "file_count", "total_size_bytes",
+                "root_device", "root_inode",
+            )}
+            contract["candidate_release"]["manifest_file_sha256"] = inventory[manifest_name]
+            identity = {key: value for key, value in contract.items()
+                        if key not in ("contract_id", "contract_hash")}
+            contract["contract_id"] = stable_id(
+                "challenger_replacement_install_contract", identity
+            )
+            contract["contract_hash"] = artifact_self_hash(contract, "contract_hash")
+            body = canonical_json(contract).encode()
+            trust._publish_contract_exact(deployment, "contract.json", body)
+            with mock.patch.object(
+                trust, "replacement_install_paths", return_value=paths
+            ):
+                self.assertEqual(trust._load_fixed_published_contract()[0], contract)
+                snapshot_manifest = Path(snapshot["root"]) / manifest_name
+                snapshot_manifest.write_bytes(b"{}")
+                with self.assertRaisesRegex(
+                    trust.ReplacementInstallTrustError,
+                    "CHALLENGER_REPLACEMENT_SNAPSHOT_FINAL_UNTRUSTED",
+                ):
+                    trust._load_fixed_published_contract()
 
     def test_contract_bindings_are_read_from_snapshot_not_mutable_repository_paths(self):
         import crypto_quant.challenger_replacement_install_trust as trust
@@ -672,7 +752,7 @@ raise SystemExit(9)
                 trust, "_publish_snapshot_from_inventory",
                 side_effect=publish_then_replace_plan,
             ):
-                result = trust._render_snapshot_and_contract(
+                result = render_fixture_contract(trust,
                     repository=repository,
                     snapshot_parent=snapshots,
                     inventory=inventory,
@@ -833,7 +913,10 @@ raise SystemExit(9)
             second = trust._ensure_fixed_snapshot_directories(paths)
             self.assertEqual(first, second)
             self.assertEqual(first_inode, second.stat().st_ino)
-            for path in (runtime, runtime / "deployment", first):
+            for path in (
+                runtime, runtime / "deployment", first,
+                runtime / "deployment/preflight-receipts",
+            ):
                 self.assertEqual(path.stat().st_mode & 0o777, 0o700)
 
     def test_system_python_identity_records_real_link_count(self):
