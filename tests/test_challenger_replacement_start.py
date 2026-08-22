@@ -1,0 +1,398 @@
+import os
+import stat
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest import mock
+
+from crypto_quant.canonical import canonical_json
+from tests.test_challenger_replacement_install_trust import temporary_workspace
+from tests.test_challenger_replacement_install import (
+    install_inputs,
+    launchctl_print_bytes,
+)
+from tests import test_challenger_replacement_live_runtime as live_fixture
+
+
+ELIGIBLE = "2026-08-22T04:00:00.000Z"
+
+
+def observation_sources(projection=None, stdout=b"", stderr=b""):
+    root = mock.Mock()
+    return {
+        "contract": {
+            "service": {
+                "identity": "gui/501/local.crypto-quant.challenger-replacement-v1"
+            }
+        },
+        "install_receipt": {
+            "first_eligible_scheduled_for": ELIGIBLE,
+        },
+        "event_root": root,
+        "projection": projection or {
+            "events": [], "slots": {}, "active_slot_id": None,
+            "completed_slot_count": 0, "failed_slot_count": 0,
+            "orphan_staging_count": 0, "orphan_staging_bytes": 0,
+        },
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+
+
+def successful_projection(count=1, scheduled_for=ELIGIBLE):
+    slots = {}
+    for index in range(count):
+        slot_id = "slot-{}".format(index + 1)
+        slots[slot_id] = {
+            "stage": "SLOT_SUCCEEDED",
+            "source_bundle": {
+                "slot": {
+                    "slot_id": slot_id,
+                    "scheduled_for": scheduled_for if index == 0 else
+                    "2026-08-22T08:00:00.000Z",
+                }
+            },
+            "source_bundle_sha256": "a" * 64,
+            "decision_sha256": "b" * 64,
+        }
+    return {
+        "events": [object()] * (3 * count), "slots": slots,
+        "active_slot_id": None, "completed_slot_count": count,
+        "failed_slot_count": 0, "orphan_staging_count": 0,
+        "orphan_staging_bytes": 0,
+        "next_required_slot": {
+            "sequence": count + 1,
+            "scheduled_for": "2026-08-22T08:00:00.000Z",
+        },
+    }
+
+
+def runtime_stdout(*, slot_id="slot-1", scheduled_for=ELIGIBLE, event_count=3):
+    return canonical_json({
+        "event_count": event_count,
+        "next_required_slot": {
+            "sequence": 2,
+            "scheduled_for": "2026-08-22T08:00:00.000Z",
+        },
+        "reason_code": "CHALLENGER_REPLACEMENT_SLOT_SUCCEEDED_VERIFIED",
+        "scheduled_for": scheduled_for,
+        "slot_id": slot_id,
+        "status": "CHALLENGER_REPLACEMENT_LIVE_RUNTIME_SUCCEEDED",
+        "terminal_stage": "SLOT_SUCCEEDED",
+    }).encode() + b"\n"
+
+
+class ReplacementFirstSlotObserverTests(unittest.TestCase):
+    def test_source_revalidation_rejects_receipt_or_snapshot_change(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        inputs = install_inputs()
+        receipt = {"first_eligible_scheduled_for": ELIGIBLE}
+        sources = {
+            "install_inputs": inputs,
+            "install_receipt": receipt,
+            "install_receipt_bytes": b"receipt",
+            "plan": {"plan_hash": "a" * 64},
+        }
+        changed = {**inputs, "contract_bytes": inputs["contract_bytes"] + b"x"}
+        with mock.patch.object(
+            start, "_load_fixed_successful_install_receipt",
+            return_value=(changed, receipt, b"receipt"),
+        ), mock.patch.object(
+            start, "_load_snapshot_plan_and_strategy",
+            return_value=sources["plan"],
+        ), self.assertRaisesRegex(
+            start.ChallengerReplacementStartError,
+            "FIRST_SLOT_SOURCE_CHANGED",
+        ):
+            start._revalidate_sources(sources)
+
+        with mock.patch.object(
+            start, "_load_fixed_successful_install_receipt",
+            return_value=(inputs, receipt, b"receipt"),
+        ), mock.patch.object(
+            start, "_load_snapshot_plan_and_strategy",
+            return_value={"plan_hash": "b" * 64},
+        ), self.assertRaisesRegex(
+            start.ChallengerReplacementStartError,
+            "FIRST_SLOT_SOURCE_CHANGED",
+        ):
+            start._revalidate_sources(sources)
+
+    def test_untrusted_loader_failure_returns_failed_closed_before_launch_or_network(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        with mock.patch.object(
+            start, "_load_fixed_observation_sources",
+            side_effect=start.ChallengerReplacementStartError(
+                "CHALLENGER_REPLACEMENT_FIRST_SLOT_PATH_UNTRUSTED"
+            ),
+        ), mock.patch.object(start, "_command") as command, mock.patch.object(
+            start, "acquire_challenger_replacement_live_capture"
+        ) as network, mock.patch.object(
+            start, "_now",
+            return_value=datetime(2026, 8, 22, 4, 10, tzinfo=timezone.utc),
+        ):
+            result = start.observe_fixed_replacement_first_slot()
+        self.assertEqual(result["status"], "FAILED_CLOSED")
+        self.assertEqual(result["reason_codes"], [
+            "CHALLENGER_REPLACEMENT_FIRST_SLOT_PATH_UNTRUSTED"
+        ])
+        self.assertEqual(result["authority"]["launchctl_read_count"], 0)
+        command.assert_not_called()
+        network.assert_not_called()
+
+    def test_launchctl_observation_requires_exact_run_and_zero_exit(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        contract = install_inputs()["contract"]
+        zero = (0, launchctl_print_bytes(contract), b"")
+        one = (0, launchctl_print_bytes(contract).replace(
+            b"\truns = 0", b"\truns = 1"
+        ).replace(
+            b"\tlast exit code = (never exited)", b"\tlast exit code = 0"
+        ), b"")
+        self.assertTrue(start._launchctl_observation_valid(contract, zero, 0))
+        self.assertTrue(start._launchctl_observation_valid(contract, one, 1))
+        self.assertFalse(start._launchctl_observation_valid(contract, one, 0))
+        self.assertFalse(start._launchctl_observation_valid(
+            contract, (0, one[1], b"bad"), 1
+        ))
+
+    def test_fixed_loader_retains_receipt_bound_event_logs_and_plist(self):
+        import hashlib
+        import crypto_quant.challenger_replacement_start as start
+
+        fixture = live_fixture.LiveRuntimeTests()
+        fixture.setUp()
+        try:
+            with temporary_workspace() as directory:
+                base = Path(directory)
+                log = base / "log"
+                launch_agents = base / "LaunchAgents"
+                log.mkdir(mode=0o700)
+                launch_agents.mkdir(mode=0o700)
+                stdout = log / "stdout.log"
+                stderr = log / "stderr.log"
+                target = launch_agents / "replacement.plist"
+                stdout.write_bytes(b"")
+                stderr.write_bytes(b"")
+                target.write_bytes(b"plist")
+                for path in (stdout, stderr, target):
+                    path.chmod(0o600)
+                inputs = install_inputs()
+                identity = fixture.workspace.identity()
+                inputs["contract"]["event_root"].update({
+                    "path": identity.absolute_path, "device": identity.device,
+                    "inode": identity.inode, "owner_uid": identity.uid,
+                })
+                inputs["contract"]["paths"].update({
+                    "event_root": identity.absolute_path,
+                    "stdout": str(stdout), "stderr": str(stderr),
+                    "target_plist": str(target),
+                })
+                entry = target.stat()
+                receipt = {
+                    "first_eligible_scheduled_for": ELIGIBLE,
+                    "plist": {
+                        "path": str(target), "device": entry.st_dev,
+                        "inode": entry.st_ino, "owner_uid": entry.st_uid,
+                        "mode": stat.S_IMODE(entry.st_mode),
+                        "link_count": entry.st_nlink,
+                        "size_bytes": entry.st_size,
+                        "sha256": hashlib.sha256(b"plist").hexdigest(),
+                    },
+                }
+                with mock.patch.object(
+                    start, "_load_fixed_successful_install_receipt",
+                    return_value=(inputs, receipt, b"receipt"),
+                ), mock.patch.object(
+                    start, "_load_snapshot_plan_and_strategy",
+                    return_value=fixture.plan,
+                ):
+                    sources = start._load_fixed_observation_sources()
+                try:
+                    self.assertEqual(sources["projection"]["events"], ())
+                    self.assertEqual(sources["stdout"], b"")
+                    self.assertEqual(sources["stderr"], b"")
+                    self.assertEqual(len(sources["retained_paths"]), 3)
+                finally:
+                    for capability in sources["retained_paths"]:
+                        capability.close()
+                    sources["event_root"].close()
+        finally:
+            fixture.tearDown()
+
+    def test_retained_file_rejects_same_bytes_new_inode_and_preserves_sentinel(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        with temporary_workspace() as directory:
+            parent = Path(directory)
+            parent.chmod(0o700)
+            target = parent / "stdout.log"
+            target.write_bytes(b"exact\n")
+            target.chmod(0o600)
+            capability = start._open_retained_path(
+                target, allow_absent=False, allow_empty=False
+            )
+            try:
+                sentinel = parent / "sentinel"
+                target.rename(sentinel)
+                target.write_bytes(b"exact\n")
+                target.chmod(0o600)
+                before = sentinel.stat()
+                with self.assertRaisesRegex(
+                    start.ChallengerReplacementStartError,
+                    "FIRST_SLOT_PATH_IDENTITY_CHANGED",
+                ):
+                    capability.validate()
+                after = sentinel.stat()
+                self.assertEqual(sentinel.read_bytes(), b"exact\n")
+                self.assertEqual(
+                    (stat.S_IMODE(after.st_mode), after.st_ino, after.st_nlink,
+                     after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+                    (stat.S_IMODE(before.st_mode), before.st_ino, before.st_nlink,
+                     before.st_size, before.st_mtime_ns, before.st_ctime_ns),
+                )
+            finally:
+                capability.close()
+
+    def test_retained_file_rejects_fifo_without_blocking_or_modifying_it(self):
+        import crypto_quant.challenger_replacement_start as start
+
+        with temporary_workspace() as directory:
+            parent = Path(directory)
+            parent.chmod(0o700)
+            fifo = parent / "stderr.log"
+            os.mkfifo(fifo, 0o600)
+            before = fifo.lstat()
+            with self.assertRaisesRegex(
+                start.ChallengerReplacementStartError,
+                "FIRST_SLOT_PATH_UNTRUSTED",
+            ):
+                start._open_retained_path(
+                    fifo, allow_absent=False, allow_empty=True
+                )
+            after = fifo.lstat()
+            self.assertEqual(
+                (stat.S_IMODE(after.st_mode), after.st_ino, after.st_nlink,
+                 after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+                (stat.S_IMODE(before.st_mode), before.st_ino, before.st_nlink,
+                 before.st_size, before.st_mtime_ns, before.st_ctime_ns),
+            )
+
+    def _observe(self, sources, now, *, launch=(0, b"launch", b""), valid=True):
+        import crypto_quant.challenger_replacement_start as start
+
+        with mock.patch.object(
+            start, "_load_fixed_observation_sources", return_value=sources
+        ), mock.patch.object(
+            start, "_now", return_value=now
+        ), mock.patch.object(
+            start, "_command", return_value=launch
+        ) as command, mock.patch.object(
+            start, "_launchctl_observation_valid", return_value=valid
+        ), mock.patch.object(
+            start, "acquire_challenger_replacement_live_capture"
+        ) as network, mock.patch.object(
+            sources["event_root"], "close", wraps=sources["event_root"].close
+        ) as close:
+            result = start.observe_fixed_replacement_first_slot()
+        network.assert_not_called()
+        command.assert_called_once_with((
+            "/bin/launchctl", "print",
+            "gui/501/local.crypto-quant.challenger-replacement-v1",
+        ))
+        close.assert_called_once()
+        self.assertEqual(result["authority"], {
+            "launchctl_read_count": 1, "market_request_count": 0,
+            "runtime_invocation_count": 0, "state_write_count": 0,
+            "credential_count": 0, "broker_request_count": 0,
+            "order_count": 0,
+        })
+        return result
+
+    def test_waiting_states_are_derived_only_from_first_eligible_time(self):
+        before = self._observe(
+            observation_sources(),
+            datetime(2026, 8, 22, 3, 59, tzinfo=timezone.utc),
+        )
+        self.assertEqual(before["status"], "WAITING_BEFORE_FIRST_ELIGIBLE_SLOT")
+        waiting = self._observe(
+            observation_sources(),
+            datetime(2026, 8, 22, 4, 5, tzinfo=timezone.utc),
+        )
+        self.assertEqual(waiting["status"], "WAITING_FOR_FIRST_NATURAL_SLOT")
+
+    def test_one_exact_first_success_is_verified_without_economic_output(self):
+        sources = observation_sources(
+            successful_projection(),
+            stdout=runtime_stdout(),
+        )
+        result = self._observe(
+            sources, datetime(2026, 8, 22, 4, 10, tzinfo=timezone.utc)
+        )
+        self.assertEqual(result["status"], "FIRST_NATURAL_SLOT_VERIFIED")
+        self.assertEqual(result["first_scheduled_for"], ELIGIBLE)
+        forbidden = {"pnl", "return", "win_rate", "profit", "gate"}
+        self.assertFalse(forbidden.intersection(result))
+
+    def test_success_stdout_must_bind_exact_first_slot_and_event_count(self):
+        for stdout in (
+            runtime_stdout(slot_id="other"),
+            runtime_stdout(scheduled_for="2026-08-22T08:00:00.000Z"),
+            runtime_stdout(event_count=6),
+        ):
+            with self.subTest(stdout=stdout):
+                result = self._observe(
+                    observation_sources(successful_projection(), stdout=stdout),
+                    datetime(2026, 8, 22, 4, 10, tzinfo=timezone.utc),
+                )
+                self.assertEqual(result["status"], "FAILED_CLOSED")
+
+    def test_second_slot_or_elapsed_second_boundary_is_missed(self):
+        two = self._observe(
+            observation_sources(successful_projection(2), stdout=b"ok\n"),
+            datetime(2026, 8, 22, 8, 1, tzinfo=timezone.utc),
+        )
+        self.assertEqual(two["status"], "FIRST_SLOT_OBSERVATION_WINDOW_MISSED")
+        late = self._observe(
+            observation_sources(),
+            datetime(2026, 8, 22, 8, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(late["status"], "FIRST_SLOT_OBSERVATION_WINDOW_MISSED")
+
+    def test_partial_failed_wrong_slot_or_bad_process_evidence_fails_closed(self):
+        partial = observation_sources({
+            **successful_projection(0), "events": [object()],
+            "active_slot_id": "slot-1",
+        })
+        failed = observation_sources({
+            **successful_projection(0), "events": [object()],
+            "failed_slot_count": 1,
+        })
+        wrong = observation_sources(
+            successful_projection(scheduled_for="2026-08-22T08:00:00.000Z"),
+            stdout=b"ok\n",
+        )
+        for sources in (partial, failed, wrong):
+            with self.subTest(sources=sources):
+                result = self._observe(
+                    sources, datetime(2026, 8, 22, 4, 10, tzinfo=timezone.utc)
+                )
+                self.assertEqual(result["status"], "FAILED_CLOSED")
+        for sources, launch, valid in (
+            (observation_sources(successful_projection(), stderr=b"bad"),
+             (0, b"launch", b""), True),
+            (observation_sources(successful_projection(), stdout=b"ok\n"),
+             (1, b"", b"bad"), False),
+        ):
+            result = self._observe(
+                sources, datetime(2026, 8, 22, 4, 10, tzinfo=timezone.utc),
+                launch=launch, valid=valid,
+            )
+            self.assertEqual(result["status"], "FAILED_CLOSED")
+
+
+if __name__ == "__main__":
+    unittest.main()

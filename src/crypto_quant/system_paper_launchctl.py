@@ -190,7 +190,7 @@ def parse_system_paper_launchctl_print(data: bytes) -> Mapping[str, Any]:
 
 
 def parse_challenger_replacement_launchctl_print(
-    data: bytes, contract: Mapping[str, Any]
+    data: bytes, contract: Mapping[str, Any], expected_runs: int = 0
 ) -> Mapping[str, Any]:
     label = contract["service"]["label"]
     service, scalars, blocks = _parse_launchctl_structure(data, label)
@@ -213,9 +213,12 @@ def parse_challenger_replacement_launchctl_print(
         or blocks["arguments"] != contract["runtime"]["program_arguments"]
         or scalars["working directory"] != contract["runtime"]["working_directory"]
         or environment != expected_environment
-        or _integer(scalars["runs"], maximum=_MAX_RUNS) != 0
+        or not isinstance(expected_runs, int)
+        or isinstance(expected_runs, bool)
+        or not 0 <= expected_runs <= _MAX_RUNS
+        or _integer(scalars["runs"], maximum=_MAX_RUNS) != expected_runs
         or scalars.get("last exit code", scalars.get("last exit status"))
-        != "(never exited)"
+        != ("(never exited)" if expected_runs == 0 else "0")
     ):
         raise SystemPaperLaunchctlParseError()
-    return {"service": service, "label": label, "runs": 0}
+    return {"service": service, "label": label, "runs": expected_runs}
