@@ -191,13 +191,15 @@ candidate plist 的 module 固定为 v0.68 installed adapter；adapter 内部只
 v0.67 策略核心，不调用 v0.67 unavailable provider。
 
 activation bridge 的最终静态预算以实际 fail-closed 边界为准：trust/preflight/installer/
-installed-adapter/observer 连同薄 CLI 总计严格少于 3,520 行。早期两次估算合计遗漏了
-successful install receipt 重放、snapshot strategy-core 重放、retained event/log/plist
-capability、严格 start-receipt codec/source binding、source-error mapping 和 no-overwrite publisher。
-最终独立审查又实证了 start receipt 在新时间戳下重复发布、pre-start event
-污染、observer 未二次重放和 close 中断等必需边界；本次修订只纳入这些
-已有路径的安全校正，不授权通用 Runner、storage、Broker、order、scheduler、
-deployment framework 或 UI 扩建。
+installed-adapter/observer 连同薄 CLI 总计严格少于 3,620 行；其中 trust+CLI 不高于
+1,700、preflight+CLI 不高于 345、installer+CLI 不高于 420、installed adapter+CLI
+不高于 300、observer/start+CLI 不高于 880。早期估算遗漏了 successful install receipt
+重放、snapshot strategy-core 重放、retained event/log/plist capability、严格
+start-receipt codec/source binding、source-error mapping 和 no-overwrite publisher；最终
+独立审查又实证了 receipt 先重放幂等、安装后首槽 durable-prefix 崩溃恢复、start receipt
+前第二槽禁止、event 二次重放、receipt 目录耐久确认、跨 publication retained source
+复核和 close 安全边界。本次修订只把这些已实证边界的估算误差分配回所属层，不授权
+通用 Runner、storage、Broker、order、scheduler、deployment framework 或 UI 扩建。
 
 ## 7. Install contract
 

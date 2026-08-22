@@ -360,6 +360,23 @@ _V067_RELEASE_PATHS = (
     "docs/adr/0067-replacement-live-input-deployment-candidate.md", "docs/implementation-status-v0.67.0.md",
 )
 
+_V068_RELEASE_PATHS = (
+    "config/challenger-replacement-install-contract-v1.schema.json",
+    "config/challenger-replacement-install-preflight-v1.schema.json",
+    "config/challenger-replacement-install-receipt-v1.schema.json",
+    "config/challenger-replacement-start-receipt-v1.schema.json",
+    "tests/test_challenger_replacement_install_trust.py",
+    "tests/test_challenger_replacement_install_preflight.py",
+    "tests/test_challenger_replacement_install.py",
+    "tests/test_challenger_replacement_installed_runtime.py",
+    "tests/test_challenger_replacement_start.py",
+    "tests/test_challenger_replacement_v068_release.py",
+    "docs/superpowers/specs/2026-08-22-replacement-install-observer-start-design.md",
+    "docs/superpowers/plans/2026-08-22-replacement-install-observer-start.md",
+    "docs/adr/0068-replacement-install-observer-start-trust-chain.md",
+    "docs/implementation-status-v0.68.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -394,6 +411,7 @@ class EvaluatorBuild:
                 + list(_V065_RELEASE_PATHS)
                 + list(_V066_RELEASE_PATHS)
                 + list(_V067_RELEASE_PATHS)
+                + list(_V068_RELEASE_PATHS)
             )
         )
 

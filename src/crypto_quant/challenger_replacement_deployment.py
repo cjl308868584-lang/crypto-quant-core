@@ -179,7 +179,7 @@ def load_challenger_replacement_deployment(path, *, manifest_path):
         actual = {name: hashlib.sha256(_read_owner_exact(workspace / name)).hexdigest()
                   for name in expected_paths}
         plist_name = "artifacts/challenger-replacement/local.crypto-quant.challenger-replacement-v1.plist"
-        if (manifest["manifest_version"] != "1.61.0"
+        if (manifest["manifest_version"] != "1.62.0"
             or manifest["manifest_hash"] != artifact_self_hash(manifest, "manifest_hash")
             or set(files) != set(expected_paths) or files != actual
             or manifest["build_input_tree_hash"] != business_hash(actual)
