@@ -35,6 +35,15 @@ _AUTHORITY_KEYS = {
     "broker_requests_allowed",
     "orders_allowed",
 }
+_REQUEST_KEYS = {
+    "request_id",
+    "method",
+    "url",
+    "symbol",
+    "interval",
+    "limit",
+    "end_time_ms",
+}
 
 
 class ChallengerReplacementLiveInputError(ValueError):
@@ -198,6 +207,34 @@ def load_challenger_replacement_live_capture_bytes(
         or trusted_completed > captured
     ):
         _invalid_clock()
+    end_time_ms = int(scheduled.timestamp() * 1000) - 1
+    expected_request_identity = {
+        "method": "GET",
+        "url": (
+            "https://data-api.binance.vision/api/v3/klines?"
+            f"endTime={end_time_ms}&interval=4h&limit=21&symbol=ETHUSDT"
+        ),
+        "symbol": "ETHUSDT",
+        "interval": "4h",
+        "limit": 21,
+        "end_time_ms": end_time_ms,
+    }
+    request = document["kline_request"]
+    if (
+        not isinstance(request, Mapping)
+        or set(request) != _REQUEST_KEYS
+        or request
+        != {
+            "request_id": stable_id(
+                "challenger_replacement_kline_request",
+                expected_request_identity,
+            ),
+            **expected_request_identity,
+        }
+    ):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_REQUEST_INVALID"
+        )
     authority = document["authority"]
     if (
         not isinstance(authority, Mapping)

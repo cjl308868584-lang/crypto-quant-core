@@ -76,6 +76,20 @@ class LiveCaptureCodecTests(unittest.TestCase):
         self.clock_probe = build_server_time_probe(transport=_TimeTransport())
 
     def _structural_document(self):
+        scheduled = datetime(2026, 8, 22, 4, 0, tzinfo=timezone.utc)
+        end_time_ms = int(scheduled.timestamp() * 1000) - 1
+        request_url = (
+            "https://data-api.binance.vision/api/v3/klines?"
+            f"endTime={end_time_ms}&interval=4h&limit=21&symbol=ETHUSDT"
+        )
+        request_identity = {
+            "method": "GET",
+            "url": request_url,
+            "symbol": "ETHUSDT",
+            "interval": "4h",
+            "limit": 21,
+            "end_time_ms": end_time_ms,
+        }
         document = {
             "$schema": "./challenger-replacement-live-capture-v1.schema.json",
             "schema_version": "1.0.0",
@@ -103,7 +117,12 @@ class LiveCaptureCodecTests(unittest.TestCase):
                 "probe": deepcopy(self.clock_probe),
                 "trust_hash": server_time_probe_trust_hash(self.clock_probe),
             },
-            "kline_request": {},
+            "kline_request": {
+                "request_id": stable_id(
+                    "challenger_replacement_kline_request", request_identity
+                ),
+                **request_identity,
+            },
             "attempts": [{}],
             "selected_success_attempt_index": 0,
             "rows": [{} for _ in range(21)],
@@ -258,6 +277,31 @@ class LiveCaptureCodecTests(unittest.TestCase):
                 self.assertEqual(
                     caught.exception.reason_code,
                     "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_CLOCK_INVALID",
+                )
+
+    def test_loader_rejects_non_allowlisted_or_forged_kline_request(self):
+        wrong_method = self._structural_document()
+        wrong_method["kline_request"]["method"] = "POST"
+        wrong_method["capture_hash"] = artifact_self_hash(
+            wrong_method, "capture_hash"
+        )
+        wrong_url = self._structural_document()
+        wrong_url["kline_request"]["url"] = (
+            "https://api.binance.com/api/v3/klines"
+        )
+        wrong_url["capture_hash"] = artifact_self_hash(wrong_url, "capture_hash")
+        for document in (wrong_method, wrong_url):
+            with self.subTest(request=document["kline_request"]):
+                with self.assertRaises(ChallengerReplacementLiveInputError) as caught:
+                    load_challenger_replacement_live_capture_bytes(
+                        canonical_json(document).encode("utf-8"),
+                        plan=self.plan,
+                        build_identity=self.build_identity,
+                        previous_source_bundle=None,
+                    )
+                self.assertEqual(
+                    caught.exception.reason_code,
+                    "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_REQUEST_INVALID",
                 )
 
 
