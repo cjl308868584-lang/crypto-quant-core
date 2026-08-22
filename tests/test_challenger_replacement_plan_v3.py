@@ -1,5 +1,10 @@
+import ast
+import copy
 import hashlib
+import inspect
 import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,6 +13,14 @@ from jsonschema import Draft202012Validator
 from crypto_quant.challenger_replacement_plan_v2 import (
     load_challenger_replacement_plan_v2,
 )
+from crypto_quant.challenger_replacement_plan_v3 import (
+    ChallengerReplacementPlanV3Error,
+    build_challenger_replacement_plan_v3,
+    challenger_replacement_plan_v3_hash,
+    challenger_replacement_plan_v3_reasons,
+    load_challenger_replacement_plan_v3,
+)
+from crypto_quant.canonical import business_hash, canonical_json, stable_id
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +82,20 @@ EXPECTED_AUTHORITY = {
     "replacement_start_authorized": False,
 }
 
+POLICY_SECTIONS = (
+    "scope",
+    "decision_policy",
+    "opportunity_policy",
+    "operational_qualification",
+    "economic_evidence",
+    "canary_ladder",
+    "product_policy",
+    "risk_policy",
+    "isolation_policy",
+    "evidence_policy",
+    "storage_authority",
+)
+
 
 def _const_object(schema):
     return {
@@ -87,6 +114,40 @@ def _walk_object_schemas(value, path="$"):
     elif isinstance(value, list):
         for index, child in enumerate(value):
             yield from _walk_object_schemas(child, f"{path}/{index}")
+
+
+def _v3_identity(plan):
+    return {
+        "previous_plan_file_sha256": plan["supersession"][
+            "previous_plan_file_sha256"
+        ],
+        "previous_plan_id": plan["supersession"]["previous_plan_id"],
+        "previous_plan_hash": plan["supersession"]["previous_plan_hash"],
+        "foundation": plan["foundation"],
+        **{
+            f"{name}_policy_hash": plan[name]["policy_hash"]
+            for name in POLICY_SECTIONS
+        },
+    }
+
+
+def _rehash_and_reidentify(plan):
+    for name in POLICY_SECTIONS:
+        policy = dict(plan[name])
+        policy.pop("policy_hash")
+        plan[name]["policy_hash"] = business_hash(policy)
+    plan["plan_id"] = stable_id(
+        "challenger_replacement_plan_v3", _v3_identity(plan)
+    )
+    plan["plan_hash"] = challenger_replacement_plan_v3_hash(plan)
+    return plan
+
+
+def _write_plan(path, plan, *, newline=True):
+    body = canonical_json(plan).encode("utf-8")
+    path.write_bytes(body + (b"\n" if newline else b""))
+    path.chmod(0o644)
+    return path
 
 
 class ChallengerReplacementPlanV3PredecessorTests(unittest.TestCase):
@@ -223,3 +284,224 @@ class ChallengerReplacementPlanV3SchemaTests(unittest.TestCase):
         self.assertEqual(product["perpetual_margin_mode"], "ISOLATED")
         self.assertEqual(product["technical_leverage_cap"], "2")
         self.assertEqual(_const_object(properties["authority"]), EXPECTED_AUTHORITY)
+
+
+class ChallengerReplacementPlanV3BuilderTests(unittest.TestCase):
+    def test_builder_is_parameterless_deterministic_and_side_effect_free(self):
+        self.assertEqual(
+            tuple(inspect.signature(build_challenger_replacement_plan_v3).parameters),
+            (),
+        )
+        first = canonical_json(build_challenger_replacement_plan_v3()).encode(
+            "utf-8"
+        )
+        for _ in range(20):
+            self.assertEqual(
+                canonical_json(build_challenger_replacement_plan_v3()).encode(
+                    "utf-8"
+                ),
+                first,
+            )
+
+    def test_builder_freezes_dual_direction_opportunities_tracks_and_ladder(self):
+        plan = build_challenger_replacement_plan_v3()
+        decision = plan["decision_policy"]
+        self.assertEqual(
+            decision["long_entry"],
+            "LATEST_CLOSE_GTE_PRIOR_SMA20_TIMES_1_005_AND_LOG_RETURN_5_GT_ZERO",
+        )
+        self.assertEqual(
+            decision["short_entry"],
+            "LATEST_CLOSE_LTE_PRIOR_SMA20_TIMES_0_995_AND_LOG_RETURN_5_LT_ZERO",
+        )
+        self.assertEqual(
+            decision["long_exit_after_minimum"],
+            "LATEST_CLOSE_LTE_PRIOR_SMA20_OR_VERTICAL_EXIT",
+        )
+        self.assertEqual(
+            decision["short_exit_after_minimum"],
+            "LATEST_CLOSE_GTE_PRIOR_SMA20_OR_VERTICAL_EXIT",
+        )
+        self.assertFalse(decision["same_opportunity_close_and_reverse_allowed"])
+        self.assertTrue(
+            decision["reverse_requires_next_opportunity_after_verified_flat"]
+        )
+        self.assertEqual(
+            plan["opportunity_policy"]["terminal_outcomes"],
+            ["OBSERVED", "MISSED"],
+        )
+        self.assertEqual(
+            plan["operational_qualification"]["minimum_calendar_days"], 7
+        )
+        self.assertEqual(plan["economic_evidence"]["minimum_calendar_days"], 90)
+        self.assertEqual(
+            {
+                name: {
+                    key: plan["canary_ladder"][name][key]
+                    for key in (
+                        "capital_limit_usdt",
+                        "gross_exposure_limit",
+                        "minimum_calendar_days",
+                        "minimum_strategy_cycles",
+                    )
+                }
+                for name in ("E0", "E1", "E2")
+            },
+            {
+                "E0": {
+                    "capital_limit_usdt": "100",
+                    "gross_exposure_limit": "0.5",
+                    "minimum_calendar_days": 7,
+                    "minimum_strategy_cycles": 3,
+                },
+                "E1": {
+                    "capital_limit_usdt": "300",
+                    "gross_exposure_limit": "1",
+                    "minimum_calendar_days": 14,
+                    "minimum_strategy_cycles": 5,
+                },
+                "E2": {
+                    "capital_limit_usdt": "1000",
+                    "gross_exposure_limit": "2",
+                    "minimum_calendar_days": 30,
+                    "minimum_strategy_cycles": 10,
+                },
+            },
+        )
+        self.assertEqual(plan["authority"], EXPECTED_AUTHORITY)
+
+    def test_policy_plan_hash_and_identity_are_recomputed_exactly(self):
+        plan = build_challenger_replacement_plan_v3()
+        for name in POLICY_SECTIONS:
+            policy = dict(plan[name])
+            claimed = policy.pop("policy_hash")
+            self.assertEqual(claimed, business_hash(policy), name)
+        self.assertEqual(
+            plan["plan_id"],
+            stable_id("challenger_replacement_plan_v3", _v3_identity(plan)),
+        )
+        self.assertEqual(plan["plan_hash"], challenger_replacement_plan_v3_hash(plan))
+        self.assertEqual(challenger_replacement_plan_v3_reasons(plan), ())
+
+    def test_rehashed_semantic_tampering_is_rejected(self):
+        cases = {
+            "opportunity": lambda plan: plan["opportunity_policy"].__setitem__(
+                "historical_decision_backfill_allowed", True
+            ),
+            "operational": lambda plan: plan[
+                "operational_qualification"
+            ].__setitem__("minimum_calendar_days", 6),
+            "economic": lambda plan: plan["economic_evidence"].__setitem__(
+                "minimum_calendar_days", 89
+            ),
+            "short_rule": lambda plan: plan["decision_policy"].__setitem__(
+                "short_entry", "DIFFERENT"
+            ),
+            "leverage": lambda plan: plan["product_policy"].__setitem__(
+                "technical_leverage_cap", "3"
+            ),
+            "capital": lambda plan: plan["canary_ladder"]["E0"].__setitem__(
+                "capital_limit_usdt", "101"
+            ),
+            "risk": lambda plan: plan["risk_policy"]["E0"].__setitem__(
+                "daily_loss_limit", "3"
+            ),
+            "authority": lambda plan: plan["authority"].__setitem__(
+                "real_orders_allowed", True
+            ),
+            "predecessor": lambda plan: plan["predecessor"][
+                "previous_plan"
+            ].__setitem__("plan_hash", "f" * 64),
+            "supersession": lambda plan: plan["supersession"].__setitem__(
+                "reason", "DIFFERENT"
+            ),
+            "warning": lambda plan: plan["warnings"].append("EXTRA"),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name=name):
+                changed = copy.deepcopy(build_challenger_replacement_plan_v3())
+                mutate(changed)
+                _rehash_and_reidentify(changed)
+                self.assertTrue(challenger_replacement_plan_v3_reasons(changed))
+
+    def test_module_has_no_process_network_runtime_or_order_capability(self):
+        source = (
+            ROOT / "src" / "crypto_quant" / "challenger_replacement_plan_v3.py"
+        ).read_text()
+        tree = ast.parse(source)
+        imported = {
+            alias.name.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        }
+        self.assertTrue(
+            {
+                "subprocess",
+                "socket",
+                "urllib",
+                "requests",
+                "sqlite3",
+                "execution",
+                "broker",
+            }.isdisjoint(imported)
+        )
+
+
+class ChallengerReplacementPlanV3LoaderTests(unittest.TestCase):
+    def test_loader_accepts_only_exact_canonical_v3_bytes(self):
+        plan = build_challenger_replacement_plan_v3()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for newline in (False, True):
+                path = _write_plan(root / f"plan-{newline}.json", plan, newline=newline)
+                self.assertEqual(load_challenger_replacement_plan_v3(path), plan)
+            pretty = root / "pretty.json"
+            pretty.write_text(json.dumps(plan, indent=2))
+            pretty.chmod(0o644)
+            with self.assertRaises(ChallengerReplacementPlanV3Error):
+                load_challenger_replacement_plan_v3(pretty)
+
+    def test_loader_rejects_duplicate_float_v2_and_relative_inputs(self):
+        plan = build_challenger_replacement_plan_v3()
+        canonical = canonical_json(plan)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            duplicate = root / "duplicate.json"
+            duplicate.write_text(
+                canonical.replace(
+                    '"schema_version":"3.0.0"',
+                    '"schema_version":"3.0.0","schema_version":"3.0.0"',
+                    1,
+                )
+            )
+            duplicate.chmod(0o644)
+            floating = root / "float.json"
+            floating.write_text(
+                canonical.replace('"minimum_calendar_days":7', '"minimum_calendar_days":7.0', 1)
+            )
+            floating.chmod(0o644)
+            for path in (duplicate, floating, V2_PATH):
+                with self.subTest(path=path.name):
+                    with self.assertRaises(ChallengerReplacementPlanV3Error):
+                        load_challenger_replacement_plan_v3(path)
+        with self.assertRaises(ChallengerReplacementPlanV3Error):
+            load_challenger_replacement_plan_v3(Path("relative.json"))
+
+    def test_loader_rejects_writable_hardlinked_symlinked_and_oversized_files(self):
+        plan = build_challenger_replacement_plan_v3()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            writable = _write_plan(root / "writable.json", plan)
+            writable.chmod(0o666)
+            hardlink_source = _write_plan(root / "hardlink-source.json", plan)
+            hardlink = root / "hardlink.json"
+            os.link(hardlink_source, hardlink)
+            symlink = root / "symlink.json"
+            symlink.symlink_to(hardlink_source)
+            oversized = root / "oversized.json"
+            oversized.write_bytes(b"{" + b" " * (256 * 1024))
+            for path in (writable, hardlink, symlink, oversized):
+                with self.subTest(path=path.name):
+                    with self.assertRaises(ChallengerReplacementPlanV3Error):
+                        load_challenger_replacement_plan_v3(path)
