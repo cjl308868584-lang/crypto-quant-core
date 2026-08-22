@@ -40,6 +40,7 @@
 
 **Create test files**
 
+- `tests/challenger_replacement_v2_fixtures.py`: exact committed v2 plan, build identity and credential-free 4h capture helpers.
 - `tests/test_challenger_replacement_events.py`: descriptor, codec, crash, concurrency and replay safety.
 - `tests/test_challenger_replacement_evidence.py`: v2-bound source bundle/schema/bytes tests.
 - `tests/test_challenger_replacement_decision.py`: v2-bound policy and previous-decision tests.
@@ -156,6 +157,7 @@ git commit -m "feat: add replacement canonical event store"
 - Create: `src/crypto_quant/schemas/challenger-replacement-decision-v1.schema.json`
 - Create: `tests/test_challenger_replacement_evidence.py`
 - Create: `tests/test_challenger_replacement_decision.py`
+- Create: `tests/challenger_replacement_v2_fixtures.py`
 - Create: `src/crypto_quant/challenger_replacement_evidence.py`
 - Create: `src/crypto_quant/challenger_replacement_decision.py`
 
@@ -165,7 +167,7 @@ git commit -m "feat: add replacement canonical event store"
 
 - [ ] **Step 1: Add strict mirrored schemas and schema tests**
 
-Use the reviewed schema shapes from `e5d6ce4`, but change plan validation tests to the exact v2 plan. Both source and decision schema must use `additionalProperties: false`, decimal strings rather than JSON floats, and exact parent/build/plan objects.
+Use the reviewed schema shapes from `e5d6ce4`, but change plan validation tests to the exact v2 plan. Add `tests/challenger_replacement_v2_fixtures.py` by adapting the reviewed fixture helper from `67a65d5`: its plan path must end in `challenger-replacement-plan-v0.64.0.json`, it must call `load_challenger_replacement_plan_v2`, and its build identity must identify a deterministic v0.66 test fixture. Both source and decision schema must use `additionalProperties: false`, decimal strings rather than JSON floats, and exact parent/build/plan objects.
 
 Add tests that assert:
 
@@ -248,6 +250,7 @@ git add config/challenger-replacement-source-bundle-v1.schema.json \
   src/crypto_quant/schemas/challenger-replacement-decision-v1.schema.json \
   src/crypto_quant/challenger_replacement_evidence.py \
   src/crypto_quant/challenger_replacement_decision.py \
+  tests/challenger_replacement_v2_fixtures.py \
   tests/test_challenger_replacement_evidence.py \
   tests/test_challenger_replacement_decision.py
 git commit -m "feat: freeze replacement v2 decision documents"
