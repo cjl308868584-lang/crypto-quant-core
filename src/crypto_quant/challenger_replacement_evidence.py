@@ -1,6 +1,7 @@
 """Strict evidence contracts for the isolated replacement Challenger runtime."""
 
 import json
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
@@ -13,6 +14,10 @@ from .canonical import business_hash, canonical_decimal, stable_id, utc_datetime
 from .canonical import canonical_json
 from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reasons
 from .evidence import artifact_self_hash
+from .challenger_replacement_live_input import (
+    ChallengerReplacementLiveCapture,
+    load_challenger_replacement_live_capture_bytes,
+)
 
 
 _ZERO_HASH = "0" * 64
@@ -36,6 +41,8 @@ _BUILD_IDENTITY_KEYS = {
     "manifest_hash",
     "manifest_file_sha256",
 }
+_COHORT_QUALIFICATION = "REPLACEMENT_CONFIRMATORY_COHORT_EVIDENCE"
+_COHORT_SOURCE_SCHEMA = "./challenger-replacement-source-bundle-v2.schema.json"
 
 
 class ChallengerReplacementEvidenceError(ValueError):
@@ -46,10 +53,165 @@ class ChallengerReplacementEvidenceError(ValueError):
         self.reason_code = reason_code
 
 
+def _cohort_parent_identity(
+    *, plan, build_identity, previous_source_bundle, previous_decision
+):
+    if previous_source_bundle is None and previous_decision is None:
+        return _ZERO_HASH, None, None, None
+    if not isinstance(previous_source_bundle, Mapping) or not isinstance(
+        previous_decision, Mapping
+    ):
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_INPUT_PARENT_INVALID"
+        )
+    previous_source_hash = previous_source_bundle.get("bundle_hash")
+    previous_decision_hash = previous_decision.get("decision_hash")
+    try:
+        previous_scheduled = _utc(
+            previous_source_bundle["slot"]["scheduled_for"]
+        )[0]
+        previous_sequence = previous_source_bundle["slot"]["sequence"]
+    except (KeyError, TypeError, ValueError) as error:
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_INPUT_PARENT_INVALID"
+        ) from error
+    if (
+        previous_source_bundle.get("$schema") != _COHORT_SOURCE_SCHEMA
+        or previous_source_bundle.get("evidence_qualification")
+        != _COHORT_QUALIFICATION
+        or previous_source_hash
+        != artifact_self_hash(previous_source_bundle, "bundle_hash")
+        or previous_decision.get("$schema")
+        != "./challenger-replacement-decision-v2.schema.json"
+        or previous_decision_hash
+        != artifact_self_hash(previous_decision, "decision_hash")
+        or previous_source_bundle.get("plan")
+        != {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]}
+        or previous_source_bundle.get("build_identity") != dict(build_identity)
+        or previous_decision.get("parents", {}).get(
+            "current_source_bundle_hash"
+        )
+        != previous_source_hash
+    ):
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_INPUT_PARENT_INVALID"
+        )
+    return (
+        previous_source_hash,
+        previous_decision_hash,
+        previous_scheduled,
+        previous_sequence,
+    )
+
+
+def build_challenger_replacement_cohort_source_bundle(
+    *,
+    plan,
+    build_identity,
+    live_capture,
+    previous_source_bundle,
+    previous_decision,
+):
+    """Build one cohort-qualified source from an adapter-derived capability."""
+
+    if not isinstance(live_capture, ChallengerReplacementLiveCapture):
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_COHORT_CAPTURE_CAPABILITY_REQUIRED"
+        )
+    (
+        previous_source_hash,
+        previous_decision_hash,
+        previous_scheduled,
+        previous_sequence,
+    ) = _cohort_parent_identity(
+        plan=plan,
+        build_identity=build_identity,
+        previous_source_bundle=previous_source_bundle,
+        previous_decision=previous_decision,
+    )
+    try:
+        receipt = load_challenger_replacement_live_capture_bytes(
+            live_capture.canonical_bytes,
+            plan=plan,
+            build_identity=build_identity,
+            previous_source_bundle=previous_source_bundle,
+        )
+    except ValueError as error:
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_COHORT_CAPTURE_INVALID"
+        ) from error
+    slot = dict(receipt["slot"])
+    scheduled = _utc(slot["scheduled_for"])[0]
+    if (
+        previous_scheduled is None
+        and slot["sequence"] != 1
+        or previous_scheduled is not None
+        and (
+            slot["sequence"] != previous_sequence + 1
+            or scheduled != previous_scheduled + _FOUR_HOURS
+        )
+    ):
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_INPUT_PARENT_INVALID"
+        )
+    identity_hash = artifact_self_hash(
+        {**dict(build_identity), "identity_hash": _ZERO_HASH}, "identity_hash"
+    )
+    parents = {
+        "previous_source_bundle_hash": previous_source_hash,
+        "previous_decision_hash_or_null": previous_decision_hash,
+    }
+    bundle_identity = {
+        "plan_hash": plan["plan_hash"],
+        "build_identity_hash": identity_hash,
+        "slot_id": slot["slot_id"],
+        "sequence": slot["sequence"],
+        "scheduled_for": slot["scheduled_for"],
+        **parents,
+    }
+    bundle = {
+        "$schema": _COHORT_SOURCE_SCHEMA,
+        "schema_version": "2.0.0",
+        "bundle_id": stable_id(
+            "challenger_replacement_source_bundle", bundle_identity
+        ),
+        "bundle_hash": _ZERO_HASH,
+        "evidence_qualification": _COHORT_QUALIFICATION,
+        "plan": {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]},
+        "build_identity": dict(build_identity),
+        "slot": slot,
+        "parents": parents,
+        "request_descriptor": dict(_REQUEST_DESCRIPTOR),
+        "klines": deepcopy(receipt["rows"]),
+        "live_capture_receipt": deepcopy(receipt),
+        "network_request_count_observed_by_core_runtime": 0,
+        "authority": {
+            "network_request_count_observed_by_runtime": 0,
+            "credentials_allowed": False,
+            "account_requests_allowed": False,
+            "broker_requests_allowed": False,
+            "orders_allowed": False,
+            "production_state_write_allowed": False,
+        },
+    }
+    bundle["bundle_hash"] = artifact_self_hash(bundle, "bundle_hash")
+    return bundle
+
+
 @lru_cache(maxsize=1)
 def _source_validator() -> Draft202012Validator:
     resource = resources.files("crypto_quant").joinpath(
         "schemas", "challenger-replacement-source-bundle-v1.schema.json"
+    )
+    schema = json.loads(resource.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
+@lru_cache(maxsize=1)
+def _cohort_source_validator() -> Draft202012Validator:
+    resource = resources.files("crypto_quant").joinpath(
+        "schemas", "challenger-replacement-source-bundle-v2.schema.json"
     )
     schema = json.loads(resource.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
@@ -495,3 +657,103 @@ def load_challenger_replacement_source_bundle_bytes(
     if reasons:
         raise ChallengerReplacementEvidenceError(reasons[0])
     return dict(value)
+
+
+def load_challenger_replacement_cohort_source_bundle_bytes(
+    data,
+    *,
+    plan,
+    build_identity,
+    previous_source_bundle,
+    previous_decision,
+):
+    """Strict-load one cohort source and replay its embedded live receipt."""
+
+    if not isinstance(data, bytes) or not 0 < len(data) <= 2 * 1024 * 1024:
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_COHORT_SOURCE_SIZE_INVALID"
+        )
+    value = _strict_json_bytes(data)
+    if tuple(_cohort_source_validator().iter_errors(value)):
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_COHORT_SOURCE_SCHEMA_INVALID"
+        )
+    try:
+        (
+            previous_source_hash,
+            previous_decision_hash,
+            previous_scheduled,
+            previous_sequence,
+        ) = _cohort_parent_identity(
+            plan=plan,
+            build_identity=build_identity,
+            previous_source_bundle=previous_source_bundle,
+            previous_decision=previous_decision,
+        )
+        receipt_bytes = canonical_json(value["live_capture_receipt"]).encode("utf-8")
+        receipt = load_challenger_replacement_live_capture_bytes(
+            receipt_bytes,
+            plan=plan,
+            build_identity=build_identity,
+            previous_source_bundle=previous_source_bundle,
+        )
+        scheduled = _utc(receipt["slot"]["scheduled_for"])[0]
+        if (
+            previous_scheduled is None
+            and receipt["slot"]["sequence"] != 1
+            or previous_scheduled is not None
+            and (
+                receipt["slot"]["sequence"] != previous_sequence + 1
+                or scheduled != previous_scheduled + _FOUR_HOURS
+            )
+        ):
+            raise ChallengerReplacementEvidenceError(
+                "CHALLENGER_REPLACEMENT_INPUT_PARENT_INVALID"
+            )
+        identity_hash = artifact_self_hash(
+            {**dict(build_identity), "identity_hash": _ZERO_HASH}, "identity_hash"
+        )
+        expected_parents = {
+            "previous_source_bundle_hash": previous_source_hash,
+            "previous_decision_hash_or_null": previous_decision_hash,
+        }
+        expected_id = stable_id(
+            "challenger_replacement_source_bundle",
+            {
+                "plan_hash": plan["plan_hash"],
+                "build_identity_hash": identity_hash,
+                "slot_id": receipt["slot"]["slot_id"],
+                "sequence": receipt["slot"]["sequence"],
+                "scheduled_for": receipt["slot"]["scheduled_for"],
+                **expected_parents,
+            },
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_COHORT_SOURCE_SEMANTIC_INVALID"
+        ) from error
+    expected_authority = {
+        "network_request_count_observed_by_runtime": 0,
+        "credentials_allowed": False,
+        "account_requests_allowed": False,
+        "broker_requests_allowed": False,
+        "orders_allowed": False,
+        "production_state_write_allowed": False,
+    }
+    if (
+        value["bundle_hash"] != artifact_self_hash(value, "bundle_hash")
+        or value["bundle_id"] != expected_id
+        or value["plan"]
+        != {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]}
+        or value["build_identity"] != dict(build_identity)
+        or value["slot"] != receipt["slot"]
+        or value["parents"] != expected_parents
+        or value["request_descriptor"] != _REQUEST_DESCRIPTOR
+        or value["klines"] != receipt["rows"]
+        or value["network_request_count_observed_by_core_runtime"] != 0
+        or value["authority"] != expected_authority
+    ):
+        raise ChallengerReplacementEvidenceError(
+            "CHALLENGER_REPLACEMENT_COHORT_SOURCE_SEMANTIC_INVALID"
+        )
+    return deepcopy(dict(value))

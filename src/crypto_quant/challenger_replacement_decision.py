@@ -1,8 +1,14 @@
 """Pure replacement Challenger decision semantics with no runtime authority."""
 
+import json
 from datetime import datetime, timedelta, timezone
+from copy import deepcopy
 from decimal import Context, Decimal, InvalidOperation, localcontext
+from functools import lru_cache
+from importlib import resources
 from typing import Any, Dict, Mapping, Optional, Tuple
+
+from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_decimal, stable_id, utc_datetime
 from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reasons
@@ -13,6 +19,7 @@ _ZERO_HASH = "0" * 64
 _FOUR_HOURS = timedelta(hours=4)
 _CONTEXT = Context(prec=50)
 _QUALIFICATION = "TEST_FIXTURE_ONLY_NOT_COHORT_EVIDENCE"
+_COHORT_QUALIFICATION = "REPLACEMENT_CONFIRMATORY_COHORT_EVIDENCE"
 
 
 class ChallengerReplacementDecisionError(ValueError):
@@ -21,6 +28,103 @@ class ChallengerReplacementDecisionError(ValueError):
     def __init__(self, reason_code: str):
         super().__init__(reason_code)
         self.reason_code = reason_code
+
+
+@lru_cache(maxsize=1)
+def _cohort_decision_validator():
+    schema = json.loads(
+        resources.files("crypto_quant")
+        .joinpath("schemas", "challenger-replacement-decision-v2.schema.json")
+        .read_text(encoding="utf-8")
+    )
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
+def build_challenger_replacement_cohort_decision(
+    *, plan, source_bundle, recorded_at, previous_decision=None
+):
+    """Evaluate the frozen policy against one cohort-qualified v2 source."""
+
+    if (
+        not isinstance(source_bundle, Mapping)
+        or source_bundle.get("$schema")
+        != "./challenger-replacement-source-bundle-v2.schema.json"
+        or source_bundle.get("evidence_qualification") != _COHORT_QUALIFICATION
+        or source_bundle.get("bundle_hash")
+        != artifact_self_hash(source_bundle, "bundle_hash")
+        or source_bundle.get("live_capture_receipt", {}).get("rows")
+        != source_bundle.get("klines")
+        or source_bundle.get("network_request_count_observed_by_core_runtime") != 0
+    ):
+        raise ChallengerReplacementDecisionError(
+            "CHALLENGER_REPLACEMENT_DECISION_SOURCE_INVALID"
+        )
+    if previous_decision is None:
+        fixture_previous = None
+        previous_decision_hash = None
+    elif (
+        isinstance(previous_decision, Mapping)
+        and previous_decision.get("$schema")
+        == "./challenger-replacement-decision-v2.schema.json"
+        and previous_decision.get("evidence_qualification")
+        == _COHORT_QUALIFICATION
+        and previous_decision.get("decision_hash")
+        == artifact_self_hash(previous_decision, "decision_hash")
+        and source_bundle.get("parents", {}).get(
+            "previous_decision_hash_or_null"
+        )
+        == previous_decision.get("decision_hash")
+    ):
+        previous_decision_hash = previous_decision["decision_hash"]
+        fixture_previous = deepcopy(dict(previous_decision))
+        fixture_previous["$schema"] = (
+            "./challenger-replacement-decision-v1.schema.json"
+        )
+        fixture_previous["schema_version"] = "1.0.0"
+        fixture_previous["evidence_qualification"] = _QUALIFICATION
+        fixture_previous["decision_hash"] = artifact_self_hash(
+            fixture_previous, "decision_hash"
+        )
+    else:
+        raise ChallengerReplacementDecisionError(
+            "CHALLENGER_REPLACEMENT_DECISION_PREVIOUS_INVALID"
+        )
+    fixture_source = deepcopy(dict(source_bundle))
+    fixture_source.pop("live_capture_receipt")
+    fixture_source.pop("network_request_count_observed_by_core_runtime")
+    fixture_source["$schema"] = "./challenger-replacement-source-bundle-v1.schema.json"
+    fixture_source["schema_version"] = "1.0.0"
+    fixture_source["evidence_qualification"] = _QUALIFICATION
+    fixture_source["parents"]["previous_decision_hash_or_null"] = (
+        None if fixture_previous is None else fixture_previous["decision_hash"]
+    )
+    fixture_source["bundle_hash"] = artifact_self_hash(
+        fixture_source, "bundle_hash"
+    )
+    decision = build_challenger_replacement_decision(
+        plan=plan,
+        source_bundle=fixture_source,
+        recorded_at=recorded_at,
+        previous_decision=fixture_previous,
+    )
+    decision["$schema"] = "./challenger-replacement-decision-v2.schema.json"
+    decision["schema_version"] = "2.0.0"
+    decision["evidence_qualification"] = _COHORT_QUALIFICATION
+    decision["parents"]["current_source_bundle_hash"] = source_bundle["bundle_hash"]
+    decision["parents"]["previous_decision_hash_or_null"] = previous_decision_hash
+    identity = {
+        "plan_hash": plan["plan_hash"],
+        "slot_id": source_bundle["slot"]["slot_id"],
+        "sequence": source_bundle["slot"]["sequence"],
+        "current_source_bundle_hash": source_bundle["bundle_hash"],
+        "previous_decision_hash_or_null": previous_decision_hash,
+    }
+    decision["decision_id"] = stable_id(
+        "challenger_replacement_decision", identity
+    )
+    decision["decision_hash"] = artifact_self_hash(decision, "decision_hash")
+    return decision
 
 
 def _utc(value: object) -> Tuple[datetime, str]:
@@ -378,3 +482,42 @@ def load_challenger_replacement_decision_bytes(
     if reasons:
         raise ChallengerReplacementDecisionError(reasons[0])
     return dict(value)
+
+
+def load_challenger_replacement_cohort_decision_bytes(
+    data, *, plan, source_bundle, previous_decision
+):
+    """Strict-load and replay one cohort-qualified decision."""
+
+    from .challenger_replacement_evidence import _strict_json_bytes
+
+    if not isinstance(data, bytes) or not 0 < len(data) <= 2 * 1024 * 1024:
+        raise ChallengerReplacementDecisionError(
+            "CHALLENGER_REPLACEMENT_COHORT_DECISION_SIZE_INVALID"
+        )
+    try:
+        value = _strict_json_bytes(data)
+    except ValueError as error:
+        raise ChallengerReplacementDecisionError(
+            "CHALLENGER_REPLACEMENT_COHORT_DECISION_CANONICAL_BYTES_REQUIRED"
+        ) from error
+    if tuple(_cohort_decision_validator().iter_errors(value)):
+        raise ChallengerReplacementDecisionError(
+            "CHALLENGER_REPLACEMENT_COHORT_DECISION_SCHEMA_INVALID"
+        )
+    try:
+        rebuilt = build_challenger_replacement_cohort_decision(
+            plan=plan,
+            source_bundle=source_bundle,
+            recorded_at=value["slot"]["recorded_at"],
+            previous_decision=previous_decision,
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ChallengerReplacementDecisionError(
+            "CHALLENGER_REPLACEMENT_COHORT_DECISION_SEMANTIC_INVALID"
+        ) from error
+    if value != rebuilt:
+        raise ChallengerReplacementDecisionError(
+            "CHALLENGER_REPLACEMENT_COHORT_DECISION_SEMANTIC_INVALID"
+        )
+    return deepcopy(dict(value))

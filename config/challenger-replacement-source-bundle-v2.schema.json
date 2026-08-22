@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-source-bundle-v2.schema.json",
+  "title": "Replacement Challenger Cohort Source Bundle V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "bundle_id", "bundle_hash", "evidence_qualification", "plan", "build_identity", "slot", "parents", "request_descriptor", "klines", "live_capture_receipt", "network_request_count_observed_by_core_runtime", "authority"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-source-bundle-v2.schema.json"},
+    "schema_version": {"const": "2.0.0"},
+    "bundle_id": {"type": "string", "pattern": "^challenger_replacement_source_bundle_[0-9a-f]{64}$"},
+    "bundle_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "evidence_qualification": {"const": "REPLACEMENT_CONFIRMATORY_COHORT_EVIDENCE"},
+    "plan": {"type": "object", "additionalProperties": false, "required": ["plan_id", "plan_hash"], "properties": {"plan_id": {"type": "string"}, "plan_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "build_identity": {"type": "object", "additionalProperties": false, "required": ["release_tag", "peeled_commit", "package_version", "manifest_version", "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"], "properties": {"release_tag": {"const": "v0.67.0"}, "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "package_version": {"const": "0.67.0"}, "manifest_version": {"const": "1.61.0"}, "build_input_tree_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "manifest_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "slot": {"type": "object", "additionalProperties": false, "required": ["slot_id", "sequence", "scheduled_for", "captured_at"], "properties": {"slot_id": {"type": "string"}, "sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}, "scheduled_for": {"type": "string"}, "captured_at": {"type": "string"}}},
+    "parents": {"type": "object", "additionalProperties": false, "required": ["previous_source_bundle_hash", "previous_decision_hash_or_null"], "properties": {"previous_source_bundle_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "previous_decision_hash_or_null": {"oneOf": [{"type": "string", "pattern": "^[0-9a-f]{64}$"}, {"type": "null"}]}}},
+    "request_descriptor": {"type": "object", "additionalProperties": false, "required": ["provider", "market", "data_family", "symbol", "interval"], "properties": {"provider": {"const": "BINANCE_PUBLIC_DATA"}, "market": {"const": "SPOT"}, "data_family": {"const": "KLINES"}, "symbol": {"const": "ETHUSDT"}, "interval": {"const": "4h"}}},
+    "klines": {"type": "array", "minItems": 21, "maxItems": 21},
+    "live_capture_receipt": {"type": "object"},
+    "network_request_count_observed_by_core_runtime": {"const": 0},
+    "authority": {"type": "object", "additionalProperties": false, "required": ["network_request_count_observed_by_runtime", "credentials_allowed", "account_requests_allowed", "broker_requests_allowed", "orders_allowed", "production_state_write_allowed"], "properties": {"network_request_count_observed_by_runtime": {"const": 0}, "credentials_allowed": {"const": false}, "account_requests_allowed": {"const": false}, "broker_requests_allowed": {"const": false}, "orders_allowed": {"const": false}, "production_state_write_allowed": {"const": false}}}
+  }
+}

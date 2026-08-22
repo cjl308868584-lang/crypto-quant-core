@@ -45,8 +45,10 @@ def _utc(value):
 
 
 class _TimeTransport:
-    def __init__(self):
-        base = datetime(2026, 8, 22, 4, 4, tzinfo=timezone.utc)
+    def __init__(
+        self,
+        base=datetime(2026, 8, 22, 4, 4, tzinfo=timezone.utc),
+    ):
         self.responses = []
         for index, rtt in enumerate((50, 60, 55)):
             started = base + timedelta(seconds=index)
@@ -71,6 +73,30 @@ class _TimeTransport:
 
     def get(self):
         return self.responses.pop(0)
+
+
+def _raw_kline_body(rows):
+    raw_rows = []
+    for row in rows:
+        opened = datetime.fromisoformat(row["open_time"].replace("Z", "+00:00"))
+        closed = datetime.fromisoformat(row["close_time"].replace("Z", "+00:00"))
+        raw_rows.append(
+            [
+                int(opened.timestamp() * 1000),
+                row["open"],
+                row["high"],
+                row["low"],
+                row["close"],
+                "0",
+                int(closed.timestamp() * 1000),
+                "0",
+                1,
+                "0",
+                "0",
+                "0",
+            ]
+        )
+    return canonical_json(raw_rows).encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -230,31 +256,7 @@ class LiveCaptureCodecTests(unittest.TestCase):
             "end_time_ms": end_time_ms,
         }
         rows = fixture_klines()
-        raw_rows = []
-        for row in rows:
-            opened = datetime.fromisoformat(
-                row["open_time"].replace("Z", "+00:00")
-            )
-            closed = datetime.fromisoformat(
-                row["close_time"].replace("Z", "+00:00")
-            )
-            raw_rows.append(
-                [
-                    int(opened.timestamp() * 1000),
-                    row["open"],
-                    row["high"],
-                    row["low"],
-                    row["close"],
-                    "0",
-                    int(closed.timestamp() * 1000),
-                    "0",
-                    1,
-                    "0",
-                    "0",
-                    "0",
-                ]
-            )
-        response_body = canonical_json(raw_rows).encode("utf-8")
+        response_body = _raw_kline_body(rows)
         document = {
             "$schema": "./challenger-replacement-live-capture-v1.schema.json",
             "schema_version": "1.0.0",
@@ -677,23 +679,33 @@ class LiveAcquisitionTests(unittest.TestCase):
         self.requests = []
         self.sleeps = []
 
-    def _kline_response(self, *, status=200, sequence=1, body=None, content_type="application/json"):
-        document = self.codec_fixture._structural_document()
-        request = document["kline_request"]
-        selected = document["attempts"][0]
-        started = datetime(2026, 8, 22, 4, 4, 3, tzinfo=timezone.utc) + timedelta(
-            seconds=sequence - 1
+    def _kline_response(
+        self,
+        *,
+        status=200,
+        sequence=1,
+        body=None,
+        content_type="application/json",
+        scheduled=datetime(2026, 8, 22, 4, 0, tzinfo=timezone.utc),
+    ):
+        end_time_ms = int(scheduled.timestamp() * 1000) - 1
+        url = (
+            "https://data-api.binance.vision/api/v3/klines?"
+            f"endTime={end_time_ms}&interval=4h&limit=21&symbol=ETHUSDT"
         )
+        started = scheduled + timedelta(minutes=4, seconds=3 + sequence - 1)
+        default_rows = fixture_klines(scheduled_for=_utc(scheduled))
+        default_body = _raw_kline_body(default_rows)
         received = started + timedelta(milliseconds=100)
         return _KlineResponse(
             status=status,
-            final_url=request["url"],
+            final_url=url,
             headers={
                 "Date": "Sat, 22 Aug 2026 04:04:03 GMT",
                 "Content-Type": content_type,
             },
             body=(
-                selected["response_body_utf8"].encode("utf-8")
+                default_body
                 if body is None
                 else body
             ),
