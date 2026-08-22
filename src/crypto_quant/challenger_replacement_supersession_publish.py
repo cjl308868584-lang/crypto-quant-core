@@ -20,7 +20,14 @@ _STAGING_RE = re.compile(
     r"[0-9a-f]{64}-[0-9a-f]{32}\.staging\Z",
     re.ASCII,
 )
+_V069_STAGING_RE = re.compile(
+    r"\A\.v069-opportunity-governance-"
+    r"(plan|machine-evidence|owner-attestation|supersession-record)-"
+    r"[0-9a-f]{64}-[0-9a-f]{32}\.staging\Z",
+    re.ASCII,
+)
 _STAGING_PREFIX = ".v064-supersession-"
+_V069_STAGING_PREFIX = ".v069-opportunity-governance-"
 _STAGING_SUFFIX = ".staging"
 _MAX_SEALED_STAGING = 64
 _FIXED_FINAL_NAMES = {
@@ -28,6 +35,10 @@ _FIXED_FINAL_NAMES = {
     "challenger-replacement-supersession-machine-evidence-v0.64.0.json",
     "challenger-replacement-owner-attestation-v0.64.0.json",
     "challenger-replacement-plan-supersession-v0.64.0.json",
+    "challenger-replacement-plan-v0.69.0.json",
+    "challenger-replacement-v3-supersession-machine-evidence-v0.69.0.json",
+    "challenger-replacement-v3-owner-attestation-v0.69.0.json",
+    "challenger-replacement-plan-v3-supersession-v0.69.0.json",
 }
 
 
@@ -353,9 +364,16 @@ def _inventory_staging(parent_fd: int) -> List[Dict[str, Any]]:
         ) from error
     sealed = []
     for name in sorted(names):
-        if not (name.startswith(_STAGING_PREFIX) and name.endswith(_STAGING_SUFFIX)):
+        matching_protocol = (
+            name.startswith(_STAGING_PREFIX)
+            or name.startswith(_V069_STAGING_PREFIX)
+        )
+        if not (matching_protocol and name.endswith(_STAGING_SUFFIX)):
             continue
-        if _STAGING_RE.fullmatch(name) is None:
+        if (
+            _STAGING_RE.fullmatch(name) is None
+            and _V069_STAGING_RE.fullmatch(name) is None
+        ):
             raise SupersessionPublishError(
                 "CHALLENGER_REPLACEMENT_SUPERSESSION_STAGING_INVENTORY_INVALID"
             )
@@ -448,9 +466,17 @@ def _atomic_no_replace(
     )
 
 
-def _publish_fixed(kind: str, final_name: str, data: bytes) -> Dict[str, Any]:
+def _publish_fixed(
+    kind: str,
+    final_name: str,
+    data: bytes,
+    *,
+    protocol: str = "v064-supersession",
+) -> Dict[str, Any]:
     if (
         kind not in {"plan", "machine-evidence", "owner-attestation", "supersession-record"}
+        or protocol not in {"v064-supersession", "v069-opportunity-governance"}
+        or final_name not in _FIXED_FINAL_NAMES
         or not isinstance(data, bytes)
         or not data
         or len(data) > _MAX_ARTIFACT_BYTES
@@ -494,7 +520,7 @@ def _publish_fixed(kind: str, final_name: str, data: bytes) -> Dict[str, Any]:
 
         digest = hashlib.sha256(data).hexdigest()
         staging_name = (
-            f".v064-supersession-{kind}-{digest}-{secrets.token_hex(16)}.staging"
+            f".{protocol}-{kind}-{digest}-{secrets.token_hex(16)}.staging"
         )
         _emit_staging_basename(staging_name)
         flags = (
@@ -741,4 +767,46 @@ def publish_challenger_replacement_supersession_record_bytes(
         "supersession-record",
         "challenger-replacement-plan-supersession-v0.64.0.json",
         data,
+    )
+
+
+def publish_challenger_replacement_plan_v3_bytes(data: bytes) -> Dict[str, Any]:
+    return _publish_fixed(
+        "plan",
+        "challenger-replacement-plan-v0.69.0.json",
+        data,
+        protocol="v069-opportunity-governance",
+    )
+
+
+def publish_challenger_replacement_v3_machine_evidence_bytes(
+    data: bytes,
+) -> Dict[str, Any]:
+    return _publish_fixed(
+        "machine-evidence",
+        "challenger-replacement-v3-supersession-machine-evidence-v0.69.0.json",
+        data,
+        protocol="v069-opportunity-governance",
+    )
+
+
+def publish_challenger_replacement_v3_owner_attestation_bytes(
+    data: bytes,
+) -> Dict[str, Any]:
+    return _publish_fixed(
+        "owner-attestation",
+        "challenger-replacement-v3-owner-attestation-v0.69.0.json",
+        data,
+        protocol="v069-opportunity-governance",
+    )
+
+
+def publish_challenger_replacement_v3_supersession_record_bytes(
+    data: bytes,
+) -> Dict[str, Any]:
+    return _publish_fixed(
+        "supersession-record",
+        "challenger-replacement-plan-v3-supersession-v0.69.0.json",
+        data,
+        protocol="v069-opportunity-governance",
     )
