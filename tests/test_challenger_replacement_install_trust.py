@@ -103,6 +103,26 @@ def valid_contract():
             "deployment_hash": HASH,
             "plist_sha256": HASH,
         },
+        "strategy_core": {
+            "release_tag": "v0.67.0",
+            "peeled_commit": "ca022edccdcbb2d28b1ea25002e5f19512795e3e",
+            "package_version": "0.67.0",
+            "manifest_version": "1.61.0",
+            "build_input_tree_hash": "5c2a98492aa45f311cea75617745ac6d1e0afe0ea2ff36a5950a0f5c00c4efa1",
+            "manifest_hash": "2b72a470a2f210461a3a6753fd3d603fee9b90df76e825deea3b9bde61a26110",
+            "manifest_file_sha256": "ec2ba2d48dd35676eb442ed80cd0e45a642a2b109626db2f54a25d25823a2bf8",
+            "file_hashes": {
+                "src/crypto_quant/challenger_replacement_decision.py": "a72a93a7aec50e6d5d8ffb9424b33eb05453fef2f9396b1dac05a665c7b6c6ec",
+                "src/crypto_quant/challenger_replacement_evidence.py": "920e84a77138509f94b42b416b1ce57adc84daad0a855ab39e9ac6a44799002f",
+                "src/crypto_quant/challenger_replacement_live_input.py": "84640cbf81659d05d8abdfa935e8340eb565db20bd3006641a77033d59263536",
+                "src/crypto_quant/challenger_replacement_runtime.py": "fbaeb06894f0a3f0468c7382c411e4296fbc2b7e514dfcc26867a97a21eaa97f",
+            },
+        },
+        "event_root": {
+            "path": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/state/challenger-replacement-events-v1",
+            "device": 1, "inode": 2, "owner_uid": 501, "mode": 448,
+            "initial_event_count": 0, "initial_orphan_staging_count": 0,
+        },
         "plist": {
             "path": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment/local.crypto-quant.challenger-replacement-v1.plist",
             "file_sha256": "0" * 64,
@@ -146,11 +166,12 @@ def valid_contract():
             "target_plist": "/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-replacement-v1.plist",
         },
         "runtime": {
-            "module": "crypto_quant.challenger_replacement_live_runtime_cli",
+            "module": "crypto_quant.challenger_replacement_installed_runtime_cli",
+            "worker_id": "challenger-replacement-natural-runner-v1",
             "program_arguments": [
                 "/usr/bin/python3",
                 "-m",
-                "crypto_quant.challenger_replacement_live_runtime_cli",
+                "crypto_quant.challenger_replacement_installed_runtime_cli",
             ],
             "working_directory": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment/snapshots/" + HASH,
             "environment": {
@@ -193,6 +214,16 @@ def render_fixture_contract(
     trust, *, repository, snapshot_parent, inventory, candidate_release,
     github_verification, python_identity,
 ):
+    inventory = dict(inventory)
+    for name, digest in trust.V067_STRATEGY_CORE["file_hashes"].items():
+        body = (ROOT / name).read_bytes()
+        if hashlib.sha256(body).hexdigest() != digest:
+            raise AssertionError("fixture strategy core drift")
+        target = repository / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
+        target.chmod(0o600)
+        inventory[name] = digest
     snapshot = trust._publish_snapshot_from_inventory(
         repository, snapshot_parent, inventory
     )
@@ -201,6 +232,10 @@ def render_fixture_contract(
         candidate_release=candidate_release,
         github_verification=github_verification,
         python_identity=python_identity,
+        event_root_identity={
+            **valid_contract()["event_root"],
+            "path": trust.replacement_install_paths()["event_root"],
+        },
     )
     body = canonical_json(contract).encode()
     trust.load_replacement_install_contract_bytes(body)
@@ -269,6 +304,35 @@ class ReplacementInstallTrustTests(unittest.TestCase):
         ):
             load_replacement_install_contract_bytes(body + b"\n")
 
+    def test_contract_binds_exact_strategy_and_empty_event_root_identity(self):
+        contract = valid_contract()
+        self.assertEqual(contract["strategy_core"]["manifest_version"], "1.61.0")
+        self.assertEqual(set(contract["strategy_core"]["file_hashes"]), {
+            "src/crypto_quant/challenger_replacement_decision.py",
+            "src/crypto_quant/challenger_replacement_evidence.py",
+            "src/crypto_quant/challenger_replacement_live_input.py",
+            "src/crypto_quant/challenger_replacement_runtime.py",
+        })
+        self.assertEqual(contract["event_root"], {
+            "path": contract["paths"]["event_root"],
+            "device": 1, "inode": 2, "owner_uid": 501, "mode": 0o700,
+            "initial_event_count": 0, "initial_orphan_staging_count": 0,
+        })
+        self.assertEqual(contract["runtime"]["worker_id"],
+                         "challenger-replacement-natural-runner-v1")
+
+    def test_strategy_core_inventory_must_match_v067_exact_bytes(self):
+        import crypto_quant.challenger_replacement_install_trust as trust
+
+        inventory = dict(trust.V067_STRATEGY_CORE["file_hashes"])
+        trust._validate_strategy_core_inventory(inventory)
+        for value in ({}, {**inventory, next(iter(inventory)): "0" * 64}):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                trust.ReplacementInstallTrustError,
+                "CHALLENGER_REPLACEMENT_STRATEGY_CORE_CHANGED",
+            ):
+                trust._validate_strategy_core_inventory(value)
+
     def test_v068_candidate_plist_is_derived_from_contract_not_v067_plist(self):
         import crypto_quant.challenger_replacement_install_trust as trust
 
@@ -293,6 +357,26 @@ class ReplacementInstallTrustTests(unittest.TestCase):
         )
         self.assertNotEqual(
             contract["plist"]["file_sha256"], contract["deployment"]["plist_sha256"]
+        )
+        self.assertEqual(value["ProgramArguments"][2],
+                         "crypto_quant.challenger_replacement_installed_runtime_cli")
+
+    def test_v067_unavailable_provider_is_never_the_install_target(self):
+        from crypto_quant.challenger_replacement_live_runtime_cli import (
+            _load_fixed_runtime_contract,
+        )
+        from crypto_quant.challenger_replacement_runtime import (
+            ChallengerReplacementRuntimeError,
+        )
+
+        with self.assertRaisesRegex(
+            ChallengerReplacementRuntimeError,
+            "CHALLENGER_REPLACEMENT_RUNTIME_CONTRACT_UNAVAILABLE",
+        ):
+            _load_fixed_runtime_contract()
+        self.assertNotEqual(
+            valid_contract()["runtime"]["module"],
+            "crypto_quant.challenger_replacement_live_runtime_cli",
         )
 
     def test_import_does_not_create_fixed_production_paths(self):
@@ -849,6 +933,14 @@ raise SystemExit(9)
                     )
                 },
             }
+            for name, digest in trust.V067_STRATEGY_CORE["file_hashes"].items():
+                body = (ROOT / name).read_bytes()
+                target = repository / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(body)
+                target.chmod(0o600)
+                self.assertEqual(hashlib.sha256(body).hexdigest(), digest)
+                inventory[name] = digest
             fixture = valid_contract()
             paths = dict(fixture["paths"])
             paths.update({
@@ -865,6 +957,10 @@ raise SystemExit(9)
             ) as collect, mock.patch.object(
                 trust, "_ensure_fixed_snapshot_directories", return_value=snapshots
             ) as ensure, mock.patch.object(
+                trust, "_fixed_empty_event_root_identity",
+                return_value={**fixture["event_root"],
+                              "path": paths["event_root"]},
+            ) as event_identity, mock.patch.object(
                 trust, "_fixed_python_identity", return_value=fixture["python"]
             ) as python_identity, mock.patch.object(
                 trust.Path, "resolve", return_value=repository / "src/crypto_quant/challenger_replacement_install_trust.py"
@@ -872,6 +968,7 @@ raise SystemExit(9)
                 result = trust.render_fixed_replacement_snapshot_and_contract()
             collect.assert_called_once_with(repository)
             ensure.assert_called_once_with(paths)
+            event_identity.assert_called_once_with(paths)
             python_identity.assert_called_once_with(result["snapshot"]["root"])
             self.assertEqual(result["plist_outcome"], "PUBLISHED")
             self.assertEqual(result["contract_outcome"], "PUBLISHED")
@@ -950,7 +1047,13 @@ raise SystemExit(9)
             anchor = Path(directory) / "anchor"
             anchor.mkdir(mode=0o700)
             runtime = anchor / "challenger-replacement-v1"
-            paths = {"runtime_root": str(runtime)}
+            paths = {
+                "runtime_root": str(runtime),
+                "event_root": str(runtime / "state/challenger-replacement-events-v1"),
+                "start_receipt_root": str(runtime / "evidence/start-receipts"),
+                "stdout": str(runtime / "log/challenger-replacement.stdout.log"),
+                "stderr": str(runtime / "log/challenger-replacement.stderr.log"),
+            }
             first = trust._ensure_fixed_snapshot_directories(paths)
             first_inode = first.stat().st_ino
             second = trust._ensure_fixed_snapshot_directories(paths)
@@ -959,8 +1062,37 @@ raise SystemExit(9)
             for path in (
                 runtime, runtime / "deployment", first,
                 runtime / "deployment/preflight-receipts",
+                runtime / "deployment/install-receipts",
+                runtime / "state", Path(paths["event_root"]),
+                runtime / "log", runtime / "evidence",
+                Path(paths["start_receipt_root"]),
             ):
                 self.assertEqual(path.stat().st_mode & 0o777, 0o700)
+            identity = trust._fixed_empty_event_root_identity(paths)
+            self.assertEqual(identity, {
+                "path": paths["event_root"],
+                "device": Path(paths["event_root"]).stat().st_dev,
+                "inode": Path(paths["event_root"]).stat().st_ino,
+                "owner_uid": os.getuid(), "mode": 0o700,
+                "initial_event_count": 0, "initial_orphan_staging_count": 0,
+            })
+            self.assertFalse(Path(paths["stdout"]).exists())
+            self.assertFalse(Path(paths["stderr"]).exists())
+
+    def test_event_root_binding_rejects_any_existing_entry(self):
+        import crypto_quant.challenger_replacement_install_trust as trust
+
+        with temporary_workspace() as directory:
+            root = Path(directory)
+            event_root = root / "events"
+            event_root.mkdir(mode=0o700)
+            (event_root / "00000000000000000001.event.json").write_bytes(b"x")
+            paths = {"event_root": str(event_root)}
+            with self.assertRaisesRegex(
+                trust.ReplacementInstallTrustError,
+                "CHALLENGER_REPLACEMENT_EVENT_ROOT_NOT_EMPTY",
+            ):
+                trust._fixed_empty_event_root_identity(paths)
 
     def test_system_python_identity_records_real_link_count(self):
         import crypto_quant.challenger_replacement_install_trust as trust

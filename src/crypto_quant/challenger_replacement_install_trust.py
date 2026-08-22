@@ -50,6 +50,20 @@ V067_FOUNDATION = MappingProxyType(
         "main_ci_run": 32572208544,
     }
 )
+V067_STRATEGY_CORE = MappingProxyType({
+    "release_tag": "v0.67.0",
+    "peeled_commit": "ca022edccdcbb2d28b1ea25002e5f19512795e3e",
+    "package_version": "0.67.0", "manifest_version": "1.61.0",
+    "build_input_tree_hash": "5c2a98492aa45f311cea75617745ac6d1e0afe0ea2ff36a5950a0f5c00c4efa1",
+    "manifest_hash": "2b72a470a2f210461a3a6753fd3d603fee9b90df76e825deea3b9bde61a26110",
+    "manifest_file_sha256": "ec2ba2d48dd35676eb442ed80cd0e45a642a2b109626db2f54a25d25823a2bf8",
+    "file_hashes": {
+        "src/crypto_quant/challenger_replacement_decision.py": "a72a93a7aec50e6d5d8ffb9424b33eb05453fef2f9396b1dac05a665c7b6c6ec",
+        "src/crypto_quant/challenger_replacement_evidence.py": "920e84a77138509f94b42b416b1ce57adc84daad0a855ab39e9ac6a44799002f",
+        "src/crypto_quant/challenger_replacement_live_input.py": "84640cbf81659d05d8abdfa935e8340eb565db20bd3006641a77033d59263536",
+        "src/crypto_quant/challenger_replacement_runtime.py": "fbaeb06894f0a3f0468c7382c411e4296fbc2b7e514dfcc26867a97a21eaa97f",
+    },
+})
 
 
 class ReplacementInstallTrustError(ValueError):
@@ -58,6 +72,16 @@ class ReplacementInstallTrustError(ValueError):
     def __init__(self, reason_code: str):
         super().__init__(reason_code)
         self.reason_code = reason_code
+
+
+def _validate_strategy_core_inventory(inventory):
+    if any(
+        inventory.get(name) != digest
+        for name, digest in V067_STRATEGY_CORE["file_hashes"].items()
+    ):
+        raise ReplacementInstallTrustError(
+            "CHALLENGER_REPLACEMENT_STRATEGY_CORE_CHANGED"
+        )
 
 
 def replacement_install_paths() -> Mapping[str, str]:
@@ -1004,7 +1028,9 @@ def _build_install_contract(
     candidate_release,
     github_verification,
     python_identity,
+    event_root_identity,
 ):
+    _validate_strategy_core_inventory(inventory)
     paths = dict(replacement_install_paths())
     plan, _ = _binding_from_snapshot(
         snapshot,
@@ -1031,6 +1057,8 @@ def _build_install_contract(
         "github_verification": dict(github_verification),
         "plan": plan,
         "deployment": deployment,
+        "strategy_core": dict(V067_STRATEGY_CORE),
+        "event_root": dict(event_root_identity),
         "plist": {"path": paths["candidate_plist"], "file_sha256": "0" * 64},
         "snapshot": {
             key: snapshot[key]
@@ -1050,11 +1078,12 @@ def _build_install_contract(
         },
         "paths": paths,
         "runtime": {
-            "module": "crypto_quant.challenger_replacement_live_runtime_cli",
+            "module": "crypto_quant.challenger_replacement_installed_runtime_cli",
+            "worker_id": "challenger-replacement-natural-runner-v1",
             "program_arguments": [
                 python_identity["path"],
                 "-m",
-                "crypto_quant.challenger_replacement_live_runtime_cli",
+                "crypto_quant.challenger_replacement_installed_runtime_cli",
             ],
             "working_directory": snapshot["root"],
             "environment": {
@@ -1282,7 +1311,7 @@ def _ensure_fixed_snapshot_directories(paths):
             child = _open_relative_directory(current, name, create=True)
             _fsync_retry(current)
             _close_descriptor(child)
-        return runtime / "deployment" / "snapshots"
+        snapshot_parent = runtime / "deployment" / "snapshots"
     except BaseException as error:
         primary_error = error
         raise
@@ -1290,6 +1319,59 @@ def _ensure_fixed_snapshot_directories(paths):
         if current != anchor_fd:
             _close_descriptor(current, primary_error)
         _close_descriptor(anchor_fd, primary_error)
+    runtime_fd, _ = _open_directory(runtime, exact_mode=0o700)
+    primary_error = None
+    try:
+        for parent_name, child_name in (
+            ("state", "challenger-replacement-events-v1"),
+            ("evidence", "start-receipts"),
+        ):
+            parent_fd = _open_relative_directory(
+                runtime_fd, parent_name, create=True
+            )
+            try:
+                child_fd = _open_relative_directory(
+                    parent_fd, child_name, create=True
+                )
+                _close_descriptor(child_fd)
+                _fsync_retry(parent_fd)
+            finally:
+                _close_descriptor(parent_fd)
+        log_fd = _open_relative_directory(runtime_fd, "log", create=True)
+        _close_descriptor(log_fd)
+        _fsync_retry(runtime_fd)
+        return snapshot_parent
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        _close_descriptor(runtime_fd, primary_error)
+
+
+def _fixed_empty_event_root_identity(paths):
+    path = Path(paths["event_root"])
+    descriptor, opened = _open_directory(path, exact_mode=0o700)
+    primary_error = None
+    try:
+        if os.listdir(descriptor):
+            raise ReplacementInstallTrustError(
+                "CHALLENGER_REPLACEMENT_EVENT_ROOT_NOT_EMPTY"
+            )
+        _validate_directory_attachment(
+            path, descriptor, opened,
+            "CHALLENGER_REPLACEMENT_EVENT_ROOT_UNTRUSTED",
+        )
+        return {
+            "path": str(path), "device": opened.st_dev,
+            "inode": opened.st_ino, "owner_uid": opened.st_uid,
+            "mode": stat.S_IMODE(opened.st_mode),
+            "initial_event_count": 0, "initial_orphan_staging_count": 0,
+        }
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        _close_descriptor(descriptor, primary_error)
 
 
 def _fixed_python_identity(snapshot_root: str):
@@ -1391,6 +1473,7 @@ def render_fixed_replacement_snapshot_and_contract():
         candidate_release=candidate,
         github_verification=github,
         python_identity=python_identity,
+        event_root_identity=_fixed_empty_event_root_identity(paths),
     )
     body = canonical_json(contract).encode("utf-8")
     load_replacement_install_contract_bytes(body)
@@ -1444,6 +1527,21 @@ def load_replacement_install_contract_bytes(data: bytes) -> Mapping[str, Any]:
             raise ValueError("predecessor")
         if contract["paths"] != replacement_install_paths():
             raise ValueError("paths")
+        if contract["strategy_core"] != dict(V067_STRATEGY_CORE):
+            raise ValueError("strategy core")
+        event_root = contract["event_root"]
+        if (
+            event_root["path"] != contract["paths"]["event_root"]
+            or event_root["owner_uid"] != 501
+            or event_root["mode"] != 0o700
+            or event_root["initial_event_count"] != 0
+            or event_root["initial_orphan_staging_count"] != 0
+        ):
+            raise ValueError("event root")
+        if contract["runtime"]["worker_id"] != (
+            "challenger-replacement-natural-runner-v1"
+        ):
+            raise ValueError("worker")
         if contract["plist"] != {
             "path": replacement_install_paths()["candidate_plist"],
             "file_sha256": hashlib.sha256(

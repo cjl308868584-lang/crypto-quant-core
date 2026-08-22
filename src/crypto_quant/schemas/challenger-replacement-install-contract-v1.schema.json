@@ -3,7 +3,7 @@
   "$id": "https://crypto-quant.local/schemas/challenger-replacement-install-contract-v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "predecessor_release", "candidate_release", "github_verification", "plan", "deployment", "plist", "snapshot", "python", "service", "paths", "runtime", "schedule", "authority", "warnings"],
+  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "predecessor_release", "candidate_release", "github_verification", "plan", "deployment", "strategy_core", "event_root", "plist", "snapshot", "python", "service", "paths", "runtime", "schedule", "authority", "warnings"],
   "properties": {
     "$schema": {"const": "./challenger-replacement-install-contract-v1.schema.json"},
     "schema_version": {"const": "1.0.0"},
@@ -70,6 +70,33 @@
         "plist_sha256": {"$ref": "#/$defs/hash"}
       }
     },
+    "strategy_core": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_tag", "peeled_commit", "package_version", "manifest_version", "build_input_tree_hash", "manifest_hash", "manifest_file_sha256", "file_hashes"],
+      "properties": {
+        "release_tag": {"const": "v0.67.0"}, "peeled_commit": {"const": "ca022edccdcbb2d28b1ea25002e5f19512795e3e"},
+        "package_version": {"const": "0.67.0"}, "manifest_version": {"const": "1.61.0"},
+        "build_input_tree_hash": {"const": "5c2a98492aa45f311cea75617745ac6d1e0afe0ea2ff36a5950a0f5c00c4efa1"},
+        "manifest_hash": {"const": "2b72a470a2f210461a3a6753fd3d603fee9b90df76e825deea3b9bde61a26110"},
+        "manifest_file_sha256": {"const": "ec2ba2d48dd35676eb442ed80cd0e45a642a2b109626db2f54a25d25823a2bf8"},
+        "file_hashes": {"const": {
+          "src/crypto_quant/challenger_replacement_decision.py": "a72a93a7aec50e6d5d8ffb9424b33eb05453fef2f9396b1dac05a665c7b6c6ec",
+          "src/crypto_quant/challenger_replacement_evidence.py": "920e84a77138509f94b42b416b1ce57adc84daad0a855ab39e9ac6a44799002f",
+          "src/crypto_quant/challenger_replacement_live_input.py": "84640cbf81659d05d8abdfa935e8340eb565db20bd3006641a77033d59263536",
+          "src/crypto_quant/challenger_replacement_runtime.py": "fbaeb06894f0a3f0468c7382c411e4296fbc2b7e514dfcc26867a97a21eaa97f"
+        }}
+      }
+    },
+    "event_root": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "device", "inode", "owner_uid", "mode", "initial_event_count", "initial_orphan_staging_count"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"}, "device": {"type": "integer", "minimum": 0},
+        "inode": {"type": "integer", "minimum": 1}, "owner_uid": {"const": 501},
+        "mode": {"const": 448}, "initial_event_count": {"const": 0},
+        "initial_orphan_staging_count": {"const": 0}
+      }
+    },
     "plist": {
       "type": "object", "additionalProperties": false,
       "required": ["path", "file_sha256"],
@@ -113,9 +140,10 @@
     },
     "runtime": {
       "type": "object", "additionalProperties": false,
-      "required": ["module", "program_arguments", "working_directory", "environment"],
+      "required": ["module", "worker_id", "program_arguments", "working_directory", "environment"],
       "properties": {
-        "module": {"const": "crypto_quant.challenger_replacement_live_runtime_cli"},
+        "module": {"const": "crypto_quant.challenger_replacement_installed_runtime_cli"},
+        "worker_id": {"const": "challenger-replacement-natural-runner-v1"},
         "program_arguments": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "string", "minLength": 1}},
         "working_directory": {"$ref": "#/$defs/path"},
         "environment": {

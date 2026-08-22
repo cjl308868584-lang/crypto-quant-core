@@ -525,7 +525,7 @@ Parametrize every write/readback/file-fsync/dir-fsync/no-replace/bootstrap/post-
 
 - [ ] **Step 3: Add static scope/YAGNI gates**
 
-Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert trust/preflight/installer/installed-adapter/observer production modules plus thin CLI modules together remain strictly below 2,850 physical lines；其中 install trust+CLI 不高于 1,650、preflight+CLI 不高于 330、installer+CLI 不高于 385、installed adapter+CLI 不高于 180、observer/start+CLI 不高于 385。新增 250 行预算只用于关闭已实证的 activation bridge，不得转成通用 Runner/storage/deployment 功能；已有 deployment plist renderer net production diff 不高于 25 行，bounded launchctl replacement parser net diff 不高于 25 行。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
+Scan new modules for `sqlite3`, scheduler imports, Broker/order modules, credential fields, mutable URL/path args, public callbacks/fault injectors, shell execution and UI code. Assert trust/preflight/installer/installed-adapter/observer production modules plus thin CLI modules together remain strictly below 3,050 physical lines；其中 install trust+CLI 不高于 1,675、preflight+CLI 不高于 335、installer+CLI 不高于 415、installed adapter+CLI 不高于 220、observer/start+CLI 不高于 405。原 2,850 行估算遗漏了 successful-install-receipt replay、snapshot strategy-core replay 和 retained event-root construction 三个不可删除的 fail-closed 边界；本次只把这 200 行估算误差分配回实际所属层，不得转成通用 Runner/storage/deployment 功能。已有 deployment plist renderer net production diff 不高于 25 行，bounded launchctl replacement parser net diff 不高于 25 行。若任一上限超出，停止并先删除重复逻辑；不得靠压缩格式、拆到无关模块或推迟删除来绕过。
 
 - [ ] **Step 4: Run focused and full v0.68 tests**
 

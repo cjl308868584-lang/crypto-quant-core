@@ -56,6 +56,103 @@ def launchctl_print_bytes(contract):
 
 
 class ReplacementInstallTests(unittest.TestCase):
+    def test_fixed_successful_receipt_loader_requires_exactly_one_verified_receipt(self):
+        import crypto_quant.challenger_replacement_install as install
+
+        with temporary_workspace() as directory:
+            inputs = install_inputs()
+            receipt_root = Path(directory) / "receipts"
+            receipt_root.mkdir(mode=0o700)
+            inputs["contract"]["paths"]["install_receipt_root"] = str(receipt_root)
+            target = inputs["contract"]["paths"]["target_plist"]
+            plist_record = {
+                "path": target, "device": 1, "inode": 2, "owner_uid": 501,
+                "mode": 0o600, "link_count": 1,
+                "size_bytes": len(inputs["plist_bytes"]),
+                "sha256": hashlib.sha256(inputs["plist_bytes"]).hexdigest(),
+            }
+            print_argv = ("/bin/launchctl", "print",
+                          inputs["contract"]["service"]["identity"])
+            bootstrap_argv = ("/bin/launchctl", "bootstrap", "gui/501", target)
+            commands = [
+                install._transcript(print_argv, command(113)),
+                install._transcript(bootstrap_argv, command(0)),
+                install._transcript(print_argv, command(0)),
+            ]
+            receipt = install.build_replacement_install_receipt(
+                contract=inputs["contract"],
+                contract_bytes=inputs["contract_bytes"],
+                preflight=inputs["preflight"],
+                preflight_bytes=inputs["preflight_bytes"],
+                status="INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT",
+                installed_at=OBSERVED + timedelta(minutes=5),
+                plist_record=plist_record, commands=commands, reason_codes=[],
+            )
+            with mock.patch.object(
+                install, "_load_fixed_install_inputs", return_value=inputs
+            ):
+                with self.assertRaisesRegex(
+                    install.ReplacementInstallError,
+                    "CHALLENGER_REPLACEMENT_INSTALL_RECEIPT_REQUIRED",
+                ):
+                    install._load_fixed_successful_install_receipt()
+                path = receipt_root / (receipt["receipt_id"] + ".json")
+                path.write_bytes(canonical_json(receipt).encode())
+                path.chmod(0o600)
+                loaded_inputs, loaded, loaded_bytes = (
+                    install._load_fixed_successful_install_receipt()
+                )
+            self.assertEqual(loaded_inputs, inputs)
+            self.assertEqual(loaded, receipt)
+            self.assertEqual(loaded_bytes, canonical_json(receipt).encode())
+
+    def test_fixed_successful_receipt_loader_rejects_duplicate_or_symlink_without_touching_target(self):
+        import os
+        import stat
+        import crypto_quant.challenger_replacement_install as install
+        from crypto_quant.challenger_replacement_install_trust import (
+            ReplacementInstallTrustError,
+        )
+
+        with temporary_workspace() as directory:
+            inputs = install_inputs()
+            receipt_root = Path(directory) / "receipts"
+            receipt_root.mkdir(mode=0o700)
+            inputs["contract"]["paths"]["install_receipt_root"] = str(receipt_root)
+            first = receipt_root / ("challenger_replacement_install_receipt_" + "a" * 64 + ".json")
+            second = receipt_root / ("challenger_replacement_install_receipt_" + "b" * 64 + ".json")
+            first.write_bytes(b"{}")
+            second.write_bytes(b"{}")
+            first.chmod(0o600)
+            second.chmod(0o600)
+            with mock.patch.object(
+                install, "_load_fixed_install_inputs", return_value=inputs
+            ), self.assertRaisesRegex(
+                install.ReplacementInstallError,
+                "CHALLENGER_REPLACEMENT_INSTALL_RECEIPT_REQUIRED",
+            ):
+                install._load_fixed_successful_install_receipt()
+
+            first.unlink()
+            second.unlink()
+            sentinel = Path(directory) / "sentinel"
+            sentinel.write_bytes(b"do-not-touch")
+            sentinel.chmod(0o640)
+            before = sentinel.stat()
+            os.symlink(sentinel, first)
+            with mock.patch.object(
+                install, "_load_fixed_install_inputs", return_value=inputs
+            ), self.assertRaises(ReplacementInstallTrustError):
+                install._load_fixed_successful_install_receipt()
+            after = sentinel.stat()
+            self.assertEqual(sentinel.read_bytes(), b"do-not-touch")
+            self.assertEqual(
+                (stat.S_IMODE(after.st_mode), after.st_size, after.st_ino,
+                 after.st_nlink, after.st_mtime_ns, after.st_ctime_ns),
+                (stat.S_IMODE(before.st_mode), before.st_size, before.st_ino,
+                 before.st_nlink, before.st_mtime_ns, before.st_ctime_ns),
+            )
+
     def test_success_uses_only_print_bootstrap_print_and_builds_receipt(self):
         import crypto_quant.challenger_replacement_install as install
 
@@ -94,6 +191,20 @@ class ReplacementInstallTests(unittest.TestCase):
         self.assertEqual(receipt["authority"]["launchctl_read_count"], 2)
         self.assertEqual(receipt["authority"]["launchctl_mutation_count"], 1)
         self.assertEqual(receipt["authority"]["runtime_invocation_count"], 0)
+        self.assertEqual(receipt["first_eligible_scheduled_for"],
+                         "2026-08-22T12:00:00.000Z")
+        self.assertEqual(receipt["event_root_binding"],
+                         inputs["contract"]["event_root"])
+        self.assertEqual(receipt["strategy_core_binding"],
+                         inputs["contract"]["strategy_core"])
+        self.assertEqual(receipt["adapter_binding"], {
+            "release_tag": "v0.68.0",
+            "peeled_commit": inputs["contract"]["candidate_release"]["peeled_commit"],
+            "manifest_version": "1.62.0",
+            "manifest_hash": inputs["contract"]["candidate_release"]["manifest_hash"],
+            "snapshot_tree_hash": inputs["contract"]["snapshot"]["tree_hash"],
+            "module": "crypto_quant.challenger_replacement_installed_runtime_cli",
+        })
         publish.assert_called_once()
 
     def test_expired_preflight_stops_before_print_plist_or_receipt_write(self):

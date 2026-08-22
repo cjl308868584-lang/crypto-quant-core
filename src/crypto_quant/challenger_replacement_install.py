@@ -2,7 +2,7 @@
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from importlib import resources
 from pathlib import Path
 
@@ -43,6 +43,25 @@ def _schema():
     return json.loads(resources.files("crypto_quant").joinpath(name).read_text())
 
 
+def _first_eligible(installed):
+    boundary = installed.replace(
+        hour=(installed.hour // 4) * 4, minute=0, second=0, microsecond=0
+    )
+    return utc_datetime(boundary + timedelta(hours=4))
+
+
+def _adapter_binding(contract):
+    release = contract["candidate_release"]
+    return {
+        "release_tag": release["release_tag"],
+        "peeled_commit": release["peeled_commit"],
+        "manifest_version": release["manifest_version"],
+        "manifest_hash": release["manifest_hash"],
+        "snapshot_tree_hash": contract["snapshot"]["tree_hash"],
+        "module": contract["runtime"]["module"],
+    }
+
+
 def _semantics(receipt, contract, preflight):
     print_argv = ["/bin/launchctl", "print", contract["service"]["identity"]]
     bootstrap = ["/bin/launchctl", "bootstrap", "gui/501",
@@ -63,6 +82,10 @@ def _semantics(receipt, contract, preflight):
         and receipt["authority"]["launchctl_read_count"] == len(commands) - 1
         and receipt["authority"]["launchctl_mutation_count"] == 1
         and observed <= installed < expires
+        and receipt["first_eligible_scheduled_for"] == _first_eligible(installed)
+        and receipt["event_root_binding"] == contract["event_root"]
+        and receipt["strategy_core_binding"] == contract["strategy_core"]
+        and receipt["adapter_binding"] == _adapter_binding(contract)
     )
     if receipt["status"] == "INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT":
         return common and exits == [113, 0, 0] and not receipt["reason_codes"]
@@ -92,6 +115,10 @@ def build_replacement_install_receipt(
             key: contract["snapshot"][key] for key in
             ("root", "tree_hash", "root_device", "root_inode")
         },
+        "event_root_binding": dict(contract["event_root"]),
+        "strategy_core_binding": dict(contract["strategy_core"]),
+        "adapter_binding": _adapter_binding(contract),
+        "first_eligible_scheduled_for": _first_eligible(installed_at),
         "plist": dict(plist_record), "commands": list(commands),
         "authority": {
             "github_request_count": 0, "market_request_count": 0,
@@ -131,6 +158,9 @@ def load_replacement_install_receipt_bytes(
                 key: contract["snapshot"][key] for key in
                 ("root", "tree_hash", "root_device", "root_inode")
             }
+            or receipt["event_root_binding"] != contract["event_root"]
+            or receipt["strategy_core_binding"] != contract["strategy_core"]
+            or receipt["adapter_binding"] != _adapter_binding(contract)
             or receipt["receipt_id"] != stable_id(
                 "challenger_replacement_install_receipt", identity)
             or receipt["receipt_hash"] != artifact_self_hash(receipt, "receipt_hash")
@@ -179,6 +209,46 @@ def _load_fixed_install_inputs():
         raise
     finally:
         _close_descriptor(root_fd, primary)
+
+
+def _load_fixed_successful_install_receipt():
+    inputs = _load_fixed_install_inputs()
+    root = Path(inputs["contract"]["paths"]["install_receipt_root"])
+    root_fd = -1
+    primary = None
+    try:
+        root_fd, _ = _open_directory(root, exact_mode=0o700)
+        names = os.listdir(root_fd)
+        if len(names) != 1 or not names[0].endswith(".json"):
+            raise ReplacementInstallError(
+                "CHALLENGER_REPLACEMENT_INSTALL_RECEIPT_REQUIRED"
+            )
+        loaded = _read_published_exact(root_fd, names[0])
+        if loaded is None:
+            raise ReplacementInstallError(
+                "CHALLENGER_REPLACEMENT_INSTALL_RECEIPT_REQUIRED"
+            )
+        receipt = load_replacement_install_receipt_bytes(
+            loaded[0], contract=inputs["contract"],
+            contract_bytes=inputs["contract_bytes"],
+            preflight=inputs["preflight"],
+            preflight_bytes=inputs["preflight_bytes"],
+        )
+        if (
+            receipt["status"] != "INSTALLED_WAITING_FOR_FIRST_NATURAL_SLOT"
+            or names[0] != receipt["receipt_id"] + ".json"
+            or _load_fixed_install_inputs() != inputs
+        ):
+            raise ReplacementInstallError(
+                "CHALLENGER_REPLACEMENT_INSTALL_RECEIPT_REQUIRED"
+            )
+        return inputs, receipt, loaded[0]
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        if root_fd >= 0:
+            _close_descriptor(root_fd, primary)
 
 
 def _now():

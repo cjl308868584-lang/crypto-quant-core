@@ -10,7 +10,11 @@ from .canonical import canonical_json, stable_id, utc_datetime
 from .challenger_replacement_plan import _strict_json_bytes
 from .evidence import artifact_self_hash
 from .challenger_replacement_install_trust import (
+    ReplacementInstallTrustError,
+    _close_descriptor,
+    _fixed_empty_event_root_identity,
     _load_fixed_published_contract,
+    _open_directory,
     _publish_contract_exact,
     replacement_install_paths,
 )
@@ -64,6 +68,17 @@ def _schema():
     return json.loads(resources.files("crypto_quant").joinpath(path).read_text())
 
 
+def _install_window_safe(observed_at):
+    boundary = observed_at.replace(
+        hour=(observed_at.hour // 4) * 4, minute=0, second=0, microsecond=0
+    )
+    return (
+        boundary + timedelta(minutes=10)
+        <= observed_at
+        <= boundary + timedelta(minutes=30)
+    )
+
+
 def build_replacement_install_preflight_receipt(
     *, contract, contract_file_sha256, machine, release_replayed,
     paths_verified, power_safe, disk, clock, credential_count, commands,
@@ -90,6 +105,8 @@ def build_replacement_install_preflight_receipt(
              or clock.get("request_count") != (0 if credential_count else 3)
              or (not credential_count and clock.get("trust_hash") == "0" * 64),
              "PREFLIGHT_CLOCK_INVALID"),
+            (not _install_window_safe(observed_at),
+             "PREFLIGHT_INSTALL_WINDOW_UNSAFE"),
         )
         reasons = [reason for failed, reason in checks if failed]
     status = (
@@ -218,10 +235,24 @@ def _fixed_checks(contract, results):
         and text[1] == text[2] == text[3] == expected and text[4] == ""
     )
     paths = contract["paths"]
-    absent = all(not os.path.lexists(paths[key]) for key in (
-        "target_plist", "event_root", "stdout", "stderr", "start_receipt_root",
-    ))
-    return release, absent and results[5][0] != 0 and results[6][0] != 0
+    descriptor = -1
+    try:
+        descriptor, _ = _open_directory(
+            Path(paths["start_receipt_root"]), exact_mode=0o700
+        )
+        boundaries = (
+            _fixed_empty_event_root_identity(paths) == contract["event_root"]
+            and not os.listdir(descriptor)
+            and all(not os.path.lexists(paths[key]) for key in (
+                "target_plist", "stdout", "stderr",
+            ))
+        )
+    except (OSError, ReplacementInstallTrustError):
+        boundaries = False
+    finally:
+        if descriptor >= 0:
+            _close_descriptor(descriptor)
+    return release, boundaries and results[5][0] != 0 and results[6][0] != 0
 
 
 def _power_safe(results):

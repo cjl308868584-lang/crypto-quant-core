@@ -1,8 +1,10 @@
 import copy
 import hashlib
 import json
+import os
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest import mock
 
 from jsonschema import Draft202012Validator
@@ -10,11 +12,12 @@ from jsonschema import Draft202012Validator
 from crypto_quant.canonical import canonical_json
 from tests.test_challenger_replacement_install_trust import (
     ROOT,
+    temporary_workspace,
     valid_contract,
 )
 
 
-OBSERVED = datetime(2026, 8, 22, 8, 0, tzinfo=timezone.utc)
+OBSERVED = datetime(2026, 8, 22, 8, 10, tzinfo=timezone.utc)
 EMPTY_HASH = hashlib.sha256(b"").hexdigest()
 FIXED_COMMANDS = (
     ("git", "remote", "get-url", "origin"),
@@ -75,8 +78,8 @@ class ReplacementInstallPreflightTests(unittest.TestCase):
         inputs = verified_inputs()
         receipt = build_replacement_install_preflight_receipt(**inputs)
         self.assertEqual(receipt["status"], "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE")
-        self.assertEqual(receipt["observed_at"], "2026-08-22T08:00:00.000Z")
-        self.assertEqual(receipt["expires_at"], "2026-08-22T08:30:00.000Z")
+        self.assertEqual(receipt["observed_at"], "2026-08-22T08:10:00.000Z")
+        self.assertEqual(receipt["expires_at"], "2026-08-22T08:40:00.000Z")
         self.assertEqual(receipt["authority"], {
             "github_request_count": 0,
             "market_request_count": 3,
@@ -97,6 +100,24 @@ class ReplacementInstallPreflightTests(unittest.TestCase):
             ),
             receipt,
         )
+
+    def test_verified_status_requires_fixed_post_boundary_install_window(self):
+        from crypto_quant.challenger_replacement_install_preflight import (
+            build_replacement_install_preflight_receipt,
+        )
+
+        for observed in (
+            datetime(2026, 8, 22, 7, 59, 59, 999000, tzinfo=timezone.utc),
+            datetime(2026, 8, 22, 8, 9, 59, 999000, tzinfo=timezone.utc),
+            datetime(2026, 8, 22, 8, 30, 0, 1000, tzinfo=timezone.utc),
+        ):
+            with self.subTest(observed=observed):
+                inputs = verified_inputs()
+                inputs["observed_at"] = observed
+                receipt = build_replacement_install_preflight_receipt(**inputs)
+                self.assertEqual(receipt["status"], "PREFLIGHT_FAILED_CLOSED")
+                self.assertIn("PREFLIGHT_INSTALL_WINDOW_UNSAFE",
+                              receipt["reason_codes"])
 
     def test_credential_boundary_fails_and_requires_zero_clock_requests(self):
         from crypto_quant.challenger_replacement_install_preflight import (
@@ -278,6 +299,45 @@ class ReplacementInstallPreflightTests(unittest.TestCase):
         self.assertEqual(receipt["authority"]["market_request_count"], 3)
         commands.assert_called_once()
         clock.assert_called_once()
+
+    def test_fixed_checks_require_bound_empty_event_and_start_roots(self):
+        import crypto_quant.challenger_replacement_install_preflight as preflight
+
+        with temporary_workspace() as directory:
+            runtime = Path(directory) / "runtime"
+            event_root = runtime / "state/events"
+            start_root = runtime / "evidence/start-receipts"
+            log = runtime / "log"
+            event_root.mkdir(parents=True, mode=0o700)
+            start_root.mkdir(parents=True, mode=0o700)
+            log.mkdir(mode=0o700)
+            for path in (runtime, runtime / "state", runtime / "evidence"):
+                path.chmod(0o700)
+            contract = valid_contract()
+            contract["paths"].update({
+                "runtime_root": str(runtime), "event_root": str(event_root),
+                "start_receipt_root": str(start_root),
+                "stdout": str(log / "stdout.log"),
+                "stderr": str(log / "stderr.log"),
+                "target_plist": str(Path(directory) / "agent.plist"),
+            })
+            entry = event_root.stat()
+            contract["event_root"].update({
+                "path": str(event_root), "device": entry.st_dev,
+                "inode": entry.st_ino, "owner_uid": os.getuid(),
+            })
+            head = contract["candidate_release"]["peeled_commit"].encode() + b"\n"
+            results = [
+                (0, b"https://github.com/cjl308868584-lang/crypto-quant-core.git\n", b""),
+                (0, head, b""), (0, head, b""), (0, head, b""),
+                (0, b"", b""), (113, b"", b""), (113, b"", b""),
+                (0, b" sleep 0\n", b""),
+            ]
+            self.assertEqual(preflight._fixed_checks(contract, results),
+                             (True, True))
+            (event_root / "unexpected").write_bytes(b"x")
+            self.assertEqual(preflight._fixed_checks(contract, results),
+                             (True, False))
 
     def test_observer_skips_commands_and_network_on_unsupported_platform(self):
         import crypto_quant.challenger_replacement_install_preflight as preflight
