@@ -1,23 +1,35 @@
 """Strict live-input boundary for the replacement Challenger."""
 
+import hashlib
 import json
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from importlib import resources
 from typing import Any, Mapping
 
 from jsonschema import Draft202012Validator
 
-from .canonical import canonical_json, stable_id, utc_datetime
+from .canonical import (
+    business_hash,
+    canonical_decimal,
+    canonical_json,
+    stable_id,
+    utc_datetime,
+)
 from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reasons
 from .evidence import artifact_self_hash
+from .errors import CanonicalizationError
 from .runtime_health import server_time_probe_reasons, server_time_probe_trust_hash
 
 
 _CAPABILITY_TOKEN = object()
+_CAPTURE_SCHEMA = "./challenger-replacement-live-capture-v1.schema.json"
+_QUALIFICATION = "REPLACEMENT_CONFIRMATORY_COHORT_INPUT"
 _MAX_CAPTURE_BYTES = 2 * 1024 * 1024
+_MAX_RESPONSE_BYTES = 256 * 1024
 _BUILD_KEYS = {
     "release_tag",
     "peeled_commit",
@@ -44,6 +56,31 @@ _REQUEST_KEYS = {
     "limit",
     "end_time_ms",
 }
+_ATTEMPT_KEYS = {
+    "sequence",
+    "request_started_at",
+    "response_received_at",
+    "status",
+    "final_url",
+    "selected_headers",
+    "body_size_bytes",
+    "body_sha256",
+    "response_body_utf8",
+}
+_HEADER_KEYS = {
+    "http_date_or_null",
+    "etag_or_null",
+    "last_modified_or_null",
+    "retry_after_or_null",
+}
+_ROW_DESCRIPTOR = {
+    "provider": "BINANCE_PUBLIC_DATA",
+    "market": "SPOT",
+    "data_family": "KLINES",
+    "symbol": "ETHUSDT",
+    "interval": "4h",
+}
+_TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
 
 class ChallengerReplacementLiveInputError(ValueError):
@@ -52,6 +89,65 @@ class ChallengerReplacementLiveInputError(ValueError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
         self.reason_code = reason_code
+
+
+def _build_live_capture_document(
+    *,
+    plan,
+    build_identity,
+    slot,
+    clock_records,
+    kline_request,
+    attempts,
+    selected_attempt_index,
+    rows,
+):
+    document = {
+        "$schema": _CAPTURE_SCHEMA,
+        "schema_version": "1.0.0",
+        "capture_id": "",
+        "capture_hash": "",
+        "evidence_qualification": _QUALIFICATION,
+        "plan": {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]},
+        "build_identity": deepcopy(dict(build_identity)),
+        "slot": deepcopy(dict(slot)),
+        "clock": deepcopy(dict(clock_records)),
+        "kline_request": deepcopy(dict(kline_request)),
+        "attempts": deepcopy(list(attempts)),
+        "selected_success_attempt_index": selected_attempt_index,
+        "rows": deepcopy(list(rows)),
+        "authority": {
+            "network_request_count": 3 + len(attempts),
+            "credentials_allowed": False,
+            "account_requests_allowed": False,
+            "broker_requests_allowed": False,
+            "orders_allowed": False,
+        },
+    }
+    document["capture_id"] = stable_id(
+        "challenger_replacement_live_capture",
+        {
+            "plan": document["plan"],
+            "build_identity": document["build_identity"],
+            "slot": document["slot"],
+        },
+    )
+    document["capture_hash"] = artifact_self_hash(document, "capture_hash")
+    return document
+
+
+def _grant_live_capture(*, document, canonical_bytes, token):
+    if token is not _CAPABILITY_TOKEN:
+        raise TypeError("live capture capability grant is private")
+    if canonical_bytes != canonical_json(document).encode("utf-8"):
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_CANONICAL_BYTES_REQUIRED"
+        )
+    return ChallengerReplacementLiveCapture(
+        _token=_CAPABILITY_TOKEN,
+        document=document,
+        canonical_bytes=canonical_bytes,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -111,7 +207,6 @@ def load_challenger_replacement_live_capture_bytes(
 ):
     """Load bounded canonical bytes without granting runtime authority."""
 
-    del previous_source_bundle
     document = _strict_json(data)
     if data != canonical_json(document).encode("utf-8"):
         raise ChallengerReplacementLiveInputError(
@@ -235,6 +330,27 @@ def load_challenger_replacement_live_capture_bytes(
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_REQUEST_INVALID"
         )
+    selected_payload = _validated_attempt_payload(
+        document,
+        request=request,
+        trusted_completed=trusted_completed,
+        captured=captured,
+    )
+    expected_rows = _normalize_kline_payload(
+        selected_payload, scheduled=scheduled, captured=captured
+    )
+    if document["rows"] != expected_rows:
+        _invalid_rows()
+    if previous_source_bundle is not None:
+        if (
+            not isinstance(previous_source_bundle, Mapping)
+            or not isinstance(previous_source_bundle.get("klines"), list)
+            or len(previous_source_bundle["klines"]) != 21
+            or previous_source_bundle["klines"][1:] != document["rows"][:20]
+        ):
+            raise ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_OVERLAP_INVALID"
+            )
     authority = document["authority"]
     if (
         not isinstance(authority, Mapping)
@@ -273,6 +389,163 @@ def _utc_millis(value):
     if value != utc_datetime(parsed):
         raise ValueError("canonical UTC milliseconds required")
     return parsed
+
+
+def _validated_attempt_payload(document, *, request, trusted_completed, captured):
+    attempts = document["attempts"]
+    selected = document["selected_success_attempt_index"]
+    if (
+        not isinstance(attempts, list)
+        or not 1 <= len(attempts) <= 3
+        or not isinstance(selected, int)
+        or isinstance(selected, bool)
+        or selected != len(attempts) - 1
+    ):
+        _invalid_attempt()
+    previous_received = trusted_completed
+    selected_body = None
+    for index, attempt in enumerate(attempts):
+        if not isinstance(attempt, Mapping) or set(attempt) != _ATTEMPT_KEYS:
+            _invalid_attempt()
+        try:
+            started = _utc_millis(attempt["request_started_at"])
+            received = _utc_millis(attempt["response_received_at"])
+            body = attempt["response_body_utf8"].encode("utf-8")
+        except (AttributeError, TypeError, ValueError):
+            _invalid_attempt()
+        headers = attempt["selected_headers"]
+        status = attempt["status"]
+        if (
+            attempt["sequence"] != index + 1
+            or not isinstance(status, int)
+            or isinstance(status, bool)
+            or attempt["final_url"] != request["url"]
+            or not isinstance(headers, Mapping)
+            or set(headers) != _HEADER_KEYS
+            or any(value is not None and not isinstance(value, str) for value in headers.values())
+            or not previous_received <= started <= received <= captured
+            or not 0 < len(body) <= _MAX_RESPONSE_BYTES
+            or attempt["body_size_bytes"] != len(body)
+            or attempt["body_sha256"] != hashlib.sha256(body).hexdigest()
+            or (index < selected and status not in _TRANSIENT_STATUS)
+            or (index == selected and status != 200)
+        ):
+            _invalid_attempt()
+        previous_received = received
+        if index == selected:
+            selected_body = body
+    try:
+        payload = _strict_response_json(selected_body)
+    except (ChallengerReplacementLiveInputError, TypeError):
+        _invalid_rows()
+    if not isinstance(payload, list) or len(payload) != 21:
+        _invalid_rows()
+    return payload
+
+
+def _strict_response_json(data):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                _invalid_rows()
+            result[key] = value
+        return result
+
+    def reject_number(_value):
+        _invalid_rows()
+
+    try:
+        value = json.loads(
+            data.decode("utf-8"),
+            object_pairs_hook=pairs,
+            parse_float=reject_number,
+            parse_constant=reject_number,
+        )
+    except ChallengerReplacementLiveInputError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ChallengerReplacementLiveInputError(
+            "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_ROWS_INVALID"
+        ) from error
+    try:
+        canonical = canonical_json(value).encode("utf-8")
+    except CanonicalizationError:
+        _invalid_rows()
+    if data != canonical:
+        _invalid_rows()
+    return value
+
+
+def _normalize_kline_payload(payload, *, scheduled, captured):
+    rows = []
+    previous_open = None
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    for raw in payload:
+        if (
+            not isinstance(raw, list)
+            or len(raw) != 12
+            or any(
+                not isinstance(raw[index], int) or isinstance(raw[index], bool)
+                for index in (0, 6, 8)
+            )
+            or raw[8] < 0
+            or raw[11] != "0"
+        ):
+            _invalid_rows()
+        try:
+            opened = epoch + timedelta(milliseconds=raw[0])
+            closed = epoch + timedelta(milliseconds=raw[6])
+            opening, high, low, close = (
+                Decimal(raw[index]) for index in (1, 2, 3, 4)
+            )
+            volumes = tuple(Decimal(raw[index]) for index in (5, 7, 9, 10))
+            normalized_prices = tuple(
+                canonical_decimal(value) for value in (opening, high, low, close)
+            )
+            normalized_volumes = tuple(canonical_decimal(value) for value in volumes)
+        except (InvalidOperation, TypeError, ValueError, OverflowError):
+            _invalid_rows()
+        if (
+            tuple(raw[index] for index in (1, 2, 3, 4)) != normalized_prices
+            or tuple(raw[index] for index in (5, 7, 9, 10)) != normalized_volumes
+            or any(value <= 0 or not value.is_finite() for value in (opening, high, low, close))
+            or any(value < 0 or not value.is_finite() for value in volumes)
+            or high < max(opening, close)
+            or low > min(opening, close)
+            or closed != opened + timedelta(hours=4) - timedelta(milliseconds=1)
+            or (previous_open is not None and opened != previous_open + timedelta(hours=4))
+            or opened + timedelta(hours=4) > captured
+        ):
+            _invalid_rows()
+        normalized = {
+            **_ROW_DESCRIPTOR,
+            "open_time": utc_datetime(opened),
+            "close_time": utc_datetime(closed),
+            "available_at": utc_datetime(opened + timedelta(hours=4)),
+            "open": normalized_prices[0],
+            "high": normalized_prices[1],
+            "low": normalized_prices[2],
+            "close": normalized_prices[3],
+        }
+        normalized["source_row_hash"] = business_hash(normalized)
+        rows.append(normalized)
+        previous_open = opened
+    if rows[-1]["close_time"] != utc_datetime(scheduled - timedelta(milliseconds=1)):
+        _invalid_rows()
+    return rows
+
+
+def _invalid_attempt():
+    raise ChallengerReplacementLiveInputError(
+        "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_ATTEMPT_INVALID"
+    )
+
+
+def _invalid_rows():
+    raise ChallengerReplacementLiveInputError(
+        "CHALLENGER_REPLACEMENT_LIVE_CAPTURE_ROWS_INVALID"
+    )
 
 
 def _invalid_slot():
