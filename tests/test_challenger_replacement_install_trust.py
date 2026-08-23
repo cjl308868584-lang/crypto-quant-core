@@ -1,4 +1,5 @@
 import copy
+import errno
 import hashlib
 import json
 import os
@@ -1104,6 +1105,14 @@ raise SystemExit(9)
         with mock.patch.object(
             trust, "_run_fixed_command", return_value=(stdout, b"")
         ) as command:
+            if Path("/usr/bin/python3").is_symlink():
+                with self.assertRaisesRegex(
+                    trust.ReplacementInstallTrustError,
+                    "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_INVALID",
+                ):
+                    trust._fixed_python_identity("/private/fixed-snapshot")
+                command.assert_not_called()
+                return
             identity = trust._fixed_python_identity("/private/fixed-snapshot")
         self.assertEqual(identity["path"], "/usr/bin/python3")
         self.assertEqual(identity["link_count"], Path("/usr/bin/python3").stat().st_nlink)
@@ -1113,6 +1122,17 @@ raise SystemExit(9)
         self.assertIn("crypto_quant.challenger_replacement_runtime", script)
         self.assertIn("crypto_quant.challenger_replacement_decision", script)
         self.assertIn("crypto_quant.challenger_replacement_evidence", script)
+
+    def test_system_python_nofollow_open_error_has_fixed_reason(self):
+        import crypto_quant.challenger_replacement_install_trust as trust
+
+        with mock.patch.object(
+            trust.os, "open", side_effect=OSError(errno.ELOOP, "symlink")
+        ), self.assertRaisesRegex(
+            trust.ReplacementInstallTrustError,
+            "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_INVALID",
+        ):
+            trust._fixed_python_identity("/private/fixed-snapshot")
 
     def test_python_identity_replay_rejects_any_runtime_change(self):
         import crypto_quant.challenger_replacement_install_trust as trust

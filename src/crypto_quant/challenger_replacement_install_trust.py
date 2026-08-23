@@ -1391,12 +1391,9 @@ def _fixed_python_identity(snapshot_root: str):
     descriptor = -1
     primary_error = None
     try:
-        descriptor = os.open(
-            python_path,
-            os.O_RDONLY
-            | _require_open_flag("O_NOFOLLOW")
-            | _require_open_flag("O_NONBLOCK"),
-        )
+        descriptor = os.open(python_path, os.O_RDONLY
+                             | _require_open_flag("O_NOFOLLOW")
+                             | _require_open_flag("O_NONBLOCK"))
         opened = os.fstat(descriptor)
         if (
             not stat.S_ISREG(opened.st_mode)
@@ -1405,8 +1402,7 @@ def _fixed_python_identity(snapshot_root: str):
             or not 0 < opened.st_size <= 64 * 1024 * 1024
         ):
             raise ReplacementInstallTrustError(
-                "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_INVALID"
-            )
+                "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_INVALID")
         body = _read_exact(descriptor, opened.st_size)
         after = os.fstat(descriptor)
         attached = python_path.lstat()
@@ -1414,8 +1410,11 @@ def _fixed_python_identity(snapshot_root: str):
             after, attached
         ):
             raise ReplacementInstallTrustError(
-                "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_INVALID"
-            )
+                "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_INVALID")
+    except OSError as error:
+        primary_error = error
+        raise ReplacementInstallTrustError(
+            "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_INVALID") from error
     except BaseException as error:
         primary_error = error
         raise
