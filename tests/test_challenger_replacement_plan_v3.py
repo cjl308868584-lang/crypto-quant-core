@@ -483,15 +483,6 @@ class ChallengerReplacementPlanV3LoaderTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), (
             "6fae2ae0df4b8402ddc1df1b5bca611e11df41eee8d42f591d5d7b5fb24a31c3"
         ))
-        self.assertFalse((
-            root / "challenger-replacement-v3-supersession-machine-evidence-v0.69.0.json"
-        ).exists())
-        self.assertFalse((
-            root / "challenger-replacement-v3-owner-attestation-v0.69.0.json"
-        ).exists())
-        self.assertFalse((
-            root / "challenger-replacement-plan-v3-supersession-v0.69.0.json"
-        ).exists())
 
     def test_loader_accepts_only_exact_canonical_v3_bytes(self):
         plan = build_challenger_replacement_plan_v3()

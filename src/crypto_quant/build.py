@@ -377,6 +377,24 @@ _V068_RELEASE_PATHS = (
     "docs/implementation-status-v0.68.0.md",
 )
 
+_V069_RELEASE_PATHS = (
+    "config/challenger-replacement-plan-v3.schema.json",
+    "config/challenger-replacement-v3-supersession-machine-evidence-v1.schema.json",
+    "config/challenger-replacement-v3-owner-attestation-v1.schema.json",
+    "config/challenger-replacement-plan-v3-supersession-v1.schema.json",
+    "artifacts/challenger-replacement/challenger-replacement-plan-v0.69.0.json",
+    "artifacts/challenger-replacement/challenger-replacement-v3-supersession-machine-evidence-v0.69.0.json",
+    "artifacts/challenger-replacement/challenger-replacement-v3-owner-attestation-v0.69.0.json",
+    "artifacts/challenger-replacement/challenger-replacement-plan-v3-supersession-v0.69.0.json",
+    "tests/test_challenger_replacement_plan_v3.py",
+    "tests/test_challenger_replacement_plan_v3_supersession.py",
+    "tests/test_challenger_replacement_v069_release.py",
+    "docs/superpowers/specs/2026-08-23-decision-opportunity-binance-canary-governance-design.md",
+    "docs/superpowers/plans/2026-08-23-decision-opportunity-binance-canary-governance.md",
+    "docs/adr/0069-decision-opportunity-binance-canary-preregistration.md",
+    "docs/implementation-status-v0.69.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -412,6 +430,7 @@ class EvaluatorBuild:
                 + list(_V066_RELEASE_PATHS)
                 + list(_V067_RELEASE_PATHS)
                 + list(_V068_RELEASE_PATHS)
+                + list(_V069_RELEASE_PATHS)
             )
         )
 

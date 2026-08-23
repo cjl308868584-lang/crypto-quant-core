@@ -73,6 +73,11 @@ _V068_PEELED = "1371997d61679609804d58753ae79147d60e1c01"
 _ACKNOWLEDGEMENT = (
     "I_SIGN_AND_ACCEPT_ACCOUNTABILITY_FOR_THE_EXACT_V3_DECLARATION"
 )
+_MISSING_SERVICE_ERROR = (
+    'Bad request.\nCould not find service "'
+    'local.crypto-quant.challenger-replacement-v1'
+    '" in domain for user gui: 501\n'
+).encode("utf-8")
 _PROCESS_ENV = {
     "HOME": "/var/empty",
     "LANG": "C",
@@ -179,17 +184,12 @@ def _stdout_line(result: subprocess.CompletedProcess) -> str:
 def _validate_collection_results(
     results: Sequence[subprocess.CompletedProcess],
 ) -> None:
-    expected_service_error = (
-        'Bad request.\nCould not find service "'
-        'local.crypto-quant.challenger-replacement-v1'
-        '" in domain for user gui: 501\n'
-    ).encode("utf-8")
     if (
         len(results) != 8
         or any(result.returncode != 0 for result in results[:7])
         or results[7].returncode != 113
         or bytes(results[7].stdout) != b""
-        or bytes(results[7].stderr) != expected_service_error
+        or bytes(results[7].stderr) != _MISSING_SERVICE_ERROR
         or _stdout_line(results[0]) != _V064_PEELED
         or _stdout_line(results[1]) != _V068_PEELED
         or _stdout_line(results[2]) != _V068_PEELED
@@ -346,6 +346,25 @@ def _require_absent(path: Path) -> None:
     )
 
 
+def _require_pre_start_state() -> None:
+    _require_absent(_RUNTIME_ROOT)
+    _require_absent(_PLIST)
+    result = _run(("/bin/launchctl", "print", _SERVICE))
+    if (
+        result.returncode == 113
+        and bytes(result.stdout) == b""
+        and bytes(result.stderr) == _MISSING_SERVICE_ERROR
+    ):
+        return
+    if result.returncode == 0:
+        raise V3SupersessionCommandError(
+            "CHALLENGER_REPLACEMENT_V3_CURRENT_STATE_PRESENT"
+        )
+    raise V3SupersessionCommandError(
+        "CHALLENGER_REPLACEMENT_V3_CURRENT_STATE_AMBIGUOUS"
+    )
+
+
 def _collect_machine_evidence() -> Dict[str, Any]:
     if os.geteuid() != 501:
         raise V3SupersessionCommandError(
@@ -357,8 +376,7 @@ def _collect_machine_evidence() -> Dict[str, Any]:
     _require_empty_protocol_staging()
     for path in (_MACHINE_RELATIVE, _ATTESTATION_RELATIVE, _RECORD_RELATIVE):
         _require_absent(root / path)
-    _require_absent(_RUNTIME_ROOT)
-    _require_absent(_PLIST)
+    _require_pre_start_state()
     commands = _collection_argv(root)
     names = (
         "git_v064_peeled",
@@ -372,6 +390,7 @@ def _collect_machine_evidence() -> Dict[str, Any]:
     )
     results = tuple(_run(argv) for argv in commands)
     _validate_collection_results(results)
+    _require_pre_start_state()
     transcripts = [
         _transcript(name, argv, result)
         for name, argv, result in zip(names, commands, results)
@@ -393,6 +412,7 @@ def _collect_command() -> int:
     value = _collect_machine_evidence()
     _require_status(root, ())
     _require_empty_protocol_staging()
+    _require_pre_start_state()
     publish_challenger_replacement_v3_machine_evidence_bytes(
         _canonical_bytes(value)
     )
@@ -475,6 +495,7 @@ def _assemble_command() -> int:
     )
     _require_status(root, expected)
     _require_empty_protocol_staging()
+    _require_pre_start_state()
     plan = load_challenger_replacement_plan_v3(root / _PLAN_RELATIVE)
     machine = load_challenger_replacement_v3_machine_evidence(
         root / _MACHINE_RELATIVE
@@ -499,6 +520,7 @@ def _assemble_command() -> int:
         raise V3SupersessionCommandError(
             "CHALLENGER_REPLACEMENT_V3_PRECONDITION_CHANGED"
         )
+    _require_pre_start_state()
     publish_challenger_replacement_v3_supersession_record_bytes(
         _canonical_bytes(record)
     )

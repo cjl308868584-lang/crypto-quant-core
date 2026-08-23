@@ -774,6 +774,101 @@ class V3SupersessionCliTests(unittest.TestCase):
             ):
                 v3_cli._collect_command()
 
+    def test_collect_rechecks_pre_start_state_immediately_before_publication(self):
+        appeared = v3_cli.V3SupersessionCommandError(
+            "CHALLENGER_REPLACEMENT_V3_CURRENT_STATE_PRESENT"
+        )
+        with mock.patch.object(v3_cli, "_repository_root", return_value=ROOT), \
+             mock.patch.object(
+                 v3_cli, "_collect_machine_evidence", return_value=_machine()
+             ), \
+             mock.patch.object(v3_cli, "_require_status"), \
+             mock.patch.object(v3_cli, "_require_empty_protocol_staging"), \
+             mock.patch.object(
+                 v3_cli,
+                 "_require_pre_start_state",
+                 create=True,
+                 side_effect=appeared,
+             ), \
+             mock.patch.object(
+                 v3_cli,
+                 "publish_challenger_replacement_v3_machine_evidence_bytes",
+                 side_effect=AssertionError("changed state must not publish"),
+             ):
+            with self.assertRaisesRegex(
+                v3_cli.V3SupersessionCommandError,
+                "CURRENT_STATE_PRESENT",
+            ):
+                v3_cli._collect_command()
+
+    def test_assemble_rechecks_pre_start_state_before_publication(self):
+        appeared = v3_cli.V3SupersessionCommandError(
+            "CHALLENGER_REPLACEMENT_V3_CURRENT_STATE_PRESENT"
+        )
+        with mock.patch.object(v3_cli, "_repository_root", return_value=ROOT), \
+             mock.patch.object(v3_cli, "_require_status"), \
+             mock.patch.object(v3_cli, "_require_empty_protocol_staging"), \
+             mock.patch.object(
+                 v3_cli,
+                 "_require_pre_start_state",
+                 create=True,
+                 side_effect=[None, appeared],
+             ), \
+             mock.patch.object(
+                 v3_cli,
+                 "publish_challenger_replacement_v3_supersession_record_bytes",
+                 side_effect=AssertionError("post-start state must not publish"),
+             ):
+            with self.assertRaisesRegex(
+                v3_cli.V3SupersessionCommandError,
+                "CURRENT_STATE_PRESENT",
+            ):
+                v3_cli._assemble_command()
+
+    def test_pre_start_gate_rejects_event_root_plist_and_loaded_service(self):
+        missing_service = self._completed(
+            returncode=113,
+            stderr=(
+                'Bad request.\nCould not find service "'
+                'local.crypto-quant.challenger-replacement-v1'
+                '" in domain for user gui: 501\n'
+            ).encode("utf-8"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "runtime"
+            plist = root / "service.plist"
+            with mock.patch.object(v3_cli, "_RUNTIME_ROOT", runtime), \
+                 mock.patch.object(v3_cli, "_PLIST", plist), \
+                 mock.patch.object(v3_cli, "_run", return_value=missing_service):
+                v3_cli._require_pre_start_state()
+                (runtime / "state" / "challenger-replacement-events-v1").mkdir(
+                    parents=True
+                )
+                with self.assertRaisesRegex(
+                    v3_cli.V3SupersessionCommandError,
+                    "CURRENT_STATE_PRESENT",
+                ):
+                    v3_cli._require_pre_start_state()
+                runtime.rename(root / "sealed-runtime")
+                plist.write_text("loaded candidate")
+                with self.assertRaisesRegex(
+                    v3_cli.V3SupersessionCommandError,
+                    "CURRENT_STATE_PRESENT",
+                ):
+                    v3_cli._require_pre_start_state()
+                plist.unlink()
+                with mock.patch.object(
+                    v3_cli,
+                    "_run",
+                    return_value=self._completed(returncode=0, stdout=b"loaded\n"),
+                ):
+                    with self.assertRaisesRegex(
+                        v3_cli.V3SupersessionCommandError,
+                        "CURRENT_STATE_PRESENT",
+                    ):
+                        v3_cli._require_pre_start_state()
+
     def test_collection_requires_exact_release_and_not_loaded_service_facts(self):
         missing_service = (
             'Bad request.\nCould not find service "'
