@@ -2,6 +2,7 @@ import json
 import hashlib
 import os
 import plistlib
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -123,6 +124,42 @@ class DeploymentCandidateTests(unittest.TestCase):
             ),
             build_challenger_replacement_deployment(),
         )
+
+    def test_loader_rejects_rehashed_wrong_current_package_version(self):
+        from crypto_quant.challenger_replacement_deployment import (
+            ChallengerReplacementDeploymentError,
+            load_challenger_replacement_deployment,
+        )
+        from crypto_quant.evidence import artifact_self_hash
+
+        with tempfile.TemporaryDirectory() as directory:
+            clone = Path(directory) / "workspace"
+            shutil.copytree(
+                ROOT,
+                clone,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+            )
+            manifest_path = clone / "config/evaluator-build-manifest-v1.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["package_version"] = "9.9.9"
+            manifest["manifest_hash"] = "0" * 64
+            manifest["manifest_hash"] = artifact_self_hash(
+                manifest, "manifest_hash"
+            )
+            manifest_path.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ChallengerReplacementDeploymentError,
+                "CHALLENGER_REPLACEMENT_DEPLOYMENT_MANIFEST_INVALID",
+            ):
+                load_challenger_replacement_deployment(
+                    clone
+                    / "artifacts/challenger-replacement/"
+                    "challenger-replacement-deployment-v0.67.0.json",
+                    manifest_path=manifest_path,
+                )
 
 
 if __name__ == "__main__":

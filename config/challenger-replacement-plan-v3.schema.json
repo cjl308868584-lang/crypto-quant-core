@@ -1,0 +1,660 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-plan-v3.schema.json",
+  "title": "Replacement Challenger DecisionOpportunity and Canary preregistration plan V3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "plan_id",
+    "plan_hash",
+    "foundation",
+    "predecessor",
+    "scope",
+    "decision_policy",
+    "opportunity_policy",
+    "operational_qualification",
+    "economic_evidence",
+    "canary_ladder",
+    "product_policy",
+    "risk_policy",
+    "isolation_policy",
+    "evidence_policy",
+    "storage_authority",
+    "supersession",
+    "authority",
+    "status",
+    "eligibility",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-plan-v3.schema.json"
+    },
+    "schema_version": {
+      "const": "3.0.0"
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^challenger_replacement_plan_v3_[0-9a-f]{64}$"
+    },
+    "plan_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "foundation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_tag",
+        "peeled_commit",
+        "package_version",
+        "manifest_version",
+        "build_input_tree_hash",
+        "manifest_hash",
+        "manifest_file_sha256"
+      ],
+      "properties": {
+        "release_tag": {"const": "v0.68.0"},
+        "peeled_commit": {
+          "const": "1371997d61679609804d58753ae79147d60e1c01"
+        },
+        "package_version": {"const": "0.68.0"},
+        "manifest_version": {"const": "1.62.0"},
+        "build_input_tree_hash": {
+          "const": "0e6bde43eff304bc42cab90895da47296a9c6b8996b0d99a0d1ca4009a71083e"
+        },
+        "manifest_hash": {
+          "const": "f4ce2f0a67b04541b850f5841897927e2886a339fecb3f11356ad96b2d7370b5"
+        },
+        "manifest_file_sha256": {
+          "const": "d7c70074fef46f28d028cc330a8726755fe999bba5af90af90a24f285df37a79"
+        }
+      }
+    },
+    "predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "previous_plan",
+        "old_cohort_failure_preserved",
+        "old_cohort_decommission_preserved"
+      ],
+      "properties": {
+        "previous_plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "release_tag",
+            "path",
+            "file_sha256",
+            "plan_id",
+            "plan_hash",
+            "status"
+          ],
+          "properties": {
+            "release_tag": {"const": "v0.64.0"},
+            "path": {
+              "const": "artifacts/challenger-replacement/challenger-replacement-plan-v0.64.0.json"
+            },
+            "file_sha256": {
+              "const": "5f1774fd912451d79c9efe13401e80f312fee3c707d9faa252933ef3e8810a8f"
+            },
+            "plan_id": {
+              "const": "challenger_replacement_plan_65d85d60a534a917f45a1ffa5fc9d3f74d6d24995b900d31b8c73cd26f0bd97b"
+            },
+            "plan_hash": {
+              "const": "c9a1e5f74c52fbf23be5a1d27fd23c25f3601ed58133178fc25480391ab65705"
+            },
+            "status": {"const": "PLAN_FROZEN_REPLACEMENT_V2_NOT_STARTED"}
+          }
+        },
+        "old_cohort_failure_preserved": {"const": true},
+        "old_cohort_decommission_preserved": {"const": true}
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "cohort_generation",
+        "route",
+        "economic_asset",
+        "symbol",
+        "venue",
+        "market_and_direction",
+        "research_hypothesis_reset",
+        "policy_hash"
+      ],
+      "properties": {
+        "mode": {"const": "REPLACEMENT_CHALLENGER_CONFIRMATORY_V3"},
+        "cohort_generation": {"const": "replacement-v2"},
+        "route": {"const": "BASELINE_ONLY"},
+        "economic_asset": {"const": "ETH"},
+        "symbol": {"const": "ETHUSDT"},
+        "venue": {"const": "BINANCE_ONLY"},
+        "market_and_direction": {
+          "const": "MUTUALLY_EXCLUSIVE_SPOT_LONG_OR_USDM_PERPETUAL_SHORT"
+        },
+        "research_hypothesis_reset": {"const": true},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "decision_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "predecessor_policy_id",
+        "predecessor_policy_hash",
+        "hypothesis_registration_hash",
+        "sma_window",
+        "momentum_lag_bars",
+        "sma20_distance_minimum",
+        "minimum_hold_hours",
+        "vertical_exit_hours",
+        "long_entry",
+        "short_entry",
+        "long_exit_after_minimum",
+        "short_exit_after_minimum",
+        "same_opportunity_close_and_reverse_allowed",
+        "reverse_requires_next_opportunity_after_verified_flat",
+        "policy_hash"
+      ],
+      "properties": {
+        "version": {
+          "const": "CHALLENGER_REPLACEMENT_SMA20_MOMENTUM_DUAL_DIRECTION_V1"
+        },
+        "predecessor_policy_id": {
+          "const": "CHALLENGER_REPLACEMENT_SMA20_MOMENTUM_V1"
+        },
+        "predecessor_policy_hash": {
+          "const": "d444fbee8cbc7c186e8ff31fccae4b37020061573d446f4d2b0428acd7f95bc1"
+        },
+        "hypothesis_registration_hash": {"$ref": "#/$defs/hash"},
+        "sma_window": {"const": 20},
+        "momentum_lag_bars": {"const": 5},
+        "sma20_distance_minimum": {"const": "0.005"},
+        "minimum_hold_hours": {"const": 8},
+        "vertical_exit_hours": {"const": 24},
+        "long_entry": {
+          "const": "LATEST_CLOSE_GTE_PRIOR_SMA20_TIMES_1_005_AND_LOG_RETURN_5_GT_ZERO"
+        },
+        "short_entry": {
+          "const": "LATEST_CLOSE_LTE_PRIOR_SMA20_TIMES_0_995_AND_LOG_RETURN_5_LT_ZERO"
+        },
+        "long_exit_after_minimum": {
+          "const": "LATEST_CLOSE_LTE_PRIOR_SMA20_OR_VERTICAL_EXIT"
+        },
+        "short_exit_after_minimum": {
+          "const": "LATEST_CLOSE_GTE_PRIOR_SMA20_OR_VERTICAL_EXIT"
+        },
+        "same_opportunity_close_and_reverse_allowed": {"const": false},
+        "reverse_requires_next_opportunity_after_verified_flat": {"const": true},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "opportunity_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cadence_seconds",
+        "capture_open_offset_seconds",
+        "capture_close_offset_seconds",
+        "terminal_outcomes",
+        "historical_decision_backfill_allowed",
+        "missed_opportunity_recovery",
+        "missed_reason_codes",
+        "policy_hash"
+      ],
+      "properties": {
+        "cadence_seconds": {"const": 14400},
+        "capture_open_offset_seconds": {"const": 120},
+        "capture_close_offset_seconds": {"const": 600},
+        "terminal_outcomes": {"const": ["OBSERVED", "MISSED"]},
+        "historical_decision_backfill_allowed": {"const": false},
+        "missed_opportunity_recovery": {
+          "const": "APPEND_MISSED_WITH_ACTUAL_DETECTION_TIME"
+        },
+        "missed_reason_codes": {
+          "type": "array",
+          "prefixItems": [
+            {"const": "PROCESS_NOT_RUNNING"},
+            {"const": "CAPTURE_WINDOW_EXPIRED"},
+            {"const": "PUBLIC_MARKET_SOURCE_UNAVAILABLE"},
+            {"const": "CLOCK_OR_CONNECTIVITY_UNTRUSTED"},
+            {"const": "PRECONDITION_FAILED_CLOSED"}
+          ],
+          "items": false,
+          "minItems": 5,
+          "maxItems": 5
+        },
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "operational_qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_source",
+        "minimum_calendar_days",
+        "minimum_observed_coverage",
+        "minimum_strategy_cycles",
+        "spot_roundtrip_required",
+        "perpetual_roundtrip_required",
+        "automatic_extension_required",
+        "window_reset_allowed",
+        "profitability_claim_allowed",
+        "terminal_statuses",
+        "policy_hash"
+      ],
+      "properties": {
+        "start_source": {"const": "FIRST_VERIFIED_NATURAL_OBSERVED_OPPORTUNITY"},
+        "minimum_calendar_days": {"const": 7},
+        "minimum_observed_coverage": {"const": "0.95"},
+        "minimum_strategy_cycles": {"const": 3},
+        "spot_roundtrip_required": {"const": true},
+        "perpetual_roundtrip_required": {"const": true},
+        "automatic_extension_required": {"const": true},
+        "window_reset_allowed": {"const": false},
+        "profitability_claim_allowed": {"const": false},
+        "terminal_statuses": {
+          "const": [
+            "OPERATIONAL_QUALIFICATION_PASS",
+            "PENDING_AUTOMATIC_EXTENSION",
+            "OPERATIONAL_QUALIFICATION_DID_NOT_PASS",
+            "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+          ]
+        },
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "economic_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_source",
+        "minimum_calendar_days",
+        "terminal_coverage_required",
+        "minimum_observed_coverage",
+        "interim_profitability_pass_allowed",
+        "window_reset_allowed",
+        "window_extension_to_seek_better_result_allowed",
+        "terminal_statuses",
+        "policy_hash"
+      ],
+      "properties": {
+        "start_source": {"const": "INDEPENDENT_ECONOMIC_START_RECEIPT"},
+        "minimum_calendar_days": {"const": 90},
+        "terminal_coverage_required": {"const": "1"},
+        "minimum_observed_coverage": {"const": "0.95"},
+        "interim_profitability_pass_allowed": {"const": false},
+        "window_reset_allowed": {"const": false},
+        "window_extension_to_seek_better_result_allowed": {"const": false},
+        "terminal_statuses": {
+          "const": [
+            "RESEARCH_CONTINUATION_GATE_PASS",
+            "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+            "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+          ]
+        },
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "canary_ladder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "E0",
+        "E1",
+        "E2",
+        "spot_roundtrip_each_stage_required",
+        "perpetual_roundtrip_each_stage_required",
+        "promotion_automatic",
+        "policy_hash"
+      ],
+      "properties": {
+        "E0": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capital_limit_usdt", "gross_exposure_limit", "minimum_calendar_days", "minimum_strategy_cycles"],
+          "properties": {
+            "capital_limit_usdt": {"const": "100"},
+            "gross_exposure_limit": {"const": "0.5"},
+            "minimum_calendar_days": {"const": 7},
+            "minimum_strategy_cycles": {"const": 3}
+          }
+        },
+        "E1": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capital_limit_usdt", "gross_exposure_limit", "minimum_calendar_days", "minimum_strategy_cycles"],
+          "properties": {
+            "capital_limit_usdt": {"const": "300"},
+            "gross_exposure_limit": {"const": "1"},
+            "minimum_calendar_days": {"const": 14},
+            "minimum_strategy_cycles": {"const": 5}
+          }
+        },
+        "E2": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capital_limit_usdt", "gross_exposure_limit", "minimum_calendar_days", "minimum_strategy_cycles"],
+          "properties": {
+            "capital_limit_usdt": {"const": "1000"},
+            "gross_exposure_limit": {"const": "2"},
+            "minimum_calendar_days": {"const": 30},
+            "minimum_strategy_cycles": {"const": 10}
+          }
+        },
+        "spot_roundtrip_each_stage_required": {"const": true},
+        "perpetual_roundtrip_each_stage_required": {"const": true},
+        "promotion_automatic": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "product_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "venue",
+        "economic_asset",
+        "spot_instrument",
+        "spot_direction",
+        "perpetual_instrument",
+        "perpetual_direction",
+        "position_states",
+        "products_mutually_exclusive",
+        "flatten_before_reversal_required",
+        "perpetual_position_mode",
+        "perpetual_margin_mode",
+        "technical_leverage_cap",
+        "gateio_fallback_allowed",
+        "policy_hash"
+      ],
+      "properties": {
+        "venue": {"const": "BINANCE_ONLY"},
+        "economic_asset": {"const": "ETH"},
+        "spot_instrument": {"const": "ETHUSDT_SPOT"},
+        "spot_direction": {"const": "LONG_ONLY_UNMARGINED"},
+        "perpetual_instrument": {"const": "ETHUSDT_USDM_PERPETUAL"},
+        "perpetual_direction": {"const": "SHORT_ONLY"},
+        "position_states": {"const": ["FLAT", "SPOT_LONG", "PERP_SHORT"]},
+        "products_mutually_exclusive": {"const": true},
+        "flatten_before_reversal_required": {"const": true},
+        "perpetual_position_mode": {"const": "ONE_WAY"},
+        "perpetual_margin_mode": {"const": "ISOLATED"},
+        "technical_leverage_cap": {"const": "2"},
+        "gateio_fallback_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "risk_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "E0",
+        "E1",
+        "E2",
+        "daily_boundary_timezone",
+        "loss_components",
+        "failure_conditions",
+        "incident_unlock_automatic",
+        "policy_hash"
+      ],
+      "properties": {
+        "E0": {"$ref": "#/$defs/e0Risk"},
+        "E1": {"$ref": "#/$defs/e0Risk"},
+        "E2": {"$ref": "#/$defs/e2Risk"},
+        "daily_boundary_timezone": {"const": "UTC"},
+        "loss_components": {
+          "const": ["REALIZED", "UNREALIZED", "FEES", "FUNDING"]
+        },
+        "failure_conditions": {
+          "const": [
+            "UNRESOLVED_UNKNOWN",
+            "DUPLICATE_ECONOMIC_ORDER",
+            "UNRECORDED_OR_CONFLICTING_FILL",
+            "LEDGER_POSITION_MISMATCH",
+            "DISASTER_STOP_MISSING_OR_UNCONFIRMED",
+            "ACCOUNT_MARGIN_OR_LEVERAGE_MODE_MISMATCH",
+            "CLOCK_MARKET_ACCOUNT_OR_USER_STREAM_INSUFFICIENT",
+            "S0_OR_S1_INCIDENT",
+            "CREDENTIAL_OR_IP_BOUNDARY_UNTRUSTED",
+            "EVIDENCE_DURABILITY_OR_IDENTITY_FAILURE"
+          ]
+        },
+        "incident_unlock_automatic": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "isolation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service_label",
+        "service_identity",
+        "runtime_root",
+        "target_plist",
+        "state_events_relative_path",
+        "owner_only_required",
+        "single_hardlink_required",
+        "symlink_ancestors_forbidden",
+        "no_overwrite_required",
+        "policy_hash"
+      ],
+      "properties": {
+        "service_label": {"const": "local.crypto-quant.challenger-replacement-v1"},
+        "service_identity": {
+          "const": "gui/501/local.crypto-quant.challenger-replacement-v1"
+        },
+        "runtime_root": {
+          "const": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1"
+        },
+        "target_plist": {
+          "const": "/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-replacement-v1.plist"
+        },
+        "state_events_relative_path": {
+          "const": "state/challenger-replacement-events-v1"
+        },
+        "owner_only_required": {"const": true},
+        "single_hardlink_required": {"const": true},
+        "symlink_ancestors_forbidden": {"const": true},
+        "no_overwrite_required": {"const": true},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "evidence_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "all_opportunities_included",
+        "missed_visible",
+        "historical_backfill_allowed",
+        "interim_economics_withheld",
+        "operational_and_economic_results_separate",
+        "old_evidence_migrated",
+        "policy_hash"
+      ],
+      "properties": {
+        "all_opportunities_included": {"const": true},
+        "missed_visible": {"const": true},
+        "historical_backfill_allowed": {"const": false},
+        "interim_economics_withheld": {"const": true},
+        "operational_and_economic_results_separate": {"const": true},
+        "old_evidence_migrated": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "storage_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authoritative_state_kind",
+        "authoritative_relative_path",
+        "runner_authority_source",
+        "observer_authority_source",
+        "operational_evaluator_authority_source",
+        "economic_evaluator_authority_source",
+        "exports_authoritative",
+        "policy_hash"
+      ],
+      "properties": {
+        "authoritative_state_kind": {
+          "const": "APPEND_ONLY_CANONICAL_DECISION_OPPORTUNITY_EVENT_LOG"
+        },
+        "authoritative_relative_path": {
+          "const": "state/challenger-replacement-events-v1"
+        },
+        "runner_authority_source": {"const": "CANONICAL_EVENT_LOG_ONLY"},
+        "observer_authority_source": {"const": "STRICT_EVENT_PROJECTION_ONLY"},
+        "operational_evaluator_authority_source": {
+          "const": "STRICT_EVENT_PROJECTION_ONLY"
+        },
+        "economic_evaluator_authority_source": {
+          "const": "STRICT_EVENT_PROJECTION_ONLY"
+        },
+        "exports_authoritative": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "supersession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "previous_plan_release_tag",
+        "previous_plan_file_sha256",
+        "previous_plan_id",
+        "previous_plan_hash",
+        "reason",
+        "previous_plan_disposition",
+        "supersession_forbidden_after",
+        "semantic_changes"
+      ],
+      "properties": {
+        "previous_plan_release_tag": {"const": "v0.64.0"},
+        "previous_plan_file_sha256": {
+          "const": "5f1774fd912451d79c9efe13401e80f312fee3c707d9faa252933ef3e8810a8f"
+        },
+        "previous_plan_id": {
+          "const": "challenger_replacement_plan_65d85d60a534a917f45a1ffa5fc9d3f74d6d24995b900d31b8c73cd26f0bd97b"
+        },
+        "previous_plan_hash": {
+          "const": "c9a1e5f74c52fbf23be5a1d27fd23c25f3601ed58133178fc25480391ab65705"
+        },
+        "reason": {
+          "const": "SUPERSEDED_PRE_START_RESEARCH_AND_OPERATIONAL_POLICY_CHANGE"
+        },
+        "previous_plan_disposition": {
+          "const": "SUPERSEDED_BEFORE_START_RESEARCH_AND_OPERATIONAL_POLICY_CHANGE"
+        },
+        "supersession_forbidden_after": {
+          "const": "FIRST_V3_START_RECEIPT_OR_CANONICAL_PRODUCTION_OPPORTUNITY_EVENT"
+        },
+        "semantic_changes": {
+          "const": [
+            "LONG_ONLY_SPOT_TO_MUTUALLY_EXCLUSIVE_SPOT_LONG_OR_PERP_SHORT",
+            "ALL_540_SLOTS_TO_DECISION_OPPORTUNITY_OUTCOMES",
+            "SINGLE_90_DAY_GATE_TO_7_DAY_OPERATIONAL_AND_90_DAY_ECONOMIC",
+            "MAXIMUM_1X_TO_STAGED_2X_TECHNICAL_CAP",
+            "PERCENTAGE_STAGES_TO_FIXED_CAPITAL_E0_E1_E2",
+            "NO_CREDENTIAL_ORDER_AUTHORITY_TO_FUTURE_EXACT_ACTIVATION_ONLY"
+          ]
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentials_allowed",
+        "account_requests_allowed",
+        "broker_requests_allowed",
+        "real_orders_allowed",
+        "production_activation",
+        "runtime_install_authorized",
+        "replacement_start_authorized"
+      ],
+      "properties": {
+        "credentials_allowed": {"const": false},
+        "account_requests_allowed": {"const": false},
+        "broker_requests_allowed": {"const": false},
+        "real_orders_allowed": {"const": false},
+        "production_activation": {"const": false},
+        "runtime_install_authorized": {"const": false},
+        "replacement_start_authorized": {"const": false}
+      }
+    },
+    "status": {"const": "PLAN_FROZEN_REPLACEMENT_V3_NOT_STARTED"},
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operational", "economic", "canary", "profitability", "ai_advantage"],
+      "properties": {
+        "operational": {"const": "INELIGIBLE_SIMULATION_NOT_STARTED"},
+        "economic": {"const": "INELIGIBLE_90_DAY_EVIDENCE_NOT_STARTED"},
+        "canary": {"const": "INELIGIBLE_NOT_AUTHORIZED"},
+        "profitability": {"const": "INELIGIBLE_NO_FINAL_EVIDENCE"},
+        "ai_advantage": {"const": "INELIGIBLE_NO_PAIRED_AI_PLAN"}
+      }
+    },
+    "warnings": {
+      "const": [
+        "OLD_COHORT_PERMANENTLY_FAILED_NO_BACKFILL",
+        "V0_64_PLAN_SUPERSEDED_BEFORE_START",
+        "REPLACEMENT_V3_NOT_INSTALLED_OR_STARTED",
+        "NO_INTERIM_ECONOMIC_REPORTING",
+        "SEVEN_DAY_OPERATIONAL_PASS_IS_NOT_PROFITABILITY_EVIDENCE",
+        "NO_PROFITABILITY_OR_AI_ADVANTAGE_CLAIM",
+        "CREDENTIAL_ORDER_FUND_AND_CANARY_NOT_AUTHORIZED"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "e0Risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "daily_loss_limit_kind",
+        "daily_loss_limit",
+        "daily_limit_action",
+        "drawdown_limit_kind",
+        "drawdown_limit",
+        "drawdown_limit_action"
+      ],
+      "properties": {
+        "daily_loss_limit_kind": {"const": "ABSOLUTE_USDT"},
+        "daily_loss_limit": {"const": "2"},
+        "daily_limit_action": {"const": "STOP_NEW_RISK_UNTIL_NEXT_UTC_DAY"},
+        "drawdown_limit_kind": {"const": "ABSOLUTE_USDT"},
+        "drawdown_limit": {"const": "5"},
+        "drawdown_limit_action": {"const": "FLATTEN_AND_STAGE_FAIL"}
+      }
+    },
+    "e2Risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "daily_loss_limit_kind",
+        "daily_loss_limit",
+        "daily_limit_action",
+        "drawdown_limit_kind",
+        "drawdown_limit",
+        "drawdown_limit_action"
+      ],
+      "properties": {
+        "daily_loss_limit_kind": {"const": "FRACTION_OF_STAGE_CAPITAL"},
+        "daily_loss_limit": {"const": "0.02"},
+        "daily_limit_action": {"const": "STOP_NEW_RISK_UNTIL_NEXT_UTC_DAY"},
+        "drawdown_limit_kind": {"const": "FRACTION_OF_HIGH_WATER_EQUITY"},
+        "drawdown_limit": {"const": "0.075"},
+        "drawdown_limit_action": {"const": "FLATTEN_AND_STAGE_FAIL"}
+      }
+    }
+  }
+}
