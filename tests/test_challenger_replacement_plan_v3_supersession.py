@@ -720,6 +720,7 @@ class V3SupersessionCliTests(unittest.TestCase):
         with mock.patch.object(v3_cli, "_repository_root", return_value=ROOT), \
              mock.patch.object(v3_cli, "_require_status"), \
              mock.patch.object(v3_cli, "_require_empty_protocol_staging"), \
+             mock.patch.object(v3_cli, "_require_pre_start_state"), \
              mock.patch.object(
                  v3_cli,
                  "load_challenger_replacement_plan_v3",
