@@ -359,8 +359,34 @@ def _validate(
         or observed_at < start_observed
     ):
         _invalid()
+    if not facts.opportunities:
+        if facts.evidence_failure_kind_or_null is None:
+            _invalid()
+        return start_observed, observed_at
+    first = facts.opportunities[0]
+    if (
+        first.outcome != "OBSERVED"
+        or first.opportunity_id != boundary.start_opportunity_id_or_null
+        or first.scheduled_for != boundary.start_scheduled_for_or_null
+        or first.observed_at_or_null != boundary.start_observed_at_or_null
+    ):
+        _invalid()
     for index, item in enumerate(facts.opportunities):
-        _validate_fact(item, start + index * _CADENCE)
+        scheduled = start + index * _CADENCE
+        _validate_fact(item, scheduled)
+        terminal = _time(item.terminal_recorded_at)
+        event_time = _time(
+            item.observed_at_or_null
+            if item.outcome == "OBSERVED"
+            else item.detected_at_or_null
+        )
+        if (
+            terminal < scheduled
+            or terminal > observed_at
+            or event_time < scheduled
+            or event_time > observed_at
+        ):
+            _invalid()
     return start_observed, observed_at
 
 
@@ -446,6 +472,25 @@ def _policy(
             _append_once(confirmed, "ECONOMIC_GAP_LOCKED")
     if facts.incident_count:
         _append_once(confirmed, "S0_OR_S1_INCIDENT")
+    if facts.unknown_order_count:
+        _append_once(confirmed, "UNKNOWN_ORDER_PRESENT")
+    if facts.open_order_count:
+        _append_once(confirmed, "OPEN_ORDER_PRESENT_AT_BOUNDARY")
+    if facts.reconciliation_status == "FAILED_CLOSED":
+        _append_once(confirmed, "LEDGER_POSITION_MISMATCH")
+    if facts.current_position != "FLAT":
+        _append_once(confirmed, "NON_FLAT_TERMINAL_POSITION")
+        if facts.protective_stop_status != "CONFIRMED_FIXTURE":
+            _append_once(
+                confirmed, "PROTECTIVE_STOP_MISSING_OR_UNCONFIRMED"
+            )
+    if facts.risk_state in {"HALT", "HARD_BOUNDARY"}:
+        _append_once(confirmed, "STAGE_FAILED_RISK_LOCK")
+    if (
+        facts.daily_loss_boundary_state == "BREACHED"
+        or facts.drawdown_boundary_state == "BREACHED"
+    ):
+        _append_once(confirmed, "SAFETY_BOUNDARY_BREACHED")
     if facts.evidence_failure_kind_or_null == _CONFIRMED_EVIDENCE_FAILURE:
         _append_once(confirmed, _CONFIRMED_EVIDENCE_FAILURE)
     if confirmed:

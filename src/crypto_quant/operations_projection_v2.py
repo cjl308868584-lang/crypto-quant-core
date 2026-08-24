@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from importlib import resources
 import json
@@ -9,7 +10,7 @@ from typing import Any, Dict, Mapping
 
 from jsonschema import Draft202012Validator
 
-from .canonical import business_hash, canonical_json
+from .canonical import business_hash, canonical_decimal, canonical_json
 from .challenger_replacement_readiness_observer import (
     ReplacementReadinessObservation,
 )
@@ -253,6 +254,9 @@ def build_operations_projection_v2(
         if (
             sources.release.identity_status != "VERIFIED"
             or replacement["evidence_health"] == "FAILED_CLOSED"
+            or replacement["operational_gate_status"]
+            == "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+            or replacement["economic_tail_status"] == "FAILED_CLOSED"
         )
         else "DEGRADED"
         if (
@@ -334,6 +338,33 @@ def _strict(body):
 
 def _semantic(value):
     replacement = value["replacement_v3"]
+    _utc(value["projected_at"])
+    _utc(value["release"]["provenance"]["observed_at"])
+    _utc(value["legacy_challenger"]["provenance"]["observed_at"])
+    _utc(value["system_paper"]["provenance"]["observed_at"])
+    _utc(replacement["provenance"]["observed_at"])
+    for optional_time in (
+        value["legacy_challenger"]["next_required_slot"],
+        value["system_paper"]["next_required_slot"],
+    ):
+        if optional_time is not None:
+            _utc(optional_time)
+    next_required = replacement["next_required_opportunity"]
+    if next_required is not None:
+        scheduled_for = next_required["scheduled_for"]
+        _utc(scheduled_for)
+        if next_required["opportunity_id"] != "ETHUSDT@" + scheduled_for:
+            _error("OPERATIONS_PROJECTION_V2_SEMANTIC_INVALID")
+    try:
+        exposure = Decimal(replacement["gross_exposure"])
+    except (InvalidOperation, TypeError, ValueError):
+        _error("OPERATIONS_PROJECTION_V2_SEMANTIC_INVALID")
+    if (
+        not exposure.is_finite()
+        or exposure < 0
+        or canonical_decimal(exposure) != replacement["gross_exposure"]
+    ):
+        _error("OPERATIONS_PROJECTION_V2_SEMANTIC_INVALID")
     if (
         value["release"]["identity_status"] != "VERIFIED"
         and value["status"] != "FAILED_CLOSED"
@@ -378,9 +409,17 @@ def _semantic(value):
         or replacement["perpetual_roundtrip_count"] < 1
     ):
         _error("OPERATIONS_PROJECTION_V2_SEMANTIC_INVALID")
+    failed_observation = (
+        replacement["operational_gate_status"]
+        == "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+        or replacement["economic_tail_status"] == "FAILED_CLOSED"
+    )
+    if failed_observation and value["status"] != "FAILED_CLOSED":
+        _error("OPERATIONS_PROJECTION_V2_SEMANTIC_INVALID")
     if (
         replacement["current_product"] != "FLAT"
         and replacement["protective_stop_status"] != "CONFIRMED_FIXTURE"
+        and not failed_observation
     ) or (replacement["unknown_order_count"] and replacement["new_risk_advisory"]):
         _error("OPERATIONS_PROJECTION_V2_SEMANTIC_INVALID")
     if replacement["new_risk_advisory"] is not False:

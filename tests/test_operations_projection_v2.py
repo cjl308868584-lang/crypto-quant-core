@@ -272,9 +272,9 @@ class OperationsProjectionV2ContractTests(unittest.TestCase):
                 terminal_coverage_complete=True,
                 meets_minimum_observed_coverage=False,
             )),
-            ("nonflat_stop", lambda d: d["replacement_v3"].update(
+            ("nonflat_stop_not_failed", lambda d: d["replacement_v3"].update(
                 current_product="SPOT_LONG",
-                protective_stop_status="NOT_REQUIRED_FLAT",
+                protective_stop_status="MISSING_OR_UNCONFIRMED",
             )),
             ("unknown_risk", lambda d: d["replacement_v3"].update(
                 unknown_order_count=1, new_risk_advisory=True
@@ -295,6 +295,12 @@ class OperationsProjectionV2ContractTests(unittest.TestCase):
             ("release_failure_not_failed_closed", lambda d: d["release"].update(
                 identity_status="FAILED_CLOSED"
             )),
+            ("operational_failure_not_failed_closed", lambda d: d["replacement_v3"].update(
+                operational_gate_status="OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+            )),
+            ("economic_failure_not_failed_closed", lambda d: d["replacement_v3"].update(
+                economic_tail_status="FAILED_CLOSED"
+            )),
         )
         for name, mutate in mutations:
             with self.subTest(name=name):
@@ -306,6 +312,23 @@ class OperationsProjectionV2ContractTests(unittest.TestCase):
                         rehash(candidate)
                     ),
                 )
+
+    def test_failed_nonflat_stop_state_is_strictly_loadable_for_observation(self):
+        candidate = json.loads(build_operations_projection_v2(
+            sources(), boundary=boundary()
+        ))
+        candidate["status"] = "FAILED_CLOSED"
+        candidate["replacement_v3"].update(
+            current_product="SPOT_LONG",
+            protective_stop_status="MISSING_OR_UNCONFIRMED",
+            operational_gate_status="OPERATIONAL_QUALIFICATION_DID_NOT_PASS",
+        )
+        loaded = load_operations_projection_v2_bytes(rehash(candidate))
+        self.assertEqual(loaded["status"], "FAILED_CLOSED")
+        self.assertEqual(
+            loaded["replacement_v3"]["protective_stop_status"],
+            "MISSING_OR_UNCONFIRMED",
+        )
 
     def test_bool_integer_extra_field_and_hash_mismatch_are_rejected(self):
         base = json.loads(build_operations_projection_v2(
@@ -364,6 +387,34 @@ class OperationsProjectionV2ContractTests(unittest.TestCase):
         self.assert_reason(
             "OPERATIONS_PROJECTION_V2_SCHEMA_INVALID",
             lambda: load_operations_projection_v2_bytes(rehash(unknown)),
+        )
+
+    def test_loader_revalidates_utc_decimal_and_next_opportunity_identity(self):
+        base = json.loads(build_operations_projection_v2(
+            sources(), boundary=boundary()
+        ))
+        invalid_time = json.loads(canonical_json(base))
+        invalid_time["projected_at"] = "2026-99-99T00:00:00.000Z"
+        self.assert_reason(
+            "OPERATIONS_PROJECTION_V2_TIME_INVALID",
+            lambda: load_operations_projection_v2_bytes(rehash(invalid_time)),
+        )
+        noncanonical_decimal = json.loads(canonical_json(base))
+        noncanonical_decimal["replacement_v3"]["gross_exposure"] = "1.0"
+        self.assert_reason(
+            "OPERATIONS_PROJECTION_V2_SEMANTIC_INVALID",
+            lambda: load_operations_projection_v2_bytes(
+                rehash(noncanonical_decimal)
+            ),
+        )
+        wrong_next = json.loads(canonical_json(base))
+        wrong_next["replacement_v3"]["next_required_opportunity"] = {
+            "opportunity_id": "ETHUSDT@2026-08-25T08:00:00.000Z",
+            "scheduled_for": "2026-08-25T04:00:00.000Z",
+        }
+        self.assert_reason(
+            "OPERATIONS_PROJECTION_V2_SEMANTIC_INVALID",
+            lambda: load_operations_projection_v2_bytes(rehash(wrong_next)),
         )
 
 

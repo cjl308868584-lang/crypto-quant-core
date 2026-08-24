@@ -495,6 +495,23 @@ class OperationsAlertClassificationTests(unittest.TestCase):
         )
         self.assertFalse(result["new_risk_allowed"])
 
+    def test_v2_failed_observer_and_missing_stop_states_are_critical(self):
+        def mutate(value):
+            value["status"] = "FAILED_CLOSED"
+            value["replacement_v3"].update(
+                current_product="SPOT_LONG",
+                protective_stop_status="MISSING_OR_UNCONFIRMED",
+                operational_gate_status="OPERATIONAL_QUALIFICATION_DID_NOT_PASS",
+                economic_tail_status="FAILED_CLOSED",
+            )
+
+        result = derive_operations_alerts(_projection_v2_body(mutate))
+        ids = [item["alert_id"] for item in result["alerts"]]
+        self.assertIn("OPS-REPLACEMENT-STOP-FAILED", ids)
+        self.assertIn("OPS-REPLACEMENT-OPERATIONAL-DID-NOT-PASS", ids)
+        self.assertIn("OPS-REPLACEMENT-ECONOMIC-FAILED-CLOSED", ids)
+        self.assertFalse(result["new_risk_allowed"])
+
 
 if __name__ == "__main__":
     unittest.main()

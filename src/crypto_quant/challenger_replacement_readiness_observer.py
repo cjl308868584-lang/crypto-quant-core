@@ -144,7 +144,7 @@ def _plan(plan_bytes, replay_source):
             _invalid("CHALLENGER_REPLACEMENT_READINESS_PLAN_INVALID")
     except ChallengerReplacementReadinessObserverError:
         raise
-    except Exception as error:
+    except (ValueError, TypeError, UnicodeError) as error:
         raise ChallengerReplacementReadinessObserverError(
             "CHALLENGER_REPLACEMENT_READINESS_PLAN_INVALID"
         ) from error
@@ -339,9 +339,9 @@ def _failure_facts(plan, replay_source, release_hash, failure_kind):
         gross_exposure="0",
         open_order_count=0,
         unknown_order_count=0,
-        reconciliation_status="FAILED_CLOSED",
+        reconciliation_status="NOT_AVAILABLE",
         protective_stop_status="NOT_AVAILABLE",
-        risk_state="HALT",
+        risk_state="NOT_AVAILABLE",
         daily_loss_boundary_state="NOT_AVAILABLE",
         drawdown_boundary_state="NOT_AVAILABLE",
         incident_count=0,

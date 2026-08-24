@@ -6,6 +6,7 @@ import inspect
 import os
 import subprocess
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,6 +17,10 @@ from crypto_quant.challenger_replacement_readiness_observer import (
     ChallengerReplacementReadinessReplaySource,
     observe_challenger_replacement_readiness,
 )
+from crypto_quant.challenger_replacement_opportunities import (
+    ChallengerReplacementOpportunityState,
+)
+from crypto_quant.system_paper_broker import SimulatedBroker
 from crypto_quant.operations_alerts import (
     build_operations_status_body,
     derive_operations_alerts,
@@ -83,6 +88,16 @@ class V073CrossComponentTests(unittest.TestCase):
                     subprocess, "run", side_effect=AssertionError("subprocess")
                 ), patch(
                     "socket.socket", side_effect=AssertionError("network")
+                ), patch.object(
+                    ChallengerReplacementOpportunityState,
+                    "append",
+                    side_effect=AssertionError("event publish"),
+                ), patch.object(
+                    SimulatedBroker,
+                    "submit",
+                    side_effect=AssertionError("broker/order"),
+                ), patch.object(
+                    os, "system", side_effect=AssertionError("launchctl")
                 ):
                     first = build_operations_projection_v2(
                         source, boundary=projection_boundary
@@ -95,8 +110,57 @@ class V073CrossComponentTests(unittest.TestCase):
                 self.assertEqual(first, second)
                 self.assertEqual(observation.authority_status, "FIXTURE_NOT_OPERATIONAL")
                 self.assertFalse(alerts["new_risk_allowed"])
+                alert_ids = [item["alert_id"] for item in alerts["alerts"]]
+                self.assertIn("OPS-CHALLENGER-EVIDENCE-STALE", alert_ids)
+                self.assertIn("OPS-PAPER-EVIDENCE-STALE", alert_ids)
                 self.assertNotIn(b"pnl", status.lower())
                 self.assertNotIn(b"profit", status.lower())
+
+    def test_confirmed_failure_facts_flow_to_projection_and_critical_alerts(self):
+        base = self._observe("spot-cycle")
+        cases = (
+            ({"unknown_order_count": 1}, "OPS-REPLACEMENT-UNKNOWN-ORDER"),
+            (
+                {"reconciliation_status": "FAILED_CLOSED"},
+                "OPS-REPLACEMENT-RECONCILIATION-FAILED",
+            ),
+            (
+                {
+                    "current_position": "SPOT_LONG",
+                    "protective_stop_status": "MISSING_OR_UNCONFIRMED",
+                },
+                "OPS-REPLACEMENT-STOP-FAILED",
+            ),
+        )
+        for fact_overrides, expected_alert in cases:
+            with self.subTest(expected_alert=expected_alert):
+                observation = replace(
+                    base,
+                    facts=replace(base.facts, **fact_overrides),
+                    operational=replace(
+                        base.operational,
+                        policy_status="OPERATIONAL_QUALIFICATION_DID_NOT_PASS",
+                        reason_codes=("CONFIRMED_FIXTURE_SAFETY_FAILURE",),
+                    ),
+                    economic=replace(
+                        base.economic,
+                        status="FAILED_CLOSED",
+                        unresolved_safety_failure=True,
+                    ),
+                )
+                boundary = _OperationsProjectionV2Boundary(
+                    qualification="COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL",
+                    observed_at=observation.observed_at,
+                )
+                body = build_operations_projection_v2(
+                    projection_sources(observation), boundary=boundary
+                )
+                result = derive_operations_alerts(body)
+                self.assertIn(
+                    expected_alert,
+                    [item["alert_id"] for item in result["alerts"]],
+                )
+                self.assertFalse(result["new_risk_allowed"])
 
 
 class V073FrozenAndStaticAuthorityTests(unittest.TestCase):

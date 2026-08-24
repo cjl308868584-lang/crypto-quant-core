@@ -237,13 +237,19 @@ def _derive_verified_v2_alerts(projection: Mapping[str, Any]) -> Dict[str, Any]:
     replacement = projection["replacement_v3"]
     alerts = []
 
-    def add(alert_id, severity, reason_code):
+    def add(alert_id, severity, reason_code, *, stream=None, risk_effect=None):
         alerts.append({
             "alert_id": alert_id,
             "severity": severity,
-            "stream": "SYSTEM" if alert_id == "OPS-SYSTEM-FAILED-CLOSED" else "REPLACEMENT_V3",
+            "stream": stream or (
+                "SYSTEM"
+                if alert_id == "OPS-SYSTEM-FAILED-CLOSED"
+                else "REPLACEMENT_V3"
+            ),
             "reason_code": reason_code,
-            "risk_effect": "BLOCK_NEW_RISK" if severity == "CRITICAL" else "NO_CHANGE",
+            "risk_effect": risk_effect or (
+                "BLOCK_NEW_RISK" if severity == "CRITICAL" else "NO_CHANGE"
+            ),
         })
 
     if projection["status"] == "FAILED_CLOSED":
@@ -254,6 +260,10 @@ def _derive_verified_v2_alerts(projection: Mapping[str, Any]) -> Dict[str, Any]:
         add("OPS-REPLACEMENT-SERVICE-FAILED-CLOSED", "CRITICAL", "REPLACEMENT_SERVICE_FAILED_CLOSED")
     if replacement["evidence_health"] == "FAILED_CLOSED":
         add("OPS-REPLACEMENT-EVIDENCE-FAILED-CLOSED", "CRITICAL", "REPLACEMENT_EVIDENCE_FAILED_CLOSED")
+    if replacement["operational_gate_status"] == "OPERATIONAL_QUALIFICATION_DID_NOT_PASS":
+        add("OPS-REPLACEMENT-OPERATIONAL-DID-NOT-PASS", "CRITICAL", "REPLACEMENT_OPERATIONAL_QUALIFICATION_DID_NOT_PASS")
+    if replacement["economic_tail_status"] == "FAILED_CLOSED":
+        add("OPS-REPLACEMENT-ECONOMIC-FAILED-CLOSED", "CRITICAL", "REPLACEMENT_ECONOMIC_TAIL_FAILED_CLOSED")
     if replacement["terminal_opportunity_count"] < replacement["due_opportunity_count"]:
         add("OPS-REPLACEMENT-TERMINAL-GAP", "CRITICAL", "REPLACEMENT_TERMINAL_OPPORTUNITY_GAP")
     if replacement["missed_opportunity_count"]:
@@ -269,7 +279,10 @@ def _derive_verified_v2_alerts(projection: Mapping[str, Any]) -> Dict[str, Any]:
         add("OPS-REPLACEMENT-UNKNOWN-ORDER", "CRITICAL", "REPLACEMENT_UNKNOWN_ORDER_PRESENT")
     if replacement["reconciliation_status"] == "FAILED_CLOSED":
         add("OPS-REPLACEMENT-RECONCILIATION-FAILED", "CRITICAL", "REPLACEMENT_RECONCILIATION_FAILED")
-    if replacement["protective_stop_status"] == "FAILED_CLOSED":
+    if (
+        replacement["current_product"] != "FLAT"
+        and replacement["protective_stop_status"] != "CONFIRMED_FIXTURE"
+    ) or replacement["protective_stop_status"] == "FAILED_CLOSED":
         add("OPS-REPLACEMENT-STOP-FAILED", "CRITICAL", "REPLACEMENT_PROTECTIVE_STOP_FAILED")
     if replacement["risk_state"] in {"HALT", "HARD_BOUNDARY"}:
         add("OPS-REPLACEMENT-RISK-HALT", "CRITICAL", "REPLACEMENT_RISK_HALTED")
@@ -285,6 +298,21 @@ def _derive_verified_v2_alerts(projection: Mapping[str, Any]) -> Dict[str, Any]:
         or replacement["provenance"]["freshness"] == "STALE"
     ):
         add("OPS-REPLACEMENT-EVIDENCE-STALE", "WARNING", "REPLACEMENT_EVIDENCE_STALE")
+    if projection["legacy_challenger"]["provenance"]["freshness"] == "STALE":
+        add(
+            "OPS-CHALLENGER-EVIDENCE-STALE",
+            "WARNING",
+            "CHALLENGER_EVIDENCE_STALE",
+            stream="CHALLENGER",
+        )
+    if projection["system_paper"]["provenance"]["freshness"] == "STALE":
+        add(
+            "OPS-PAPER-EVIDENCE-STALE",
+            "WARNING",
+            "SYSTEM_PAPER_EVIDENCE_STALE",
+            stream="SYSTEM_PAPER",
+            risk_effect="BLOCK_NEW_RISK",
+        )
 
     counts = {"INFO": 0, "WARNING": 0, "CRITICAL": 0}
     for alert in alerts:

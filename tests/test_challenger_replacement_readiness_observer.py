@@ -139,6 +139,17 @@ class ChallengerReplacementReadinessObserverTests(unittest.TestCase):
         self.assertEqual(observed.operational.strategy_cycle_count, 1)
         self.assertEqual(observed.economic.status, "WITHHELD_PRE_TAIL")
 
+    def test_unexpected_memory_error_is_not_masked_as_plan_invalid(self):
+        source = ChallengerReplacementReadinessReplaySource(
+            self.workspace.state
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_readiness_observer._strict_json_bytes",
+            side_effect=MemoryError("fixture allocation failure"),
+        ):
+            with self.assertRaisesRegex(MemoryError, "allocation failure"):
+                self.observe(source)
+
     def test_observer_has_replay_only_facade_and_performs_zero_writes(self):
         self.workspace.run_stream("spot-cycle")
         source = ChallengerReplacementReadinessReplaySource(

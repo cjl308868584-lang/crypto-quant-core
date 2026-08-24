@@ -100,15 +100,15 @@ def _coverage_facts(*, observed, total):
 
 
 def _boundary_for_due_count(total):
-    last_capture_close = _START + timedelta(
-        hours=4 * (total - 1), minutes=10
+    terminal_observed = _START + timedelta(
+        hours=4 * (total - 1), minutes=11
     )
     return _ReplacementReadinessBoundary(
         qualification="COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL",
         start_opportunity_id_or_null=opportunity_id_for(_utc(_START)),
         start_scheduled_for_or_null=_utc(_START),
         start_observed_at_or_null=_utc(_START + timedelta(minutes=5)),
-        observed_at=_utc(last_capture_close),
+        observed_at=_utc(terminal_observed),
     )
 
 
@@ -388,6 +388,60 @@ class ChallengerReplacementReadinessValidationTests(unittest.TestCase):
             _coverage_facts(observed=19, total=20), boundary
         )
 
+    def test_start_must_bind_exact_first_verified_observed_opportunity(self):
+        facts = _coverage_facts(observed=2, total=2)
+        boundary = _boundary_for_due_count(2)
+        cases = (
+            replace(
+                facts,
+                opportunities=(
+                    replace(
+                        facts.opportunities[0],
+                        outcome="MISSED",
+                        observed_at_or_null=None,
+                        missed_reason_or_null="CAPTURE_WINDOW_EXPIRED",
+                        detected_at_or_null=_utc(_START + timedelta(minutes=11)),
+                        result_evidence_sha256_or_null=None,
+                        lifecycle_status_or_null=None,
+                    ),
+                    facts.opportunities[1],
+                ),
+                observed_opportunity_count=1,
+                missed_opportunity_count=1,
+            ),
+            replace(
+                facts,
+                opportunities=(
+                    replace(
+                        facts.opportunities[0],
+                        observed_at_or_null=_utc(_START + timedelta(minutes=6)),
+                    ),
+                    facts.opportunities[1],
+                ),
+            ),
+        )
+        for candidate in cases:
+            with self.subTest(candidate=candidate.opportunities[0].outcome):
+                self.assert_facts_invalid(candidate, boundary)
+
+    def test_fact_terminal_times_must_stay_inside_observation_boundary(self):
+        facts = _coverage_facts(observed=2, total=2)
+        boundary = _boundary_for_due_count(2)
+        for terminal in (
+            _utc(_START - timedelta(milliseconds=1)),
+            _utc(_START + timedelta(hours=4, minutes=10, milliseconds=1)),
+        ):
+            first = replace(
+                facts.opportunities[0],
+                terminal_recorded_at=terminal,
+                observed_at_or_null=terminal,
+            )
+            with self.subTest(terminal=terminal):
+                self.assert_facts_invalid(
+                    replace(facts, opportunities=(first, facts.opportunities[1])),
+                    boundary,
+                )
+
 
 class ChallengerReplacementOperationalPolicyTests(unittest.TestCase):
     def test_absent_start_is_not_started(self):
@@ -577,6 +631,35 @@ class ChallengerReplacementOperationalPolicyTests(unittest.TestCase):
             result.policy_status, "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
         )
         self.assertIn("S0_OR_S1_INCIDENT", result.reason_codes)
+
+    def test_top_level_confirmed_safety_states_can_never_pass(self):
+        cases = (
+            ({"unknown_order_count": 1}, "UNKNOWN_ORDER_PRESENT"),
+            ({"open_order_count": 1}, "OPEN_ORDER_PRESENT_AT_BOUNDARY"),
+            ({"reconciliation_status": "FAILED_CLOSED"}, "LEDGER_POSITION_MISMATCH"),
+            (
+                {
+                    "current_position": "SPOT_LONG",
+                    "protective_stop_status": "MISSING_OR_UNCONFIRMED",
+                },
+                "PROTECTIVE_STOP_MISSING_OR_UNCONFIRMED",
+            ),
+            ({"current_position": "SPOT_LONG"}, "NON_FLAT_TERMINAL_POSITION"),
+            ({"risk_state": "HALT"}, "STAGE_FAILED_RISK_LOCK"),
+            ({"daily_loss_boundary_state": "BREACHED"}, "SAFETY_BOUNDARY_BREACHED"),
+            ({"drawdown_boundary_state": "BREACHED"}, "SAFETY_BOUNDARY_BREACHED"),
+        )
+        for overrides, reason in cases:
+            with self.subTest(overrides=overrides):
+                result = evaluate_challenger_replacement_operational_readiness(
+                    replace(_facts_with_cycles(("spot", "perpetual", "spot")), **overrides),
+                    _seven_day_boundary(),
+                )
+                self.assertEqual(
+                    result.policy_status,
+                    "OPERATIONAL_QUALIFICATION_DID_NOT_PASS",
+                )
+                self.assertIn(reason, result.reason_codes)
 
     def test_unavailable_evidence_is_inconclusive(self):
         facts = replace(
