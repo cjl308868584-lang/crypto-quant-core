@@ -5,7 +5,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="crypto-quant-core",
-    version="0.69.0",
+    version="0.70.0",
     package_dir={"": "src"},
     packages=find_packages("src"),
     package_data={
