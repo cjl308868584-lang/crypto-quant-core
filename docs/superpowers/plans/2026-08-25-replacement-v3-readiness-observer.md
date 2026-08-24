@@ -47,12 +47,11 @@
 - Create: `tests/test_challenger_replacement_readiness.py`
 
 **Interfaces:**
-- Produces: `OpportunityReadinessFact`, `ReplacementReadinessFacts`, `OperationalReadinessResult`, `EconomicTailObservation`; `_ReplacementReadinessBoundary` remains private and fixture-qualified.
+- Produces: `OpportunityReadinessFact`, `ReplacementReadinessFacts`, `OperationalReadinessResult`; `_ReplacementReadinessBoundary` remains private and fixture-qualified. `EconomicTailObservation` is introduced by Task 3.
 - Produces: `evaluate_challenger_replacement_operational_readiness(facts, boundary) -> OperationalReadinessResult`.
-- Produces: `observe_challenger_replacement_economic_tail(facts, boundary) -> EconomicTailObservation`.
 - Consumes: canonical UTC helper and fixed v0.69 policy constants only; no event-root or filesystem API.
 
-- [ ] **Step 1: Add RED tests for exact types, time and coverage**
+- [x] **Step 1: Add RED tests for exact types, time and coverage**
 
 Add tests that construct frozen facts explicitly and prove bool/int substitution,
 noncanonical timestamps, negative counts, count inconsistencies, duplicate or
@@ -77,7 +76,7 @@ def test_operational_rejects_boolean_count(self):
         ReplacementReadinessFacts(due_opportunity_count=True, **valid_fact_fields())
 ```
 
-- [ ] **Step 2: Run the focused RED**
+- [x] **Step 2: Run the focused RED**
 
 Run:
 
@@ -87,7 +86,7 @@ python -m unittest tests.test_challenger_replacement_readiness -v
 
 Expected: import failure because the readiness module does not exist.
 
-- [ ] **Step 3: Implement minimal frozen types and validators**
+- [x] **Step 3: Implement minimal frozen types and validators**
 
 Use exact frozen dataclasses with explicit slots and tuple-only ordered facts:
 
@@ -204,14 +203,14 @@ Keep constructors strict inside evaluator validation. The only v0.73 boundary
 qualification is `COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL`; no public
 constructor or CLI accepts its individual fields.
 
-- [ ] **Step 4: Implement exact coverage representation**
+- [x] **Step 4: Implement exact coverage representation**
 
 Compare `observed * 100 >= due * 95` and `terminal == due`; never convert to
 float or Decimal. Return numerator, denominator,
 `meets_minimum_observed_coverage` and `terminal_coverage_complete`. UI later
 renders `numerator / denominator`; no rounded value participates in policy.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [x] **Step 5: Run GREEN and commit**
 
 Run the focused test and `git diff --check`. Commit:
 
