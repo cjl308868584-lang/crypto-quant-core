@@ -221,7 +221,7 @@
     "docs/implementation-status-v0.67.0.md": "6a9fa1393084a8d8dc8abd6e14f6a750f2a1ef93bc361f0c02daa78f3b462bd5",
     "docs/implementation-status-v0.68.0.md": "5bc1ff5593fe0d32de3e90c1098e8229f5537944f1cdefa0eab6fd0627af20d1",
     "docs/implementation-status-v0.69.0.md": "3e883734f260d6504ecbc9aa9d08658bfb7bb9bb974ec43c342bb1adf3986b0d",
-    "docs/implementation-status-v0.70.0.md": "5f3b44899a9dcc0ad18ffb2896a747e7b71c33b8da5420ab01f2373afe27eec6",
+    "docs/implementation-status-v0.70.0.md": "07e1eeacdd859e0c2752c7ebb7ad9bfddfee0e8c35768c2ed58dba11434cb309",
     "docs/runbooks/operations-dashboard.md": "2874680de443098fe0cf5e642b4dffc63853996661091fc836df8e7e8605868d",
     "docs/runbooks/system-paper-operations.md": "beee3603f76b1db0ecb1ef851dea25d6f700b5b67ece3cc320b8774a33a02523",
     "docs/superpowers/plans/2026-08-02-system-paper-wal-scheduler.md": "9ff21c585d907268728801ff472c0032ca4865b60f477120e95e16fe4b3fd3e4",
@@ -603,7 +603,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "7b13b7fdf27bd731bdb39b53b71ed85e22e0a3a096e554651d91404528fd07e9",
+  "build_input_tree_hash": "ac1e722877d9e79f21bd797f67061f1269a0e9dfbe00ce7b86b710a34bd09521",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -611,5 +611,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "1ef1ab44076cf33b574f14dcad62d0dd4d1fa0bfb754e47ecf2d99f0aeda4525"
+  "manifest_hash": "1270a187d06931327b85b00a6e3f26c4bf00c948228e9fc9512caa735e3c6e3f"
 }

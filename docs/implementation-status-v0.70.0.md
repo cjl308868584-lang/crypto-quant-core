@@ -26,11 +26,13 @@
 - focused/adjacent tests：139 passed；
 - compileall：passed；
 - implementation module：696 physical lines（limit 700）；
-- local full suite：`PENDING_FINAL_CANDIDATE_VERIFICATION`；
-- independent code review：`PENDING_FINAL_CANDIDATE_REVIEW`；
+- local full suite：1910 passed, 5 skipped, 1054.713s（production-code
+  candidate `d1322ff83fdd7f8bf6c7b74f6934c5ede625a41a`）；
+- independent code review：Critical 0 / Important 0 / Minor 0，最终针对性复审批准
+  `d1322ff83fdd7f8bf6c7b74f6934c5ede625a41a`；
 - PR/main CI and annotated tag：`PENDING_REMOTE_RELEASE_GATES`。
 
-这些 pending 值必须在真实门完成后才可替换，不得预写成功。
+剩余 remote pending 值必须在真实门完成后才可替换，不得预写成功。
 
 ## 未执行的动作
 
