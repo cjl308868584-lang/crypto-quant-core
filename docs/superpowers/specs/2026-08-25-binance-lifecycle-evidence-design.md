@@ -204,44 +204,123 @@ not silently rebuild or rebase a different intent.
 
 ## 6. Lifecycle state machine
 
-The immutable lifecycle stages are:
+### 6.1 Canonical event envelope
+
+Every lifecycle event has exactly these keys:
 
 ```text
-NO_INTENT
-INTENT_PREPARED
-ATTEMPT_SUBMITTED_FIXTURE
-ACKNOWLEDGED_FIXTURE
-PARTIALLY_FILLED_FIXTURE
-FILLED_FIXTURE
-STOP_CONFIRMED_FIXTURE
-RECONCILED_FIXTURE
-FAILED_CLOSED
+ordinal
+event_type
+event_hash
+parent_event_hash_or_null
+intent_id_or_null
+attempt_id_or_null
+payload
 ```
 
-Normal fixtures take only:
+`ordinal` starts at 1 and increases by one.  `parent_event_hash_or_null` is null
+only for ordinal 1 and otherwise equals the preceding event hash.  `event_hash`
+is the canonical self-hash of the complete event excluding only its own value.
+Intent and attempt fields are null only for events whose table row explicitly
+allows null.  No event has extra payload keys.
+
+The exact event vocabulary and payload keys are:
+
+| `event_type` | exact `payload` keys | identity rule |
+|---|---|---|
+| `NO_INTENT_RECONCILED` | `action`, `reason_code` | both IDs null |
+| `INTENT_PREPARED` | `product`, `side`, `reduce_only`, `order_type`, `quantity`, `approved_notional`, `instrument_metadata_hash` | intent non-null, attempt null |
+| `ATTEMPT_SUBMITTED_FIXTURE` | `client_order_id` | both non-null |
+| `ORDER_ACKNOWLEDGED_FIXTURE` | `client_order_id` | both non-null |
+| `FILL_OBSERVED_FIXTURE` | `fill_id`, `quantity`, `price`, `notional`, `fee_asset`, `fee`, `cumulative_filled_quantity` | both non-null |
+| `ORDER_UNKNOWN_FIXTURE` | `reason_code`, `last_known_cumulative_filled_quantity` | both non-null |
+| `ORDER_RECONCILED_FIXTURE` | `terminal_state`, `cumulative_filled_quantity`, `average_fill_price_or_null`, `cumulative_fee` | both non-null |
+| `STOP_INTENT_PREPARED` | `stop_intent_id`, `side`, `reduce_only`, `quantity`, `trigger_price`, `order_type` | header intent equals stop intent, attempt null |
+| `STOP_ACKNOWLEDGED_FIXTURE` | `stop_intent_id`, `stop_client_order_id` | header intent equals stop intent, stop attempt non-null |
+| `STOP_CANCEL_REQUESTED_FIXTURE` | `stop_intent_id` | header intent equals stop intent, stop attempt non-null |
+| `STOP_CANCEL_ACKNOWLEDGED_FIXTURE` | `stop_intent_id` | header intent equals stop intent, stop attempt non-null |
+| `STOP_TRIGGERED_FIXTURE` | `stop_intent_id`, `bar_open`, `bar_high`, `bar_low`, `gap_reference` | header intent equals stop intent, stop attempt non-null |
+| `LIFECYCLE_RECONCILED_FIXTURE` | `engine_projection_hash`, `venue_projection_hash`, `ledger_projection_hash` | both IDs null |
+| `LIFECYCLE_FAILED_CLOSED` | `reason_code`, `position_certainty`, `unresolved_intent_ids` | both IDs null |
+
+`fee_asset` is exactly `USDT`; normal order type is `MARKET`; stop order type is
+`STOP_MARKET`.  `terminal_state` is one of `FILLED`, `PARTIALLY_FILLED`,
+`CANCELED`, `REJECTED` or `UNKNOWN`.  UNKNOWN reason is exactly
+`TIMEOUT` or `DISCONNECT`.  All quantities, prices, notionals and fees are
+canonical Decimal strings.  Stop intent ID is deterministically derived from
+the protected position intent, protected cumulative quantity, trigger and stop
+ordinal; its attempt/client IDs are derived from that stop intent and are
+stored in the protective-stop snapshot for a later opportunity.  A triggered
+stop fill therefore binds the pre-existing stop attempt rather than inventing a
+new attempt.  Partial-fill replacement cannot reuse different stop content.
+
+### 6.2 Legal transitions
+
+Normal no-intent/hold:
+
+```text
+NO_INTENT_RECONCILED
+→ LIFECYCLE_RECONCILED_FIXTURE
+```
+
+Normal open:
 
 ```text
 INTENT_PREPARED
 → ATTEMPT_SUBMITTED_FIXTURE
-→ ACKNOWLEDGED_FIXTURE
-→ FILLED_FIXTURE
-→ STOP_CONFIRMED_FIXTURE (open only)
-→ RECONCILED_FIXTURE
+→ ORDER_ACKNOWLEDGED_FIXTURE
+→ FILL_OBSERVED_FIXTURE
+→ ORDER_RECONCILED_FIXTURE(FILLED)
+→ STOP_INTENT_PREPARED
+→ STOP_ACKNOWLEDGED_FIXTURE
+→ LIFECYCLE_RECONCILED_FIXTURE
 ```
 
-Close fixtures first record stop-cancel acknowledgement, then submit the
-reduce-only close and reconcile verified-flat.  A stop-triggered close records
-the trigger before the fill.  Hold and no-trade use `NO_INTENT` and still
-produce a reconciled result whose three position views match.
+Normal strategy close:
 
-Fault tests may reach partial or failed states only by patching existing
-private low-level boundaries.  Production/public code exposes no fault enum,
-callback, environment flag, CLI or scenario selector.
+```text
+STOP_CANCEL_REQUESTED_FIXTURE
+→ STOP_CANCEL_ACKNOWLEDGED_FIXTURE
+→ INTENT_PREPARED
+→ ATTEMPT_SUBMITTED_FIXTURE
+→ ORDER_ACKNOWLEDGED_FIXTURE
+→ FILL_OBSERVED_FIXTURE
+→ ORDER_RECONCILED_FIXTURE(FILLED)
+→ LIFECYCLE_RECONCILED_FIXTURE
+```
 
-Every event has exact keys, stable type, monotonically increasing local ordinal
-and a parent event hash.  Duplicate exact external observations are ignored in
-the aggregate; conflicting duplicates fail closed.  Cumulative fill quantity
-may never decrease or exceed intended quantity.
+Normal stop close:
+
+```text
+STOP_TRIGGERED_FIXTURE
+→ FILL_OBSERVED_FIXTURE
+→ ORDER_RECONCILED_FIXTURE(FILLED)
+→ LIFECYCLE_RECONCILED_FIXTURE
+```
+
+A fault observation may place `FILL_OBSERVED_FIXTURE` before acknowledgement;
+the later exact acknowledgement is accepted without reordering the evidence.
+Multiple fills require strictly increasing cumulative quantity.  Every partial
+opening fill must be followed by a new exact `STOP_INTENT_PREPARED` and
+`STOP_ACKNOWLEDGED_FIXTURE` for the cumulative position before another
+risk-increasing fill is legal.  `ORDER_UNKNOWN_FIXTURE` may be followed only by
+an exact `ORDER_RECONCILED_FIXTURE` or terminal `LIFECYCLE_FAILED_CLOSED`.
+Conflicting duplicate, overfill, missing stop, unexplained late fill or any
+event after a terminal lifecycle event is invalid.
+
+Fault tests construct an immutable private `LifecycleObservation` tuple by
+patching the single existing private simulated-venue observation boundary.
+That type is not public, serializable, configurable or durable.  A “fresh
+reconciliation” fault test means a new pure reducer instance consumes the same
+immutable observation tuple; it does not mean that an undurable fault
+observation can be rediscovered by a fresh interpreter.  Fresh-interpreter
+recovery applies only at the canonical opportunity event boundaries in Section
+12.  Production/public code exposes no fault enum, callback, environment flag,
+CLI or scenario selector.
+
+Duplicate exact observations are normalized once; conflicting duplicates fail
+closed.  Cumulative fill quantity may never decrease or exceed intended
+quantity.
 
 ## 7. Fill, cost and accounting authority
 
@@ -269,6 +348,24 @@ one confirmed persistent stop:
 - Spot stop side: SELL;
 - perpetual stop side: BUY reduce-only.
 
+Non-null `protective_stop_or_null` has exactly:
+
+```text
+stop_intent_id
+stop_attempt_id
+stop_client_order_id
+product
+side
+reduce_only
+quantity
+trigger_price
+status
+```
+
+`status` is exactly `CONFIRMED_FIXTURE`; the three identities, product, side,
+quantity and trigger must equal the acknowledged stop lifecycle events.  A
+close, trigger or replacement consumes these stored identities.
+
 On each completed bar, stop evaluation precedes strategy exit.  Spot triggers
 when `low <= trigger`; perpetual triggers when `high >= trigger`.  Gap reference
 is `min(open, trigger)` for Spot SELL and `max(open, trigger)` for perpetual BUY,
@@ -291,11 +388,23 @@ corrected.
 
 ## 9. Reconciliation and failure closure
 
-Each result records three independent projections:
+Each result records three independently derived projections:
 
-1. engine order aggregate;
-2. simulated venue position and cumulative costs;
-3. canonical ledger position and cumulative costs.
+1. **engine order aggregate** is reduced only from the canonical normalized
+   lifecycle-event sequence;
+2. **simulated venue projection** is reduced independently from the immutable
+   raw `LifecycleObservation` tuple and previous venue position; it may not
+   read or copy the engine aggregate;
+3. **canonical ledger projection** is derived only from the previous canonical
+   snapshot plus the v0.71 accounting transition; it may not read or copy the
+   engine aggregate or venue projection.
+
+The three reducers have distinct typed inputs and return distinct immutable
+types.  The reconciliation function accepts their three completed values; it
+does not accept a caller mapping and cannot create one projection from another.
+Focused tests separately tamper each reducer output after derivation and require
+`LEDGER_POSITION_MISMATCH`, proving the equality check is not a comparison of
+three aliases of one postcomputed mapping.
 
 Product, signed quantity, average price, fee, funding and terminal state must
 match exactly.  An exact match yields `RECONCILED_FIXTURE`.  Any unexplained
@@ -357,11 +466,13 @@ accounting and canonical next snapshot.  `result_hash` covers the entire
 canonical document excluding only its own value through the existing
 self-hash convention.
 
-The maximum canonical result size is 1 MiB and is checked before allocation or
-parse.  The loader rejects duplicate keys, floats, noncanonical JSON, unknown
+The maximum canonical result size is 1 MiB.  The bytes loader checks `len(data)`
+before JSON parse, decode into nested objects or defensive copy.  The loader
+rejects duplicate keys, floats, noncanonical JSON, unknown
 or missing fields, wrong schema/version, unsafe integers, malformed Decimal
-strings, self-hash mismatch, inconsistent derived identities and any nonzero
-authority.
+strings, self-hash mismatch and inconsistent derived identities.  `authority`
+must equal the exact fixed object from Section 1: all five counts are zero and
+the credential boolean is false; numeric/boolean substitution is invalid.
 
 The fixture build identity uses an explicit non-authoritative test identity;
 it does not claim a future commit, tag or CI run.  Committed goldens therefore
@@ -383,9 +494,15 @@ projection dispatches v1/v2 by exact `$schema` and `schema_version`; a v2 result
 is accepted only in a v0.72 fixture root/build identity.  v1 committed bytes
 remain replayable only in their existing isolated v0.70 fixtures.
 
-An opportunity with no valid source/decision observation may become MISSED
-only through the existing explicit catch-up API after capture close.  Once
-source and decision were fully observed, lifecycle failure is terminal
+An opportunity with no durable v2 `RESULT_PREPARED` may become MISSED only
+through the existing explicit catch-up API after capture close.  A v2
+`RESULT_PREPARED` is an irreversible complete source/decision/lifecycle
+observation boundary: catch-up must reject it with
+`CHALLENGER_REPLACEMENT_OPPORTUNITY_ACTIVE_CONFLICT`; it can only be recovered
+and completed as `OPPORTUNITY_OBSERVED`.  Existing committed v1 bytes retain
+their historical replay semantics, but no v1 event is appended to a v0.72
+root.  A crash after v2 RESULT and before OBSERVED therefore cannot be
+reclassified as MISSED.  Lifecycle failure is terminal
 `OPPORTUNITY_OBSERVED` with:
 
 ```text
@@ -404,7 +521,8 @@ transition is economically gap-locked and cannot add risk.
 
 The runner replays before every append and carries the optimistic
 `expected_last_event_hash`.  A stale projection raises the existing fixed
-sequence conflict; it does not retry, rebase or choose a winner.
+sequence conflict; it does not retry, rebase, replay-to-success or choose a
+winner inside that invocation.
 
 Durable boundaries are:
 
@@ -428,9 +546,19 @@ rename visible before directory fsync
   use the existing event-store durability confirmation before success
 ```
 
-Two processes racing the same exact opportunity may publish one canonical
-chain.  Exact loser bytes return already committed; different bytes return
-conflict.  There is exactly one intent and one set of economic fills in replay.
+Concurrency has two different, noninterchangeable cases:
+
+- two processes racing the same single event from the same parent may yield
+  `COMMITTED` and `ALREADY_COMMITTED` only when their final event bytes are
+  exact; different bytes yield conflict;
+- two complete runner invocations racing one opportunity may let one process
+  advance beyond the other process's optimistic token.  The stale invocation
+  returns `CHALLENGER_REPLACEMENT_OPPORTUNITY_SEQUENCE_CONFLICT` and does not
+  convert the winner's terminal result into its own success.  A new, separate
+  invocation that begins by replaying an already-terminal exact opportunity
+  may return the stored terminal result with zero append/build/recompute.
+
+Replay contains exactly one intent and one set of economic fills.
 
 Because v0.72 has no external Broker/order side effect, replay idempotence is
 proved entirely by canonical bytes and zero recomputation after RESULT.  This
@@ -469,7 +597,8 @@ not published as an unversioned or caller-selectable portable scenario.
 
 - partial fill and stop quantity replacement;
 - fill-before-ack, duplicate exact fill and conflicting duplicate;
-- timeout/UNKNOWN, disconnect and fresh reconciliation;
+- timeout/UNKNOWN and disconnect classification; a new pure reducer instance
+  reconciles the same immutable in-process fault-observation tuple;
 - late close/stop fill, impossible overfill and wrong product/side;
 - missing stop, failed stop rebuild and failed flatten;
 - ledger/venue/order mismatch;
@@ -485,7 +614,8 @@ not published as an unversioned or caller-selectable portable scenario.
 - MISSED while flat and economic gap after non-flat MISSED;
 - failed lifecycle maps to OBSERVED, not MISSED;
 - malformed input fails before INPUT with zero event;
-- fresh interpreter recovery at INPUT/RESULT/OBSERVED;
+- fresh interpreter recovery at canonical INPUT/RESULT/OBSERVED boundaries,
+  including RESULT-visible-before-OBSERVED followed by expired catch-up;
 - true two-process same/different-result competition.
 
 ### 14.4 Static and side effects
@@ -539,4 +669,3 @@ Healthy fixture evidence does not authorize installation or a running Paper
 service.  v0.72 release is complete only when all gates above are evidenced and
 the exact status remains
 `FIXTURE_LIFECYCLE_EVIDENCE_VERIFIED_NOT_OPERATIONAL`.
-
