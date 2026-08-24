@@ -56,6 +56,18 @@ def fixture_v071_build_identity():
     }
 
 
+def fixture_v072_build_identity():
+    return {
+        "release_tag": "v0.72.0-fixture",
+        "peeled_commit": "9" * 40,
+        "package_version": "0.72.0",
+        "manifest_version": "1.66.0",
+        "build_input_tree_hash": "7" * 64,
+        "manifest_hash": "8" * 64,
+        "manifest_file_sha256": "9" * 64,
+    }
+
+
 def fixture_v071_contract():
     return build_challenger_replacement_simulation_contract(plan=fixture_v3_plan())
 
@@ -160,7 +172,7 @@ def fixture_v071_signal_bars(signal, scheduled_for=DEFAULT_SCHEDULED_FOR):
     return bars
 
 
-def fixture_v071_input_document(
+def _fixture_input_document(
     *,
     scheduled_for=DEFAULT_SCHEDULED_FOR,
     observed_at=DEFAULT_OBSERVED_AT,
@@ -171,10 +183,11 @@ def fixture_v071_input_document(
     perpetual_quote=None,
     funding_boundary_at_or_null=None,
     funding_rate_or_null=None,
+    build_identity=None,
 ):
     plan = fixture_v3_plan()
     contract = fixture_v071_contract()
-    build = fixture_v071_build_identity()
+    build = deepcopy(build_identity or fixture_v071_build_identity())
     scheduled = datetime.fromisoformat(
         scheduled_for.replace("Z", "+00:00")
     ).astimezone(timezone.utc)
@@ -254,8 +267,23 @@ def fixture_v071_input_document(
     return document
 
 
+def fixture_v071_input_document(**kwargs):
+    return _fixture_input_document(**kwargs)
+
+
 def fixture_v071_input_bytes(**kwargs):
     return canonical_json(fixture_v071_input_document(**kwargs)).encode("utf-8")
+
+
+def fixture_v072_input_document(**kwargs):
+    return _fixture_input_document(
+        build_identity=fixture_v072_build_identity(),
+        **kwargs,
+    )
+
+
+def fixture_v072_input_bytes(**kwargs):
+    return canonical_json(fixture_v072_input_document(**kwargs)).encode("utf-8")
 
 
 def fixture_opportunity_id(scheduled_for=DEFAULT_SCHEDULED_FOR):

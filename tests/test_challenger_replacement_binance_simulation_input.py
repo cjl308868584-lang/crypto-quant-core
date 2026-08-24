@@ -21,6 +21,8 @@ from tests.challenger_replacement_v3_fixtures import (
     fixture_v071_input_bytes,
     fixture_v071_input_document,
     fixture_v071_spot_metadata,
+    fixture_v072_build_identity,
+    fixture_v072_input_bytes,
     fixture_v3_plan,
 )
 
@@ -160,6 +162,31 @@ class ChallengerReplacementBinanceSimulationInputTests(unittest.TestCase):
             INVALID,
         ):
             self.load(opportunity_id="ETHUSDT@2026-01-02T04:00:00.000Z")
+
+    def test_input_v1_dispatch_accepts_only_same_version_fixture_identity(self):
+        v072_build = fixture_v072_build_identity()
+        loaded = self.load(
+            fixture_v072_input_bytes(),
+            build_identity=v072_build,
+        )
+        self.assertEqual(loaded["build_identity"], v072_build)
+
+        with self.assertRaisesRegex(
+            ChallengerReplacementSimulationInputError,
+            INVALID,
+        ):
+            self.load(
+                fixture_v072_input_bytes(),
+                build_identity=fixture_v071_build_identity(),
+            )
+        with self.assertRaisesRegex(
+            ChallengerReplacementSimulationInputError,
+            INVALID,
+        ):
+            self.load(
+                fixture_v071_input_bytes(),
+                build_identity=v072_build,
+            )
 
     def test_fixture_has_21_closed_contiguous_four_hour_bars(self):
         bars = self.load()["bars"]

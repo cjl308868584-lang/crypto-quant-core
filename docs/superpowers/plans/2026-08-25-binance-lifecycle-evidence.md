@@ -193,7 +193,7 @@ Save the exact failing test names/output in the task checkpoint.
 
 First add the two-value strict input-v1 identity dispatch and the v0.72 fixture
 builder.  Then implement only the listed dataclasses, fixed error mapping, the
-15 event-type payload key table, canonical event self-hash/parent validation
+14 event-type payload key table, canonical event self-hash/parent validation
 and stable IDs.
 Use one private `_append_event(...)` that receives typed values, not a public
 payload mapping.  Add the no-intent reducer by consuming the existing v0.71

@@ -51,6 +51,10 @@ _AUTHORITY = {
     "credentials_used": False,
     "production_state_writes": 0,
 }
+_FIXTURE_BUILD_VERSIONS = {
+    ("v0.71.0-fixture", "0.71.0", "1.65.0"),
+    ("v0.72.0-fixture", "0.72.0", "1.66.0"),
+}
 
 
 class ChallengerReplacementSimulationInputError(ValueError):
@@ -111,15 +115,12 @@ def _valid_build_identity(value: object) -> bool:
             or any(character not in "0123456789abcdef" for character in item)
         ):
             return False
-    return (
-        value.get("release_tag") == "v0.71.0-fixture"
-        and value.get("package_version") == "0.71.0"
-        and value.get("manifest_version") == "1.65.0"
-        and all(
-            isinstance(value.get(key), str) and bool(value[key])
-            for key in ("release_tag", "package_version", "manifest_version")
-        )
+    version = (
+        value.get("release_tag"),
+        value.get("package_version"),
+        value.get("manifest_version"),
     )
+    return version in _FIXTURE_BUILD_VERSIONS
 
 
 def _metadata(payload: object, *, market_type: MarketType) -> InstrumentMetadata:
