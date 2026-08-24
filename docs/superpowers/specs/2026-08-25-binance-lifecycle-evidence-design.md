@@ -300,13 +300,47 @@ STOP_TRIGGERED_FIXTURE
 
 A fault observation may place `FILL_OBSERVED_FIXTURE` before acknowledgement;
 the later exact acknowledgement is accepted without reordering the evidence.
-Multiple fills require strictly increasing cumulative quantity.  Every partial
-opening fill must be followed by a new exact `STOP_INTENT_PREPARED` and
-`STOP_ACKNOWLEDGED_FIXTURE` for the cumulative position before another
-risk-increasing fill is legal.  `ORDER_UNKNOWN_FIXTURE` may be followed only by
-an exact `ORDER_RECONCILED_FIXTURE` or terminal `LIFECYCLE_FAILED_CLOSED`.
-Conflicting duplicate, overfill, missing stop, unexplained late fill or any
-event after a terminal lifecycle event is invalid.
+Multiple fills require strictly increasing cumulative quantity.  The first
+partial opening fill takes:
+
+```text
+FILL_OBSERVED_FIXTURE(partial cumulative quantity)
+→ STOP_INTENT_PREPARED(same cumulative quantity)
+→ STOP_ACKNOWLEDGED_FIXTURE
+```
+
+Every later partial opening fill takes exactly:
+
+```text
+FILL_OBSERVED_FIXTURE(new cumulative quantity)
+→ STOP_CANCEL_REQUESTED_FIXTURE(old stop identity)
+→ STOP_CANCEL_ACKNOWLEDGED_FIXTURE(old stop identity)
+→ STOP_INTENT_PREPARED(new cumulative quantity and new identity)
+→ STOP_ACKNOWLEDGED_FIXTURE(new identity)
+```
+
+No next fill, economic intent, risk increase, result return or durable result
+publication is legal between the opening fill and the final new stop ACK.  The
+old stop remains the recorded stop until cancel ACK; after cancel ACK the pure
+in-memory reducer has no confirmed stop, but it has no external time or side
+effect and may execute only the new stop prepare/ACK pair.  The invariant is
+that every returned or durable non-flat result has exactly one confirmed stop,
+not that this fixture model proves continuous external-exchange protection.
+
+Missing old-stop cancel ACK, missing new-stop ACK, or a second opening fill
+before new-stop ACK appends `LIFECYCLE_FAILED_CLOSED` with exact reason
+`DISASTER_STOP_MISSING_OR_UNCONFIRMED`; it never continues the order or risk
+increase.  A fill from the old stop attempt after its cancel ACK is first
+recorded as `FILL_OBSERVED_FIXTURE` under that old stop intent/attempt and then
+terminates with `LIFECYCLE_FAILED_CLOSED` and exact reason
+`UNRECORDED_OR_CONFLICTING_FILL`.  The independent reducers determine whether
+the remaining position is VERIFIED or UNRESOLVED; the fill is never silently
+discarded, netted or treated as a successful replacement.
+
+`ORDER_UNKNOWN_FIXTURE` may be followed only by an exact
+`ORDER_RECONCILED_FIXTURE` or terminal `LIFECYCLE_FAILED_CLOSED`.  Conflicting
+duplicate, overfill, missing stop, invalid late fill or any event after a
+terminal lifecycle event is invalid.
 
 Fault tests construct an immutable private `LifecycleObservation` tuple by
 patching the single existing private simulated-venue observation boundary.
@@ -471,8 +505,8 @@ before JSON parse, decode into nested objects or defensive copy.  The loader
 rejects duplicate keys, floats, noncanonical JSON, unknown
 or missing fields, wrong schema/version, unsafe integers, malformed Decimal
 strings, self-hash mismatch and inconsistent derived identities.  `authority`
-must equal the exact fixed object from Section 1: all five counts are zero and
-the credential boolean is false; numeric/boolean substitution is invalid.
+must equal the exact fixed object from Section 1: all counts are zero and all
+booleans are false; numeric/boolean substitution is invalid.
 
 The fixture build identity uses an explicit non-authoritative test identity;
 it does not claim a future commit, tag or CI run.  Committed goldens therefore
@@ -596,6 +630,8 @@ not published as an unversioned or caller-selectable portable scenario.
 ### 14.2 Fault and risk
 
 - partial fill and stop quantity replacement;
+- old-stop identity consumption, final unique stop, missing cancel/ACK and a
+  second fill racing before replacement ACK;
 - fill-before-ack, duplicate exact fill and conflicting duplicate;
 - timeout/UNKNOWN and disconnect classification; a new pure reducer instance
   reconciles the same immutable in-process fault-observation tuple;
