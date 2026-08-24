@@ -34,8 +34,9 @@ Actions Python 3.9/3.12 and macOS arm64.
   physical lines relative to `v0.71.0^{}`; unrelated deletions do not count.
 - If a size gate cannot hold, stop before artifacts/release and preregister a
   new semantic split.  Do not introduce a generic framework to evade it.
-- Use exact RED → minimal GREEN → refactor for every task.  Do not batch a RED
-  with its implementation commit.
+- Use exact RED → minimal GREEN → refactor for every task.  Record the exact RED
+  output in the task checkpoint before GREEN; commit the reviewed task only
+  after GREEN.  A separate RED commit is not required.
 - Run one complete local suite only on the final code state; focused tests are
   used during tasks.  Do not repeat a full suite on unchanged code.
 - v0.72 status is exactly
@@ -58,6 +59,9 @@ Actions Python 3.9/3.12 and macOS arm64.
   second state machine.
 - `src/crypto_quant/challenger_replacement_fixture_simulation.py`: thin
   canonical-input fixture runner and recovery orchestration.
+- `src/crypto_quant/challenger_replacement_binance_simulation_input.py`: strict
+  input-v1 build-identity dispatch; accept only the exact released v0.71 fixture
+  tuple or the exact v0.72 fixture tuple, without changing v0.71 bytes.
 - `config/challenger-replacement-opportunity-result-evidence-v2.schema.json`
   and package mirror: exact v2 schema.
 - `tests/test_challenger_replacement_binance_lifecycle.py`: pure lifecycle,
@@ -85,6 +89,8 @@ Actions Python 3.9/3.12 and macOS arm64.
 **Files:**
 - Create: `src/crypto_quant/challenger_replacement_binance_lifecycle.py`
 - Create: `tests/test_challenger_replacement_binance_lifecycle.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_simulation_input.py`
+- Modify: `tests/test_challenger_replacement_binance_simulation_input.py`
 - Modify: `tests/challenger_replacement_v3_fixtures.py`
 
 **Interfaces:**
@@ -127,9 +133,27 @@ def simulate_challenger_replacement_binance_lifecycle(
 ) -> ChallengerReplacementLifecycleResult
 ```
 
+The strict simulation-input v1 loader uses version dispatch over exactly two
+accepted fixture identities:
+
+```text
+v0.71: release_tag=v0.71.0-fixture, package_version=0.71.0,
+       manifest_version=1.65.0
+v0.72: release_tag=v0.72.0-fixture, package_version=0.72.0,
+       manifest_version=1.66.0
+```
+
+The v0.72 fixture helper is named `fixture_v072_build_identity()`.  Lifecycle
+execution requires the source-bound build identity to equal the explicitly
+passed v0.72 identity.  Projection and v2 result evidence bind that same exact
+identity.  Any v0.71/v0.72 cross-version mix is rejected; exact v0.71 fixture
+loading and replay remain accepted byte-for-byte.
+
 - [ ] **Step 1: Write identity/envelope RED tests**
 
-Create tests that require exact common event keys, ordinal/parent/self-hash,
+Create tests that require exact input build-identity dispatch, exact v0.71
+replay, rejection of every cross-version mix, common event keys,
+ordinal/parent/self-hash,
 stable intent/attempt/client IDs, canonical Decimal payloads, and rejection of
 caller mappings or caller IDs.  Require HOLD/NO_TRADE to emit exactly
 `NO_INTENT_RECONCILED` then `LIFECYCLE_RECONCILED_FIXTURE` with null IDs.
@@ -157,7 +181,8 @@ Run:
 
 ```bash
 PYTHONPATH=src python3 -m unittest \
-  tests.test_challenger_replacement_binance_lifecycle -v
+  tests.test_challenger_replacement_binance_lifecycle \
+  tests.test_challenger_replacement_binance_simulation_input -v
 ```
 
 Expected: import/API failures because the lifecycle module does not exist.
@@ -165,8 +190,10 @@ Save the exact failing test names/output in the task checkpoint.
 
 - [ ] **Step 3: Implement immutable types and exact event builder**
 
-Implement only the listed dataclasses, fixed error mapping, the 15 event-type
-payload key table, canonical event self-hash/parent validation and stable IDs.
+First add the two-value strict input-v1 identity dispatch and the v0.72 fixture
+builder.  Then implement only the listed dataclasses, fixed error mapping, the
+15 event-type payload key table, canonical event self-hash/parent validation
+and stable IDs.
 Use one private `_append_event(...)` that receives typed values, not a public
 payload mapping.  Add the no-intent reducer by consuming the existing v0.71
 simulation result.
@@ -181,6 +208,7 @@ Run:
 ```bash
 PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_binance_lifecycle \
+  tests.test_challenger_replacement_binance_simulation_input \
   tests.test_challenger_replacement_simulation \
   tests.test_challenger_replacement_simulation_contract -v
 PYTHONPATH=src python3 -m compileall -q src/crypto_quant
@@ -194,7 +222,9 @@ Expected: all selected tests pass; v0.71 accounting results are unchanged.
 ```bash
 git add \
   src/crypto_quant/challenger_replacement_binance_lifecycle.py \
+  src/crypto_quant/challenger_replacement_binance_simulation_input.py \
   tests/test_challenger_replacement_binance_lifecycle.py \
+  tests/test_challenger_replacement_binance_simulation_input.py \
   tests/challenger_replacement_v3_fixtures.py
 git commit -m "feat: define replacement lifecycle evidence"
 ```
@@ -215,7 +245,7 @@ git commit -m "feat: define replacement lifecycle evidence"
   `protective_stop_or_null` has exact identities/product/side/quantity/trigger
   and `status=CONFIRMED_FIXTURE`.
 
-- [ ] **Step 1: Write normal complete-cycle RED tests**
+- [ ] **Step 1: Write normal complete-cycle and old-byte RED tests**
 
 Require exact event type order and payloads for both products.  Assert stop
 trigger is evaluated before strategy exit and produces:
@@ -229,7 +259,14 @@ self.assertEqual(decision["risk_approval"], "REDUCE_ONLY")
 
 Require Spot stop round-down, Perp stop round-up, stop cancel ACK before normal
 close, reduce-only perpetual close, exact fee/funding/PnL and verified-flat
-before reversal.  Add equality-boundary bars and gap-open fills.
+before reversal.  Add equality-boundary bars and gap-open fills.  Freeze the
+exact canonical public v0.71 simulation outputs and require them to remain:
+
+```text
+FLAT:  length=2124, sha256=2a43ff164c0729808ef5b3f73da8415856d7d366cc7173407da091805d9bfd6d
+LONG:  length=2388, sha256=f8e738ac45b4c99c8b574360b3545764d21b175a392a1c7ff0213fbb3fb23d98
+SHORT: length=2377, sha256=ef5a5a0a2bdaf15980c72784863489f26591606c4f4e2cd4a1b8febf22580e7b
+```
 
 - [ ] **Step 2: Run Task 2 tests and record RED**
 
@@ -244,13 +281,16 @@ PYTHONPATH=src python3 -m unittest \
 Expected: missing order/stop events, enriched stop identity and stop-trigger
 action assertions fail against Task 1.
 
-- [ ] **Step 3: Add stop-before-strategy transition to the accounting core**
+- [ ] **Step 3: Add a private v0.72 stop-before-strategy transition**
 
-Modify the private v0.71 transition so a validated previous confirmed stop and
-completed bar derive the two exact stop actions.  The caller receives no
-override parameter.  Reuse `_fill_price`, quantity, fee and signed accounting;
-do not duplicate formulas in the lifecycle module.  Preserve all existing
-public signatures and v0.71 non-triggered test bytes.
+Keep public `simulate_challenger_replacement_opportunity(...)` and all v0.71
+output bytes unchanged.  Add one private typed v0.72 transition, for example
+`_simulate_challenger_replacement_v072_transition(...)`, used only by the
+lifecycle reducer.  It derives the two exact stop actions from a validated
+previous confirmed stop and completed bar.  The caller receives no override
+parameter.  Share private `_fill_price`, quantity, fee and signed-accounting
+formulas; do not duplicate them in the lifecycle module and do not route the
+released public function through the enriched result shape.
 
 - [ ] **Step 4: Implement normal product-specific lifecycle**
 
@@ -275,7 +315,8 @@ git diff --check
 ```
 
 Expected: normal lifecycle and existing generic primitives all pass without
-changing System Paper behavior.
+changing System Paper behavior, and the three frozen v0.71 public byte
+length/SHA pairs remain exact.
 
 - [ ] **Step 6: Commit Task 2**
 
@@ -376,6 +417,23 @@ wc -l \
   src/crypto_quant/challenger_replacement_binance_lifecycle.py \
   src/crypto_quant/challenger_replacement_simulation.py
 git diff --numstat v0.71.0^{}..HEAD -- src/crypto_quant
+python3 - <<'PY'
+from pathlib import Path
+baseline = {
+    "challenger_replacement_binance_lifecycle.py": 0,
+    "challenger_replacement_fixture_simulation.py": 0,
+    "challenger_replacement_simulation.py": 517,
+    "challenger_replacement_opportunity_evidence.py": 147,
+    "challenger_replacement_opportunity_projection.py": 447,
+    "challenger_replacement_opportunities.py": 296,
+}
+root = Path("src/crypto_quant")
+current = {name: len((root / name).read_text().splitlines()) for name in baseline}
+assert all(lines <= 700 for lines in current.values()), current
+delta = sum(max(0, current[name] - baseline[name]) for name in baseline)
+print({"baseline_total": 1407, "current": current, "conservative_net_new": delta})
+assert delta <= 1500, delta
+PY
 PYTHONPATH=src python3 -m compileall -q src/crypto_quant
 git diff --check
 ```
@@ -572,12 +630,34 @@ git diff --numstat v0.71.0^{}..HEAD -- \
   src/crypto_quant/challenger_replacement_opportunity_evidence.py \
   src/crypto_quant/challenger_replacement_opportunity_projection.py \
   src/crypto_quant/challenger_replacement_opportunities.py
+python3 - <<'PY'
+from pathlib import Path
+baseline = {
+    "challenger_replacement_binance_lifecycle.py": 0,
+    "challenger_replacement_fixture_simulation.py": 0,
+    "challenger_replacement_simulation.py": 517,
+    "challenger_replacement_opportunity_evidence.py": 147,
+    "challenger_replacement_opportunity_projection.py": 447,
+    "challenger_replacement_opportunities.py": 296,
+}
+root = Path("src/crypto_quant")
+current = {name: len((root / name).read_text().splitlines()) for name in baseline}
+assert all(lines <= 700 for lines in current.values()), current
+delta = sum(max(0, current[name] - baseline[name]) for name in baseline)
+print({"baseline_total": 1407, "current": current, "conservative_net_new": delta})
+assert delta <= 1500, delta
+PY
 PYTHONPATH=src python3 -m compileall -q src/crypto_quant
 git diff --check
 ```
 
-Expected: selected tests pass, every module ≤700 lines and actual net-new
-production logic ≤1,500 lines.  If not, stop before Task 6/artifacts.
+Expected: selected tests pass, every module ≤700 lines and the conservative
+net-new production count is ≤1,500.  The exact frozen baseline map totals 1,407
+physical lines.  The formula is
+`sum(max(0, current[path] - baseline[path]) for path in exact_six_modules)`;
+therefore unrelated deletion or moving code between modules cannot create
+budget credit.  `git diff --numstat` is diagnostic only.  If the gate fails,
+stop before Task 6/artifacts.
 
 - [ ] **Step 7: Commit Task 5**
 
@@ -712,13 +792,18 @@ PYTHONPATH=src python3 -m unittest \
 
 Expected: exact files are missing.
 
-- [ ] **Step 3: Generate canonical fixtures with reviewed builders**
+- [ ] **Step 3: Generate and independently reproduce canonical fixtures**
 
-Use only the committed fixture builders and owner-only temp event roots.  Each
-input loads through the strict v1 simulation-input loader; each result loads
-through the v2 result loader.  Run the fixture runner from a fresh root and
-require computed result bytes equal the paired committed result before copying
-the canonical bytes into the fixed paths.  Do not edit JSON manually.
+Use only the committed fixture builders and owner-only temp event roots.  First
+generate the fixed canonical input files and strict-load them with the input-v1
+loader.  Run each complete stream independently in two fresh owner-only event
+roots and fresh interpreter processes.  Require candidate result bytes from
+the two runs to be byte-identical, then strict-load and replay both candidates.
+Only after this independent equality gate may the exact candidate bytes be
+added, using `apply_patch`/repository no-overwrite publication, to the fixed
+result paths.  Run a third fresh root/process and require its results to equal
+the now-committed result bytes.  No step compares against a result file before
+that file exists, and no JSON is edited manually.
 
 - [ ] **Step 4: Build and publish the exact manifest**
 
@@ -763,9 +848,20 @@ git commit -m "test: freeze lifecycle golden cycles"
 - Modify: `setup.py`
 - Modify: `src/crypto_quant/__init__.py`
 - Modify: `src/crypto_quant/build.py`
-- Modify: `config/evaluator-build-manifest-v1.schema.json`
-- Modify: `src/crypto_quant/schemas/evaluator-build-manifest-v1.schema.json`
+- Modify: `src/crypto_quant/challenger_replacement_deployment.py`
 - Modify: `config/evaluator-build-manifest-v1.json`
+- Modify: `scripts/refresh_evaluator_build_manifest.py`
+- Modify current-manifest expectations only in:
+  `tests/test_estimators.py`,
+  `tests/test_challenger_replacement_v066_release.py`,
+  `tests/test_challenger_replacement_v067_release.py`,
+  `tests/test_challenger_replacement_v068_release.py`,
+  `tests/test_challenger_replacement_v069_release.py`,
+  `tests/test_challenger_replacement_v070_release.py`,
+  `tests/test_challenger_replacement_v071_release.py`,
+  `tests/test_nautilus_v065_release.py`,
+  `tests/test_nautilus_v0651_hardening.py`, and
+  `tests/test_v064_public_ci_bundle.py`.
 
 **Interfaces:**
 - Consumes: final Tasks 1-7 code/artifacts and released predecessor identities.
@@ -777,7 +873,11 @@ git commit -m "test: freeze lifecycle golden cycles"
 Require package/manifest versions, expected file set, exact predecessor hashes,
 formal artifact replay, each module ≤700, net-new production ≤1,500, no forbidden
 imports/signatures, exact status and no seven-day/90-day clock claim.  Initially
-require candidate verification fields `PENDING_VERIFICATION`.
+require candidate verification fields `PENDING_VERIFICATION`.  Hard-code the
+exact six-module baseline map `{lifecycle: 0, fixture_runner: 0, simulation:
+517, evidence: 147, projection: 447, opportunities: 296}` and the conservative
+per-module positive-delta formula used in Tasks 3 and 5; `numstat` alone is not
+an acceptance gate.
 
 - [ ] **Step 2: Run release tests and record RED**
 
@@ -848,9 +948,19 @@ git add \
   tests/test_challenger_replacement_v072_release.py \
   README.md pyproject.toml setup.py \
   src/crypto_quant/__init__.py src/crypto_quant/build.py \
-  config/evaluator-build-manifest-v1.schema.json \
-  src/crypto_quant/schemas/evaluator-build-manifest-v1.schema.json \
-  config/evaluator-build-manifest-v1.json
+  src/crypto_quant/challenger_replacement_deployment.py \
+  config/evaluator-build-manifest-v1.json \
+  scripts/refresh_evaluator_build_manifest.py \
+  tests/test_estimators.py \
+  tests/test_challenger_replacement_v066_release.py \
+  tests/test_challenger_replacement_v067_release.py \
+  tests/test_challenger_replacement_v068_release.py \
+  tests/test_challenger_replacement_v069_release.py \
+  tests/test_challenger_replacement_v070_release.py \
+  tests/test_challenger_replacement_v071_release.py \
+  tests/test_nautilus_v065_release.py \
+  tests/test_nautilus_v0651_hardening.py \
+  tests/test_v064_public_ci_bundle.py
 git commit -m "chore: prepare v0.72.0 release"
 ```
 
