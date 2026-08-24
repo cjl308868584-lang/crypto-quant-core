@@ -1,6 +1,7 @@
 """Pure semantic projection for replacement DecisionOpportunity events."""
 
 import base64
+from copy import deepcopy
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,7 @@ from .canonical import business_hash, canonical_json, utc_datetime
 from .challenger_replacement_opportunity_evidence import (
     ChallengerReplacementOpportunityEvidenceError,
     load_challenger_replacement_fixture_result_evidence_bytes,
+    load_challenger_replacement_simulation_result_evidence_bytes,
 )
 from .challenger_replacement_plan import (
     ChallengerReplacementPlanError,
@@ -105,9 +107,14 @@ def validate_build_identity(value):
     if (
         not isinstance(value, Mapping)
         or set(value) != keys
-        or value["release_tag"] not in {"v0.70.0", "v0.70.0-fixture"}
-        or value["package_version"] != "0.70.0"
-        or value["manifest_version"] != "1.64.0"
+        or (
+            value["release_tag"], value["package_version"],
+            value["manifest_version"]
+        ) not in {
+            ("v0.70.0", "0.70.0", "1.64.0"),
+            ("v0.70.0-fixture", "0.70.0", "1.64.0"),
+            ("v0.72.0-fixture", "0.72.0", "1.66.0"),
+        }
         or not isinstance(value["peeled_commit"], str)
         or len(value["peeled_commit"]) != 40
         or set(value["peeled_commit"]) - _HASH_CHARS
@@ -169,7 +176,20 @@ def initial_opportunity_projection(*, plan, build_identity):
 
     if not isinstance(plan, Mapping):
         invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_IDENTITY_INVALID")
-    validate_build_identity(build_identity)
+    build_identity = validate_build_identity(build_identity)
+    latest_snapshot = None
+    if build_identity["package_version"] == "0.72.0":
+        from .challenger_replacement_simulation import (
+            build_challenger_replacement_genesis_snapshot,
+        )
+        from .challenger_replacement_simulation_contract import (
+            build_challenger_replacement_simulation_contract,
+        )
+
+        latest_snapshot = build_challenger_replacement_genesis_snapshot(
+            plan=plan,
+            contract=build_challenger_replacement_simulation_contract(plan=plan),
+        )
     return {
         "opportunities": {},
         "active_opportunity_id": None,
@@ -187,6 +207,7 @@ def initial_opportunity_projection(*, plan, build_identity):
         "_previous_observed_source_bytes": None,
         "_previous_observed_decision_bytes": None,
         "_previous_observed_decision_hash": None,
+        "_latest_next_snapshot": latest_snapshot,
         "_terminal_ids": set(),
     }
 
@@ -301,6 +322,10 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
             slot = projection["opportunities"][opportunity_id]
             if (
                 slot["stage"] not in {"INPUT_PREPARED", "RESULT_PREPARED"}
+                or (
+                    slot["stage"] == "RESULT_PREPARED"
+                    and build_identity["package_version"] == "0.72.0"
+                )
                 or payload["missed_after_stage_or_null"] != slot["stage"]
                 or payload["missed_after_event_hash_or_null"]
                 != event.previous_event_hash
@@ -323,6 +348,14 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
         )
         reasons = projection["missed_reason_counts"]
         reasons[payload["reason_code"]] = reasons.get(payload["reason_code"], 0) + 1
+        latest = projection["_latest_next_snapshot"]
+        if latest is not None and latest["position_state"] != "FLAT":
+            from .evidence import artifact_self_hash
+
+            latest = deepcopy(latest)
+            latest["economic_gap_locked"] = True
+            latest["snapshot_hash"] = artifact_self_hash(latest, "snapshot_hash")
+            projection["_latest_next_snapshot"] = latest
         _terminalize(projection, opportunity_id, scheduled_for)
         return
 
@@ -357,20 +390,59 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
             payload["result_evidence_sha256"],
         )
         try:
-            evidence = load_challenger_replacement_fixture_result_evidence_bytes(
-                evidence_bytes,
-                opportunity_id=opportunity_id,
-                scheduled_for=scheduled_for,
-                observed_at=json.loads(evidence_bytes)["observed_at"],
-                source_bundle_sha256=slot["source_bundle_sha256"],
-                decision_sha256=payload["decision_sha256"],
-            )
+            evidence_header = json.loads(evidence_bytes)
+            if build_identity["package_version"] == "0.72.0":
+                if (
+                    evidence_header.get("$schema")
+                    != "./challenger-replacement-opportunity-result-evidence-v2.schema.json"
+                    or evidence_header.get("schema_version") != "2.0.0"
+                ):
+                    invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
+                from .challenger_replacement_simulation_contract import (
+                    build_challenger_replacement_simulation_contract,
+                )
+
+                evidence = load_challenger_replacement_simulation_result_evidence_bytes(
+                    evidence_bytes,
+                    plan=plan,
+                    contract=build_challenger_replacement_simulation_contract(plan=plan),
+                    build_identity=build_identity,
+                )
+                observed_at = evidence["opportunity"]["observed_at"]
+                source_document = _strict_json_bytes(slot["source_bundle_bytes"])
+                if (
+                    evidence["opportunity"]["opportunity_id"] != opportunity_id
+                    or evidence["opportunity"]["scheduled_for"] != scheduled_for
+                    or evidence["source"] != {
+                        "input_id": source_document["input_id"],
+                        "input_hash": source_document["input_hash"],
+                    }
+                    or canonical_json(evidence["decision"]).encode("utf-8")
+                    != decision_bytes
+                ):
+                    invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
+            else:
+                if (
+                    evidence_header.get("$schema")
+                    != "./challenger-replacement-opportunity-result-evidence-v1.schema.json"
+                    or evidence_header.get("schema_version") != "1.0.0"
+                ):
+                    invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
+                observed_at = evidence_header["observed_at"]
+                evidence = load_challenger_replacement_fixture_result_evidence_bytes(
+                    evidence_bytes,
+                    opportunity_id=opportunity_id,
+                    scheduled_for=scheduled_for,
+                    observed_at=observed_at,
+                    source_bundle_sha256=slot["source_bundle_sha256"],
+                    decision_sha256=payload["decision_sha256"],
+                )
         except (ChallengerReplacementOpportunityEvidenceError, KeyError) as error:
             raise ChallengerReplacementOpportunityError(
                 "CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID"
             ) from error
         if (
-            header["recorded_at"] != evidence["observed_at"]
+            header["recorded_at"] != observed_at
             or canonical_time(header["recorded_at"])
             < canonical_time(slot["input_recorded_at"])
         ):
@@ -403,7 +475,11 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
         "source_bundle_sha256": slot.get("source_bundle_sha256"),
         "decision_sha256": slot.get("decision_sha256"),
         "result_evidence_sha256": slot.get("result_evidence_sha256"),
-        "observed_at": slot.get("result_evidence", {}).get("observed_at"),
+        "observed_at": (
+            slot.get("result_evidence", {}).get("observed_at")
+            if build_identity["package_version"] == "0.70.0"
+            else slot.get("result_evidence", {}).get("opportunity", {}).get("observed_at")
+        ),
     }
     if (
         slot["stage"] != "RESULT_PREPARED"
@@ -419,6 +495,10 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
     projection["_previous_observed_source_bytes"] = slot["source_bundle_bytes"]
     projection["_previous_observed_decision_bytes"] = slot["decision_bytes"]
     projection["_previous_observed_decision_hash"] = slot["decision_sha256"]
+    if build_identity["package_version"] == "0.72.0":
+        projection["_latest_next_snapshot"] = deepcopy(
+            slot["result_evidence"]["next_snapshot"]
+        )
     _terminalize(projection, opportunity_id, scheduled_for)
 
 
@@ -440,8 +520,12 @@ def _terminalize(projection, opportunity_id, scheduled_for):
 
 
 def public_opportunity_projection(projection):
-    return {
+    public = {
         key: value
         for key, value in projection.items()
         if not key.startswith("_")
     }
+    public["latest_next_snapshot_or_null"] = deepcopy(
+        projection.get("_latest_next_snapshot")
+    )
+    return public

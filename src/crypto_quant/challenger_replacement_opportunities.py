@@ -275,6 +275,11 @@ def catch_up_missed_opportunities(
             boundary_stage = None
         else:
             slot = projection["opportunities"][active]
+            if (
+                slot["stage"] == "RESULT_PREPARED"
+                and state.build_identity["package_version"] == "0.72.0"
+            ):
+                _invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_ACTIVE_CONFLICT")
             boundary_hash = projection["last_event_hash"]
             boundary_stage = slot["stage"]
         state.append(
