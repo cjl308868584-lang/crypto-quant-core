@@ -207,7 +207,7 @@
     "docs/adr/0067-replacement-live-input-deployment-candidate.md": "43f68896e9986b4a47911643b839981ef6d74d86f68c497b88e63ce994f3c304",
     "docs/adr/0068-replacement-install-observer-start-trust-chain.md": "558bf8b8a48415a62c45728fde61fd5518b2d4f067fed5da6ee2090da9a2248c",
     "docs/adr/0069-decision-opportunity-binance-canary-preregistration.md": "31b1b8dd16c417696a84a149a4f6f6d0f8d513e3a1f948da83c0a5be956884bb",
-    "docs/adr/0070-decision-opportunity-event-runtime.md": "da9d5041350005e4c17120de25bf28debd2aa282cf9201ca047157270cbbbb99",
+    "docs/adr/0070-decision-opportunity-event-runtime.md": "d188dab0866dec8983ea03c94676a225ef4483b887f995fec7b4c9b36cf4c551",
     "docs/implementation-status-v0.58.0.md": "6499059d63114910f9e977bdf71bbafa46c34fe58e43db34a3c7dc0f5cc6f838",
     "docs/implementation-status-v0.59.0.md": "e78f548566699338fdfe4596764fe2fad52aeaf311b4ef65b28aa140f2e3c6e0",
     "docs/implementation-status-v0.60.0.md": "73b94074d97251bac2620301e1970fd793aea5339490b79115914d47b1ae9bef",
@@ -221,7 +221,7 @@
     "docs/implementation-status-v0.67.0.md": "6a9fa1393084a8d8dc8abd6e14f6a750f2a1ef93bc361f0c02daa78f3b462bd5",
     "docs/implementation-status-v0.68.0.md": "5bc1ff5593fe0d32de3e90c1098e8229f5537944f1cdefa0eab6fd0627af20d1",
     "docs/implementation-status-v0.69.0.md": "3e883734f260d6504ecbc9aa9d08658bfb7bb9bb974ec43c342bb1adf3986b0d",
-    "docs/implementation-status-v0.70.0.md": "158eb901dc8f408800e6ae35d4e03119be11b406b85fcd3787a74b4f2c74b580",
+    "docs/implementation-status-v0.70.0.md": "560337f7189f415a7798fbc19bcc0d6e8a5ae0289a5407745cf994f13e3b2dba",
     "docs/runbooks/operations-dashboard.md": "2874680de443098fe0cf5e642b4dffc63853996661091fc836df8e7e8605868d",
     "docs/runbooks/system-paper-operations.md": "beee3603f76b1db0ecb1ef851dea25d6f700b5b67ece3cc320b8774a33a02523",
     "docs/superpowers/plans/2026-08-02-system-paper-wal-scheduler.md": "9ff21c585d907268728801ff472c0032ca4865b60f477120e95e16fe4b3fd3e4",
@@ -244,7 +244,7 @@
     "docs/superpowers/plans/2026-08-22-replacement-live-input-deployment.md": "77c3c16c13169d7b24b6a5e6c2b3b4970d61488abec34806bace1d89e40c6cca",
     "docs/superpowers/plans/2026-08-22-replacement-three-stage-event-runtime.md": "1006ce36621e49da4c7b3b0cb0a18175b141b218819f81c285d0709d4bd4e9f1",
     "docs/superpowers/plans/2026-08-23-decision-opportunity-binance-canary-governance.md": "04a8dfa7bdeda084a5d13f07c40eec9449895816b7e637cf2f8c066de17fd98f",
-    "docs/superpowers/plans/2026-08-24-decision-opportunity-event-runtime.md": "ea2916eebb8ae5ce47d4dfc586afa0076400095bcde816c337cec926a0a06842",
+    "docs/superpowers/plans/2026-08-24-decision-opportunity-event-runtime.md": "788dad335e2452127345b35ba2ef2337341df157cfcd2089fc7b030603a259d0",
     "docs/superpowers/specs/2026-08-02-system-paper-wal-scheduler-design.md": "ba7a327bb3d243045b9522796135521adba0c38acf708749220be558c473b549",
     "docs/superpowers/specs/2026-08-03-system-paper-deployment-trust-chain-design.md": "acf72abafc844ac98a7c2e11334d31278a5af626c8b54a2c639fe5e93e0372f8",
     "docs/superpowers/specs/2026-08-04-system-paper-deployment-review-hardening-design.md": "38244e35ee0782dc66f2430d81655f6101fcb5e8e4b232317a7b72ca77b32b30",
@@ -265,7 +265,7 @@
     "docs/superpowers/specs/2026-08-22-replacement-live-input-deployment-design.md": "3a047295af08907ba3fc4e14f06f2e01b0a2ef8db8385f5821490e251fc52c45",
     "docs/superpowers/specs/2026-08-22-replacement-three-stage-event-runtime-design.md": "0ed6ef6e77448ab98423bf502e512255f8fda7ce0eb02db7d3891839223a2264",
     "docs/superpowers/specs/2026-08-23-decision-opportunity-binance-canary-governance-design.md": "b850e7ae1d7c649a5aa1429cf60359025df69b6fa6e4c43e4584a860c54695b1",
-    "docs/superpowers/specs/2026-08-24-decision-opportunity-event-runtime-design.md": "1ae7a672efc90ce63a3e373dd09f965b02ad2a770030bddb349fe021d31aa067",
+    "docs/superpowers/specs/2026-08-24-decision-opportunity-event-runtime-design.md": "1c770d53501c9a8e66248c689b4345bd8cd129d496d924a7530df17b412d379a",
     "public_ci/v064/.github/workflows/ci.yml": "1c1d982c31eb348f5568464a7db40d9177bba8202b939ebc7e033a843eac5407",
     "public_ci/v064/.gitignore": "6feaded4e28ea86e001a6751b4e3d960e8b7c31b9616ff9936b79297086e809b",
     "public_ci/v064/NOTICE.md": "b6a1c3c9b51e6ba74e8c2cd0fff93e0343d9cb97d76683bcb3b690055a17d3d4",
@@ -352,7 +352,7 @@
     "src/crypto_quant/challenger_replacement_installed_runtime_cli.py": "67fecad2cbced013cdd8d748e1c14d17698c0c80b8da117c54314f92ae8b2c97",
     "src/crypto_quant/challenger_replacement_live_input.py": "84640cbf81659d05d8abdfa935e8340eb565db20bd3006641a77033d59263536",
     "src/crypto_quant/challenger_replacement_live_runtime_cli.py": "0d35fb91e01d4d1950b9e445d7d68231ed728b20f0a637c9365f36ead1748170",
-    "src/crypto_quant/challenger_replacement_opportunities.py": "2194ac239ca0b042622838be0691c14ef45b221864fc53185356d287350b2177",
+    "src/crypto_quant/challenger_replacement_opportunities.py": "dab60143d871ebe4a7753e2c62320b141863b425ccabbb74859de81eeae47037",
     "src/crypto_quant/challenger_replacement_opportunity_evidence.py": "f3b06d588f6dbf171a259eb116a080590bcb2ee7264d0baed030890047f1ae06",
     "src/crypto_quant/challenger_replacement_plan.py": "661abda1a956be2f607adbbf7af3435ed2baacfe8f5bf7864a08f2e23443d5ae",
     "src/crypto_quant/challenger_replacement_plan_supersession.py": "d1f051bd4b02c2954bf67bd8cdd9473e1188148106208da4b07f596056e6aa66",
@@ -552,7 +552,7 @@
     "tests/test_challenger_replacement_live_documents.py": "8eace14e33b619b4f4b8882c49b65bd65ea1ddccb9d2ef15f51442c7114ba5a9",
     "tests/test_challenger_replacement_live_input.py": "c3c21b2eb76ca4a4961dc5a0786384edda89841098fc95c80e878422721200a3",
     "tests/test_challenger_replacement_live_runtime.py": "1ef44e5a21501771f7ccae3368fdc19181c8053c2d479bc46946f7a2e8414d0d",
-    "tests/test_challenger_replacement_opportunities.py": "a5fff074e1d0f6f15b4386567b1c2f302404182d73af905b2e7831d79b3430b1",
+    "tests/test_challenger_replacement_opportunities.py": "a12f18b7f1b00a266a2d095913b261b9a52d79909e3e45919c524e372d941a90",
     "tests/test_challenger_replacement_opportunity_evidence.py": "97b96c18bc441e76e8feae45a3ec4ca51e97c403f4df93d8e3b6008210218130",
     "tests/test_challenger_replacement_plan.py": "a9708ba025395d0d6da01ab404558908355c7f11b2008b7ecac377df0f4b1833",
     "tests/test_challenger_replacement_plan_supersession.py": "98a8250ac9128dc84d4f1a6aca79aa162ee4a10392ace7048cb25692eddf9ab1",
@@ -603,7 +603,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "08102a427e32e9f476ad77e4aef3616a4288dd80f3789c44139cf74c7ad25ae0",
+  "build_input_tree_hash": "cab125f986795a29c2eb9cc7869deb3a3d078fb7cc9de0822800be64d4a4f699",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -611,5 +611,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "770cad9d6e4841305ffa2a4c53ee28bb813ad4a06989a1a331518311a9628bf6"
+  "manifest_hash": "8532a6927a5071299574edc94ea5308cc5afad706a1059685e8b9eb97f03a301"
 }
