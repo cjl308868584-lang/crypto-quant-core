@@ -635,7 +635,10 @@ class ChallengerReplacementOpportunityState:
         except ChallengerReplacementOpportunityError:
             raise
         except ChallengerReplacementEventError as error:
-            raise ChallengerReplacementOpportunityError(error.reason_code) from error
+            reason = error.reason_code
+            if reason == "CHALLENGER_REPLACEMENT_EVENT_SEQUENCE_CONFLICT":
+                reason = "CHALLENGER_REPLACEMENT_OPPORTUNITY_SEQUENCE_CONFLICT"
+            raise ChallengerReplacementOpportunityError(reason) from error
 
 
 def catch_up_missed_opportunities(

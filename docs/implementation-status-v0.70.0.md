@@ -23,9 +23,9 @@
 
 ## 验证状态
 
-- focused/adjacent tests：135 passed；
+- focused/adjacent tests：139 passed；
 - compileall：passed；
-- implementation module：693 physical lines（limit 700）；
+- implementation module：696 physical lines（limit 700）；
 - local full suite：`PENDING_FINAL_CANDIDATE_VERIFICATION`；
 - independent code review：`PENDING_FINAL_CANDIDATE_REVIEW`；
 - PR/main CI and annotated tag：`PENDING_REMOTE_RELEASE_GATES`。

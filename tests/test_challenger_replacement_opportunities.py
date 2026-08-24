@@ -3,6 +3,7 @@ import base64
 import copy
 import hashlib
 import json
+import multiprocessing
 import os
 import subprocess
 import sys
@@ -13,8 +14,10 @@ from unittest.mock import patch
 
 from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_events import (
+    ChallengerReplacementEventRootIdentity,
     open_challenger_replacement_event_root,
 )
+from crypto_quant import challenger_replacement_events as event_module
 from crypto_quant.challenger_replacement_opportunity_evidence import (
     build_challenger_replacement_fixture_result_evidence,
 )
@@ -35,6 +38,51 @@ from tests.challenger_replacement_v3_fixtures import (
     fixture_v3_plan,
 )
 from tests.test_challenger_replacement_events import EventWorkspace
+
+
+def _opportunity_race_worker(identity_values, worker_id, barrier, queue):
+    identity = ChallengerReplacementEventRootIdentity(**identity_values)
+    original = event_module._rename_noreplace
+
+    def synchronized_rename(*args, **kwargs):
+        barrier.wait(timeout=10)
+        return original(*args, **kwargs)
+
+    opportunity_id = fixture_opportunity_id()
+    source_bytes = canonical_json({
+        "$schema": "fixture-source-v1",
+        "opportunity_id": opportunity_id,
+    }).encode("utf-8")
+    try:
+        with open_challenger_replacement_event_root(identity) as root, patch.object(
+            event_module, "_rename_noreplace", synchronized_rename
+        ):
+            publication = ChallengerReplacementOpportunityState(
+                event_root=root,
+                plan=fixture_v3_plan(),
+                build_identity=fixture_v070_build_identity(),
+            ).append(
+                event_type="INPUT_PREPARED",
+                opportunity_id=opportunity_id,
+                worker_id=worker_id,
+                recorded_at=DEFAULT_OBSERVED_AT,
+                payload={
+                    "opportunity_id": opportunity_id,
+                    "scheduled_for": DEFAULT_SCHEDULED_FOR,
+                    "capture_open": "2026-08-24T00:02:00.000Z",
+                    "capture_close": "2026-08-24T00:10:00.000Z",
+                    "source_bundle_bytes_base64": base64.b64encode(
+                        source_bytes
+                    ).decode("ascii"),
+                    "source_bundle_sha256": hashlib.sha256(
+                        source_bytes
+                    ).hexdigest(),
+                },
+                expected_last_event_hash="0" * 64,
+            )
+        queue.put(publication.outcome)
+    except ChallengerReplacementOpportunityError as error:
+        queue.put(error.reason_code)
 
 
 class OpportunityScheduleTests(unittest.TestCase):
@@ -426,6 +474,43 @@ class OpportunityStateTests(unittest.TestCase):
             "COMMITTED", "ALREADY_COMMITTED"
         ))
         self.assertEqual(first.event_hash, second.event_hash)
+        self.assertEqual(len(self.state.replay()["events"]), 1)
+
+    def test_different_event_true_process_race_maps_opportunity_conflict(self):
+        identity = self.ws.files.identity()
+        values = {
+            "absolute_path": identity.absolute_path,
+            "device": identity.device,
+            "inode": identity.inode,
+            "uid": identity.uid,
+            "mode_octal": identity.mode_octal,
+        }
+        context = multiprocessing.get_context("spawn")
+        barrier = context.Barrier(2)
+        queue = context.Queue()
+        processes = [
+            context.Process(
+                target=_opportunity_race_worker,
+                args=(values, "fixture-worker-%s" % index, barrier, queue),
+            )
+            for index in range(2)
+        ]
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join(10)
+            if process.is_alive():
+                process.terminate()
+                process.join()
+                self.fail("opportunity publisher hung at rename barrier")
+            self.assertEqual(process.exitcode, 0)
+        self.assertCountEqual(
+            [queue.get(timeout=2) for _ in processes],
+            [
+                "COMMITTED",
+                "CHALLENGER_REPLACEMENT_OPPORTUNITY_SEQUENCE_CONFLICT",
+            ],
+        )
         self.assertEqual(len(self.state.replay()["events"]), 1)
 
     def test_input_and_result_can_terminalize_as_missed(self):
