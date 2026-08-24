@@ -189,7 +189,8 @@ authority = {
 ```
 
 `observed_at` 必须位于该 opportunity 的 capture window；source/decision hash 必须与 durable INPUT/RESULT
-逐字相等。v0.70 builder 仅为 tests/fixture 创建这种 proof-of-contract evidence；它不是完整 market
+逐字相等。`RESULT_PREPARED` header `recorded_at` 必须逐字等于 evidence `observed_at`，
+且不得早于 INPUT。v0.70 builder 仅为 tests/fixture 创建这种 proof-of-contract evidence；它不是完整 market
 capture 或 strategy semantic validation，也不是模拟成交、风险批准、订单、
 fill、fee、position 或 PnL。v0.71 必须以新的 schema supersede 它后，真实 simulation runner 才有资格
 产生 `OBSERVED`。v0.70 不提供自然 runner，也不对 production opportunity 调用该 fixture builder。
@@ -211,7 +212,8 @@ result_evidence_sha256
 observed_at
 ```
 
-`observed_at` 必须等于 fixture result evidence 所绑定的观察时间并位于 capture window。所有 hash
+`observed_at` 必须等于 fixture result evidence 所绑定的观察时间并位于 capture window，
+且 terminal header 不得早于 RESULT header。所有 hash
 必须与前两阶段 exact 相等。只有 `RESULT_PREPARED` 可以进入 OBSERVED。
 
 ### 4.7 OPPORTUNITY_MISSED
@@ -317,11 +319,14 @@ numerator 固定为 observed count，denominator 固定为 due count；没有 du
    不声称来自可信 production clock/detector；
 4. 对每个已过 capture close 且没有 terminal 的机会按时间顺序 append MISSED；
 5. replay/rebase；
-6. 仅返回当前仍在 window 的唯一 eligible opportunity；
+6. 仅返回当前仍在 window 的唯一 eligible opportunity；`NOT_OPEN` 只停止扫描并返回
+   `eligible_opportunity=null`；
 7. v0.70 不自动 capture、build decision 或产生 OBSERVED。
 
-不同 worker 竞争同一 parent hash时只有一个 winner。loser 固定返回 sequence conflict，并由上层重新 replay；
-状态层不得暗中重试、改 reason 或跳过机会。
+不同 worker 竞争同一 parent hash时只有一个 winner。状态层只允许对“立即上一个 canonical
+event、相同 parent token、逐字节相同”做幂等确认并返回 `ALREADY_COMMITTED`；任何更旧
+token 或字段变化都固定返回 sequence conflict，由上层重新 replay。状态层不得暗中 rebase、
+改 reason 或跳过机会。
 
 ### 6.2 Crash points
 
@@ -371,6 +376,10 @@ v3 module 可以复用 frozen event API，但必须拥有严格 v3 plan/build lo
 
 禁止新增 scheduler、deployment、LaunchAgent、Runner、Broker、exchange adapter、generic order lifecycle、
 generic UI、REST write endpoint、第三方 runtime dependency 或 production injection seam。
+唯一允许的既有 deployment 模块变更是：完整 full-suite 证明 committed candidate loader 与当前
+build manifest 存在冻结版本字面量耦合后，只同步 `manifest_version=1.64.0` 和
+`package_version=0.70.0` 两个 compatibility literal。不得改 deployment artifact、path、authority、
+install/start 行为或任何 production gate。
 
 ## 9. 可证伪测试矩阵
 

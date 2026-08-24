@@ -17,12 +17,15 @@
 - canonical replay 与 boundary-qualified health 分层，95% 使用整数交叉乘；
 - fresh Python interpreter 可重放 INPUT、RESULT、MISSED 耐久边界；
 - v2 event/runtime source bytes 与 v0.69 predecessor artifacts 保持不变。
+- 完整 build manifest loader 所需的既有 deployment module 仅同步
+  `manifest_version=1.64.0` 和 `package_version=0.70.0` 两个字面量；
+  deployment artifact/path/authority/install/start 行为不变。
 
 ## 验证状态
 
 - focused/adjacent tests：135 passed；
 - compileall：passed；
-- implementation module：677 physical lines（limit 700）；
+- implementation module：693 physical lines（limit 700）；
 - local full suite：`PENDING_FINAL_CANDIDATE_VERIFICATION`；
 - independent code review：`PENDING_FINAL_CANDIDATE_REVIEW`；
 - PR/main CI and annotated tag：`PENDING_REMOTE_RELEASE_GATES`。

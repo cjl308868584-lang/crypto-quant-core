@@ -20,7 +20,7 @@
 - v0.70 has no natural runner and no production start boundary. Its result-evidence builder is fixture-only and must report network/Broker/order/credential/production-write counts as zero.
 - Keep `challenger_replacement_events.py` storage semantics unchanged unless a new focused red test proves a necessary generic fix.
 - Keep v2 `challenger_replacement_runtime.py` and v2 replay behavior unchanged; v3 lives in focused modules.
-- No scheduler, deployment, LaunchAgent, install, start receipt, production root, network, Binance SDK, credential, account, Broker, order, fill, fee, position, PnL, generic UI or production fault seam.
+- No new scheduler, deployment, LaunchAgent, install, start receipt, production root, network, Binance SDK, credential, account, Broker, order, fill, fee, position, PnL, generic UI or production fault seam. The only allowed existing-deployment change is the exact two-literal current-manifest compatibility correction (`1.64.0`/`0.70.0`) if the final full suite proves the committed candidate loader otherwise rejects the complete v0.70 manifest; deployment artifact, path, authority and behavior remain unchanged.
 - `production_activation=false`, `runtime_install_authorized=false`, `replacement_start_authorized=false`, `credentials_allowed=false`, `account_requests_allowed=false`, `broker_requests_allowed=false`, `real_orders_allowed=false` remain true as negative authority gates.
 - New v3 production module target is at most 700 physical lines. Stop and simplify before commit if the gate is exceeded.
 - Every task follows RED -> minimal GREEN -> refactor. Run the local full suite only once at the milestone final code state.
@@ -53,13 +53,14 @@
 - `README.md`: concise v0.70 checkpoint and unchanged nonactivation boundary.
 - `docs/adr/0070-decision-opportunity-event-runtime.md`: architectural decision and nonclaims.
 - `docs/implementation-status-v0.70.0.md`: exact implementation/test/release status.
+- `src/crypto_quant/challenger_replacement_deployment.py`: only the two current-manifest compatibility literals described above; no deployment semantics.
 
 **Must not modify**
 
 - `src/crypto_quant/challenger_replacement_events.py`
 - `src/crypto_quant/challenger_replacement_runtime.py`
 - v0.64/v0.67/v0.68/v0.69 committed artifacts and schemas
-- deployment/install/observer/start/CLI modules
+- install/observer/start/CLI modules and every deployment behavior other than the exact two compatibility literals above
 
 ---
 
@@ -254,7 +255,7 @@ git commit -m "feat: derive decision opportunity schedule"
 
 **Interfaces:**
 - Consumes: `ChallengerReplacementEventRoot`, `build_challenger_replacement_event`, `publish_challenger_replacement_event`, `replay_challenger_replacement_events`, a mapping whose canonical v3 semantics exactly match the frozen v0.69 plan, and v0.70 build identity.
-- Produces: `ChallengerReplacementOpportunityState(event_root, plan, build_identity)`, `.replay() -> dict`, and `.append(event_type, opportunity_id, worker_id, recorded_at, payload, expected_last_event_hash) -> ChallengerReplacementCanonicalEvent`.
+- Produces: `ChallengerReplacementOpportunityState(event_root, plan, build_identity)`, `.replay() -> dict`, and `.append(event_type, opportunity_id, worker_id, recorded_at, payload, expected_last_event_hash) -> ChallengerReplacementEventPublication`.
 
 - [ ] **Step 1: Write genesis state-machine RED**
 
@@ -284,7 +285,7 @@ Expected: missing state class/append behavior.
 
 Use one private `_apply_event(projection, event, plan, build_identity)` for replay and pre-publish validation. First require `challenger_replacement_plan_v3_reasons(plan) == ()` and exact frozen v0.69 plan ID/hash constants; do not claim path provenance. Validate envelope `slot_id == opportunity_id`, plan/build hashes, payload exact keys, nonempty canonical JSON source/decision fixture bytes, evidence byte hashes, fixture evidence binding, capture window, stage parent hashes and monotonic times. Do not call v2 source/decision loaders or claim v3 market/strategy semantic validation. Keep private previous-observed source/decision bytes/hashes out of public projection.
 
-`append` must fresh replay, compare `expected_last_event_hash`, apply to a copy, publish once and return. On stale token raise `CHALLENGER_REPLACEMENT_OPPORTUNITY_SEQUENCE_CONFLICT`; do not rebase internally.
+`append` must fresh replay, compare `expected_last_event_hash`, apply to a copy, publish once and return the publisher outcome. It may confirm only an immediate exact retry whose last event has the supplied parent token and byte-identical frozen candidate, returning `ALREADY_COMMITTED`; any older token or changed candidate raises `CHALLENGER_REPLACEMENT_OPPORTUNITY_SEQUENCE_CONFLICT`. Do not rebase internally.
 
 - [ ] **Step 4: Add invariant RED tests**
 
@@ -343,7 +344,7 @@ Expected: missing catch-up API.
 
 - [ ] **Step 3: Implement ordered catch-up**
 
-Fresh replay before each append. For every derived `EXPIRED` opportunity with no terminal event, append only `OPPORTUNITY_MISSED` using a parent-hash token. On sequence conflict return the fixed conflict for the caller to replay; do not silently continue. Stop before an `ELIGIBLE_WINDOW` opportunity and return it as read-only eligibility.
+Fresh replay before each append. For every derived `EXPIRED` opportunity with no terminal event, append only `OPPORTUNITY_MISSED` using a parent-hash token. On sequence conflict return the fixed conflict for the caller to replay; do not silently continue. Stop before an `ELIGIBLE_WINDOW` opportunity and return it as read-only eligibility. Stop before `NOT_OPEN` too, but return no eligible opportunity and append no event.
 
 - [ ] **Step 4: Write partial-stage expiry RED and implement**
 

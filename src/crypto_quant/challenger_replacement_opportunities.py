@@ -488,7 +488,10 @@ def _apply_event(projection, event, plan, build_identity):
             raise ChallengerReplacementOpportunityError(
                 "CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID"
             ) from error
-        if _time(header["recorded_at"]) < _time(slot["input_recorded_at"]):
+        if (
+            header["recorded_at"] != evidence["observed_at"]
+            or _time(header["recorded_at"]) < _time(slot["input_recorded_at"])
+        ):
             _invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
         slot.update(
             stage=event_type,
@@ -524,6 +527,7 @@ def _apply_event(projection, event, plan, build_identity):
         slot["stage"] != "RESULT_PREPARED"
         or dict(payload) != expected
         or header.get("recorded_at") != payload["observed_at"]
+        or _time(header["recorded_at"]) < _time(slot["result_recorded_at"])
     ):
         _invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
     slot.update(stage=event_type, outcome="OBSERVED")
@@ -593,8 +597,6 @@ class ChallengerReplacementOpportunityState:
         payload, expected_last_event_hash
     ):
         projection = self._replay()
-        if projection["last_event_hash"] != expected_last_event_hash:
-            _invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_SEQUENCE_CONFLICT")
         if (
             not isinstance(payload, Mapping)
             or not isinstance(worker_id, str)
@@ -602,22 +604,34 @@ class ChallengerReplacementOpportunityState:
         ):
             _invalid()
         try:
+            retry = projection["last_event_hash"] != expected_last_event_hash
+            events = projection["events"]
+            if retry and (
+                not events
+                or events[-1].previous_event_hash != expected_last_event_hash
+            ):
+                _invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_SEQUENCE_CONFLICT")
             event = build_challenger_replacement_event(
-                sequence=projection["next_sequence"],
+                sequence=(
+                    events[-1].sequence if retry else projection["next_sequence"]
+                ),
                 event_type=event_type,
                 slot_id=opportunity_id,
                 worker_id=worker_id,
                 recorded_at=recorded_at,
-                previous_event_hash=projection["last_event_hash"],
+                previous_event_hash=expected_last_event_hash,
                 payload_bytes=canonical_json(dict(payload)).encode("utf-8"),
                 plan_hash=_PLAN_HASH,
                 build_identity_hash=business_hash(self.build_identity),
                 event_root=self.event_root,
             )
+            if retry:
+                if event.final_bytes != events[-1].final_bytes:
+                    _invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_SEQUENCE_CONFLICT")
+                return publish_challenger_replacement_event(self.event_root, event)
             candidate = deepcopy(projection)
             _apply_event(candidate, event, self.plan, self.build_identity)
-            publish_challenger_replacement_event(self.event_root, event)
-            return event
+            return publish_challenger_replacement_event(self.event_root, event)
         except ChallengerReplacementOpportunityError:
             raise
         except ChallengerReplacementEventError as error:
@@ -646,7 +660,9 @@ def catch_up_missed_opportunities(
         terminal_scheduled_for=projection["terminal_scheduled_for"],
     ):
         if candidate["status"] != "EXPIRED":
-            eligible = candidate
+            eligible = (
+                candidate if candidate["status"] == "ELIGIBLE_WINDOW" else None
+            )
             break
         active = projection["active_opportunity_id"]
         if active not in (None, candidate["opportunity_id"]):

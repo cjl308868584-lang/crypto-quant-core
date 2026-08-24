@@ -410,6 +410,24 @@ class OpportunityStateTests(unittest.TestCase):
             )
         self.assertEqual(len(self.state.replay()["events"]), 1)
 
+    def test_immediate_exact_append_retry_is_already_committed(self):
+        token = self.state.replay()["last_event_hash"]
+        arguments = {
+            "event_type": "INPUT_PREPARED",
+            "opportunity_id": self.ws.opportunity_id,
+            "worker_id": "fixture-worker",
+            "recorded_at": DEFAULT_OBSERVED_AT,
+            "payload": self.ws.input_payload(),
+            "expected_last_event_hash": token,
+        }
+        first = self.state.append(**arguments)
+        second = self.state.append(**arguments)
+        self.assertEqual((first.outcome, second.outcome), (
+            "COMMITTED", "ALREADY_COMMITTED"
+        ))
+        self.assertEqual(first.event_hash, second.event_hash)
+        self.assertEqual(len(self.state.replay()["events"]), 1)
+
     def test_input_and_result_can_terminalize_as_missed(self):
         for after_result in (False, True):
             with self.subTest(after_result=after_result):
@@ -560,6 +578,37 @@ class OpportunityStateTests(unittest.TestCase):
             "INPUT_PREPARED",
         )
 
+    def test_result_recorded_at_must_equal_bound_evidence_time(self):
+        input_event = self._append_input()
+        projection = self.state.replay()
+        with self.assertRaisesRegex(
+            ChallengerReplacementOpportunityError, "EVENT_INVALID"
+        ):
+            self.state.append(
+                event_type="RESULT_PREPARED",
+                opportunity_id=self.ws.opportunity_id,
+                worker_id="fixture-worker",
+                recorded_at="2026-08-24T00:20:00.000Z",
+                payload={
+                    "opportunity_id": self.ws.opportunity_id,
+                    "scheduled_for": DEFAULT_SCHEDULED_FOR,
+                    "input_event_hash": input_event.event_hash,
+                    "input_event_sequence": input_event.sequence,
+                    "source_bundle_sha256": self.ws.source_hash,
+                    "decision_bytes_base64": base64.b64encode(
+                        self.ws.decision_bytes
+                    ).decode("ascii"),
+                    "decision_sha256": self.ws.decision_hash,
+                    "result_evidence_bytes_base64": base64.b64encode(
+                        self.ws.evidence_bytes
+                    ).decode("ascii"),
+                    "result_evidence_sha256": self.ws.evidence_hash,
+                    "previous_observed_decision_hash_or_null": None,
+                },
+                expected_last_event_hash=projection["last_event_hash"],
+            )
+        self.assertEqual(len(self.state.replay()["events"]), 1)
+
     def test_large_coverage_is_exact_and_context_independent(self):
         observed = 9_500_000_000_000_001
         due = 10_000_000_000_000_001
@@ -586,6 +635,17 @@ class OpportunityCatchUpTests(unittest.TestCase):
 
     def tearDown(self):
         self.ws.close()
+
+    def test_preopen_opportunity_is_not_returned_as_eligible(self):
+        result = catch_up_missed_opportunities(
+            state=self.state,
+            start_scheduled_for=DEFAULT_SCHEDULED_FOR,
+            detected_at="2026-08-24T00:01:00.000Z",
+            worker_id="fixture-worker",
+            reason_code="PROCESS_NOT_RUNNING",
+        )
+        self.assertIsNone(result["eligible_opportunity"])
+        self.assertEqual(result["projection"]["events"], ())
 
     def test_expired_opportunities_become_ordered_missed_facts(self):
         with patch(

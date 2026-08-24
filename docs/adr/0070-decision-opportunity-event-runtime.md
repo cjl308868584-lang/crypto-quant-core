@@ -41,6 +41,13 @@ read-only overlay requiring explicit start/detected boundaries. Coverage is an
 exact integer fraction and the 95% threshold uses integer cross multiplication;
 there is no float/Decimal context dependence and no PnL field.
 
+The final full-suite gate exposed one legacy coupling: the committed deployment
+candidate loader verifies the complete current build manifest through exact
+package/manifest version literals. v0.70 updates only those two literals to
+`0.70.0`/`1.64.0`; it changes no deployment artifact, path, authority, install
+or start behavior. This is release-identity compatibility, not deployment
+scope.
+
 ## Rejected alternatives
 
 - Modifying the v2 runtime in place would mix permanent-failure slot semantics
