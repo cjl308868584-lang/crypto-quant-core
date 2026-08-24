@@ -167,6 +167,64 @@ def _validate_snapshot(snapshot):
         invalid = quantity <= 0 or margin != 0
     else:
         invalid = quantity >= 0 or margin <= 0
+    stop = snapshot["protective_stop_or_null"]
+    if snapshot["position_state"] != "FLAT" and stop is None:
+        invalid = invalid or snapshot["risk_state"] != "STAGE_FAILED_LOCKED"
+    if snapshot["position_state"] != "FLAT" and stop is not None:
+        product = "spot" if snapshot["position_state"] == "SPOT_LONG" else "perpetual"
+        expected = {
+            "stop_intent_id", "stop_attempt_id", "stop_client_order_id",
+            "product", "side", "reduce_only", "quantity", "trigger_price",
+            "status",
+        }
+        try:
+            trigger = _d(stop["trigger_price"])
+            entry = _d(snapshot["entry_price_or_null"])
+            valid_stop = (
+                isinstance(stop, Mapping)
+                and set(stop) == expected
+                and stop["product"] == product
+                and stop["side"] == ("SELL" if product == "spot" else "BUY")
+                and stop["reduce_only"] is (product == "perpetual")
+                and stop["quantity"] == _c(abs(quantity))
+                and stop["trigger_price"] == _c(trigger)
+                and trigger > 0
+                and ((trigger < entry) if product == "spot" else (trigger > entry))
+                and stop["status"] == "CONFIRMED_FIXTURE"
+                and stop["stop_attempt_id"] == stable_id(
+                    "replacement_attempt",
+                    {"intent_id": stop["stop_intent_id"], "attempt_ordinal": 1},
+                )
+                and stop["stop_client_order_id"] == stable_id(
+                    "replacement_client",
+                    {"intent_id": stop["stop_intent_id"], "product": product},
+                )
+                and all(
+                    isinstance(stop[name], str)
+                    and stop[name].startswith(prefix)
+                    and len(stop[name]) == len(prefix) + 64
+                    and all(c in "0123456789abcdef" for c in stop[name][len(prefix):])
+                    for name, prefix in (
+                        ("stop_intent_id", "replacement_stop_"),
+                        ("stop_attempt_id", "replacement_attempt_"),
+                        ("stop_client_order_id", "replacement_client_"),
+                    )
+                )
+            )
+        except (KeyError, TypeError, ChallengerReplacementSimulationError, ValueError):
+            try:
+                trigger = _d(stop["trigger"])
+                entry = _d(snapshot["entry_price_or_null"])
+                valid_stop = (
+                    isinstance(stop, Mapping)
+                    and set(stop) == {"status", "trigger"}
+                    and stop["status"] == "CONFIRMED_FIXTURE"
+                    and stop["trigger"] == _c(trigger)
+                    and ((trigger < entry) if product == "spot" else (trigger > entry))
+                )
+            except (KeyError, TypeError, ChallengerReplacementSimulationError, ValueError):
+                valid_stop = False
+        invalid = invalid or not valid_stop
     if invalid:
         _invalid("CHALLENGER_REPLACEMENT_SIMULATION_SNAPSHOT_INVALID")
     if snapshot["position_certainty"] == "UNRESOLVED" and (
@@ -398,12 +456,46 @@ def _instrument(source, state):
 
 def _fill_price(source, product, side, metadata, contract):
     quote = source["quotes"][product]
+    reference = _d(quote["ask"] if side == "BUY" else quote["bid"])
+    return _adverse_fill_price(reference, side, metadata, contract)
+
+
+def _adverse_fill_price(reference, side, metadata, contract):
     slip = _d(contract["market_order_slippage_per_side"])
     if side == "BUY":
-        raw, rounding = _d(quote["ask"]) * (1 + slip), ROUND_CEILING
+        raw, rounding = reference * (1 + slip), ROUND_CEILING
     else:
-        raw, rounding = _d(quote["bid"]) * (1 - slip), ROUND_FLOOR
+        raw, rounding = reference * (1 - slip), ROUND_FLOOR
     return (raw / metadata.price_tick).to_integral_value(rounding=rounding) * metadata.price_tick
+
+
+def _close_position(snapshot, source, contract, *, fill_or_null=None):
+    state = snapshot["position_state"]
+    product, metadata = _instrument(source, state)
+    if metadata.metadata_hash != snapshot["instrument_metadata_hash_or_null"] or _d(snapshot["contract_multiplier"]) != metadata.contract_multiplier:
+        _invalid("SIMULATION_INSTRUMENT_METADATA_CONFLICT")
+    side = "SELL" if product == "spot" else "BUY"
+    fill = (
+        _fill_price(source, product, side, metadata, contract)
+        if fill_or_null is None
+        else fill_or_null
+    )
+    quantity = abs(_d(snapshot["signed_quantity"]))
+    notional = quantity * metadata.contract_multiplier * fill
+    fee = _money(notional * metadata.taker_fee, debit=True)
+    realized = _signed_cashflow(_d(snapshot["signed_quantity"]) * metadata.contract_multiplier * (fill - _d(snapshot["entry_price_or_null"])))
+    cash = _money(
+        _d(snapshot["cash"])
+        + (notional - fee if product == "spot" else realized - fee)
+    )
+    snapshot.update(position_state="FLAT", cash=_c(cash), signed_quantity="0", entry_price_or_null=None, entry_time=None, isolated_margin="0", contract_multiplier="0", instrument_metadata_hash_or_null=None, realized_pnl=_c(_d(snapshot["realized_pnl"]) + realized), cumulative_fees=_c(_d(snapshot["cumulative_fees"]) + fee), protective_stop_or_null=None, reverse_blocked_until_next_opportunity=True)
+    return {
+        "fill_price": _c(fill),
+        "quantity": _c(quantity),
+        "notional": _c(notional),
+        "fee": _c(fee),
+        "realized_pnl": _c(realized),
+    }
 
 
 def _opening_quantity(source, product, metadata, fill, contract, snapshot):
@@ -496,22 +588,96 @@ def simulate_challenger_replacement_opportunity(
         )
         accounting.update(fill_price=_c(fill), quantity=_c(quantity), notional=_c(notional), fee=_c(fee))
     elif action in {"CLOSE_SPOT_LONG", "CLOSE_PERP_SHORT", "RISK_FLATTEN"} and snapshot["position_state"] != "FLAT":
-        state = snapshot["position_state"]
-        product, metadata = _instrument(source, state)
-        if metadata.metadata_hash != snapshot["instrument_metadata_hash_or_null"] or _d(snapshot["contract_multiplier"]) != metadata.contract_multiplier:
-            _invalid("SIMULATION_INSTRUMENT_METADATA_CONFLICT")
-        side = "SELL" if product == "spot" else "BUY"
-        fill = _fill_price(source, product, side, metadata, contract)
-        quantity = abs(_d(snapshot["signed_quantity"]))
-        notional = quantity * metadata.contract_multiplier * fill
-        fee = _money(notional * metadata.taker_fee, debit=True)
-        realized = _signed_cashflow(_d(snapshot["signed_quantity"]) * metadata.contract_multiplier * (fill - _d(snapshot["entry_price_or_null"])))
-        cash = _money(
-            _d(snapshot["cash"])
-            + (notional - fee if product == "spot" else realized - fee)
-        )
-        snapshot.update(position_state="FLAT", cash=_c(cash), signed_quantity="0", entry_price_or_null=None, entry_time=None, isolated_margin="0", contract_multiplier="0", instrument_metadata_hash_or_null=None, realized_pnl=_c(_d(snapshot["realized_pnl"]) + realized), cumulative_fees=_c(_d(snapshot["cumulative_fees"]) + fee), protective_stop_or_null=None, reverse_blocked_until_next_opportunity=True)
-        accounting.update(fill_price=_c(fill), quantity=_c(quantity), notional=_c(notional), fee=_c(fee), realized_pnl=_c(realized))
+        accounting.update(_close_position(snapshot, source, contract))
     _risk(snapshot, source)
     snapshot = _with_hash(snapshot)
     return {"decision": decision, "accounting": accounting, "next_snapshot": snapshot}
+
+
+@_fixed_decimal
+def _simulate_challenger_replacement_v072_transition(
+    *, source, previous_projection, plan, contract, build_identity
+):
+    """Return the released transition plus private v0.72 protective-stop terms."""
+
+    source = _validate_source(source, plan, contract)
+    previous = _validate_snapshot(previous_projection)
+    stop = previous.get("protective_stop_or_null")
+    if previous["position_state"] != "FLAT" and isinstance(stop, Mapping):
+        product = "spot" if previous["position_state"] == "SPOT_LONG" else "perpetual"
+        expected_keys = {
+            "stop_intent_id", "stop_attempt_id", "stop_client_order_id",
+            "product", "side", "reduce_only", "quantity", "trigger_price", "status",
+        }
+        if set(stop) == expected_keys and stop.get("status") == "CONFIRMED_FIXTURE" and stop.get("product") == product:
+            trigger = _d(stop["trigger_price"])
+            latest = source["bars"][-1]
+            triggered = (
+                _d(latest["low"]) <= trigger
+                if product == "spot"
+                else _d(latest["high"]) >= trigger
+            )
+            if triggered:
+                snapshot = copy.deepcopy(previous)
+                snapshot["parent_snapshot_hash_or_null"] = previous["snapshot_hash"]
+                snapshot["opportunity_id_or_null"] = source["opportunity"]["opportunity_id"]
+                snapshot["reverse_blocked_until_next_opportunity"] = False
+                funding, daily_loss, drawdown = _prepare_boundary(snapshot, source)
+                decision = _decision(source, snapshot, previous["snapshot_hash"], daily_loss, drawdown, plan)
+                decision.update(
+                    action=("STOP_CLOSE_SPOT_LONG" if product == "spot" else "STOP_CLOSE_PERP_SHORT"),
+                    reason_code="PROTECTIVE_STOP_TRIGGERED",
+                    risk_approval="REDUCE_ONLY",
+                )
+                decision = _finalize_decision(decision)
+                market = MarketType.SPOT if product == "spot" else MarketType.USDT_PERP
+                metadata = _metadata(source["instruments"][product]["metadata"], market_type=market)
+                opened = _d(latest["open"])
+                gap = min(opened, trigger) if product == "spot" else max(opened, trigger)
+                side = "SELL" if product == "spot" else "BUY"
+                fill = _adverse_fill_price(gap, side, metadata, contract)
+                accounting = {
+                    "fill_price": None, "quantity": "0", "notional": "0",
+                    "fee": "0", "realized_pnl": "0",
+                    "funding_cashflow": _c(funding),
+                }
+                accounting.update(_close_position(snapshot, source, contract, fill_or_null=fill))
+                _risk(snapshot, source)
+                return {
+                    "decision": decision,
+                    "accounting": accounting,
+                    "next_snapshot": _with_hash(snapshot),
+                    "protective_stop_terms_or_null": None,
+                    "triggered_stop_or_null": {**dict(stop), "bar_open": latest["open"], "bar_high": latest["high"], "bar_low": latest["low"], "gap_reference": _c(gap)},
+                }
+    result = simulate_challenger_replacement_opportunity(
+        source=source,
+        previous_projection=previous_projection,
+        plan=plan,
+        contract=contract,
+        build_identity=build_identity,
+    )
+    action = result["decision"]["action"]
+    if action not in {"OPEN_SPOT_LONG", "OPEN_PERP_SHORT"}:
+        return {**result, "protective_stop_terms_or_null": None, "triggered_stop_or_null": None}
+    product = "spot" if action == "OPEN_SPOT_LONG" else "perpetual"
+    market = MarketType.SPOT if product == "spot" else MarketType.USDT_PERP
+    metadata = _metadata(source["instruments"][product]["metadata"], market_type=market)
+    entry = _d(result["accounting"]["fill_price"])
+    rounding = ROUND_FLOOR if product == "spot" else ROUND_CEILING
+    factor = Decimal("0.98") if product == "spot" else Decimal("1.02")
+    trigger = (
+        (entry * factor / metadata.price_tick).to_integral_value(rounding=rounding)
+        * metadata.price_tick
+    )
+    return {
+        **result,
+        "protective_stop_terms_or_null": {
+            "product": product,
+            "side": "SELL" if product == "spot" else "BUY",
+            "reduce_only": product == "perpetual",
+            "quantity": result["accounting"]["quantity"],
+            "trigger_price": _c(trigger),
+        },
+        "triggered_stop_or_null": None,
+    }

@@ -424,6 +424,34 @@ _V071_RELEASE_PATHS = (
     "docs/implementation-status-v0.71.0.md",
 )
 
+_V072_RELEASE_PATHS = (
+    "config/challenger-replacement-opportunity-result-evidence-v2.schema.json",
+    "config/challenger-replacement-binance-golden-fixture-manifest-v1.schema.json",
+    "artifacts/challenger-replacement/challenger-replacement-binance-golden-fixture-manifest-v0.72.0.json",
+    "tests/fixtures/challenger_replacement_v072/spot-cycle/01-input.json",
+    "tests/fixtures/challenger_replacement_v072/spot-cycle/02-result.json",
+    "tests/fixtures/challenger_replacement_v072/spot-cycle/03-input.json",
+    "tests/fixtures/challenger_replacement_v072/spot-cycle/04-result.json",
+    "tests/fixtures/challenger_replacement_v072/spot-cycle/05-input.json",
+    "tests/fixtures/challenger_replacement_v072/spot-cycle/06-result.json",
+    "tests/fixtures/challenger_replacement_v072/perp-cycle/01-input.json",
+    "tests/fixtures/challenger_replacement_v072/perp-cycle/02-result.json",
+    "tests/fixtures/challenger_replacement_v072/perp-cycle/03-input.json",
+    "tests/fixtures/challenger_replacement_v072/perp-cycle/04-result.json",
+    "tests/fixtures/challenger_replacement_v072/perp-cycle/05-input.json",
+    "tests/fixtures/challenger_replacement_v072/perp-cycle/06-result.json",
+    "tests/fixtures/challenger_replacement_v072/perp-cycle/07-input.json",
+    "tests/fixtures/challenger_replacement_v072/perp-cycle/08-result.json",
+    "tests/test_challenger_replacement_binance_lifecycle.py",
+    "tests/test_challenger_replacement_fixture_simulation.py",
+    "tests/test_challenger_replacement_v072_artifacts.py",
+    "tests/test_challenger_replacement_v072_release.py",
+    "docs/superpowers/specs/2026-08-25-binance-lifecycle-evidence-design.md",
+    "docs/superpowers/plans/2026-08-25-binance-lifecycle-evidence.md",
+    "docs/adr/0072-binance-lifecycle-evidence.md",
+    "docs/implementation-status-v0.72.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -462,6 +490,7 @@ class EvaluatorBuild:
                 + list(_V069_RELEASE_PATHS)
                 + list(_V070_RELEASE_PATHS)
                 + list(_V071_RELEASE_PATHS)
+                + list(_V072_RELEASE_PATHS)
             )
         )
 

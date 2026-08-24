@@ -56,6 +56,18 @@ def fixture_v071_build_identity():
     }
 
 
+def fixture_v072_build_identity():
+    return {
+        "release_tag": "v0.72.0-fixture",
+        "peeled_commit": "9" * 40,
+        "package_version": "0.72.0",
+        "manifest_version": "1.66.0",
+        "build_input_tree_hash": "7" * 64,
+        "manifest_hash": "8" * 64,
+        "manifest_file_sha256": "9" * 64,
+    }
+
+
 def fixture_v071_contract():
     return build_challenger_replacement_simulation_contract(plan=fixture_v3_plan())
 
@@ -160,7 +172,7 @@ def fixture_v071_signal_bars(signal, scheduled_for=DEFAULT_SCHEDULED_FOR):
     return bars
 
 
-def fixture_v071_input_document(
+def _fixture_input_document(
     *,
     scheduled_for=DEFAULT_SCHEDULED_FOR,
     observed_at=DEFAULT_OBSERVED_AT,
@@ -171,10 +183,11 @@ def fixture_v071_input_document(
     perpetual_quote=None,
     funding_boundary_at_or_null=None,
     funding_rate_or_null=None,
+    build_identity=None,
 ):
     plan = fixture_v3_plan()
     contract = fixture_v071_contract()
-    build = fixture_v071_build_identity()
+    build = deepcopy(build_identity or fixture_v071_build_identity())
     scheduled = datetime.fromisoformat(
         scheduled_for.replace("Z", "+00:00")
     ).astimezone(timezone.utc)
@@ -254,8 +267,63 @@ def fixture_v071_input_document(
     return document
 
 
+def fixture_v071_input_document(**kwargs):
+    return _fixture_input_document(**kwargs)
+
+
 def fixture_v071_input_bytes(**kwargs):
     return canonical_json(fixture_v071_input_document(**kwargs)).encode("utf-8")
+
+
+def fixture_v072_input_document(**kwargs):
+    return _fixture_input_document(
+        build_identity=fixture_v072_build_identity(),
+        **kwargs,
+    )
+
+
+def fixture_v072_input_bytes(**kwargs):
+    return canonical_json(fixture_v072_input_document(**kwargs)).encode("utf-8")
+
+
+def fixture_v072_golden_streams():
+    """Return the two fixed ordered v0.72 complete-cycle input streams."""
+
+    definitions = {
+        "spot-cycle": (
+            ("2026-08-24T00:00:00.000Z", "LONG", {}),
+            ("2026-08-24T04:00:00.000Z", "LONG", {}),
+            ("2026-08-24T08:00:00.000Z", "FLAT", {}),
+        ),
+        "perp-cycle": (
+            ("2026-08-25T00:00:00.000Z", "SHORT", {}),
+            ("2026-08-25T04:00:00.000Z", "SHORT", {}),
+            (
+                "2026-08-25T08:00:00.000Z",
+                "SHORT",
+                {
+                    "funding_boundary_at_or_null": "2026-08-25T08:00:00.000Z",
+                    "funding_rate_or_null": "0.0001",
+                },
+            ),
+            ("2026-08-25T12:00:00.000Z", "LONG", {}),
+        ),
+    }
+    streams = {}
+    for name, rows in definitions.items():
+        values = []
+        for scheduled_for, signal, extra in rows:
+            scheduled = datetime.fromisoformat(
+                scheduled_for.replace("Z", "+00:00")
+            ).astimezone(timezone.utc)
+            values.append(fixture_v072_input_bytes(
+                scheduled_for=scheduled_for,
+                observed_at=utc_datetime(scheduled + timedelta(minutes=5)),
+                bars=fixture_v071_signal_bars(signal, scheduled_for),
+                **extra,
+            ))
+        streams[name] = tuple(values)
+    return streams
 
 
 def fixture_opportunity_id(scheduled_for=DEFAULT_SCHEDULED_FOR):

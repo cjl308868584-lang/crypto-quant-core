@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-opportunity-result-evidence-v2.schema.json",
+  "title": "Challenger Replacement Fixture Simulation Result Evidence V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "mode", "result_id", "result_hash", "evidence_qualification", "plan", "simulation_contract", "build_identity", "opportunity", "source", "decision", "previous_snapshot", "risk", "lifecycle", "accounting", "next_snapshot", "authority"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-opportunity-result-evidence-v2.schema.json"},
+    "schema_version": {"const": "2.0.0"},
+    "mode": {"const": "FIXTURE_SIMULATION_NO_NETWORK_NO_ACCOUNT_NO_BROKER_NO_REAL_ORDER"},
+    "result_id": {"type": "string", "pattern": "^challenger_replacement_simulation_result_[0-9a-f]{64}$"},
+    "result_hash": {"$ref": "#/$defs/hash"},
+    "evidence_qualification": {"const": "COMMITTED_FIXTURE_NOT_LIVE_MARKET_OR_ACCOUNT"},
+    "plan": {"$ref": "#/$defs/identity"},
+    "simulation_contract": {"$ref": "#/$defs/contractIdentity"},
+    "build_identity": {"$ref": "#/$defs/buildIdentity"},
+    "opportunity": {"$ref": "#/$defs/opportunity"},
+    "source": {"$ref": "#/$defs/source"},
+    "decision": {"type": "object"},
+    "previous_snapshot": {"type": "object"},
+    "risk": {"$ref": "#/$defs/risk"},
+    "lifecycle": {"$ref": "#/$defs/lifecycle"},
+    "accounting": {"type": "object"},
+    "next_snapshot": {"type": "object"},
+    "authority": {"$ref": "#/$defs/authority"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["plan_id", "plan_hash"],
+      "properties": {"plan_id": {"type": "string"}, "plan_hash": {"$ref": "#/$defs/hash"}}
+    },
+    "contractIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_id", "contract_hash"],
+      "properties": {"contract_id": {"type": "string"}, "contract_hash": {"$ref": "#/$defs/hash"}}
+    },
+    "buildIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_tag", "peeled_commit", "package_version", "manifest_version", "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"],
+      "properties": {
+        "release_tag": {"const": "v0.72.0-fixture"}, "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "package_version": {"const": "0.72.0"}, "manifest_version": {"const": "1.66.0"},
+        "build_input_tree_hash": {"$ref": "#/$defs/hash"}, "manifest_hash": {"$ref": "#/$defs/hash"}, "manifest_file_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "opportunity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["opportunity_id", "scheduled_for", "capture_open", "capture_close", "observed_at"],
+      "properties": {
+        "opportunity_id": {"type": "string"}, "scheduled_for": {"type": "string"}, "capture_open": {"type": "string"},
+        "capture_close": {"type": "string"}, "observed_at": {"type": "string"}
+      }
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["input_id", "input_hash"],
+      "properties": {"input_id": {"type": "string"}, "input_hash": {"$ref": "#/$defs/hash"}}
+    },
+    "risk": {
+      "type": "object", "additionalProperties": false,
+      "required": ["approval", "reason_code"],
+      "properties": {"approval": {"type": "string"}, "reason_code": {"type": "string"}}
+    },
+    "event": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "event_type", "event_hash", "parent_event_hash_or_null", "intent_id_or_null", "attempt_id_or_null", "payload"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}, "event_type": {"type": "string"},
+        "event_hash": {"$ref": "#/$defs/hash"}, "parent_event_hash_or_null": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "intent_id_or_null": {"type": ["string", "null"]}, "attempt_id_or_null": {"type": ["string", "null"]}, "payload": {"type": "object"}
+      }
+    },
+    "lifecycle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "operationally_complete", "reason_code_or_null", "events"],
+      "properties": {
+        "status": {"enum": ["RECONCILED_FIXTURE", "FAILED_CLOSED"]}, "operationally_complete": {"type": "boolean"},
+        "reason_code_or_null": {"type": ["string", "null"]}, "events": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/event"}}
+      }
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["network_requests", "account_requests", "broker_requests", "orders_submitted_to_venue", "credentials_used", "production_state_writes", "production_activation", "runtime_install_authorized", "replacement_start_authorized", "real_orders_allowed"],
+      "properties": {
+        "network_requests": {"const": 0}, "account_requests": {"const": 0}, "broker_requests": {"const": 0},
+        "orders_submitted_to_venue": {"const": 0}, "credentials_used": {"const": false}, "production_state_writes": {"const": 0},
+        "production_activation": {"const": false}, "runtime_install_authorized": {"const": false},
+        "replacement_start_authorized": {"const": false}, "real_orders_allowed": {"const": false}
+      }
+    }
+  }
+}

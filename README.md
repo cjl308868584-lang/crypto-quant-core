@@ -4,6 +4,13 @@
 
 项目当前处于设计基线阶段。任何回测收益、模型准确率或论文结果都不构成实盘盈利承诺；系统首先要证明数据、验证、执行和风险闭环可信，然后才允许逐级使用真实资金。
 
+## Binance Lifecycle Evidence v0.72.0
+
+v0.72.0 仅验证 fixture-only 的 Spot-long / perpetual-short 生命周期、三方
+对账、失败关闭、崩溃恢复和 canonical complete-cycle goldens。它仍然是
+no install/start/account/credential/order/funds；没有启动 Paper 或 7/90 天
+计时，不构成盈利、AI 优势、Canary 或实盘资格声明。
+
 ## 当前权威文档
 
 1. [系统计划 v1.1](docs/system-plan-v1.1.md)
