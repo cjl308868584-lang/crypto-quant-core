@@ -286,5 +286,45 @@ def fixture_v072_input_bytes(**kwargs):
     return canonical_json(fixture_v072_input_document(**kwargs)).encode("utf-8")
 
 
+def fixture_v072_golden_streams():
+    """Return the two fixed ordered v0.72 complete-cycle input streams."""
+
+    definitions = {
+        "spot-cycle": (
+            ("2026-08-24T00:00:00.000Z", "LONG", {}),
+            ("2026-08-24T04:00:00.000Z", "LONG", {}),
+            ("2026-08-24T08:00:00.000Z", "FLAT", {}),
+        ),
+        "perp-cycle": (
+            ("2026-08-25T00:00:00.000Z", "SHORT", {}),
+            ("2026-08-25T04:00:00.000Z", "SHORT", {}),
+            (
+                "2026-08-25T08:00:00.000Z",
+                "SHORT",
+                {
+                    "funding_boundary_at_or_null": "2026-08-25T08:00:00.000Z",
+                    "funding_rate_or_null": "0.0001",
+                },
+            ),
+            ("2026-08-25T12:00:00.000Z", "LONG", {}),
+        ),
+    }
+    streams = {}
+    for name, rows in definitions.items():
+        values = []
+        for scheduled_for, signal, extra in rows:
+            scheduled = datetime.fromisoformat(
+                scheduled_for.replace("Z", "+00:00")
+            ).astimezone(timezone.utc)
+            values.append(fixture_v072_input_bytes(
+                scheduled_for=scheduled_for,
+                observed_at=utc_datetime(scheduled + timedelta(minutes=5)),
+                bars=fixture_v071_signal_bars(signal, scheduled_for),
+                **extra,
+            ))
+        streams[name] = tuple(values)
+    return streams
+
+
 def fixture_opportunity_id(scheduled_for=DEFAULT_SCHEDULED_FOR):
     return "ETHUSDT@" + scheduled_for
