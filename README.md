@@ -380,7 +380,18 @@ Canary 仅预注册 Binance ETH/USDT 无保证金现货做多与 ETHUSDT USDⓈ-
 `replacement_start_authorized=false`、`real_orders_allowed=false`，
 `no seven-day timer started`、`no 90-day timer started`。
 
-仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的启动前代码批次现已覆盖 v0.59 evaluator、v0.60 Tail-Blind 运维投影和 v0.61 只读 Web/alerts/runbooks，但仍未 production 安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。replacement Challenger 已完成 v0.64 plan-only storage supersession、v0.66 三阶段 append-only event runtime、v0.67 live deployment candidate、v0.68 install/observer/start trust chain 和 v0.69 DecisionOpportunity/Canary 预注册，但仍未安装/启动，且仍缺后续评估器与运维接线；Nautilus v0.65 的正式重评因冻结 platform gate 保持 `INCONCLUSIVE_KEEP_CURRENT_CORE`，没有接管任何事实源。两条流都必须在启动前工程和真实机器门完成后，才能从各自首个验证自然证据的 start receipt 独立计时。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.69.0](docs/implementation-status-v0.69.0.md)，工程裁决见[ADR-0069](docs/adr/0069-decision-opportunity-binance-canary-preregistration.md)。
+DecisionOpportunity Event Runtime v0.70.0 以 v0.66 未修改的 append-only event
+store 为唯一权威，实现 `INPUT_PREPARED -> RESULT_PREPARED ->
+OPPORTUNITY_OBSERVED` 与不可回填的 `OPPORTUNITY_MISSED`。过期机会按显式
+fixture/orchestration 时间顺序记录，后续四小时自然机会可恢复；coverage 只用整数
+fraction 计算。当前 result evidence 为 fixture-only，不验证 Binance 行情、策略、成交、
+费用、仓位或 PnL，也不提供 natural runner。状态为
+`DECISION_OPPORTUNITY_EVENT_RUNTIME_FIXTURE_ONLY`：
+`production_activation=false`、`runtime_install_authorized=false`、
+`replacement_start_authorized=false`、`real_orders_allowed=false`，
+`no seven-day timer started`、`no 90-day timer started`。
+
+仓库仍没有批准AI模型、真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的启动前代码批次现已覆盖 v0.59 evaluator、v0.60 Tail-Blind 运维投影和 v0.61 只读 Web/alerts/runbooks，但仍未 production 安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。replacement Challenger 已完成 v0.64 plan-only storage supersession、v0.66 三阶段 append-only event runtime、v0.67 live deployment candidate、v0.68 install/observer/start trust chain、v0.69 DecisionOpportunity/Canary 预注册和 v0.70 fixture-only opportunity event/recovery runtime，但仍未安装/启动，且仍缺 Binance simulation、最终评估器与运维接线；Nautilus v0.65 的正式重评因冻结 platform gate 保持 `INCONCLUSIVE_KEEP_CURRENT_CORE`，没有接管任何事实源。两条流都必须在启动前工程和真实机器门完成后，才能从各自首个验证自然证据的 start receipt 独立计时。`production_activation.enabled=false`继续生效。详细完成度见[实施追踪 v0.70.0](docs/implementation-status-v0.70.0.md)，工程裁决见[ADR-0070](docs/adr/0070-decision-opportunity-event-runtime.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。
 
 本地验证：

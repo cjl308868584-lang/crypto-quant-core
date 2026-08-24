@@ -395,6 +395,18 @@ _V069_RELEASE_PATHS = (
     "docs/implementation-status-v0.69.0.md",
 )
 
+_V070_RELEASE_PATHS = (
+    "config/challenger-replacement-opportunity-result-evidence-v1.schema.json",
+    "tests/challenger_replacement_v3_fixtures.py",
+    "tests/test_challenger_replacement_opportunity_evidence.py",
+    "tests/test_challenger_replacement_opportunities.py",
+    "tests/test_challenger_replacement_v070_release.py",
+    "docs/superpowers/specs/2026-08-24-decision-opportunity-event-runtime-design.md",
+    "docs/superpowers/plans/2026-08-24-decision-opportunity-event-runtime.md",
+    "docs/adr/0070-decision-opportunity-event-runtime.md",
+    "docs/implementation-status-v0.70.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -431,6 +443,7 @@ class EvaluatorBuild:
                 + list(_V067_RELEASE_PATHS)
                 + list(_V068_RELEASE_PATHS)
                 + list(_V069_RELEASE_PATHS)
+                + list(_V070_RELEASE_PATHS)
             )
         )
 
