@@ -1,9 +1,11 @@
 import copy
+import hashlib
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, localcontext
 import unittest
 
 from crypto_quant.evidence import artifact_self_hash
+from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_binance_simulation_input import (
     load_challenger_replacement_binance_simulation_input_bytes,
 )
@@ -99,6 +101,18 @@ class ChallengerReplacementSimulationTests(unittest.TestCase):
             snapshot["snapshot_hash"],
             artifact_self_hash(snapshot, "snapshot_hash"),
         )
+
+    def test_public_v071_result_bytes_remain_frozen_for_all_signals(self):
+        expected = {
+            "FLAT": (2124, "2a43ff164c0729808ef5b3f73da8415856d7d366cc7173407da091805d9bfd6d"),
+            "LONG": (2388, "f8e738ac45b4c99c8b574360b3545764d21b175a392a1c7ff0213fbb3fb23d98"),
+            "SHORT": (2377, "ef5a5a0a2bdaf15980c72784863489f26591606c4f4e2cd4a1b8febf22580e7b"),
+        }
+        for signal, (size, digest) in expected.items():
+            with self.subTest(signal=signal):
+                data = canonical_json(self.simulate(self.source(signal=signal))).encode()
+                self.assertEqual(len(data), size)
+                self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
 
     def test_flat_decision_uses_exact_sma20_and_lag5_sign(self):
         cases = (

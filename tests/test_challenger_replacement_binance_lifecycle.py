@@ -1,6 +1,8 @@
 import inspect
 import json
 import unittest
+from datetime import datetime, timedelta
+from decimal import Decimal
 
 from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_binance_simulation_input import (
@@ -41,6 +43,35 @@ class ChallengerReplacementBinanceLifecycleTests(unittest.TestCase):
         self.genesis = build_challenger_replacement_genesis_snapshot(
             plan=self.plan,
             contract=self.contract,
+        )
+
+    def source_for(
+        self,
+        signal,
+        scheduled_for="2026-08-24T00:00:00.000Z",
+        bars=None,
+        **kwargs,
+    ):
+        scheduled = datetime.fromisoformat(scheduled_for.replace("Z", "+00:00"))
+        observed_at = (scheduled + timedelta(minutes=5)).isoformat(
+            timespec="milliseconds"
+        ).replace("+00:00", "Z")
+        data = fixture_v072_input_bytes(
+            scheduled_for=scheduled_for,
+            observed_at=observed_at,
+            bars=(
+                fixture_v071_signal_bars(signal, scheduled_for)
+                if bars is None
+                else bars
+            ),
+            **kwargs,
+        )
+        return load_challenger_replacement_binance_simulation_input_bytes(
+            data,
+            plan=self.plan,
+            contract=self.contract,
+            build_identity=self.build,
+            opportunity_id=fixture_opportunity_id(scheduled_for),
         )
 
     def simulate(self, **overrides):
@@ -149,6 +180,172 @@ class ChallengerReplacementBinanceLifecycleTests(unittest.TestCase):
             "CHALLENGER_REPLACEMENT_LIFECYCLE_IDENTITY_INVALID",
         ):
             self.simulate(build_identity=fixture_v071_build_identity())
+
+    def test_spot_open_has_exact_full_fill_and_confirmed_stop_sequence(self):
+        result = self.simulate(source=self.source_for("LONG"))
+        self.assertEqual(
+            [event.event_type for event in result.lifecycle_events],
+            [
+                "INTENT_PREPARED",
+                "ATTEMPT_SUBMITTED_FIXTURE",
+                "ORDER_ACKNOWLEDGED_FIXTURE",
+                "FILL_OBSERVED_FIXTURE",
+                "ORDER_RECONCILED_FIXTURE",
+                "STOP_INTENT_PREPARED",
+                "STOP_ACKNOWLEDGED_FIXTURE",
+                "LIFECYCLE_RECONCILED_FIXTURE",
+            ],
+        )
+        decision = json.loads(result.decision_bytes)
+        accounting = json.loads(result.accounting_bytes)
+        snapshot = json.loads(result.next_snapshot_bytes)
+        self.assertEqual(decision["action"], "OPEN_SPOT_LONG")
+        self.assertEqual(accounting["fill_price"], "2003.01")
+        self.assertEqual(snapshot["position_state"], "SPOT_LONG")
+        stop = snapshot["protective_stop_or_null"]
+        self.assertEqual(
+            set(stop),
+            {
+                "stop_intent_id",
+                "stop_attempt_id",
+                "stop_client_order_id",
+                "product",
+                "side",
+                "reduce_only",
+                "quantity",
+                "trigger_price",
+                "status",
+            },
+        )
+        self.assertEqual(
+            {key: stop[key] for key in (
+                "product", "side", "reduce_only", "quantity",
+                "trigger_price", "status",
+            )},
+            {
+                "product": "spot",
+                "side": "SELL",
+                "reduce_only": False,
+                "quantity": accounting["quantity"],
+                "trigger_price": "1962.94",
+                "status": "CONFIRMED_FIXTURE",
+            },
+        )
+        self.assertRegex(stop["stop_intent_id"], r"^replacement_stop_[0-9a-f]{64}$")
+        self.assertRegex(stop["stop_attempt_id"], r"^replacement_attempt_[0-9a-f]{64}$")
+        self.assertRegex(stop["stop_client_order_id"], r"^replacement_client_[0-9a-f]{64}$")
+        stop_prepared = json.loads(result.lifecycle_events[5].payload_bytes)
+        stop_ack = json.loads(result.lifecycle_events[6].payload_bytes)
+        self.assertEqual(stop_prepared["stop_intent_id"], stop["stop_intent_id"])
+        self.assertEqual(stop_ack["stop_client_order_id"], stop["stop_client_order_id"])
+
+    def test_perpetual_open_is_sell_isolated_and_has_rounded_up_stop(self):
+        result = self.simulate(source=self.source_for("SHORT"))
+        decision = json.loads(result.decision_bytes)
+        accounting = json.loads(result.accounting_bytes)
+        snapshot = json.loads(result.next_snapshot_bytes)
+        intent = json.loads(result.lifecycle_events[0].payload_bytes)
+        stop = snapshot["protective_stop_or_null"]
+        self.assertEqual(decision["action"], "OPEN_PERP_SHORT")
+        self.assertEqual(intent["product"], "perpetual")
+        self.assertEqual(intent["side"], "SELL")
+        self.assertFalse(intent["reduce_only"])
+        self.assertGreater(Decimal(snapshot["isolated_margin"]), 0)
+        self.assertEqual(stop["side"], "BUY")
+        self.assertTrue(stop["reduce_only"])
+        self.assertEqual(stop["quantity"], accounting["quantity"])
+        self.assertEqual(stop["trigger_price"], "2036.43")
+
+    def test_normal_close_cancels_stop_before_reduce_order_and_finishes_flat(self):
+        cases = (
+            ("LONG", "SPOT_LONG", "spot", "SELL", False),
+            ("SHORT", "PERP_SHORT", "perpetual", "BUY", True),
+        )
+        for signal, state, product, side, reduce_only in cases:
+            with self.subTest(product=product):
+                opened = self.simulate(source=self.source_for(signal))
+                previous = json.loads(opened.next_snapshot_bytes)
+                self.assertEqual(previous["position_state"], state)
+                closed = self.simulate(
+                    source=self.source_for(
+                        "FLAT", "2026-08-24T12:00:00.000Z"
+                    ),
+                    previous_projection=previous,
+                )
+                self.assertEqual(
+                    [event.event_type for event in closed.lifecycle_events],
+                    [
+                        "STOP_CANCEL_REQUESTED_FIXTURE",
+                        "STOP_CANCEL_ACKNOWLEDGED_FIXTURE",
+                        "INTENT_PREPARED",
+                        "ATTEMPT_SUBMITTED_FIXTURE",
+                        "ORDER_ACKNOWLEDGED_FIXTURE",
+                        "FILL_OBSERVED_FIXTURE",
+                        "ORDER_RECONCILED_FIXTURE",
+                        "LIFECYCLE_RECONCILED_FIXTURE",
+                    ],
+                )
+                intent = json.loads(closed.lifecycle_events[2].payload_bytes)
+                self.assertEqual(intent["product"], product)
+                self.assertEqual(intent["side"], side)
+                self.assertEqual(intent["reduce_only"], reduce_only)
+                next_snapshot = json.loads(closed.next_snapshot_bytes)
+                self.assertEqual(next_snapshot["position_state"], "FLAT")
+                self.assertIsNone(next_snapshot["protective_stop_or_null"])
+
+    def test_perpetual_hold_applies_funding_and_preserves_exact_stop(self):
+        opened = self.simulate(source=self.source_for("SHORT"))
+        previous = json.loads(opened.next_snapshot_bytes)
+        held = self.simulate(
+            source=self.source_for(
+                "SHORT",
+                "2026-08-24T04:00:00.000Z",
+                funding_boundary_at_or_null="2026-08-24T04:00:00.000Z",
+                funding_rate_or_null="0.0001",
+            ),
+            previous_projection=previous,
+        )
+        self.assertEqual(json.loads(held.decision_bytes)["action"], "HOLD_PERP_SHORT")
+        self.assertNotEqual(json.loads(held.accounting_bytes)["funding_cashflow"], "0")
+        self.assertEqual(
+            json.loads(held.next_snapshot_bytes)["protective_stop_or_null"],
+            previous["protective_stop_or_null"],
+        )
+
+    def test_stop_trigger_precedes_strategy_and_uses_gap_adverse_fill(self):
+        cases = (
+            ("LONG", "spot", "STOP_CLOSE_SPOT_LONG", "1960.97", "low", "1900"),
+            ("SHORT", "perpetual", "STOP_CLOSE_PERP_SHORT", "2038.47", "high", "2100"),
+        )
+        for signal, product, action, fill, extreme_key, extreme in cases:
+            with self.subTest(product=product):
+                opened = self.simulate(source=self.source_for(signal))
+                previous = json.loads(opened.next_snapshot_bytes)
+                scheduled = "2026-08-24T04:00:00.000Z"
+                bars = fixture_v071_signal_bars("FLAT", scheduled)
+                bars[-1][extreme_key] = extreme
+                stopped = self.simulate(
+                    source=self.source_for("FLAT", scheduled, bars=bars),
+                    previous_projection=previous,
+                )
+                decision = json.loads(stopped.decision_bytes)
+                self.assertEqual(decision["action"], action)
+                self.assertEqual(decision["reason_code"], "PROTECTIVE_STOP_TRIGGERED")
+                self.assertEqual(decision["risk_approval"], "REDUCE_ONLY")
+                self.assertEqual(
+                    [event.event_type for event in stopped.lifecycle_events],
+                    [
+                        "STOP_TRIGGERED_FIXTURE",
+                        "FILL_OBSERVED_FIXTURE",
+                        "ORDER_RECONCILED_FIXTURE",
+                        "LIFECYCLE_RECONCILED_FIXTURE",
+                    ],
+                )
+                self.assertEqual(json.loads(stopped.accounting_bytes)["fill_price"], fill)
+                self.assertEqual(
+                    json.loads(stopped.next_snapshot_bytes)["position_state"],
+                    "FLAT",
+                )
 
 
 if __name__ == "__main__":

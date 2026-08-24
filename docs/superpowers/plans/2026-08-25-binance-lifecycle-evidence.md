@@ -306,7 +306,7 @@ identity and require cancel ACK before the reduce close.
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m unittest \
+PYTHONPATH=src:tests python3 -m unittest \
   tests.test_challenger_replacement_binance_lifecycle \
   tests.test_challenger_replacement_simulation \
   tests.test_instruments tests.test_orders tests.test_ledger \
