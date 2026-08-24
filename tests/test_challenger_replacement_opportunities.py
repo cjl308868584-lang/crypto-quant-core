@@ -2,8 +2,13 @@ import decimal
 import base64
 import copy
 import hashlib
+import json
+import os
+import subprocess
+import sys
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 from crypto_quant.canonical import canonical_json
@@ -768,6 +773,99 @@ class OpportunityCatchUpTests(unittest.TestCase):
                         reason_code=reason,
                     )
         self.assertEqual(len(self.state.replay()["events"]), 0)
+
+
+class OpportunitySemanticRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.ws = OpportunityStateWorkspace()
+        self.state = self.ws.state()
+
+    def tearDown(self):
+        self.ws.close()
+
+    def _fresh_process_projection(self):
+        identity = self.ws.files.identity()
+        values = {
+            "absolute_path": identity.absolute_path,
+            "device": identity.device,
+            "inode": identity.inode,
+            "uid": identity.uid,
+            "mode_octal": identity.mode_octal,
+        }
+        script = r'''
+import json, sys
+from crypto_quant.challenger_replacement_events import (
+    ChallengerReplacementEventRootIdentity,
+    open_challenger_replacement_event_root,
+)
+from crypto_quant.challenger_replacement_opportunities import (
+    ChallengerReplacementOpportunityState,
+)
+from tests.challenger_replacement_v3_fixtures import (
+    fixture_v070_build_identity, fixture_v3_plan,
+)
+identity = ChallengerReplacementEventRootIdentity(**json.loads(sys.argv[1]))
+with open_challenger_replacement_event_root(identity) as root:
+    projection = ChallengerReplacementOpportunityState(
+        event_root=root, plan=fixture_v3_plan(),
+        build_identity=fixture_v070_build_identity(),
+    ).replay()
+print(json.dumps({
+    "active": projection["active_opportunity_id"],
+    "events": len(projection["events"]),
+    "observed": projection["observed_opportunity_count"],
+    "missed": projection["missed_opportunity_count"],
+}, sort_keys=True))
+'''
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = "src"
+        result = subprocess.run(
+            [sys.executable, "-c", script, json.dumps(values)],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return json.loads(result.stdout)
+
+    def test_fresh_interpreter_replays_each_durable_semantic_boundary(self):
+        input_event = OpportunityStateTests._append_input(self)
+        self.assertEqual(
+            self._fresh_process_projection(),
+            {
+                "active": self.ws.opportunity_id,
+                "events": 1,
+                "missed": 0,
+                "observed": 0,
+            },
+        )
+        OpportunityStateTests._append_result(self, input_event)
+        self.assertEqual(self._fresh_process_projection()["events"], 2)
+        catch_up_missed_opportunities(
+            state=self.state,
+            start_scheduled_for=DEFAULT_SCHEDULED_FOR,
+            detected_at="2026-08-24T00:11:00.000Z",
+            worker_id="fixture-worker",
+            reason_code="CAPTURE_WINDOW_EXPIRED",
+        )
+        self.assertEqual(
+            self._fresh_process_projection(),
+            {"active": None, "events": 3, "missed": 1, "observed": 0},
+        )
+
+    def test_replaced_root_propagates_fixed_event_failure_without_append(self):
+        displaced = self.ws.files.base / "retained-events"
+        self.ws.files.event_root.rename(displaced)
+        self.ws.files.event_root.mkdir(mode=0o700)
+        with self.assertRaisesRegex(
+            ChallengerReplacementOpportunityError,
+            "CHALLENGER_REPLACEMENT_EVENT_ROOT_CHANGED",
+        ):
+            self.state.replay()
+        self.assertEqual(list(self.ws.files.event_root.iterdir()), [])
+        self.assertEqual(list(displaced.iterdir()), [])
 
 
 if __name__ == "__main__":
