@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "operations-projection-v2.schema.json",
+  "title": "Tail-Blind Operations Projection V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema","schema_version","projected_at","status","release","legacy_challenger","replacement_v3","system_paper","projection_hash"],
+  "properties": {
+    "$schema": {"const":"./operations-projection-v2.schema.json"},
+    "schema_version": {"const":"2.0.0"},
+    "projected_at": {"$ref":"#/$defs/timestamp"},
+    "status": {"enum":["HEALTHY","DEGRADED","FAILED_CLOSED"]},
+    "release": {"$ref":"#/$defs/release"},
+    "legacy_challenger": {"$ref":"#/$defs/legacy"},
+    "replacement_v3": {"$ref":"#/$defs/replacement"},
+    "system_paper": {"$ref":"#/$defs/paper"},
+    "projection_hash": {"$ref":"#/$defs/sha"}
+  },
+  "$defs": {
+    "timestamp": {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+    "sha": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "commit": {"type":"string","pattern":"^[0-9a-f]{40}$"},
+    "count": {"type":"integer","minimum":0,"maximum":9007199254740991},
+    "health": {"enum":["NOT_LOADED","HEALTHY","DEGRADED","FAILED_CLOSED"]},
+    "evidence": {"enum":["VERIFIED","STALE","INCIDENT_DETECTED","FAILED_CLOSED","NOT_AVAILABLE"]},
+    "provenance": {
+      "type":"object","additionalProperties":false,
+      "required":["source_kind","source_sha256","observed_at","freshness"],
+      "properties":{
+        "source_kind":{"enum":["RELEASE_IDENTITY","CHALLENGER_OPERATIONS","SYSTEM_PAPER_OPERATIONS"]},
+        "source_sha256":{"$ref":"#/$defs/sha"},
+        "observed_at":{"$ref":"#/$defs/timestamp"},
+        "freshness":{"enum":["IDENTITY_VERIFIED","FRESH","STALE"]}
+      }
+    },
+    "release": {
+      "type":"object","additionalProperties":false,
+      "required":["package_version","main_commit","release_tag","tag_commit","identity_status","provenance"],
+      "properties":{
+        "package_version":{"type":"string","pattern":"^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+        "main_commit":{"$ref":"#/$defs/commit"},
+        "release_tag":{"type":"string","pattern":"^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+        "tag_commit":{"$ref":"#/$defs/commit"},
+        "identity_status":{"const":"VERIFIED"},
+        "provenance":{"$ref":"#/$defs/provenance"}
+      }
+    },
+    "legacy": {
+      "type":"object","additionalProperties":false,
+      "required":["phase","service_health","evidence_health","verified_slot_count","completed_episode_count","active_episode_present","next_required_slot","gate_status","incident_count","provenance"],
+      "properties":{
+        "phase":{"enum":["LEGACY_FAILED_REPLACEMENT_NOT_STARTED","REPLACEMENT_NOT_STARTED","COLLECTING","FINAL"]},
+        "service_health":{"$ref":"#/$defs/health"},"evidence_health":{"$ref":"#/$defs/evidence"},
+        "verified_slot_count":{"$ref":"#/$defs/count"},"completed_episode_count":{"$ref":"#/$defs/count"},
+        "active_episode_present":{"type":"boolean"},
+        "next_required_slot":{"oneOf":[{"$ref":"#/$defs/timestamp"},{"type":"null"}]},
+        "gate_status":{"enum":["NOT_AVAILABLE","WITHHELD_PRE_TAIL","RESEARCH_CONTINUATION_GATE_PASS","RESEARCH_CONTINUATION_GATE_DID_NOT_PASS","INCONCLUSIVE_INSUFFICIENT_EVIDENCE"]},
+        "incident_count":{"$ref":"#/$defs/count"},"provenance":{"$ref":"#/$defs/provenance"}
+      }
+    },
+    "next_opportunity": {
+      "type":"object","additionalProperties":false,
+      "required":["opportunity_id","scheduled_for"],
+      "properties":{
+        "opportunity_id":{"type":"string","pattern":"^ETHUSDT@[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:00:00\\.000Z$"},
+        "scheduled_for":{"$ref":"#/$defs/timestamp"}
+      }
+    },
+    "replacement_provenance": {
+      "type":"object","additionalProperties":false,
+      "required":["authority_status","event_evidence_identity_hash","release_provenance_hash","provenance_hash","observed_at","freshness"],
+      "properties":{
+        "authority_status":{"const":"FIXTURE_NOT_OPERATIONAL"},
+        "event_evidence_identity_hash":{"$ref":"#/$defs/sha"},
+        "release_provenance_hash":{"$ref":"#/$defs/sha"},
+        "provenance_hash":{"$ref":"#/$defs/sha"},
+        "observed_at":{"$ref":"#/$defs/timestamp"},
+        "freshness":{"enum":["FRESH","STALE"]}
+      }
+    },
+    "replacement": {
+      "type":"object","additionalProperties":false,
+      "required":["phase","service_health","evidence_health","due_opportunity_count","terminal_opportunity_count","observed_opportunity_count","missed_opportunity_count","observed_coverage_numerator","observed_coverage_denominator","meets_minimum_observed_coverage","terminal_coverage_complete","current_consecutive_missed","maximum_consecutive_missed","last_missed_reason_or_null","next_required_opportunity","operational_elapsed_days","operational_minimum_days","operational_strategy_cycle_count","spot_roundtrip_count","perpetual_roundtrip_count","operational_gate_status","economic_elapsed_days","economic_minimum_days","economic_tail_status","current_product","gross_exposure","open_order_count","unknown_order_count","reconciliation_status","protective_stop_status","risk_state","daily_loss_boundary_state","drawdown_boundary_state","incident_count","new_risk_advisory","provenance"],
+      "properties":{
+        "phase":{"enum":["REPLACEMENT_NOT_STARTED","COLLECTING"]},
+        "service_health":{"$ref":"#/$defs/health"},"evidence_health":{"$ref":"#/$defs/evidence"},
+        "due_opportunity_count":{"$ref":"#/$defs/count"},"terminal_opportunity_count":{"$ref":"#/$defs/count"},
+        "observed_opportunity_count":{"$ref":"#/$defs/count"},"missed_opportunity_count":{"$ref":"#/$defs/count"},
+        "observed_coverage_numerator":{"$ref":"#/$defs/count"},"observed_coverage_denominator":{"$ref":"#/$defs/count"},
+        "meets_minimum_observed_coverage":{"type":"boolean"},"terminal_coverage_complete":{"type":"boolean"},
+        "current_consecutive_missed":{"$ref":"#/$defs/count"},"maximum_consecutive_missed":{"$ref":"#/$defs/count"},
+        "last_missed_reason_or_null":{"oneOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "next_required_opportunity":{"oneOf":[{"$ref":"#/$defs/next_opportunity"},{"type":"null"}]},
+        "operational_elapsed_days":{"$ref":"#/$defs/count"},"operational_minimum_days":{"const":7},
+        "operational_strategy_cycle_count":{"$ref":"#/$defs/count"},"spot_roundtrip_count":{"$ref":"#/$defs/count"},"perpetual_roundtrip_count":{"$ref":"#/$defs/count"},
+        "operational_gate_status":{"enum":["NOT_STARTED","COLLECTING_BEFORE_MINIMUM_DURATION","PENDING_AUTOMATIC_EXTENSION","OPERATIONAL_QUALIFICATION_PASS","OPERATIONAL_QUALIFICATION_DID_NOT_PASS","INCONCLUSIVE_INSUFFICIENT_EVIDENCE"]},
+        "economic_elapsed_days":{"$ref":"#/$defs/count"},"economic_minimum_days":{"const":90},
+        "economic_tail_status":{"enum":["NOT_STARTED","WITHHELD_PRE_TAIL","TAIL_REACHED_FINAL_EVALUATOR_NOT_PREREGISTERED","FAILED_CLOSED"]},
+        "current_product":{"enum":["FLAT","SPOT_LONG","PERP_SHORT"]},
+        "gross_exposure":{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
+        "open_order_count":{"$ref":"#/$defs/count"},"unknown_order_count":{"$ref":"#/$defs/count"},
+        "reconciliation_status":{"enum":["NOT_AVAILABLE","RECONCILED","FAILED_CLOSED"]},
+        "protective_stop_status":{"type":"string","minLength":1},
+        "risk_state":{"enum":["NOT_AVAILABLE","NORMAL","WARNING","REDUCE","HALT","HARD_BOUNDARY"]},
+        "daily_loss_boundary_state":{"enum":["NOT_AVAILABLE","NORMAL","BREACHED"]},
+        "drawdown_boundary_state":{"enum":["NOT_AVAILABLE","NORMAL","BREACHED"]},
+        "incident_count":{"$ref":"#/$defs/count"},"new_risk_advisory":{"const":false},
+        "provenance":{"$ref":"#/$defs/replacement_provenance"}
+      }
+    },
+    "paper": {
+      "type":"object","additionalProperties":false,
+      "required":["phase","service_health","evidence_health","elapsed_days","verified_slot_count","next_required_slot","submitted_order_count","filled_order_count","partially_filled_order_count","cancelled_order_count","rejected_order_count","timeout_unknown_order_count","reconciliation_status","risk_state","gate_status","incident_count","provenance"],
+      "properties":{
+        "phase":{"enum":["NOT_INSTALLED","INSTALLED_NOT_STARTED","COLLECTING","FINAL"]},
+        "service_health":{"$ref":"#/$defs/health"},"evidence_health":{"$ref":"#/$defs/evidence"},
+        "elapsed_days":{"$ref":"#/$defs/count"},"verified_slot_count":{"$ref":"#/$defs/count"},
+        "next_required_slot":{"oneOf":[{"$ref":"#/$defs/timestamp"},{"type":"null"}]},
+        "submitted_order_count":{"$ref":"#/$defs/count"},"filled_order_count":{"$ref":"#/$defs/count"},
+        "partially_filled_order_count":{"$ref":"#/$defs/count"},"cancelled_order_count":{"$ref":"#/$defs/count"},
+        "rejected_order_count":{"$ref":"#/$defs/count"},"timeout_unknown_order_count":{"$ref":"#/$defs/count"},
+        "reconciliation_status":{"enum":["NOT_AVAILABLE","RECONCILED","FAILED_CLOSED"]},
+        "risk_state":{"enum":["NOT_AVAILABLE","NORMAL","WARNING","REDUCE","HALT","HARD_BOUNDARY"]},
+        "gate_status":{"enum":["NOT_EVALUATED","SYSTEM_PAPER_GATE_PASS","SYSTEM_PAPER_GATE_DID_NOT_PASS","INCONCLUSIVE_INSUFFICIENT_EVIDENCE"]},
+        "incident_count":{"$ref":"#/$defs/count"},"provenance":{"$ref":"#/$defs/provenance"}
+      }
+    }
+  }
+}

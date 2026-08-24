@@ -545,27 +545,27 @@ class _OperationsProjectionV2Boundary:
 Only `COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL` is accepted in v0.73; no
 public CLI or constructor accepts its fields.
 
-- [ ] **Step 1: Add RED for mirrored schema and canonical output**
+- [x] **Step 1: Add RED for mirrored schema and canonical output**
 
 Test exact mirror bytes, Draft 2020-12 validity, exact top-level keys,
 self-hash, deterministic output and one fixture-qualified valid projection.
 Require replacement fields from the spec, with `daily_loss_boundary_state` and
 `drawdown_boundary_state` enums instead of economic amounts.
 
-- [ ] **Step 2: Add RED for semantic invariants**
+- [x] **Step 2: Add RED for semantic invariants**
 
 Reject count contradictions, terminal greater than due, observed+missed not
 equal terminal, incorrect numerator/denominator/threshold boolean, PASS with insufficient cycles/products,
 non-flat without confirmed stop, unknown order with risk advisory, stale source
 marked healthy, economic final status, bool/int substitution and extra fields.
 
-- [ ] **Step 3: Add RED for typed-source and strict-byte boundary**
+- [x] **Step 3: Add RED for typed-source and strict-byte boundary**
 
 Reject plain dictionaries passed as sources, non-bytes, empty/oversize input,
 duplicate keys, float, noncanonical JSON, unsafe integer, wrong schema/version,
 unknown enum and self-hash mismatch.
 
-- [ ] **Step 4: Run RED**
+- [x] **Step 4: Run RED**
 
 ```bash
 python -m unittest tests.test_operations_projection_v2 -v
@@ -573,14 +573,14 @@ python -m unittest tests.test_operations_projection_v2 -v
 
 Expected: module/schema absence failures.
 
-- [ ] **Step 5: Implement schema, typed builder and strict loader**
+- [x] **Step 5: Implement schema, typed builder and strict loader**
 
 Follow the v1 canonical/self-hash pattern without importing or mutating v1
 private state. Build every output field explicitly. v2 `new_risk_advisory` is
 always false for `FIXTURE_NOT_OPERATIONAL`, NOT_STARTED, stale, failed,
 unreconciled, unknown, stop-unconfirmed or incident states.
 
-- [ ] **Step 6: Run GREEN, v1 regression and commit**
+- [x] **Step 6: Run GREEN, v1 regression and commit**
 
 ```bash
 python -m unittest tests.test_operations_projection_v2 tests.test_operations_projection -v
