@@ -108,6 +108,50 @@ def _boundary_for_due_count(total):
     )
 
 
+def _seven_day_boundary():
+    return _ReplacementReadinessBoundary(
+        qualification="COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL",
+        start_opportunity_id_or_null=opportunity_id_for(_utc(_START)),
+        start_scheduled_for_or_null=_utc(_START),
+        start_observed_at_or_null=_utc(_START + timedelta(minutes=5)),
+        observed_at=_utc(_START + timedelta(days=7, minutes=5)),
+    )
+
+
+def _not_started_boundary():
+    return _ReplacementReadinessBoundary(
+        qualification="COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL",
+        start_opportunity_id_or_null=None,
+        start_scheduled_for_or_null=None,
+        start_observed_at_or_null=None,
+        observed_at=_utc(_START),
+    )
+
+
+def _facts_with_cycles(products):
+    facts = _coverage_facts(observed=42, total=42)
+    items = list(facts.opportunities)
+    cursor = 0
+    for product in products:
+        position = "SPOT_LONG" if product == "spot" else "PERP_SHORT"
+        items[cursor] = replace(
+            items[cursor],
+            position_before="FLAT",
+            position_after=position,
+            product_or_null=product,
+            protective_stop_status="CONFIRMED_FIXTURE",
+        )
+        items[cursor + 1] = replace(
+            items[cursor + 1],
+            position_before=position,
+            position_after="FLAT",
+            product_or_null=product,
+            protective_stop_status="NOT_REQUIRED_FLAT",
+        )
+        cursor += 2
+    return replace(facts, opportunities=tuple(items))
+
+
 class ChallengerReplacementReadinessCoverageTests(unittest.TestCase):
     def test_exact_nineteen_of_twenty_meets_frozen_coverage(self):
         result = evaluate_challenger_replacement_operational_readiness(
@@ -182,6 +226,7 @@ class ChallengerReplacementReadinessValidationTests(unittest.TestCase):
         self.assert_facts_invalid(
             _coverage_facts(observed=19, total=20), boundary
         )
+
 
     def test_negative_count_is_rejected(self):
         facts = replace(
@@ -284,6 +329,23 @@ class ChallengerReplacementReadinessValidationTests(unittest.TestCase):
             replace(facts, opportunities=(first, *facts.opportunities[1:]))
         )
 
+    def test_unresolved_reasons_must_be_an_ordered_tuple(self):
+        facts = _coverage_facts(observed=19, total=20)
+        first = replace(
+            facts.opportunities[0],
+            unresolved_reason_codes=["LEDGER_POSITION_MISMATCH"],
+        )
+        self.assert_facts_invalid(
+            replace(facts, opportunities=(first, *facts.opportunities[1:]))
+        )
+
+    def test_observed_product_value_is_strict(self):
+        facts = _coverage_facts(observed=19, total=20)
+        first = replace(facts.opportunities[0], product_or_null="SPOT")
+        self.assert_facts_invalid(
+            replace(facts, opportunities=(first, *facts.opportunities[1:]))
+        )
+
     def test_start_identity_must_match_start_schedule(self):
         boundary = replace(
             _boundary_for_due_count(20),
@@ -311,6 +373,250 @@ class ChallengerReplacementReadinessValidationTests(unittest.TestCase):
         self.assert_facts_invalid(
             _coverage_facts(observed=19, total=20), boundary
         )
+
+
+class ChallengerReplacementOperationalPolicyTests(unittest.TestCase):
+    def test_absent_start_is_not_started(self):
+        result = evaluate_challenger_replacement_operational_readiness(
+            _coverage_facts(observed=0, total=0),
+            _not_started_boundary(),
+        )
+
+        self.assertEqual(result.policy_status, "NOT_STARTED")
+        self.assertEqual(result.due_opportunity_count, 0)
+
+    def test_below_ninety_five_percent_extends_after_seven_days(self):
+        result = evaluate_challenger_replacement_operational_readiness(
+            _coverage_facts(observed=39, total=42),
+            _seven_day_boundary(),
+        )
+
+        self.assertFalse(result.meets_minimum_observed_coverage)
+        self.assertEqual(result.policy_status, "PENDING_AUTOMATIC_EXTENSION")
+        self.assertIn("MINIMUM_OBSERVED_COVERAGE_NOT_MET", result.reason_codes)
+
+    def test_missing_due_terminal_extends_after_seven_days(self):
+        result = evaluate_challenger_replacement_operational_readiness(
+            _coverage_facts(observed=41, total=41),
+            _seven_day_boundary(),
+        )
+
+        self.assertFalse(result.terminal_coverage_complete)
+        self.assertEqual(result.policy_status, "PENDING_AUTOMATIC_EXTENSION")
+        self.assertIn("TERMINAL_COVERAGE_INCOMPLETE", result.reason_codes)
+
+    def test_hold_inside_position_does_not_create_an_extra_cycle(self):
+        facts = _coverage_facts(observed=42, total=42)
+        items = list(facts.opportunities)
+        items[0] = replace(
+            items[0], position_after="SPOT_LONG", product_or_null="spot"
+        )
+        items[1] = replace(
+            items[1],
+            position_before="SPOT_LONG",
+            position_after="SPOT_LONG",
+            product_or_null="spot",
+        )
+        items[2] = replace(
+            items[2], position_before="SPOT_LONG", product_or_null="spot"
+        )
+
+        result = evaluate_challenger_replacement_operational_readiness(
+            replace(facts, opportunities=tuple(items)),
+            _seven_day_boundary(),
+        )
+
+        self.assertEqual(result.strategy_cycle_count, 1)
+        self.assertEqual(result.spot_roundtrip_count, 1)
+
+    def test_direct_cross_product_reversal_is_confirmed_failure(self):
+        facts = _coverage_facts(observed=42, total=42)
+        items = list(facts.opportunities)
+        items[0] = replace(
+            items[0], position_after="SPOT_LONG", product_or_null="spot"
+        )
+        items[1] = replace(
+            items[1],
+            position_before="SPOT_LONG",
+            position_after="PERP_SHORT",
+            product_or_null="perpetual",
+        )
+
+        result = evaluate_challenger_replacement_operational_readiness(
+            replace(facts, opportunities=tuple(items)),
+            _seven_day_boundary(),
+        )
+
+        self.assertEqual(
+            result.policy_status, "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+        )
+        self.assertIn(
+            "CROSS_PRODUCT_REVERSAL_WITHOUT_FLAT", result.reason_codes
+        )
+
+    def test_duplicate_entry_transition_is_confirmed_failure(self):
+        facts = _coverage_facts(observed=42, total=42)
+        items = list(facts.opportunities)
+        items[0] = replace(
+            items[0], position_after="SPOT_LONG", product_or_null="spot"
+        )
+        items[1] = replace(
+            items[1], position_after="SPOT_LONG", product_or_null="spot"
+        )
+
+        result = evaluate_challenger_replacement_operational_readiness(
+            replace(facts, opportunities=tuple(items)),
+            _seven_day_boundary(),
+        )
+
+        self.assertEqual(
+            result.policy_status, "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+        )
+        self.assertIn(
+            "DUPLICATE_POSITION_ENTRY_TRANSITION", result.reason_codes
+        )
+
+    def test_failed_lifecycle_cannot_complete_cycle(self):
+        facts = _facts_with_cycles(("spot", "perpetual", "spot"))
+        items = list(facts.opportunities)
+        items[1] = replace(items[1], lifecycle_status_or_null="FAILED_CLOSED")
+
+        result = evaluate_challenger_replacement_operational_readiness(
+            replace(facts, opportunities=tuple(items)),
+            _seven_day_boundary(),
+        )
+
+        self.assertEqual(result.strategy_cycle_count, 2)
+        self.assertEqual(
+            result.policy_status, "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+        )
+        self.assertIn("LIFECYCLE_NOT_RECONCILED", result.reason_codes)
+
+    def test_confirmed_evidence_identity_failure_is_did_not_pass(self):
+        facts = replace(
+            _facts_with_cycles(("spot", "perpetual", "spot")),
+            evidence_failure_kind_or_null=(
+                "CONFIRMED_EVIDENCE_DURABILITY_OR_IDENTITY_FAILURE"
+            ),
+        )
+
+        result = evaluate_challenger_replacement_operational_readiness(
+            facts, _seven_day_boundary()
+        )
+
+        self.assertEqual(
+            result.policy_status, "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+        )
+        self.assertIn(
+            "CONFIRMED_EVIDENCE_DURABILITY_OR_IDENTITY_FAILURE",
+            result.reason_codes,
+        )
+
+    def test_three_cycles_with_both_products_pass_policy_only(self):
+        result = evaluate_challenger_replacement_operational_readiness(
+            _facts_with_cycles(("spot", "perpetual", "spot")),
+            _seven_day_boundary(),
+        )
+
+        self.assertEqual(result.strategy_cycle_count, 3)
+        self.assertEqual(result.spot_roundtrip_count, 2)
+        self.assertEqual(result.perpetual_roundtrip_count, 1)
+        self.assertEqual(
+            result.policy_status, "OPERATIONAL_QUALIFICATION_PASS"
+        )
+        self.assertEqual(
+            result.authority_status, "FIXTURE_POLICY_RESULT_NOT_OPERATIONAL"
+        )
+
+    def test_two_cycles_remain_pending_after_seven_days(self):
+        result = evaluate_challenger_replacement_operational_readiness(
+            _facts_with_cycles(("spot", "perpetual")),
+            _seven_day_boundary(),
+        )
+
+        self.assertEqual(
+            result.policy_status, "PENDING_AUTOMATIC_EXTENSION"
+        )
+        self.assertIn("MINIMUM_STRATEGY_CYCLES_NOT_MET", result.reason_codes)
+
+    def test_single_product_cycles_remain_pending(self):
+        result = evaluate_challenger_replacement_operational_readiness(
+            _facts_with_cycles(("spot", "spot", "spot")),
+            _seven_day_boundary(),
+        )
+
+        self.assertEqual(
+            result.policy_status, "PENDING_AUTOMATIC_EXTENSION"
+        )
+        self.assertIn("PERPETUAL_ROUNDTRIP_NOT_OBSERVED", result.reason_codes)
+
+    def test_confirmed_safety_failure_is_did_not_pass(self):
+        facts = replace(
+            _facts_with_cycles(("spot", "perpetual", "spot")),
+            incident_count=1,
+        )
+        result = evaluate_challenger_replacement_operational_readiness(
+            facts, _seven_day_boundary()
+        )
+
+        self.assertEqual(
+            result.policy_status, "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+        )
+        self.assertIn("S0_OR_S1_INCIDENT", result.reason_codes)
+
+    def test_unavailable_evidence_is_inconclusive(self):
+        facts = replace(
+            _facts_with_cycles(("spot", "perpetual", "spot")),
+            evidence_failure_kind_or_null=(
+                "EVIDENCE_SOURCE_UNAVAILABLE_OR_QUALIFICATION_UNKNOWN"
+            ),
+        )
+        result = evaluate_challenger_replacement_operational_readiness(
+            facts, _seven_day_boundary()
+        )
+
+        self.assertEqual(
+            result.policy_status, "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+        )
+
+    def test_confirmed_violation_wins_over_unavailable_evidence(self):
+        facts = _facts_with_cycles(("spot", "perpetual", "spot"))
+        first = replace(
+            facts.opportunities[0],
+            unresolved_reason_codes=("LEDGER_POSITION_MISMATCH",),
+        )
+        facts = replace(
+            facts,
+            opportunities=(first, *facts.opportunities[1:]),
+            evidence_failure_kind_or_null=(
+                "EVIDENCE_SOURCE_UNAVAILABLE_OR_QUALIFICATION_UNKNOWN"
+            ),
+        )
+        result = evaluate_challenger_replacement_operational_readiness(
+            facts, _seven_day_boundary()
+        )
+
+        self.assertEqual(
+            result.policy_status, "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+        )
+        self.assertIn("LEDGER_POSITION_MISMATCH", result.reason_codes)
+
+    def test_exposed_missed_gap_is_permanent_failure(self):
+        facts = _facts_with_cycles(("spot", "perpetual", "spot"))
+        first = replace(
+            facts.opportunities[0],
+            economic_gap_locked=True,
+            unresolved_reason_codes=("ECONOMIC_GAP_LOCKED",),
+        )
+        result = evaluate_challenger_replacement_operational_readiness(
+            replace(facts, opportunities=(first, *facts.opportunities[1:])),
+            _seven_day_boundary(),
+        )
+
+        self.assertEqual(
+            result.policy_status, "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+        )
+        self.assertIn("ECONOMIC_GAP_LOCKED", result.reason_codes)
 
 
 if __name__ == "__main__":

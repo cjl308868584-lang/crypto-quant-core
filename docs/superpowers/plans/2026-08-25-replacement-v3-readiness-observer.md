@@ -231,7 +231,7 @@ git commit -m "feat: define replacement readiness facts"
 - Consumes: ordered `OpportunityReadinessFact` tuple and fixed boundary from Task 1.
 - Produces: immutable `OperationalReadinessResult` with `policy_status`, `authority_status`, coverage/cycle counts and ordered reason codes.
 
-- [ ] **Step 1: Add RED for state-machine cycle counting**
+- [x] **Step 1: Add RED for state-machine cycle counting**
 
 Cover Spot open/HOLD/close, perpetual open/HOLD/close, MISSED while flat,
 permanently gap-locked MISSED while exposed, cross-product reversal, non-flat terminal, failed
@@ -255,7 +255,7 @@ def test_missed_while_exposed_does_not_create_or_complete_cycle(self):
     self.assertIn("ECONOMIC_GAP_LOCKED", result.reason_codes)
 ```
 
-- [ ] **Step 2: Add RED for status precedence**
+- [x] **Step 2: Add RED for status precedence**
 
 Test day 6 versus day 7, 94% versus exact 95%, missing terminal, two versus
 three cycles, single-product coverage, every v0.69 frozen failure reason,
@@ -285,7 +285,7 @@ INCONCLUSIVE.
 Also assert `authority_status` remains
 `FIXTURE_POLICY_RESULT_NOT_OPERATIONAL` even when `policy_status` is PASS.
 
-- [ ] **Step 3: Run RED and record the exact failing assertions**
+- [x] **Step 3: Run RED and record the exact failing assertions**
 
 Run:
 
@@ -296,7 +296,7 @@ python -m unittest tests.test_challenger_replacement_readiness -v
 Expected: cycle/status assertions fail while Task 1 validation tests remain
 green.
 
-- [ ] **Step 4: Implement the minimum single-pass reducer**
+- [x] **Step 4: Implement the minimum single-pass reducer**
 
 Track only verified position state and open-cycle product. Do not create a
 general order state machine. Count a cycle only for:
@@ -310,18 +310,18 @@ Any direct product switch, unknown state, unresolved reason or failed lifecycle
 enters the ordered reason set and prevents PASS. Derive all counts; callers
 cannot supply them separately.
 
-- [ ] **Step 5: Implement status selection and immutable result**
+- [x] **Step 5: Implement status selection and immutable result**
 
 Calculate elapsed complete days from canonical UTC times with integer seconds.
 Keep `policy_status` distinct from `authority_status`. Never publish a result
 file in this module.
 
-- [ ] **Step 6: Run GREEN, adjacent opportunity tests and commit**
+- [x] **Step 6: Run GREEN, adjacent opportunity tests and commit**
 
 Run:
 
 ```bash
-python -m unittest tests.test_challenger_replacement_readiness tests.test_challenger_replacement_opportunity_runtime tests.test_challenger_replacement_binance_lifecycle -v
+python -m unittest tests.test_challenger_replacement_readiness tests.test_challenger_replacement_opportunities tests.test_challenger_replacement_binance_lifecycle -v
 git diff --check
 ```
 
@@ -501,7 +501,7 @@ errors. Never include raw exception text in reason codes.
 - [ ] **Step 6: Run GREEN, v0.70/v0.72 adjacent tests and commit**
 
 ```bash
-python -m unittest tests.test_challenger_replacement_readiness_observer tests.test_challenger_replacement_opportunity_runtime tests.test_challenger_replacement_fixture_simulation -v
+python -m unittest tests.test_challenger_replacement_readiness_observer tests.test_challenger_replacement_opportunities tests.test_challenger_replacement_fixture_simulation -v
 git diff --check
 git add src/crypto_quant/challenger_replacement_readiness_observer.py tests/test_challenger_replacement_readiness_observer.py
 git commit -m "feat: observe replacement readiness evidence"
@@ -710,7 +710,7 @@ python -m unittest \
   tests.test_operations_projection \
   tests.test_operations_alerts \
   tests.test_operations_dashboard \
-  tests.test_challenger_replacement_opportunity_runtime \
+  tests.test_challenger_replacement_opportunities \
   tests.test_challenger_replacement_binance_lifecycle \
   tests.test_challenger_replacement_fixture_simulation \
   tests.test_v073_authority_boundaries -v

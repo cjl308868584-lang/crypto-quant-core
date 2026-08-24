@@ -16,6 +16,12 @@ _POSITION = frozenset({"FLAT", "SPOT_LONG", "PERP_SHORT"})
 _OUTCOME = frozenset({"OBSERVED", "MISSED"})
 _QUALIFICATION = "STRICT_V072_FIXTURE_SANITIZED"
 _BOUNDARY_QUALIFICATION = "COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL"
+_UNKNOWN_EVIDENCE_FAILURE = (
+    "EVIDENCE_SOURCE_UNAVAILABLE_OR_QUALIFICATION_UNKNOWN"
+)
+_CONFIRMED_EVIDENCE_FAILURE = (
+    "CONFIRMED_EVIDENCE_DURABILITY_OR_IDENTITY_FAILURE"
+)
 
 
 class ChallengerReplacementReadinessError(ValueError):
@@ -221,6 +227,17 @@ def _validate_fact(value: object, expected_scheduled: datetime) -> None:
         or value.outcome not in _OUTCOME
         or value.position_before not in _POSITION
         or value.position_after not in _POSITION
+        or value.product_or_null not in {None, "spot", "perpetual"}
+        or value.lifecycle_status_or_null
+        not in {None, "RECONCILED_FIXTURE", "FAILED_CLOSED"}
+        or type(value.economic_gap_locked) is not bool
+        or not isinstance(value.unresolved_reason_codes, tuple)
+        or any(
+            not isinstance(reason, str) or not reason
+            for reason in value.unresolved_reason_codes
+        )
+        or len(set(value.unresolved_reason_codes))
+        != len(value.unresolved_reason_codes)
     ):
         _invalid()
     _time(value.terminal_recorded_at)
@@ -246,7 +263,9 @@ def _validate_fact(value: object, expected_scheduled: datetime) -> None:
         _time(value.detected_at_or_null)
 
 
-def _validate(facts: object, boundary: object) -> Tuple[datetime, datetime]:
+def _validate(
+    facts: object, boundary: object
+) -> Tuple[Optional[datetime], datetime]:
     if (
         type(facts) is not ReplacementReadinessFacts
         or type(boundary) is not _ReplacementReadinessBoundary
@@ -285,11 +304,17 @@ def _validate(facts: object, boundary: object) -> Tuple[datetime, datetime]:
         != facts.terminal_opportunity_count
     ):
         _invalid()
-    if (
-        boundary.start_scheduled_for_or_null is None
-        or boundary.start_observed_at_or_null is None
-        or boundary.start_opportunity_id_or_null is None
-    ):
+    start_values = (
+        boundary.start_opportunity_id_or_null,
+        boundary.start_scheduled_for_or_null,
+        boundary.start_observed_at_or_null,
+    )
+    if start_values == (None, None, None):
+        observed_at = _time(boundary.observed_at)
+        if facts.opportunities or facts.terminal_opportunity_count:
+            _invalid()
+        return None, observed_at
+    if any(value is None for value in start_values):
         _invalid()
     start = _time(boundary.start_scheduled_for_or_null)
     start_observed = _time(boundary.start_observed_at_or_null)
@@ -313,6 +338,108 @@ def _due_count(start_scheduled: datetime, observed_at: datetime) -> int:
     return int((last_due_schedule - start_scheduled) // _CADENCE) + 1
 
 
+def _cycle_counts(
+    opportunities: Tuple[OpportunityReadinessFact, ...],
+) -> Tuple[int, int, Tuple[str, ...]]:
+    active_product = None
+    spot = 0
+    perpetual = 0
+    reasons = []
+    for fact in opportunities:
+        if fact.outcome != "OBSERVED":
+            continue
+        if fact.lifecycle_status_or_null != "RECONCILED_FIXTURE":
+            _append_once(reasons, "LIFECYCLE_NOT_RECONCILED")
+            if fact.position_after == "FLAT":
+                active_product = None
+            continue
+        transition = (fact.position_before, fact.position_after)
+        if transition in {
+            ("SPOT_LONG", "PERP_SHORT"),
+            ("PERP_SHORT", "SPOT_LONG"),
+        }:
+            _append_once(reasons, "CROSS_PRODUCT_REVERSAL_WITHOUT_FLAT")
+            active_product = None
+            continue
+        if transition == ("FLAT", "SPOT_LONG") and fact.product_or_null == "spot":
+            if active_product is not None:
+                _append_once(reasons, "DUPLICATE_POSITION_ENTRY_TRANSITION")
+            active_product = "spot"
+        elif (
+            transition == ("FLAT", "PERP_SHORT")
+            and fact.product_or_null == "perpetual"
+        ):
+            if active_product is not None:
+                _append_once(reasons, "DUPLICATE_POSITION_ENTRY_TRANSITION")
+            active_product = "perpetual"
+        elif (
+            transition == ("SPOT_LONG", "FLAT")
+            and fact.product_or_null == "spot"
+            and active_product == "spot"
+        ):
+            spot += 1
+            active_product = None
+        elif (
+            transition == ("PERP_SHORT", "FLAT")
+            and fact.product_or_null == "perpetual"
+            and active_product == "perpetual"
+        ):
+            perpetual += 1
+            active_product = None
+    return spot, perpetual, tuple(reasons)
+
+
+def _append_once(values: list, value: str) -> None:
+    if value not in values:
+        values.append(value)
+
+
+def _policy(
+    facts: ReplacementReadinessFacts,
+    *,
+    elapsed_days: int,
+    terminal_complete: bool,
+    observed_coverage: bool,
+    spot_cycles: int,
+    perpetual_cycles: int,
+    cycle_reason_codes: Tuple[str, ...],
+    started: bool,
+) -> Tuple[str, Tuple[str, ...]]:
+    confirmed = list(cycle_reason_codes)
+    for fact in facts.opportunities:
+        for reason in fact.unresolved_reason_codes:
+            _append_once(confirmed, reason)
+        if fact.economic_gap_locked:
+            _append_once(confirmed, "ECONOMIC_GAP_LOCKED")
+    if facts.incident_count:
+        _append_once(confirmed, "S0_OR_S1_INCIDENT")
+    if facts.evidence_failure_kind_or_null == _CONFIRMED_EVIDENCE_FAILURE:
+        _append_once(confirmed, _CONFIRMED_EVIDENCE_FAILURE)
+    if confirmed:
+        return "OPERATIONAL_QUALIFICATION_DID_NOT_PASS", tuple(confirmed)
+    if facts.evidence_failure_kind_or_null == _UNKNOWN_EVIDENCE_FAILURE:
+        return "INCONCLUSIVE_INSUFFICIENT_EVIDENCE", (_UNKNOWN_EVIDENCE_FAILURE,)
+    if not started:
+        return "NOT_STARTED", ()
+    if elapsed_days < 7:
+        return "COLLECTING_BEFORE_MINIMUM_DURATION", ()
+
+    pending = []
+    if not terminal_complete:
+        pending.append("TERMINAL_COVERAGE_INCOMPLETE")
+    if not observed_coverage:
+        pending.append("MINIMUM_OBSERVED_COVERAGE_NOT_MET")
+    if spot_cycles + perpetual_cycles < 3:
+        pending.append("MINIMUM_STRATEGY_CYCLES_NOT_MET")
+    if spot_cycles == 0:
+        pending.append("SPOT_ROUNDTRIP_NOT_OBSERVED")
+    if perpetual_cycles == 0:
+        pending.append("PERPETUAL_ROUNDTRIP_NOT_OBSERVED")
+    if pending:
+        return "PENDING_AUTOMATIC_EXTENSION", tuple(pending)
+    return "OPERATIONAL_QUALIFICATION_PASS", ()
+
+
 def evaluate_challenger_replacement_operational_readiness(
     facts: ReplacementReadinessFacts,
     boundary: _ReplacementReadinessBoundary,
@@ -320,12 +447,36 @@ def evaluate_challenger_replacement_operational_readiness(
     """Evaluate exact fixture policy without granting operational authority."""
 
     start_observed, observed_at = _validate(facts, boundary)
-    start_scheduled = _time(boundary.start_scheduled_for_or_null)
-    due = _due_count(start_scheduled, observed_at)
-    elapsed_days = int((observed_at - start_observed).total_seconds() // 86400)
+    started = start_observed is not None
+    if started:
+        start_scheduled = _time(boundary.start_scheduled_for_or_null)
+        due = _due_count(start_scheduled, observed_at)
+        elapsed_days = int(
+            (observed_at - start_observed).total_seconds() // 86400
+        )
+    else:
+        due = 0
+        elapsed_days = 0
+    observed_coverage = (
+        due > 0 and facts.observed_opportunity_count * 100 >= due * 95
+    )
+    terminal_complete = facts.terminal_opportunity_count == due
+    spot_cycles, perpetual_cycles, cycle_reasons = _cycle_counts(
+        facts.opportunities
+    )
+    policy_status, reason_codes = _policy(
+        facts,
+        elapsed_days=elapsed_days,
+        terminal_complete=terminal_complete,
+        observed_coverage=observed_coverage,
+        spot_cycles=spot_cycles,
+        perpetual_cycles=perpetual_cycles,
+        cycle_reason_codes=cycle_reasons,
+        started=started,
+    )
     return OperationalReadinessResult(
         evidence_qualification=_QUALIFICATION,
-        policy_status="COLLECTING_BEFORE_MINIMUM_DURATION",
+        policy_status=policy_status,
         authority_status="FIXTURE_POLICY_RESULT_NOT_OPERATIONAL",
         elapsed_complete_days=elapsed_days,
         due_opportunity_count=due,
@@ -334,12 +485,10 @@ def evaluate_challenger_replacement_operational_readiness(
         missed_opportunity_count=facts.missed_opportunity_count,
         observed_coverage_numerator=facts.observed_opportunity_count,
         observed_coverage_denominator=due,
-        meets_minimum_observed_coverage=(
-            due > 0 and facts.observed_opportunity_count * 100 >= due * 95
-        ),
-        terminal_coverage_complete=facts.terminal_opportunity_count == due,
-        strategy_cycle_count=0,
-        spot_roundtrip_count=0,
-        perpetual_roundtrip_count=0,
-        reason_codes=(),
+        meets_minimum_observed_coverage=observed_coverage,
+        terminal_coverage_complete=terminal_complete,
+        strategy_cycle_count=spot_cycles + perpetual_cycles,
+        spot_roundtrip_count=spot_cycles,
+        perpetual_roundtrip_count=perpetual_cycles,
+        reason_codes=reason_codes,
     )
