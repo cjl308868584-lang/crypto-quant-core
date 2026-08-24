@@ -1,10 +1,13 @@
 import inspect
 import json
 import unittest
+from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from crypto_quant.canonical import canonical_json
+import crypto_quant.challenger_replacement_binance_lifecycle as lifecycle
 from crypto_quant.challenger_replacement_binance_simulation_input import (
     load_challenger_replacement_binance_simulation_input_bytes,
 )
@@ -345,6 +348,93 @@ class ChallengerReplacementBinanceLifecycleTests(unittest.TestCase):
                 self.assertEqual(
                     json.loads(stopped.next_snapshot_bytes)["position_state"],
                     "FLAT",
+                )
+
+    def test_three_reconciliation_reducers_have_distinct_types_and_fresh_venue(self):
+        captured = []
+        original = lifecycle._reduce_venue
+
+        def capture(observations, previous_position):
+            value = original(observations, previous_position)
+            captured.append((observations, previous_position, value))
+            return value
+
+        with patch.object(lifecycle, "_reduce_venue", side_effect=capture):
+            result = self.simulate(source=self.source_for("LONG"))
+        self.assertEqual(result.status, "RECONCILED_FIXTURE")
+        observations, previous_position, venue = captured[0]
+        fresh = original(tuple(observations), previous_position)
+        self.assertEqual(fresh, venue)
+        self.assertIsInstance(venue, lifecycle.VenueProjection)
+        self.assertNotIsInstance(venue, lifecycle.EngineProjection)
+        self.assertNotIsInstance(venue, lifecycle.LedgerProjection)
+
+    def test_each_independent_projection_mismatch_fails_closed(self):
+        for reducer_name in ("_reduce_engine", "_reduce_venue", "_reduce_ledger"):
+            with self.subTest(reducer=reducer_name):
+                original = getattr(lifecycle, reducer_name)
+
+                def tamper(*args, _original=original):
+                    return replace(_original(*args), signed_quantity="999")
+
+                with patch.object(lifecycle, reducer_name, side_effect=tamper):
+                    result = self.simulate(source=self.source_for("LONG"))
+                self.assertEqual(result.status, "FAILED_CLOSED")
+                self.assertFalse(result.operationally_complete)
+                self.assertEqual(
+                    result.reason_code_or_null,
+                    "LEDGER_POSITION_MISMATCH",
+                )
+                self.assertEqual(
+                    result.lifecycle_events[-1].event_type,
+                    "LIFECYCLE_FAILED_CLOSED",
+                )
+                snapshot = json.loads(result.next_snapshot_bytes)
+                self.assertEqual(snapshot["risk_state"], "STAGE_FAILED_LOCKED")
+
+    def test_fill_before_ack_is_preserved_and_reconciles_once(self):
+        original = lifecycle._normal_lifecycle_observations
+
+        def fill_before_ack(*args):
+            item = original(*args)[0]
+            return (replace(item, fill_before_ack=True),)
+
+        with patch.object(
+            lifecycle, "_normal_lifecycle_observations", side_effect=fill_before_ack
+        ):
+            result = self.simulate(source=self.source_for("LONG"))
+        types = [event.event_type for event in result.lifecycle_events]
+        self.assertLess(
+            types.index("FILL_OBSERVED_FIXTURE"),
+            types.index("ORDER_ACKNOWLEDGED_FIXTURE"),
+        )
+        self.assertEqual(types.count("FILL_OBSERVED_FIXTURE"), 1)
+        self.assertEqual(result.status, "RECONCILED_FIXTURE")
+
+    def test_fixed_fault_observations_fail_with_single_frozen_reason(self):
+        cases = (
+            ({"unknown_reason_or_null": "TIMEOUT"}, "UNRESOLVED_UNKNOWN"),
+            ({"conflicting_duplicate": True}, "DUPLICATE_ECONOMIC_ORDER"),
+            ({"overfill": True}, "UNRECORDED_OR_CONFLICTING_FILL"),
+            ({"stop_confirmed": False}, "DISASTER_STOP_MISSING_OR_UNCONFIRMED"),
+        )
+        original = lifecycle._normal_lifecycle_observations
+        for changes, reason in cases:
+            with self.subTest(reason=reason):
+                def fault(*args, _changes=changes):
+                    return (replace(original(*args)[0], **_changes),)
+
+                with patch.object(
+                    lifecycle,
+                    "_normal_lifecycle_observations",
+                    side_effect=fault,
+                ):
+                    result = self.simulate(source=self.source_for("LONG"))
+                self.assertEqual(result.status, "FAILED_CLOSED")
+                self.assertEqual(result.reason_code_or_null, reason)
+                self.assertEqual(
+                    result.lifecycle_events[-1].event_type,
+                    "LIFECYCLE_FAILED_CLOSED",
                 )
 
 

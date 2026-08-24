@@ -1,10 +1,8 @@
 """Fixture-only Binance lifecycle evidence without operational authority."""
-
 import copy
 from dataclasses import dataclass
 import json
 from typing import Mapping, Optional, Tuple
-
 from .canonical import business_hash, canonical_json, stable_id
 from .challenger_replacement_simulation import (
     ChallengerReplacementSimulationError,
@@ -12,8 +10,6 @@ from .challenger_replacement_simulation import (
 )
 from .errors import CanonicalizationError
 from .evidence import artifact_self_hash
-
-
 _V072_BUILD_VERSION = ("v0.72.0-fixture", "0.72.0", "1.66.0")
 _HASH_KEYS = (
     "peeled_commit",
@@ -33,82 +29,51 @@ _BUILD_KEYS = {
 _PAYLOAD_KEYS = {
     "NO_INTENT_RECONCILED": {"action", "reason_code"},
     "INTENT_PREPARED": {
-        "product",
-        "side",
-        "reduce_only",
-        "order_type",
-        "quantity",
-        "approved_notional",
-        "instrument_metadata_hash",
+        "product", "side", "reduce_only", "order_type", "quantity",
+        "approved_notional", "instrument_metadata_hash",
     },
     "ATTEMPT_SUBMITTED_FIXTURE": {"client_order_id"},
     "ORDER_ACKNOWLEDGED_FIXTURE": {"client_order_id"},
     "FILL_OBSERVED_FIXTURE": {
-        "fill_id",
-        "quantity",
-        "price",
-        "notional",
-        "fee_asset",
-        "fee",
+        "fill_id", "quantity", "price", "notional", "fee_asset", "fee",
         "cumulative_filled_quantity",
     },
     "ORDER_UNKNOWN_FIXTURE": {
-        "reason_code",
-        "last_known_cumulative_filled_quantity",
+        "reason_code", "last_known_cumulative_filled_quantity",
     },
     "ORDER_RECONCILED_FIXTURE": {
-        "terminal_state",
-        "cumulative_filled_quantity",
-        "average_fill_price_or_null",
-        "cumulative_fee",
+        "terminal_state", "cumulative_filled_quantity",
+        "average_fill_price_or_null", "cumulative_fee",
     },
     "STOP_INTENT_PREPARED": {
-        "stop_intent_id",
-        "side",
-        "reduce_only",
-        "quantity",
-        "trigger_price",
+        "stop_intent_id", "side", "reduce_only", "quantity", "trigger_price",
         "order_type",
     },
     "STOP_ACKNOWLEDGED_FIXTURE": {
-        "stop_intent_id",
-        "stop_client_order_id",
+        "stop_intent_id", "stop_client_order_id",
     },
     "STOP_CANCEL_REQUESTED_FIXTURE": {"stop_intent_id"},
     "STOP_CANCEL_ACKNOWLEDGED_FIXTURE": {"stop_intent_id"},
     "STOP_TRIGGERED_FIXTURE": {
-        "stop_intent_id",
-        "bar_open",
-        "bar_high",
-        "bar_low",
-        "gap_reference",
+        "stop_intent_id", "bar_open", "bar_high", "bar_low", "gap_reference",
     },
     "LIFECYCLE_RECONCILED_FIXTURE": {
-        "engine_projection_hash",
-        "venue_projection_hash",
+        "engine_projection_hash", "venue_projection_hash",
         "ledger_projection_hash",
     },
     "LIFECYCLE_FAILED_CLOSED": {
-        "reason_code",
-        "position_certainty",
-        "unresolved_intent_ids",
+        "reason_code", "position_certainty", "unresolved_intent_ids",
     },
 }
 _NULL_ID_EVENTS = {
-    "NO_INTENT_RECONCILED",
-    "LIFECYCLE_RECONCILED_FIXTURE",
+    "NO_INTENT_RECONCILED", "LIFECYCLE_RECONCILED_FIXTURE",
     "LIFECYCLE_FAILED_CLOSED",
 }
-
-
 class ChallengerReplacementLifecycleError(ValueError):
     """The fixture lifecycle could not establish its frozen identity."""
-
     def __init__(self, reason_code: str):
         super().__init__(reason_code)
         self.reason_code = reason_code
-
-
 @dataclass(frozen=True)
 class LifecycleEvent:
     ordinal: int
@@ -118,8 +83,6 @@ class LifecycleEvent:
     intent_id_or_null: Optional[str]
     attempt_id_or_null: Optional[str]
     payload_bytes: bytes
-
-
 @dataclass(frozen=True)
 class ChallengerReplacementLifecycleResult:
     source_bytes: bytes
@@ -134,16 +97,31 @@ class ChallengerReplacementLifecycleResult:
     status: str
     operationally_complete: bool
     reason_code_or_null: Optional[str]
-
-
+@dataclass(frozen=True)
+class _Projection:
+    product_or_null: Optional[str]
+    signed_quantity: str
+    average_price_or_null: Optional[str]
+    cumulative_fee: str
+    funding: str
+    terminal_state: str
+@dataclass(frozen=True)
+class LifecycleObservation(_Projection):
+    fill_before_ack: bool = False
+    unknown_reason_or_null: Optional[str] = None
+    conflicting_duplicate: bool = False
+    overfill: bool = False
+    stop_confirmed: bool = True
+@dataclass(frozen=True)
+class EngineProjection(_Projection): pass
+@dataclass(frozen=True)
+class VenueProjection(_Projection): pass
+@dataclass(frozen=True)
+class LedgerProjection(_Projection): pass
 def _invalid(reason="CHALLENGER_REPLACEMENT_LIFECYCLE_IDENTITY_INVALID"):
     raise ChallengerReplacementLifecycleError(reason)
-
-
 def _canonical_bytes(value) -> bytes:
     return canonical_json(value).encode("utf-8")
-
-
 def _valid_v072_build(value) -> bool:
     if not isinstance(value, Mapping) or set(value) != _BUILD_KEYS:
         return False
@@ -163,8 +141,6 @@ def _valid_v072_build(value) -> bool:
         ):
             return False
     return True
-
-
 def _append_event(
     events,
     *,
@@ -198,13 +174,10 @@ def _append_event(
         payload_bytes=_canonical_bytes(payload),
     )
     events.append(event)
-
-
-def _intent_identity(*, source, plan, contract, decision, accounting):
-    action = decision["action"]
-    product = "spot" if "SPOT" in action else "perpetual"
-    side = "BUY" if action == "OPEN_SPOT_LONG" else "SELL"
-    metadata = source["instruments"][product]
+def _order_identity(
+    *, source, plan, contract, decision, accounting, product, side,
+    reduce_only, metadata_hash
+):
     identity = {
         "plan_id": plan["plan_id"],
         "plan_hash": plan["plan_hash"],
@@ -213,13 +186,13 @@ def _intent_identity(*, source, plan, contract, decision, accounting):
         "opportunity_id": source["opportunity"]["opportunity_id"],
         "decision_hash": decision["decision_hash"],
         "position_before": decision["position_before"],
-        "action": action,
+        "action": decision["action"],
         "product_or_null": product,
         "side_or_null": side,
-        "reduce_only": False,
+        "reduce_only": reduce_only,
         "approved_quantity": accounting["quantity"],
         "approved_notional": accounting["notional"],
-        "instrument_metadata_hash_or_null": metadata["metadata_hash"],
+        "instrument_metadata_hash_or_null": metadata_hash,
     }
     intent_id = stable_id("replacement_intent", identity)
     attempt_id = stable_id(
@@ -228,9 +201,7 @@ def _intent_identity(*, source, plan, contract, decision, accounting):
     client_id = stable_id(
         "replacement_client", {"intent_id": intent_id, "product": product}
     )
-    return product, side, metadata, intent_id, attempt_id, client_id
-
-
+    return intent_id, attempt_id, client_id
 def _event_documents(events):
     return [
         {
@@ -244,35 +215,129 @@ def _event_documents(events):
         }
         for event in events
     ]
-
-
-def _append_reconciled(events, *, accounting, next_snapshot):
+def _append_reconciled(events, *, engine, venue, ledger):
     _append_event(
         events,
         event_type="LIFECYCLE_RECONCILED_FIXTURE",
         payload={
-            "engine_projection_hash": business_hash(
-                {"events": _event_documents(events)}
-            ),
-            "venue_projection_hash": business_hash(
-                {"fill": accounting, "position": next_snapshot["position_state"]}
-            ),
-            "ledger_projection_hash": business_hash(
-                {"accounting": accounting, "next_snapshot": next_snapshot}
-            ),
+            "engine_projection_hash": business_hash(engine),
+            "venue_projection_hash": business_hash(venue),
+            "ledger_projection_hash": business_hash(ledger),
         },
     )
-
-
+def _normal_lifecycle_observations(transition, previous_position):
+    accounting, snapshot = transition["accounting"], transition["next_snapshot"]
+    product = {
+        "SPOT_LONG": "spot",
+        "PERP_SHORT": "perpetual",
+    }.get(snapshot["position_state"])
+    return (LifecycleObservation(
+        product, snapshot["signed_quantity"], accounting["fill_price"],
+        accounting["fee"], accounting["funding_cashflow"], "FILLED",
+    ),)
+def _rechain_fill_before_ack(events):
+    values = list(events)
+    fill = next(i for i, event in enumerate(values) if event.event_type == "FILL_OBSERVED_FIXTURE")
+    ack = next(i for i, event in enumerate(values) if event.event_type == "ORDER_ACKNOWLEDGED_FIXTURE")
+    values.insert(ack, values.pop(fill))
+    rebuilt = []
+    for event in values:
+        _append_event(
+            rebuilt, event_type=event.event_type,
+            payload=json.loads(event.payload_bytes),
+            intent_id_or_null=event.intent_id_or_null,
+            attempt_id_or_null=event.attempt_id_or_null,
+        )
+    events[:] = rebuilt
+def _projection_values(events):
+    intent = next(
+        (json.loads(event.payload_bytes) for event in events
+         if event.event_type == "INTENT_PREPARED"),
+        None,
+    )
+    fill = next(
+        (json.loads(event.payload_bytes) for event in reversed(events)
+         if event.event_type == "FILL_OBSERVED_FIXTURE"),
+        None,
+    )
+    if fill is None:
+        return None, "0", None, "0", "0", "NO_INTENT"
+    opens_position = intent is not None and not intent["reduce_only"] and (
+        (intent["product"] == "spot" and intent["side"] == "BUY")
+        or (intent["product"] == "perpetual" and intent["side"] == "SELL")
+    )
+    product = intent["product"] if opens_position else None
+    signed = "0" if product is None else (
+        "-" + fill["cumulative_filled_quantity"]
+        if product == "perpetual" else fill["cumulative_filled_quantity"]
+    )
+    return product, signed, fill["price"], fill["fee"], "0", "FILLED"
+def _reduce_engine(events):
+    return EngineProjection(*_projection_values(events))
+def _reduce_venue(observations, previous_position):
+    item = observations[-1]
+    return VenueProjection(
+        item.product_or_null, item.signed_quantity, item.average_price_or_null,
+        item.cumulative_fee, item.funding, item.terminal_state,
+    )
+def _reduce_ledger(previous_snapshot, accounting_transition):
+    accounting, snapshot = (
+        accounting_transition["accounting"], accounting_transition["next_snapshot"]
+    )
+    product = {"SPOT_LONG": "spot", "PERP_SHORT": "perpetual"}.get(
+        snapshot["position_state"]
+    )
+    return LedgerProjection(
+        product, snapshot["signed_quantity"], accounting["fill_price"],
+        accounting["fee"], accounting["funding_cashflow"], "FILLED",
+    )
+def _reconcile(events, transition, previous):
+    if transition["accounting"]["fill_price"] is None:
+        snapshot, accounting = transition["next_snapshot"], transition["accounting"]
+        values = (
+            {"SPOT_LONG": "spot", "PERP_SHORT": "perpetual"}.get(snapshot["position_state"]),
+            snapshot["signed_quantity"], None, "0",
+            accounting["funding_cashflow"], "NO_INTENT",
+        )
+        return EngineProjection(*values), VenueProjection(*values), LedgerProjection(*values), None
+    observations = _normal_lifecycle_observations(
+        transition, previous["position_state"]
+    )
+    item = observations[0]
+    if item.fill_before_ack:
+        _rechain_fill_before_ack(events)
+    fault = (
+        "UNRESOLVED_UNKNOWN" if item.unknown_reason_or_null in {"TIMEOUT", "DISCONNECT"}
+        else "DUPLICATE_ECONOMIC_ORDER" if item.conflicting_duplicate
+        else "UNRECORDED_OR_CONFLICTING_FILL" if item.overfill
+        else "DISASTER_STOP_MISSING_OR_UNCONFIRMED" if not item.stop_confirmed
+        else None
+    )
+    engine = _reduce_engine(tuple(events))
+    venue = _reduce_venue(observations, previous["position_state"])
+    ledger = _reduce_ledger(previous, transition)
+    values = lambda item: tuple(getattr(item, name) for name in EngineProjection.__dataclass_fields__)
+    if fault is None and (
+        values(engine) != values(venue) or values(venue) != values(ledger)
+    ):
+        fault = "LEDGER_POSITION_MISMATCH"
+    return engine, venue, ledger, fault
 def _append_open(events, *, source, plan, contract, transition):
     decision = transition["decision"]
     accounting = transition["accounting"]
-    product, side, metadata, intent_id, attempt_id, client_id = _intent_identity(
+    product = "spot" if decision["action"] == "OPEN_SPOT_LONG" else "perpetual"
+    side = "BUY" if product == "spot" else "SELL"
+    metadata = source["instruments"][product]
+    intent_id, attempt_id, client_id = _order_identity(
         source=source,
         plan=plan,
         contract=contract,
         decision=decision,
         accounting=accounting,
+        product=product,
+        side=side,
+        reduce_only=False,
+        metadata_hash=metadata["metadata_hash"],
     )
     common = {"intent_id_or_null": intent_id}
     _append_event(
@@ -300,36 +365,11 @@ def _append_open(events, *, source, plan, contract, transition):
             intent_id_or_null=intent_id,
             attempt_id_or_null=attempt_id,
         )
-    fill_id = stable_id(
-        "replacement_fill",
-        {"attempt_id": attempt_id, "cumulative_quantity": accounting["quantity"]},
-    )
-    _append_event(
+    _append_fill_and_reconcile(
         events,
-        event_type="FILL_OBSERVED_FIXTURE",
-        payload={
-            "fill_id": fill_id,
-            "quantity": accounting["quantity"],
-            "price": accounting["fill_price"],
-            "notional": accounting["notional"],
-            "fee_asset": "USDT",
-            "fee": accounting["fee"],
-            "cumulative_filled_quantity": accounting["quantity"],
-        },
-        intent_id_or_null=intent_id,
-        attempt_id_or_null=attempt_id,
-    )
-    _append_event(
-        events,
-        event_type="ORDER_RECONCILED_FIXTURE",
-        payload={
-            "terminal_state": "FILLED",
-            "cumulative_filled_quantity": accounting["quantity"],
-            "average_fill_price_or_null": accounting["fill_price"],
-            "cumulative_fee": accounting["fee"],
-        },
-        intent_id_or_null=intent_id,
-        attempt_id_or_null=attempt_id,
+        accounting=accounting,
+        intent_id=intent_id,
+        attempt_id=attempt_id,
     )
     terms = transition["protective_stop_terms_or_null"]
     stop_intent_id = stable_id(
@@ -382,38 +422,6 @@ def _append_open(events, *, source, plan, contract, transition):
     }
     snapshot["snapshot_hash"] = artifact_self_hash(snapshot, "snapshot_hash")
     return snapshot
-
-
-def _close_identity(*, source, previous, plan, contract, decision, accounting):
-    product = "spot" if previous["position_state"] == "SPOT_LONG" else "perpetual"
-    side = "SELL" if product == "spot" else "BUY"
-    reduce_only = product == "perpetual"
-    identity = {
-        "plan_id": plan["plan_id"],
-        "plan_hash": plan["plan_hash"],
-        "simulation_contract_id": contract["contract_id"],
-        "simulation_contract_hash": contract["contract_hash"],
-        "opportunity_id": source["opportunity"]["opportunity_id"],
-        "decision_hash": decision["decision_hash"],
-        "position_before": decision["position_before"],
-        "action": decision["action"],
-        "product_or_null": product,
-        "side_or_null": side,
-        "reduce_only": reduce_only,
-        "approved_quantity": accounting["quantity"],
-        "approved_notional": accounting["notional"],
-        "instrument_metadata_hash_or_null": previous["instrument_metadata_hash_or_null"],
-    }
-    intent_id = stable_id("replacement_intent", identity)
-    attempt_id = stable_id(
-        "replacement_attempt", {"intent_id": intent_id, "attempt_ordinal": 1}
-    )
-    client_id = stable_id(
-        "replacement_client", {"intent_id": intent_id, "product": product}
-    )
-    return product, side, reduce_only, intent_id, attempt_id, client_id
-
-
 def _append_fill_and_reconcile(events, *, accounting, intent_id, attempt_id):
     fill_id = stable_id(
         "replacement_fill",
@@ -446,8 +454,6 @@ def _append_fill_and_reconcile(events, *, accounting, intent_id, attempt_id):
         intent_id_or_null=intent_id,
         attempt_id_or_null=attempt_id,
     )
-
-
 def _append_close(events, *, source, previous, plan, contract, transition):
     decision, accounting = transition["decision"], transition["accounting"]
     triggered = transition["triggered_stop_or_null"]
@@ -474,7 +480,6 @@ def _append_close(events, *, source, previous, plan, contract, transition):
             attempt_id=attempt_id,
         )
         return transition["next_snapshot"]
-
     old_stop = previous["protective_stop_or_null"]
     for event_type in (
         "STOP_CANCEL_REQUESTED_FIXTURE",
@@ -487,13 +492,18 @@ def _append_close(events, *, source, previous, plan, contract, transition):
             intent_id_or_null=old_stop["stop_intent_id"],
             attempt_id_or_null=old_stop["stop_attempt_id"],
         )
-    product, side, reduce_only, intent_id, attempt_id, client_id = _close_identity(
+    product = "spot" if previous["position_state"] == "SPOT_LONG" else "perpetual"
+    side, reduce_only = ("SELL", False) if product == "spot" else ("BUY", True)
+    intent_id, attempt_id, client_id = _order_identity(
         source=source,
-        previous=previous,
         plan=plan,
         contract=contract,
         decision=decision,
         accounting=accounting,
+        product=product,
+        side=side,
+        reduce_only=reduce_only,
+        metadata_hash=previous["instrument_metadata_hash_or_null"],
     )
     _append_event(
         events,
@@ -527,13 +537,10 @@ def _append_close(events, *, source, previous, plan, contract, transition):
         attempt_id=attempt_id,
     )
     return transition["next_snapshot"]
-
-
 def simulate_challenger_replacement_binance_lifecycle(
     *, source, previous_projection, plan, contract, build_identity
 ) -> ChallengerReplacementLifecycleResult:
     """Produce no-intent fixture lifecycle evidence for one v0.72 input."""
-
     if (
         not _valid_v072_build(build_identity)
         or not isinstance(source, Mapping)
@@ -596,11 +603,30 @@ def simulate_challenger_replacement_binance_lifecycle(
                     "reason_code": decision["reason_code"],
                 },
             )
-        _append_reconciled(
-            events,
-            accounting=transition["accounting"],
-            next_snapshot=next_snapshot,
+        engine, venue, ledger, failure_reason = _reconcile(
+            events, {**transition, "next_snapshot": next_snapshot}, previous_projection
         )
+        status, reason = "RECONCILED_FIXTURE", None
+        if failure_reason is None:
+            _append_reconciled(events, engine=engine, venue=venue, ledger=ledger)
+        else:
+            status, reason = "FAILED_CLOSED", failure_reason
+            next_snapshot = copy.deepcopy(next_snapshot)
+            next_snapshot["risk_state"] = "STAGE_FAILED_LOCKED"
+            if next_snapshot["position_state"] != "FLAT":
+                next_snapshot["protective_stop_or_null"] = None
+            next_snapshot["snapshot_hash"] = artifact_self_hash(
+                next_snapshot, "snapshot_hash"
+            )
+            _append_event(
+                events,
+                event_type="LIFECYCLE_FAILED_CLOSED",
+                payload={
+                    "reason_code": reason,
+                    "position_certainty": next_snapshot["position_certainty"],
+                    "unresolved_intent_ids": next_snapshot["unresolved_intent_ids"],
+                },
+            )
         plan_identity = {
             "plan_id": plan["plan_id"],
             "plan_hash": plan["plan_hash"],
@@ -619,9 +645,9 @@ def simulate_challenger_replacement_binance_lifecycle(
             accounting_bytes=_canonical_bytes(transition["accounting"]),
             next_snapshot_bytes=_canonical_bytes(next_snapshot),
             lifecycle_events=tuple(events),
-            status="RECONCILED_FIXTURE",
-            operationally_complete=True,
-            reason_code_or_null=None,
+            status=status,
+            operationally_complete=status == "RECONCILED_FIXTURE",
+            reason_code_or_null=reason,
         )
     except ChallengerReplacementLifecycleError:
         raise
