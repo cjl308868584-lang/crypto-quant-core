@@ -1,6 +1,6 @@
 import copy
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import unittest
 
 from crypto_quant.evidence import artifact_self_hash
@@ -397,6 +397,18 @@ class ChallengerReplacementSimulationTests(unittest.TestCase):
                     max(0, len(value.partition(".")[2])),
                     8,
                 )
+
+    def test_canonical_result_is_independent_of_caller_decimal_context(self):
+        source = self.source(
+            signal="LONG",
+            spot_metadata=fixture_v071_spot_metadata(multiplier="1.23456789"),
+        )
+        results = []
+        for precision in (10, 16, 28, 50):
+            with localcontext() as context:
+                context.prec = precision
+                results.append(self.simulate(source))
+        self.assertTrue(all(result == results[0] for result in results[1:]))
 
     def test_margin_exhaustion_flattens_with_frozen_reason(self):
         opened = self.simulate(self.source(signal="SHORT"))["next_snapshot"]

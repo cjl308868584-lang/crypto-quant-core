@@ -24,7 +24,7 @@
     ".gitattributes": "7a8e8efda0e664ca86fce23220cc4af5e50821892a593a68c5140e600bb875af",
     ".github/workflows/ci.yml": "69d7935f09bf75b989887cf319cc9973a4e372390545cec9f6eda25cd700ae41",
     ".gitignore": "9212fcaffe51713f7fc1d6abd01a2d0302c58bb0f58ba9a198044f1815fd0608",
-    "README.md": "40ee492cdd2cb9635d3eea32ac65162435f36be3f1cc325595f5c317fa37525c",
+    "README.md": "643333ef15349ae9475b410290e1665ccd6022d779ea0fc63b15357a10a0b5d0",
     "artifacts/account-cost/binance-account-commission-smoke-not-run-v0.22.0.json": "3ab008d9e95665ada3e0351052ece7dd9db0c63044d99397fa797e6719e3bcb0",
     "artifacts/ai-research/binance-causal-logistic-research-v0.28.0.json": "7b76e70b6924f1b0061da372c765a42d9bbdffead70bb9e40957a2c1ac288d24",
     "artifacts/baseline-research/binance-baseline-failure-attribution-v0.29.0.json": "b3bb875e6f21b2477f99ac32e6b84404fde0e6b02e14aebaf0b0f5def783038d",
@@ -116,6 +116,7 @@
     "config/challenger-launchd-contract-v1.schema.json": "824fe0bf0837064c73b40dee9ae6e7c6ed844036d2ee76bf936c36ae470e4fa9",
     "config/challenger-launchd-install-receipt-v1.schema.json": "577c65582d5dede5230b45a42632e2a4dacd897e325e1bccbe72873b3bc40277",
     "config/challenger-prequential-snapshot-v1.schema.json": "55a39743984fa70ef7bf323c1fbb5d5db83e66c3be5188e81c8b6bab9f70e74a",
+    "config/challenger-replacement-binance-simulation-input-v1.schema.json": "29016998de04fff5b1c11b5aa804acf81712fc36c1fc4c8a9ac9d889334c429f",
     "config/challenger-replacement-decision-v1.schema.json": "c5be2b73a38a53efe19c7abbcb0113cf5ffe62bc0f2c938118af29f0f88361d7",
     "config/challenger-replacement-decision-v2.schema.json": "1f4614892962b95e497b81a16c4524bf3a1bb0b28de31ef83fd88b08c1b4a7e1",
     "config/challenger-replacement-deployment-v1.schema.json": "10403324f32074c1f92f9d71e2bf1d55e45592dd7d183e7d3c56b59ee4929125",
@@ -298,7 +299,7 @@
     "src/crypto_quant/account_commission.py": "7ce2db8d648f8e0208951caf866d914854d244e469c9a86a27b1ee14ff84c9f4",
     "src/crypto_quant/account_commission_cli.py": "993e6cb903673bc6781ca0a74494bfc149cea73c4d5a47576a3384e052652076",
     "src/crypto_quant/baseline_attribution.py": "cb72d295c26b05f5205643adc7403b127ac6a174d4e198b06d025661967060dd",
-    "src/crypto_quant/build.py": "5109aa9485b6efce8bfb391440b586919359fe50edca544a95227c36560f42e7",
+    "src/crypto_quant/build.py": "61a77d2996aef1e63ca1adc7bfdea1a9be66cc99a2651ca77ff22356ccadb5cc",
     "src/crypto_quant/canonical.py": "29bca29c775ec8f6734c5676fc0682d402b0659a2250902de68fb7c477891120",
     "src/crypto_quant/capture_cli.py": "d542e062327c3c2f17bf3484a020b5e38d5f07027be12e0bd78cc2c975629bb0",
     "src/crypto_quant/causal_research.py": "20f0065df15988f4bb1838b21b1e955bf5b3053d41547d2e478c91df78bedfd1",
@@ -373,7 +374,7 @@
     "src/crypto_quant/challenger_replacement_plan_v3_supersession_cli.py": "145390b1821ad397a602cbc2664b59a6cc3077a12996de34060b70c9c86c66c8",
     "src/crypto_quant/challenger_replacement_preflight.py": "1f47286210eb260f0f20208187a72082c6ecb88483fb3f0ba62c6a6ee92aac74",
     "src/crypto_quant/challenger_replacement_runtime.py": "fbaeb06894f0a3f0468c7382c411e4296fbc2b7e514dfcc26867a97a21eaa97f",
-    "src/crypto_quant/challenger_replacement_simulation.py": "01de0ea97330340354fd4ae8d2754c46f4d303b01371958406f59afa7e74ff0b",
+    "src/crypto_quant/challenger_replacement_simulation.py": "a36f4deabeea56549d72a2c16fbbf667963b5225b698548b36d016de85e35f0b",
     "src/crypto_quant/challenger_replacement_simulation_contract.py": "a20cd43fff271d7861d52d35797e90e530814a5de197ce38335e2a3889fed00f",
     "src/crypto_quant/challenger_replacement_start.py": "8e909879dfd483180018adaf6c6e85348de2ff3aa24da333a912217fa3cb431d",
     "src/crypto_quant/challenger_replacement_start_cli.py": "df6bf9344b9a023538668be5bf47645364acd9374c9a16428a70a7a529a1cac7",
@@ -576,7 +577,7 @@
     "tests/test_challenger_replacement_plan_v3_supersession.py": "22ab803cd0f6dd2228b2eada2419b551f0638209cde4118fefe74cc093194963",
     "tests/test_challenger_replacement_preflight.py": "8134fe2937f859235c8e1aed73b0073b4944b82120db8bfc8abc61a29bbde579",
     "tests/test_challenger_replacement_runtime.py": "ad37b577bab22baea5902db44117d2bb81bb6ab859279d3af68a2ea4a500823b",
-    "tests/test_challenger_replacement_simulation.py": "5d77292dc80f66f85426057cf4dbdaa69f58a7de576c0a6e39a1d7e064a9dc47",
+    "tests/test_challenger_replacement_simulation.py": "d3ab558e5c18f3f02e385c8a13522243c143e90978ce2c51bd8f09b17dd6514b",
     "tests/test_challenger_replacement_simulation_contract.py": "ef2ff2e50399901d5796b8581d9e5dfde92663e67dce32c461bc775e3c789571",
     "tests/test_challenger_replacement_start.py": "ed09d1cd992fb2aeeedabcbc5ea0a1ec48752e813f8293a3cd698ea04d8a5542",
     "tests/test_challenger_replacement_v066_release.py": "7b664f41b365734645bb390fe45a73c370df8b46cb82b5f3d2a9d59a8757e5fb",
@@ -586,7 +587,7 @@
     "tests/test_challenger_replacement_v069_release.py": "7028ab0ac550b397ffc34be273c613bd7f645a5c181475643967c364a1e539e9",
     "tests/test_challenger_replacement_v070_release.py": "269a33f125f1cfcd0bff492b73016a007172b33a8e44bcaa0295486480fbd7c0",
     "tests/test_challenger_replacement_v071_artifacts.py": "b1418768d7be414b9db91d9ce3c923061f4d00fda75fb550cdd7f573b2765a3b",
-    "tests/test_challenger_replacement_v071_release.py": "bd176eff2345e7f0373294138a11b8aa09a95a69f431fb0b6909414ccc17012d",
+    "tests/test_challenger_replacement_v071_release.py": "05bbec92d7dd328b6b2b4705c1279ad6cc312de10b70493278e7cee5e00d8716",
     "tests/test_estimators.py": "0a22a637e532465fa01ca01eff143d4c8c3a7c930320fd4f28fbb4ffc4310653",
     "tests/test_nautilus_evidence_adapter.py": "70dd0688ef9163320cbe241f9e86d47f46ac5401c407a92ce5c14c7f2529dbf1",
     "tests/test_nautilus_sandbox_artifacts.py": "d674cbdfc044c129f0017059d35b7c66562b252df3b96de3dd6a02d0fde77245",
@@ -622,7 +623,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "2fc62c024dafc0fc65f59728f2de5f030f3c167aca960f5cdffc79e4f5662473",
+  "build_input_tree_hash": "ed4e0e3dde2b586d9555e5997fbdad758c646206502f584bef6093c51f0a102f",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -630,5 +631,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "8011229ae45e70ff870f6e88f8a634e853879b14e3ebbf4f1ed3e77ef7882726"
+  "manifest_hash": "d5d9e1a8d1c1325bc42fef5ed7692194cd14d6ec001b82e63a2f10904da12c15"
 }

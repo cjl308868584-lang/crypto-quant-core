@@ -37,6 +37,7 @@ class V071ReleaseTests(unittest.TestCase):
         required = {
             "artifacts/challenger-replacement/challenger-replacement-binance-simulation-contract-v0.71.0.json",
             "config/challenger-replacement-simulation-contract-v1.schema.json",
+            "config/challenger-replacement-binance-simulation-input-v1.schema.json",
             "src/crypto_quant/schemas/challenger-replacement-simulation-contract-v1.schema.json",
             "src/crypto_quant/challenger_replacement_simulation_contract.py",
             "src/crypto_quant/challenger_replacement_binance_simulation_input.py",

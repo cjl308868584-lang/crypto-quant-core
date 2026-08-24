@@ -2,7 +2,7 @@
 
 import copy
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR
+from decimal import Context, Decimal, DecimalException, InvalidOperation, ROUND_CEILING, ROUND_FLOOR, localcontext
 from typing import Mapping
 
 from .canonical import canonical_decimal, stable_id, utc_datetime
@@ -16,6 +16,7 @@ from .instruments import MarketType
 
 _ZERO_HASH = "0" * 64
 _QUOTE_QUANTUM = Decimal("0.00000001")
+_FIXED_CONTEXT = Context(prec=50)
 _SNAPSHOT_KEYS = {
     "snapshot_version", "snapshot_hash", "parent_snapshot_hash_or_null",
     "opportunity_id_or_null", "position_state", "position_certainty", "cash",
@@ -37,6 +38,17 @@ class ChallengerReplacementSimulationError(ValueError):
 def _invalid(reason="CHALLENGER_REPLACEMENT_SIMULATION_INPUT_INVALID"):
     raise ChallengerReplacementSimulationError(reason)
 
+def _fixed_decimal(function):
+    def wrapped(*args, **kwargs):
+        try:
+            with localcontext(_FIXED_CONTEXT):
+                return function(*args, **kwargs)
+        except DecimalException as error:
+            raise ChallengerReplacementSimulationError(
+                "CHALLENGER_REPLACEMENT_SIMULATION_INPUT_INVALID"
+            ) from error
+    return wrapped
+
 
 def _d(value):
     try:
@@ -53,8 +65,6 @@ def _money(value, *, debit=False):
     return value.quantize(_QUOTE_QUANTUM, rounding=rounding)
 def _signed_cashflow(value):
     return -_money(-value, debit=True) if value < 0 else _money(value)
-
-
 def _finalize_decision(decision):
     identity = {
         key: value
@@ -66,8 +76,6 @@ def _finalize_decision(decision):
     )
     decision["decision_hash"] = artifact_self_hash(decision, "decision_hash")
     return decision
-
-
 def _time(value):
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -89,14 +97,10 @@ def _valid_context(plan, contract):
         )
     except (KeyError, TypeError, ValueError):
         return False
-
-
 def _with_hash(snapshot):
     value = copy.deepcopy(snapshot)
     value["snapshot_hash"] = artifact_self_hash(value, "snapshot_hash")
     return value
-
-
 def build_challenger_replacement_genesis_snapshot(*, plan, contract):
     """Build the sole 100-USDT, verified-flat fixture genesis."""
 
@@ -171,8 +175,6 @@ def _validate_snapshot(snapshot):
     ):
         _invalid("CHALLENGER_REPLACEMENT_SIMULATION_SNAPSHOT_INVALID")
     return copy.deepcopy(dict(snapshot))
-
-
 def _validate_source(source, plan, contract):
     if (
         not _valid_context(plan, contract)
@@ -188,8 +190,6 @@ def _validate_source(source, plan, contract):
     ):
         _invalid()
     return source
-
-
 def _indicators(source):
     closes = tuple(_d(bar["close"]) for bar in source["bars"])
     prior = sum(closes[:20], Decimal("0")) / Decimal("20")
@@ -205,8 +205,6 @@ def _indicators(source):
         "long_signal": long_signal,
         "short_signal": short_signal,
     }
-
-
 def _mark(snapshot, source):
     state, quantity = snapshot["position_state"], _d(snapshot["signed_quantity"])
     cash = _d(snapshot["cash"])
@@ -376,6 +374,7 @@ def _decision(source, snapshot, previous_hash, daily_loss, drawdown, plan):
     return _finalize_decision(decision)
 
 
+@_fixed_decimal
 def compute_challenger_replacement_simulation_decision(
     *, source, previous_projection, plan, contract
 ):
@@ -436,6 +435,7 @@ def _opening_quantity(source, product, metadata, fill, contract, snapshot):
     return Decimal("0"), "NO_TRADE"
 
 
+@_fixed_decimal
 def simulate_challenger_replacement_opportunity(
     *, source, previous_projection, plan, contract, build_identity
 ):

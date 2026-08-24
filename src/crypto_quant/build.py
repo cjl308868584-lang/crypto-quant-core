@@ -409,6 +409,7 @@ _V070_RELEASE_PATHS = (
 
 _V071_RELEASE_PATHS = (
     "config/challenger-replacement-simulation-contract-v1.schema.json",
+    "config/challenger-replacement-binance-simulation-input-v1.schema.json",
     "artifacts/challenger-replacement/challenger-replacement-binance-simulation-contract-v0.71.0.json",
     "tests/test_challenger_replacement_simulation_contract.py",
     "tests/test_challenger_replacement_binance_simulation_input.py",
