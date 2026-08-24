@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from crypto_quant.canonical import canonical_json
+from crypto_quant import challenger_replacement_opportunities as opportunity_module
 from crypto_quant.challenger_replacement_events import (
     ChallengerReplacementEventRootIdentity,
     open_challenger_replacement_event_root,
@@ -30,6 +31,10 @@ from crypto_quant.challenger_replacement_opportunities import (
     opportunity_health,
     opportunity_id_for,
 )
+from crypto_quant.challenger_replacement_opportunity_projection import (
+    apply_opportunity_event,
+    initial_opportunity_projection,
+)
 from tests.challenger_replacement_v3_fixtures import (
     DEFAULT_OBSERVED_AT,
     DEFAULT_SCHEDULED_FOR,
@@ -38,6 +43,84 @@ from tests.challenger_replacement_v3_fixtures import (
     fixture_v3_plan,
 )
 from tests.test_challenger_replacement_events import EventWorkspace
+
+
+V070_SEMANTIC_PROJECTION_BYTES = (
+    b'{"active_opportunity_id":null,"current_consecutive_missed":1,'
+    b'"first_scheduled_for":"2026-08-24T00:00:00.000Z",'
+    b'"last_terminal_scheduled_for":"2026-08-24T04:00:00.000Z",'
+    b'"maximum_consecutive_missed":1,"maximum_detection_delay_seconds":660,'
+    b'"missed_opportunity_count":1,"missed_reason_counts":'
+    b'{"PROCESS_NOT_RUNNING":1},"next_required_opportunity":'
+    b'{"opportunity_id":"ETHUSDT@2026-08-24T08:00:00.000Z",'
+    b'"scheduled_for":"2026-08-24T08:00:00.000Z"},'
+    b'"observed_opportunity_count":1,"opportunities":'
+    b'{"ETHUSDT@2026-08-24T00:00:00.000Z":'
+    b'{"capture_close":"2026-08-24T00:10:00.000Z",'
+    b'"capture_open":"2026-08-24T00:02:00.000Z",'
+    b'"decision_sha256":"730db15b20d3c9eb273861fd788d13f5424623a5aec9df334c05ac4593600844",'
+    b'"outcome":"OBSERVED","result_evidence_sha256":'
+    b'"3b218612b5e9d86dfca13b614e97910d1098280117acd3862ee63b29b68282ec",'
+    b'"scheduled_for":"2026-08-24T00:00:00.000Z",'
+    b'"source_bundle_sha256":"6ceda47dac352d9f81a563f3c33dfef60b2a652f9e4107eff080cac9b7a71214",'
+    b'"stage":"OPPORTUNITY_OBSERVED"},'
+    b'"ETHUSDT@2026-08-24T04:00:00.000Z":'
+    b'{"detected_at":"2026-08-24T04:11:00.000Z","outcome":"MISSED",'
+    b'"reason_code":"PROCESS_NOT_RUNNING",'
+    b'"scheduled_for":"2026-08-24T04:00:00.000Z",'
+    b'"stage":"OPPORTUNITY_MISSED"}},"terminal_opportunity_count":2,'
+    b'"terminal_scheduled_for":["2026-08-24T00:00:00.000Z",'
+    b'"2026-08-24T04:00:00.000Z"]}'
+)
+V070_SEMANTIC_PROJECTION_SHA256 = (
+    "b0f887adcea10275688ab6fe68feb2f55bf8a4bc49eff9a574dae35c9b51979a"
+)
+V070_PUBLIC_API_NAMES = {
+    "ChallengerReplacementOpportunityError",
+    "ChallengerReplacementOpportunityState",
+    "catch_up_missed_opportunities",
+    "derive_due_opportunities",
+    "opportunity_coverage",
+    "opportunity_health",
+    "opportunity_id_for",
+}
+
+
+def v070_semantic_projection(projection):
+    slot_keys = (
+        "stage",
+        "outcome",
+        "scheduled_for",
+        "capture_open",
+        "capture_close",
+        "source_bundle_sha256",
+        "decision_sha256",
+        "result_evidence_sha256",
+        "reason_code",
+        "detected_at",
+    )
+    return {
+        "active_opportunity_id": projection["active_opportunity_id"],
+        "first_scheduled_for": projection["first_scheduled_for"],
+        "last_terminal_scheduled_for": projection["last_terminal_scheduled_for"],
+        "next_required_opportunity": projection["next_required_opportunity"],
+        "terminal_scheduled_for": projection["terminal_scheduled_for"],
+        "terminal_opportunity_count": projection["terminal_opportunity_count"],
+        "observed_opportunity_count": projection["observed_opportunity_count"],
+        "missed_opportunity_count": projection["missed_opportunity_count"],
+        "current_consecutive_missed": projection["current_consecutive_missed"],
+        "maximum_consecutive_missed": projection["maximum_consecutive_missed"],
+        "missed_reason_counts": projection["missed_reason_counts"],
+        "maximum_detection_delay_seconds": projection[
+            "maximum_detection_delay_seconds"
+        ],
+        "opportunities": {
+            opportunity_id: {
+                key: slot[key] for key in slot_keys if key in slot
+            }
+            for opportunity_id, slot in sorted(projection["opportunities"].items())
+        },
+    }
 
 
 def _opportunity_race_worker(identity_values, worker_id, barrier, queue):
@@ -407,6 +490,56 @@ class OpportunityStateTests(unittest.TestCase):
             projection["opportunities"][self.ws.opportunity_id]["outcome"],
             "OBSERVED",
         )
+
+    def test_extracted_projection_replays_committed_v070_bytes_exactly(self):
+        self.assertTrue(callable(initial_opportunity_projection))
+        self.assertTrue(callable(apply_opportunity_event))
+        input_event = self._append_input()
+        result_event = self._append_result(input_event)
+        projection = self.state.replay()
+        self.state.append(
+            event_type="OPPORTUNITY_OBSERVED",
+            opportunity_id=self.ws.opportunity_id,
+            worker_id="fixture-worker",
+            recorded_at=DEFAULT_OBSERVED_AT,
+            payload={
+                "opportunity_id": self.ws.opportunity_id,
+                "scheduled_for": DEFAULT_SCHEDULED_FOR,
+                "input_event_hash": input_event.event_hash,
+                "input_event_sequence": input_event.sequence,
+                "result_event_hash": result_event.event_hash,
+                "result_event_sequence": result_event.sequence,
+                "source_bundle_sha256": self.ws.source_hash,
+                "decision_sha256": self.ws.decision_hash,
+                "result_evidence_sha256": self.ws.evidence_hash,
+                "observed_at": DEFAULT_OBSERVED_AT,
+            },
+            expected_last_event_hash=projection["last_event_hash"],
+        )
+        catch_up_missed_opportunities(
+            state=self.state,
+            start_scheduled_for=DEFAULT_SCHEDULED_FOR,
+            detected_at="2026-08-24T04:11:00.000Z",
+            worker_id="fixture-worker",
+            reason_code="PROCESS_NOT_RUNNING",
+        )
+        actual = canonical_json(
+            v070_semantic_projection(self.state.replay())
+        ).encode("utf-8")
+        self.assertEqual(actual, V070_SEMANTIC_PROJECTION_BYTES)
+        self.assertEqual(
+            hashlib.sha256(actual).hexdigest(),
+            V070_SEMANTIC_PROJECTION_SHA256,
+        )
+
+    def test_facade_does_not_duplicate_extracted_projection_state_machine(self):
+        facade = Path(
+            __file__
+        ).resolve().parents[1] / "src/crypto_quant/challenger_replacement_opportunities.py"
+        source = facade.read_text(encoding="utf-8")
+        self.assertLessEqual(len(source.splitlines()), 696)
+        self.assertNotIn("def _apply_event(", source)
+        self.assertTrue(V070_PUBLIC_API_NAMES <= set(dir(opportunity_module)))
 
     def test_replays_direct_missed_without_active_opportunity(self):
         projection = self.state.replay()

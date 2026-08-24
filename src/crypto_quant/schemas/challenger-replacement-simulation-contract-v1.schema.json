@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/challenger-replacement-simulation-contract-v1.schema.json",
+  "title": "Challenger replacement deterministic simulation contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "mode", "venue", "economic_asset", "starting_virtual_equity_usdt", "capital_limit_usdt", "gross_exposure_limit", "configured_leverage", "technical_leverage_cap", "fill_model", "market_order_slippage_per_side", "spot_taker_fee", "perpetual_taker_fee", "protective_stop_distance", "funding_source", "quote_quantum_usdt", "plan", "policy_bindings", "products", "accounting", "risk_rehearsal", "authority", "status", "warnings"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-simulation-contract-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "contract_id": {"type": "string", "pattern": "^challenger_replacement_simulation_contract_[0-9a-f]{64}$"},
+    "contract_hash": {"$ref": "#/$defs/hash"},
+    "mode": {"const": "FIXTURE_ONLY_DETERMINISTIC_BINANCE_SIMULATION"},
+    "venue": {"const": "BINANCE_ONLY"},
+    "economic_asset": {"const": "ETH"},
+    "starting_virtual_equity_usdt": {"const": "100"},
+    "capital_limit_usdt": {"const": "100"},
+    "gross_exposure_limit": {"const": "0.5"},
+    "configured_leverage": {"const": "1"},
+    "technical_leverage_cap": {"const": "2"},
+    "fill_model": {"const": "DETERMINISTIC_IMMEDIATE_FULL_MARKET_FIXTURE"},
+    "market_order_slippage_per_side": {"const": "0.001"},
+    "spot_taker_fee": {"const": "0.0015"},
+    "perpetual_taker_fee": {"const": "0.0015"},
+    "protective_stop_distance": {"const": "0.02"},
+    "funding_source": {"const": "EXACT_FIXTURE_RATE_AT_SCHEDULED_BOUNDARY"},
+    "quote_quantum_usdt": {"const": "0.00000001"},
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_id", "plan_hash", "file_sha256"],
+      "properties": {
+        "plan_id": {"const": "challenger_replacement_plan_v3_e1b6a4187cb4bb4b371ea503f83284056d4f0c6c504feb7827971869a52f666f"},
+        "plan_hash": {"const": "f29474a1700b0c3cf313047e2d6e85182e68104d9584ec9df7b492aa7ab00486"},
+        "file_sha256": {"const": "6fae2ae0df4b8402ddc1df1b5bca611e11df41eee8d42f591d5d7b5fb24a31c3"}
+      }
+    },
+    "policy_bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_policy_hash", "opportunity_policy_hash", "product_policy_hash", "risk_policy_hash", "storage_authority_policy_hash"],
+      "properties": {
+        "decision_policy_hash": {"const": "1a201f174e45f1f990efd5d4198fa1be3b00de0115fa1ff73d2aef046456ad32"},
+        "opportunity_policy_hash": {"const": "032d5a5a706a50a5e053b1d86247d67005aa9f74178b43f2a81d8937e6c2af4d"},
+        "product_policy_hash": {"const": "61b7e40509146bbae2d7581dc14b45e12b839c7fa18e54073406f5ef707bbe92"},
+        "risk_policy_hash": {"const": "f7d42570ef7772914d6c9753a7402f62aa8b2d7583693521ae5faf643d9a2fab"},
+        "storage_authority_policy_hash": {"const": "dcf89c804d2576c88ffd590a27c1a736a2dc4ed9a79a8879c675f8156b2dc8ee"}
+      }
+    },
+    "products": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spot_instrument", "spot_direction", "perpetual_instrument", "perpetual_direction", "products_mutually_exclusive", "perpetual_position_mode", "perpetual_margin_mode"],
+      "properties": {
+        "spot_instrument": {"const": "BINANCE:SPOT:ETHUSDT"},
+        "spot_direction": {"const": "LONG_ONLY_UNMARGINED"},
+        "perpetual_instrument": {"const": "BINANCE:USDT_PERP:ETHUSDT"},
+        "perpetual_direction": {"const": "SHORT_ONLY"},
+        "products_mutually_exclusive": {"const": true},
+        "perpetual_position_mode": {"const": "ONE_WAY"},
+        "perpetual_margin_mode": {"const": "ISOLATED"}
+      }
+    },
+    "accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decimal_arithmetic_only", "binary_float_allowed", "contract_multiplier_required", "fee_authority", "spot_conservative_mark", "perpetual_conservative_mark", "perpetual_short_quantity_sign", "funding_cashflow_formula", "utc_day_start_boundary", "continuous_high_water"],
+      "properties": {
+        "decimal_arithmetic_only": {"const": true},
+        "binary_float_allowed": {"const": false},
+        "contract_multiplier_required": {"const": true},
+        "fee_authority": {"const": "CONTRACT_MUST_EQUAL_INSTRUMENT_METADATA"},
+        "spot_conservative_mark": {"const": "BID"},
+        "perpetual_conservative_mark": {"const": "MARK"},
+        "perpetual_short_quantity_sign": {"const": "NEGATIVE"},
+        "funding_cashflow_formula": {"const": "NEGATIVE_SIGNED_Q_TIMES_MULTIPLIER_TIMES_MARK_TIMES_RATE"},
+        "utc_day_start_boundary": {"const": "POST_STOP_FUNDING_MARK_BEFORE_NEW_ACTION"},
+        "continuous_high_water": {"const": true}
+      }
+    },
+    "risk_rehearsal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["daily_boundary_timezone", "daily_loss_limit_usdt", "daily_limit_action", "drawdown_limit_usdt", "drawdown_limit_action", "equality_triggers", "gross_drift_action", "margin_exhausted_action"],
+      "properties": {
+        "daily_boundary_timezone": {"const": "UTC"},
+        "daily_loss_limit_usdt": {"const": "2"},
+        "daily_limit_action": {"const": "STOP_NEW_RISK_UNTIL_NEXT_UTC_DAY"},
+        "drawdown_limit_usdt": {"const": "5"},
+        "drawdown_limit_action": {"const": "FLATTEN_AND_STAGE_FAIL"},
+        "equality_triggers": {"const": true},
+        "gross_drift_action": {"const": "REDUCE_BEFORE_STRATEGY_OR_FLATTEN_FAIL"},
+        "margin_exhausted_action": {"const": "FLATTEN_AND_STAGE_FAIL"}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network_requests", "account_requests", "broker_requests", "orders_submitted_to_venue", "credentials_used", "production_state_writes", "production_activation", "runtime_install_authorized", "replacement_start_authorized", "real_orders_allowed"],
+      "properties": {
+        "network_requests": {"const": 0},
+        "account_requests": {"const": 0},
+        "broker_requests": {"const": 0},
+        "orders_submitted_to_venue": {"const": 0},
+        "credentials_used": {"const": false},
+        "production_state_writes": {"const": 0},
+        "production_activation": {"const": false},
+        "runtime_install_authorized": {"const": false},
+        "replacement_start_authorized": {"const": false},
+        "real_orders_allowed": {"const": false}
+      }
+    },
+    "status": {"const": "CONTRACT_FROZEN_FIXTURE_SIMULATION_NOT_STARTED"},
+    "warnings": {
+      "const": ["FIXTURE_ONLY_NOT_LIVE_MARKET", "NO_ACCOUNT_OR_VENUE_FEE_CLAIM", "NO_OPERATIONAL_OR_ECONOMIC_TIMER_STARTED", "NO_PROFITABILITY_OR_CANARY_ELIGIBILITY"]
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

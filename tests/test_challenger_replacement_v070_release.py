@@ -15,10 +15,10 @@ class V070ReleaseTests(unittest.TestCase):
     def test_versions_and_manifest_inventory_are_frozen(self):
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.70\.0"$',
+            r'(?m)^version = "0\.71\.0"$',
         )
         self.assertRegex(
-            (ROOT / "setup.py").read_text(), r'version="0\.70\.0"'
+            (ROOT / "setup.py").read_text(), r'version="0\.71\.0"'
         )
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
@@ -29,7 +29,7 @@ class V070ReleaseTests(unittest.TestCase):
                 manifest["package_version"],
                 manifest["manifest_version"],
             ),
-            ("0.70.0", "0.70.0", "1.64.0"),
+            ("0.71.0", "0.71.0", "1.65.0"),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {
@@ -44,7 +44,7 @@ class V070ReleaseTests(unittest.TestCase):
             "docs/superpowers/specs/2026-08-24-decision-opportunity-event-runtime-design.md",
             "docs/superpowers/plans/2026-08-24-decision-opportunity-event-runtime.md",
             "docs/adr/0070-decision-opportunity-event-runtime.md",
-            "docs/implementation-status-v0.70.0.md",
+            "docs/implementation-status-v0.71.0.md",
         }
         self.assertEqual(required - expected, set())
         self.assertEqual(set(manifest["file_hashes"]), expected)
@@ -101,7 +101,7 @@ class V070ReleaseTests(unittest.TestCase):
             (ROOT / path).read_text()
             for path in (
                 "docs/adr/0070-decision-opportunity-event-runtime.md",
-                "docs/implementation-status-v0.70.0.md",
+                "docs/implementation-status-v0.71.0.md",
             )
         ]
         for document in documents:
