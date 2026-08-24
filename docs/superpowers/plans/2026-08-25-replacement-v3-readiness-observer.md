@@ -438,7 +438,7 @@ class ReplacementReadinessObservation:
     economic: EconomicTailObservation
 ```
 
-- [ ] **Step 1: Add RED for strict ordered projection conversion**
+- [x] **Step 1: Add RED for strict ordered projection conversion**
 
 Rebuild the committed v0.72 Spot and perpetual fixture streams in owner-only
 temporary event roots. Verify one replay call yields ordered facts and exact
@@ -457,7 +457,7 @@ def test_observer_reduces_strict_v2_projection_once(self):
     self.assertEqual(observed.authority_status, "FIXTURE_NOT_OPERATIONAL")
 ```
 
-- [ ] **Step 2: Add RED for failure closure and zero writes**
+- [x] **Step 2: Add RED for failure closure and zero writes**
 
 Patch event append/publish, `open` write modes, `Path.write_*`, chmod, rename,
 network, subprocess and runtime discovery. Assert counts stay zero. Malformed
@@ -468,7 +468,7 @@ fixed reason codes without input/exception bytes.
 Add a static assertion that the observer module imports no event append/publish
 symbol and that the façade exposes only `replay()`.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run:
 
@@ -478,7 +478,7 @@ python -m unittest tests.test_challenger_replacement_readiness_observer -v
 
 Expected: module import failure.
 
-- [ ] **Step 4: Implement minimal conversion using the strict projection**
+- [x] **Step 4: Implement minimal conversion using the strict projection**
 
 Call `replay_source.replay()` once. Require its exact public projection shape
 and frozen v0.72 fixture event-evidence identity. Iterate terminal opportunities
@@ -488,7 +488,7 @@ facts; for MISSED, create no economic transition. Bind real release provenance
 separately. Never compare release provenance to fixture event identity and do
 not serialize nested evidence into output.
 
-- [ ] **Step 5: Collapse expected loader failures without catching control-flow exceptions**
+- [x] **Step 5: Collapse expected loader failures without catching control-flow exceptions**
 
 Map a readable proof of hash, parent, attachment, durability or identity
 violation to `CONFIRMED_EVIDENCE_DURABILITY_OR_IDENTITY_FAILURE`, which the
@@ -498,7 +498,7 @@ that cannot be established to
 INCONCLUSIVE. Preserve unexpected `KeyboardInterrupt`, `SystemExit` and memory
 errors. Never include raw exception text in reason codes.
 
-- [ ] **Step 6: Run GREEN, v0.70/v0.72 adjacent tests and commit**
+- [x] **Step 6: Run GREEN, v0.70/v0.72 adjacent tests and commit**
 
 ```bash
 python -m unittest tests.test_challenger_replacement_readiness_observer tests.test_challenger_replacement_opportunities tests.test_challenger_replacement_fixture_simulation -v
