@@ -479,7 +479,6 @@ def _policy(
     if facts.reconciliation_status == "FAILED_CLOSED":
         _append_once(confirmed, "LEDGER_POSITION_MISMATCH")
     if facts.current_position != "FLAT":
-        _append_once(confirmed, "NON_FLAT_TERMINAL_POSITION")
         if facts.protective_stop_status != "CONFIRMED_FIXTURE":
             _append_once(
                 confirmed, "PROTECTIVE_STOP_MISSING_OR_UNCONFIRMED"
@@ -513,6 +512,8 @@ def _policy(
         pending.append("SPOT_ROUNDTRIP_NOT_OBSERVED")
     if perpetual_cycles == 0:
         pending.append("PERPETUAL_ROUNDTRIP_NOT_OBSERVED")
+    if facts.current_position != "FLAT":
+        pending.append("ACTIVE_POSITION_CYCLE_INCOMPLETE")
     if pending:
         return "PENDING_AUTOMATIC_EXTENSION", tuple(pending)
     return "OPERATIONAL_QUALIFICATION_PASS", ()

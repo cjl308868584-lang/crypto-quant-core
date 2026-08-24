@@ -1,6 +1,7 @@
 """Cross-component v0.73 authority, compatibility, and tail-blind gates."""
 
 import ast
+import builtins
 import hashlib
 import inspect
 import os
@@ -12,6 +13,8 @@ from unittest.mock import patch
 
 from crypto_quant.challenger_replacement_readiness import (
     _ReplacementReadinessBoundary,
+    evaluate_challenger_replacement_operational_readiness,
+    observe_challenger_replacement_economic_tail,
 )
 from crypto_quant.challenger_replacement_readiness_observer import (
     ChallengerReplacementReadinessReplaySource,
@@ -19,6 +22,10 @@ from crypto_quant.challenger_replacement_readiness_observer import (
 )
 from crypto_quant.challenger_replacement_opportunities import (
     ChallengerReplacementOpportunityState,
+    catch_up_missed_opportunities,
+)
+from crypto_quant.challenger_replacement_fixture_simulation import (
+    run_challenger_replacement_fixture_simulation_opportunity,
 )
 from crypto_quant.system_paper_broker import SimulatedBroker
 from crypto_quant.operations_alerts import (
@@ -33,6 +40,13 @@ from tests.test_challenger_replacement_readiness_observer import (
     PLAN_BYTES,
     ReadinessObserverWorkspace,
     _release_provenance,
+)
+from tests.challenger_replacement_v3_fixtures import fixture_v072_golden_streams
+from tests.test_challenger_replacement_readiness import (
+    _boundary_for_due_count,
+    _coverage_facts,
+    _facts_with_cycles,
+    _seven_day_boundary,
 )
 from tests.test_operations_projection_v2 import sources as projection_sources
 
@@ -50,18 +64,22 @@ FROZEN = {
 
 
 class V073CrossComponentTests(unittest.TestCase):
-    def _observe(self, stream):
-        workspace = ReadinessObserverWorkspace()
-        self.addCleanup(workspace.close)
-        workspace.run_stream(stream)
+    @staticmethod
+    def _boundary(stream):
         start = "2026-08-24T00:00:00.000Z" if stream == "spot-cycle" else "2026-08-25T00:00:00.000Z"
-        boundary = _ReplacementReadinessBoundary(
+        return _ReplacementReadinessBoundary(
             qualification="COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL",
             start_opportunity_id_or_null="ETHUSDT@" + start,
             start_scheduled_for_or_null=start,
             start_observed_at_or_null=start.replace("00:00.000Z", "05:00.000Z"),
             observed_at="2026-08-26T00:25:00.000Z",
         )
+
+    def _observe(self, stream):
+        workspace = ReadinessObserverWorkspace()
+        self.addCleanup(workspace.close)
+        workspace.run_stream(stream)
+        boundary = self._boundary(stream)
         source = ChallengerReplacementReadinessReplaySource(workspace.state)
         return observe_challenger_replacement_readiness(
             plan_bytes=PLAN_BYTES,
@@ -80,6 +98,15 @@ class V073CrossComponentTests(unittest.TestCase):
                     qualification="COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL",
                     observed_at=projected_at,
                 )
+                original_import = builtins.__import__
+                keyring_attempts = []
+
+                def guarded_import(name, *args, **kwargs):
+                    if name == "keyring" or name.startswith("keyring."):
+                        keyring_attempts.append(name)
+                        raise AssertionError("keyring")
+                    return original_import(name, *args, **kwargs)
+
                 with patch.object(os, "write", side_effect=AssertionError("write")), patch(
                     "pathlib.Path.write_bytes", side_effect=AssertionError("write_bytes")
                 ), patch(
@@ -98,6 +125,8 @@ class V073CrossComponentTests(unittest.TestCase):
                     side_effect=AssertionError("broker/order"),
                 ), patch.object(
                     os, "system", side_effect=AssertionError("launchctl")
+                ), patch.object(
+                    builtins, "__import__", side_effect=guarded_import
                 ):
                     first = build_operations_projection_v2(
                         source, boundary=projection_boundary
@@ -113,6 +142,7 @@ class V073CrossComponentTests(unittest.TestCase):
                 alert_ids = [item["alert_id"] for item in alerts["alerts"]]
                 self.assertIn("OPS-CHALLENGER-EVIDENCE-STALE", alert_ids)
                 self.assertIn("OPS-PAPER-EVIDENCE-STALE", alert_ids)
+                self.assertEqual(keyring_attempts, [])
                 self.assertNotIn(b"pnl", status.lower())
                 self.assertNotIn(b"profit", status.lower())
 
@@ -137,15 +167,15 @@ class V073CrossComponentTests(unittest.TestCase):
                 observation = replace(
                     base,
                     facts=replace(base.facts, **fact_overrides),
-                    operational=replace(
-                        base.operational,
-                        policy_status="OPERATIONAL_QUALIFICATION_DID_NOT_PASS",
-                        reason_codes=("CONFIRMED_FIXTURE_SAFETY_FAILURE",),
+                )
+                readiness_boundary = self._boundary("spot-cycle")
+                observation = replace(
+                    observation,
+                    operational=evaluate_challenger_replacement_operational_readiness(
+                        observation.facts, readiness_boundary
                     ),
-                    economic=replace(
-                        base.economic,
-                        status="FAILED_CLOSED",
-                        unresolved_safety_failure=True,
+                    economic=observe_challenger_replacement_economic_tail(
+                        observation.facts, readiness_boundary
                     ),
                 )
                 boundary = _OperationsProjectionV2Boundary(
@@ -161,6 +191,88 @@ class V073CrossComponentTests(unittest.TestCase):
                     [item["alert_id"] for item in result["alerts"]],
                 )
                 self.assertFalse(result["new_risk_allowed"])
+
+    def test_exposed_missed_gap_stays_failed_after_later_valid_opportunity(self):
+        workspace = ReadinessObserverWorkspace()
+        self.addCleanup(workspace.close)
+        stream = fixture_v072_golden_streams()["spot-cycle"]
+        run_challenger_replacement_fixture_simulation_opportunity(
+            state=workspace.state,
+            input_bytes=stream[0],
+            worker_id="fixture-worker",
+        )
+        catch_up_missed_opportunities(
+            state=workspace.state,
+            start_scheduled_for="2026-08-24T00:00:00.000Z",
+            detected_at="2026-08-24T04:11:00.000Z",
+            worker_id="fixture-worker",
+            reason_code="PROCESS_NOT_RUNNING",
+        )
+        run_challenger_replacement_fixture_simulation_opportunity(
+            state=workspace.state,
+            input_bytes=stream[2],
+            worker_id="fixture-worker",
+        )
+        observed = observe_challenger_replacement_readiness(
+            plan_bytes=PLAN_BYTES,
+            replay_source=ChallengerReplacementReadinessReplaySource(workspace.state),
+            boundary=_ReplacementReadinessBoundary(
+                qualification="COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL",
+                start_opportunity_id_or_null="ETHUSDT@2026-08-24T00:00:00.000Z",
+                start_scheduled_for_or_null="2026-08-24T00:00:00.000Z",
+                start_observed_at_or_null="2026-08-24T00:05:00.000Z",
+                observed_at="2026-08-24T08:11:00.000Z",
+            ),
+            release_provenance=_release_provenance(),
+        )
+        self.assertEqual(
+            observed.operational.policy_status,
+            "OPERATIONAL_QUALIFICATION_DID_NOT_PASS",
+        )
+        self.assertIn("ECONOMIC_GAP_LOCKED", observed.operational.reason_codes)
+
+    def test_flat_missed_coverage_can_recover_but_confirmed_failure_wins(self):
+        def with_cycles(facts):
+            template = _facts_with_cycles(("spot", "perpetual", "spot"))
+            return replace(
+                facts,
+                opportunities=(
+                    *template.opportunities[:6],
+                    *facts.opportunities[6:],
+                ),
+            )
+
+        before = evaluate_challenger_replacement_operational_readiness(
+            with_cycles(_coverage_facts(observed=39, total=42)),
+            _seven_day_boundary(),
+        )
+        after = evaluate_challenger_replacement_operational_readiness(
+            with_cycles(_coverage_facts(observed=57, total=60)),
+            _boundary_for_due_count(60),
+        )
+        self.assertEqual(before.policy_status, "PENDING_AUTOMATIC_EXTENSION")
+        self.assertIn("MINIMUM_OBSERVED_COVERAGE_NOT_MET", before.reason_codes)
+        self.assertEqual(after.policy_status, "OPERATIONAL_QUALIFICATION_PASS")
+
+        precedence = _facts_with_cycles(("spot", "perpetual", "spot"))
+        first = replace(
+            precedence.opportunities[0],
+            unresolved_reason_codes=("LEDGER_POSITION_MISMATCH",),
+        )
+        precedence = replace(
+            precedence,
+            opportunities=(first, *precedence.opportunities[1:]),
+            evidence_failure_kind_or_null=(
+                "EVIDENCE_SOURCE_UNAVAILABLE_OR_QUALIFICATION_UNKNOWN"
+            ),
+        )
+        result = evaluate_challenger_replacement_operational_readiness(
+            precedence, _seven_day_boundary()
+        )
+        self.assertEqual(
+            result.policy_status,
+            "OPERATIONAL_QUALIFICATION_DID_NOT_PASS",
+        )
 
 
 class V073FrozenAndStaticAuthorityTests(unittest.TestCase):

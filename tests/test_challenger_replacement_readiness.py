@@ -644,7 +644,6 @@ class ChallengerReplacementOperationalPolicyTests(unittest.TestCase):
                 },
                 "PROTECTIVE_STOP_MISSING_OR_UNCONFIRMED",
             ),
-            ({"current_position": "SPOT_LONG"}, "NON_FLAT_TERMINAL_POSITION"),
             ({"risk_state": "HALT"}, "STAGE_FAILED_RISK_LOCK"),
             ({"daily_loss_boundary_state": "BREACHED"}, "SAFETY_BOUNDARY_BREACHED"),
             ({"drawdown_boundary_state": "BREACHED"}, "SAFETY_BOUNDARY_BREACHED"),
@@ -660,6 +659,35 @@ class ChallengerReplacementOperationalPolicyTests(unittest.TestCase):
                     "OPERATIONAL_QUALIFICATION_DID_NOT_PASS",
                 )
                 self.assertIn(reason, result.reason_codes)
+
+    def test_healthy_protected_open_position_waits_for_cycle_completion(self):
+        facts = _coverage_facts(observed=1, total=1)
+        entry = replace(
+            facts.opportunities[0],
+            position_after="SPOT_LONG",
+            product_or_null="spot",
+            protective_stop_status="CONFIRMED_FIXTURE",
+        )
+        facts = replace(
+            facts,
+            opportunities=(entry,),
+            current_position="SPOT_LONG",
+            gross_exposure="0.5",
+            protective_stop_status="CONFIRMED_FIXTURE",
+        )
+        collecting = evaluate_challenger_replacement_operational_readiness(
+            facts, _boundary_for_due_count(1)
+        )
+        pending = evaluate_challenger_replacement_operational_readiness(
+            facts, _seven_day_boundary()
+        )
+        self.assertEqual(
+            collecting.policy_status, "COLLECTING_BEFORE_MINIMUM_DURATION"
+        )
+        self.assertEqual(
+            pending.policy_status, "PENDING_AUTOMATIC_EXTENSION"
+        )
+        self.assertIn("ACTIVE_POSITION_CYCLE_INCOMPLETE", pending.reason_codes)
 
     def test_unavailable_evidence_is_inconclusive(self):
         facts = replace(
