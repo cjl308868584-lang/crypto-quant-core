@@ -697,6 +697,8 @@ Expected production changes:
 ```text
 Create challenger_replacement_binance_lifecycle.py
 Create challenger_replacement_fixture_simulation.py
+Modify challenger_replacement_binance_simulation_input.py only for strict
+  v0.71/v0.72 fixture-build identity dispatch
 Modify challenger_replacement_simulation.py minimally
 Modify challenger_replacement_opportunity_evidence.py
 Modify challenger_replacement_opportunity_projection.py
@@ -706,8 +708,13 @@ Add two mirrored v2 schemas
 
 Every production module remains at most 700 physical lines.  Net-new production
 logic relative to `v0.71.0^{}` is at most 1,500 physical lines across the exact
-modules above; pure line moves are neutral and unrelated deletions cannot be
-credited.  The v0.70 opportunities facade may not grow a second state machine.
+seven modules above.  The frozen per-module physical-line baselines are
+`lifecycle=0`, `fixture_simulation=0`, `simulation_input=385`,
+`simulation=517`, `opportunity_evidence=147`,
+`opportunity_projection=447`, and `opportunities=296` (total 1,792).  The
+conservative acceptance formula sums only each module's positive delta, so
+unrelated deletions and cross-module moves cannot create budget credit.  The
+v0.70 opportunities facade may not grow a second state machine.
 
 If RED tests prove the bound insufficient, stop and create another semantic
 split before adding artifacts or changing the approved budget.  Do not replace

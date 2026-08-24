@@ -50,7 +50,8 @@ Actions Python 3.9/3.12 and macOS arm64.
   lifecycle event/observation/result types, stable IDs, order/stop reducers and
   three independent reconciliation projections.
 - `src/crypto_quant/challenger_replacement_simulation.py`: released accounting
-  core; only derive stop-before-strategy transition and enriched stop snapshot.
+  core; add only a private v0.72 stop-before-strategy transition while keeping
+  the public v0.71 result shape and bytes exact.
 - `src/crypto_quant/challenger_replacement_opportunity_evidence.py`: keep v1
   replay and add strict v2 builder/loader dispatch.
 - `src/crypto_quant/challenger_replacement_opportunity_projection.py`: sole
@@ -278,8 +279,8 @@ PYTHONPATH=src python3 -m unittest \
   tests.test_challenger_replacement_simulation -v
 ```
 
-Expected: missing order/stop events, enriched stop identity and stop-trigger
-action assertions fail against Task 1.
+Expected: missing order/stop events, private v0.72 enriched stop identity and
+stop-trigger action assertions fail against Task 1.
 
 - [ ] **Step 3: Add a private v0.72 stop-before-strategy transition**
 
@@ -415,6 +416,7 @@ PYTHONPATH=src python3 -m unittest \
   tests.test_orders tests.test_ledger tests.test_risk -v
 wc -l \
   src/crypto_quant/challenger_replacement_binance_lifecycle.py \
+  src/crypto_quant/challenger_replacement_binance_simulation_input.py \
   src/crypto_quant/challenger_replacement_simulation.py
 git diff --numstat v0.71.0^{}..HEAD -- src/crypto_quant
 python3 - <<'PY'
@@ -422,6 +424,7 @@ from pathlib import Path
 baseline = {
     "challenger_replacement_binance_lifecycle.py": 0,
     "challenger_replacement_fixture_simulation.py": 0,
+    "challenger_replacement_binance_simulation_input.py": 385,
     "challenger_replacement_simulation.py": 517,
     "challenger_replacement_opportunity_evidence.py": 147,
     "challenger_replacement_opportunity_projection.py": 447,
@@ -431,7 +434,7 @@ root = Path("src/crypto_quant")
 current = {name: len((root / name).read_text().splitlines()) for name in baseline}
 assert all(lines <= 700 for lines in current.values()), current
 delta = sum(max(0, current[name] - baseline[name]) for name in baseline)
-print({"baseline_total": 1407, "current": current, "conservative_net_new": delta})
+print({"baseline_total": 1792, "current": current, "conservative_net_new": delta})
 assert delta <= 1500, delta
 PY
 PYTHONPATH=src python3 -m compileall -q src/crypto_quant
@@ -619,6 +622,7 @@ PYTHONPATH=src python3 -m unittest \
 wc -l \
   src/crypto_quant/challenger_replacement_binance_lifecycle.py \
   src/crypto_quant/challenger_replacement_fixture_simulation.py \
+  src/crypto_quant/challenger_replacement_binance_simulation_input.py \
   src/crypto_quant/challenger_replacement_simulation.py \
   src/crypto_quant/challenger_replacement_opportunity_evidence.py \
   src/crypto_quant/challenger_replacement_opportunity_projection.py \
@@ -626,6 +630,7 @@ wc -l \
 git diff --numstat v0.71.0^{}..HEAD -- \
   src/crypto_quant/challenger_replacement_binance_lifecycle.py \
   src/crypto_quant/challenger_replacement_fixture_simulation.py \
+  src/crypto_quant/challenger_replacement_binance_simulation_input.py \
   src/crypto_quant/challenger_replacement_simulation.py \
   src/crypto_quant/challenger_replacement_opportunity_evidence.py \
   src/crypto_quant/challenger_replacement_opportunity_projection.py \
@@ -635,6 +640,7 @@ from pathlib import Path
 baseline = {
     "challenger_replacement_binance_lifecycle.py": 0,
     "challenger_replacement_fixture_simulation.py": 0,
+    "challenger_replacement_binance_simulation_input.py": 385,
     "challenger_replacement_simulation.py": 517,
     "challenger_replacement_opportunity_evidence.py": 147,
     "challenger_replacement_opportunity_projection.py": 447,
@@ -644,7 +650,7 @@ root = Path("src/crypto_quant")
 current = {name: len((root / name).read_text().splitlines()) for name in baseline}
 assert all(lines <= 700 for lines in current.values()), current
 delta = sum(max(0, current[name] - baseline[name]) for name in baseline)
-print({"baseline_total": 1407, "current": current, "conservative_net_new": delta})
+print({"baseline_total": 1792, "current": current, "conservative_net_new": delta})
 assert delta <= 1500, delta
 PY
 PYTHONPATH=src python3 -m compileall -q src/crypto_quant
@@ -652,9 +658,9 @@ git diff --check
 ```
 
 Expected: selected tests pass, every module ≤700 lines and the conservative
-net-new production count is ≤1,500.  The exact frozen baseline map totals 1,407
+net-new production count is ≤1,500.  The exact frozen baseline map totals 1,792
 physical lines.  The formula is
-`sum(max(0, current[path] - baseline[path]) for path in exact_six_modules)`;
+`sum(max(0, current[path] - baseline[path]) for path in exact_seven_modules)`;
 therefore unrelated deletion or moving code between modules cannot create
 budget credit.  `git diff --numstat` is diagnostic only.  If the gate fails,
 stop before Task 6/artifacts.
@@ -810,7 +816,41 @@ that file exists, and no JSON is edited manually.
 Construct sorted fixed inventory, lengths and SHA-256, contract identity and
 self-hash.  Publish with repository no-overwrite semantics.  Add the schema,
 formal manifest and fixture paths to the build manifest expected paths without
-embedding future commit/tag/CI identity.
+embedding future commit/tag/CI identity.  Introduce exact
+`_V072_RELEASE_PATHS` in `src/crypto_quant/build.py` containing:
+
+```text
+config/challenger-replacement-opportunity-result-evidence-v2.schema.json
+config/challenger-replacement-binance-golden-fixture-manifest-v1.schema.json
+artifacts/challenger-replacement/challenger-replacement-binance-golden-fixture-manifest-v0.72.0.json
+tests/fixtures/challenger_replacement_v072/spot-cycle/01-input.json
+tests/fixtures/challenger_replacement_v072/spot-cycle/02-result.json
+tests/fixtures/challenger_replacement_v072/spot-cycle/03-input.json
+tests/fixtures/challenger_replacement_v072/spot-cycle/04-result.json
+tests/fixtures/challenger_replacement_v072/spot-cycle/05-input.json
+tests/fixtures/challenger_replacement_v072/spot-cycle/06-result.json
+tests/fixtures/challenger_replacement_v072/perp-cycle/01-input.json
+tests/fixtures/challenger_replacement_v072/perp-cycle/02-result.json
+tests/fixtures/challenger_replacement_v072/perp-cycle/03-input.json
+tests/fixtures/challenger_replacement_v072/perp-cycle/04-result.json
+tests/fixtures/challenger_replacement_v072/perp-cycle/05-input.json
+tests/fixtures/challenger_replacement_v072/perp-cycle/06-result.json
+tests/fixtures/challenger_replacement_v072/perp-cycle/07-input.json
+tests/fixtures/challenger_replacement_v072/perp-cycle/08-result.json
+tests/test_challenger_replacement_binance_lifecycle.py
+tests/test_challenger_replacement_fixture_simulation.py
+tests/test_challenger_replacement_v072_artifacts.py
+tests/test_challenger_replacement_v072_release.py
+docs/superpowers/specs/2026-08-25-binance-lifecycle-evidence-design.md
+docs/superpowers/plans/2026-08-25-binance-lifecycle-evidence.md
+docs/adr/0072-binance-lifecycle-evidence.md
+docs/implementation-status-v0.72.0.md
+```
+
+Files already present in earlier release-path sets remain there and are not
+duplicated.  The v0.72 release regression asserts every exact path above is in
+the manifest with matching bytes/hash; package Python files and mirrored
+package schemas continue to enter through the existing automatic inventory.
 
 - [ ] **Step 5: Run artifact replay and tamper tests**
 
@@ -874,8 +914,9 @@ Require package/manifest versions, expected file set, exact predecessor hashes,
 formal artifact replay, each module ≤700, net-new production ≤1,500, no forbidden
 imports/signatures, exact status and no seven-day/90-day clock claim.  Initially
 require candidate verification fields `PENDING_VERIFICATION`.  Hard-code the
-exact six-module baseline map `{lifecycle: 0, fixture_runner: 0, simulation:
-517, evidence: 147, projection: 447, opportunities: 296}` and the conservative
+exact seven-module baseline map `{lifecycle: 0, fixture_runner: 0,
+simulation_input: 385, simulation: 517, evidence: 147, projection: 447,
+opportunities: 296}` and the conservative
 per-module positive-delta formula used in Tasks 3 and 5; `numstat` alone is not
 an acceptance gate.
 
