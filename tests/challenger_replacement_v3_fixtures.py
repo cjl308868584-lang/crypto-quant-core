@@ -1,6 +1,7 @@
 """Credential-free deterministic fixtures for replacement v3 tests."""
 
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
@@ -97,12 +98,15 @@ def _fixture_metadata(market_type, *, taker_fee="0.0015", multiplier="1"):
     )
 
 
-def fixture_v071_spot_metadata(*, taker_fee="0.0015", multiplier="1"):
-    return _fixture_metadata(
+def fixture_v071_spot_metadata(
+    *, taker_fee="0.0015", multiplier="1", min_notional="5"
+):
+    metadata = _fixture_metadata(
         MarketType.SPOT,
         taker_fee=taker_fee,
         multiplier=multiplier,
     )
+    return replace(metadata, min_notional=Decimal(min_notional))
 
 
 def fixture_v071_perpetual_metadata(*, taker_fee="0.0015", multiplier="1"):
@@ -131,6 +135,27 @@ def fixture_v071_bars(scheduled_for=DEFAULT_SCHEDULED_FOR):
                 "low": str(close - Decimal("4")),
                 "close": str(close),
             }
+        )
+    return bars
+
+
+def fixture_v071_signal_bars(signal, scheduled_for=DEFAULT_SCHEDULED_FOR):
+    if signal not in {"LONG", "SHORT", "FLAT"}:
+        raise ValueError("unknown fixture signal")
+    bars = fixture_v071_bars(scheduled_for)
+    prior = Decimal("2000")
+    latest = {
+        "LONG": Decimal("2020"),
+        "SHORT": Decimal("1980"),
+        "FLAT": Decimal("2000"),
+    }[signal]
+    for index, bar in enumerate(bars):
+        close = latest if index == 20 else prior
+        bar.update(
+            open=str(close),
+            high=str(close + Decimal("2")),
+            low=str(close - Decimal("2")),
+            close=str(close),
         )
     return bars
 
