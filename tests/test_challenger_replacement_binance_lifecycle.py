@@ -437,6 +437,120 @@ class ChallengerReplacementBinanceLifecycleTests(unittest.TestCase):
                     "LIFECYCLE_FAILED_CLOSED",
                 )
 
+    def test_partial_fill_rebuilds_one_quantity_exact_stop_before_success(self):
+        original = lifecycle._normal_lifecycle_observations
+
+        def partial(*args):
+            return (replace(
+                original(*args)[0],
+                partial_first_quantity_or_null="0.01",
+            ),)
+
+        with patch.object(
+            lifecycle, "_normal_lifecycle_observations", side_effect=partial
+        ):
+            result = self.simulate(source=self.source_for("LONG"))
+        types = [event.event_type for event in result.lifecycle_events]
+        first = types.index("FILL_OBSERVED_FIXTURE")
+        second = types.index("FILL_OBSERVED_FIXTURE", first + 1)
+        self.assertEqual(
+            types[first:first + 3],
+            ["FILL_OBSERVED_FIXTURE", "STOP_INTENT_PREPARED", "STOP_ACKNOWLEDGED_FIXTURE"],
+        )
+        self.assertEqual(
+            types[second:second + 5],
+            [
+                "FILL_OBSERVED_FIXTURE",
+                "STOP_CANCEL_REQUESTED_FIXTURE",
+                "STOP_CANCEL_ACKNOWLEDGED_FIXTURE",
+                "STOP_INTENT_PREPARED",
+                "STOP_ACKNOWLEDGED_FIXTURE",
+            ],
+        )
+        stops = [
+            json.loads(event.payload_bytes)
+            for event in result.lifecycle_events
+            if event.event_type == "STOP_INTENT_PREPARED"
+        ]
+        self.assertEqual([item["quantity"] for item in stops], ["0.01", "0.0249"])
+        self.assertNotEqual(stops[0]["stop_intent_id"], stops[1]["stop_intent_id"])
+        final_stop = json.loads(result.next_snapshot_bytes)["protective_stop_or_null"]
+        self.assertEqual(final_stop["stop_intent_id"], stops[-1]["stop_intent_id"])
+        fills = [
+            json.loads(event.payload_bytes)
+            for event in result.lifecycle_events
+            if event.event_type == "FILL_OBSERVED_FIXTURE"
+        ]
+        self.assertTrue(all(Decimal(item["fee"]).as_tuple().exponent >= -8 for item in fills))
+        self.assertEqual(
+            sum((Decimal(item["fee"]) for item in fills), Decimal("0")),
+            Decimal(json.loads(result.accounting_bytes)["fee"]),
+        )
+        self.assertEqual(result.status, "RECONCILED_FIXTURE")
+
+    def test_partial_fill_protection_faults_never_return_reconciled(self):
+        cases = (
+            ("missing_cancel_ack", "DISASTER_STOP_MISSING_OR_UNCONFIRMED"),
+            ("missing_new_stop_ack", "DISASTER_STOP_MISSING_OR_UNCONFIRMED"),
+            ("second_fill_before_stop_ack", "DISASTER_STOP_MISSING_OR_UNCONFIRMED"),
+            ("old_stop_late_fill", "UNRECORDED_OR_CONFLICTING_FILL"),
+            ("wrong_product_or_side", "UNRECORDED_OR_CONFLICTING_FILL"),
+            ("flatten_succeeded", "DISASTER_STOP_MISSING_OR_UNCONFIRMED"),
+        )
+        original = lifecycle._normal_lifecycle_observations
+        for field, reason in cases:
+            with self.subTest(field=field):
+                value = False if field == "flatten_succeeded" else True
+                def fault(*args, _field=field, _value=value):
+                    return (replace(
+                        original(*args)[0],
+                        partial_first_quantity_or_null="0.01",
+                        **{_field: _value},
+                    ),)
+                with patch.object(
+                    lifecycle, "_normal_lifecycle_observations", side_effect=fault
+                ):
+                    result = self.simulate(source=self.source_for("LONG"))
+                self.assertEqual(result.status, "FAILED_CLOSED")
+                self.assertEqual(result.reason_code_or_null, reason)
+                snapshot = json.loads(result.next_snapshot_bytes)
+                self.assertEqual(snapshot["risk_state"], "STAGE_FAILED_LOCKED")
+                self.assertEqual(snapshot["position_state"], "SPOT_LONG")
+                self.assertIsNone(snapshot["protective_stop_or_null"])
+                types = [event.event_type for event in result.lifecycle_events]
+                if field == "missing_cancel_ack":
+                    self.assertIn("STOP_CANCEL_REQUESTED_FIXTURE", types)
+                    self.assertNotIn("STOP_CANCEL_ACKNOWLEDGED_FIXTURE", types)
+                elif field == "missing_new_stop_ack":
+                    self.assertEqual(types.count("STOP_INTENT_PREPARED"), 2)
+                    self.assertEqual(types.count("STOP_ACKNOWLEDGED_FIXTURE"), 1)
+                elif field == "second_fill_before_stop_ack":
+                    first_fill = types.index("FILL_OBSERVED_FIXTURE")
+                    second_fill = types.index("FILL_OBSERVED_FIXTURE", first_fill + 1)
+                    first_stop_ack = types.index("STOP_ACKNOWLEDGED_FIXTURE")
+                    self.assertLess(second_fill, first_stop_ack)
+                elif field == "old_stop_late_fill":
+                    cancel_ack = types.index("STOP_CANCEL_ACKNOWLEDGED_FIXTURE")
+                    late_fill = types.index("FILL_OBSERVED_FIXTURE", cancel_ack + 1)
+                    self.assertGreater(late_fill, cancel_ack)
+
+    def test_exact_duplicate_observation_is_normalized_once(self):
+        original = lifecycle._normal_lifecycle_observations
+        def duplicate(*args):
+            item = original(*args)[0]
+            return item, item
+        with patch.object(
+            lifecycle, "_normal_lifecycle_observations", side_effect=duplicate
+        ):
+            result = self.simulate(source=self.source_for("LONG"))
+        self.assertEqual(result.status, "RECONCILED_FIXTURE")
+        self.assertEqual(
+            [event.event_type for event in result.lifecycle_events].count(
+                "FILL_OBSERVED_FIXTURE"
+            ),
+            1,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

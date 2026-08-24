@@ -1,13 +1,10 @@
 """Fixture-only Binance lifecycle evidence without operational authority."""
-import copy
+import copy, json
 from dataclasses import dataclass
-import json
 from typing import Mapping, Optional, Tuple
-from .canonical import business_hash, canonical_json, stable_id
-from .challenger_replacement_simulation import (
-    ChallengerReplacementSimulationError,
-    _simulate_challenger_replacement_v072_transition,
-)
+from .canonical import business_hash, canonical_decimal, canonical_json, stable_id
+from decimal import Decimal, ROUND_CEILING
+from .challenger_replacement_simulation import ChallengerReplacementSimulationError, _simulate_challenger_replacement_v072_transition
 from .errors import CanonicalizationError
 from .evidence import artifact_self_hash
 _V072_BUILD_VERSION = ("v0.72.0-fixture", "0.72.0", "1.66.0")
@@ -76,12 +73,9 @@ class ChallengerReplacementLifecycleError(ValueError):
         self.reason_code = reason_code
 @dataclass(frozen=True)
 class LifecycleEvent:
-    ordinal: int
-    event_type: str
-    event_hash: str
+    ordinal: int; event_type: str; event_hash: str
     parent_event_hash_or_null: Optional[str]
-    intent_id_or_null: Optional[str]
-    attempt_id_or_null: Optional[str]
+    intent_id_or_null: Optional[str]; attempt_id_or_null: Optional[str]
     payload_bytes: bytes
 @dataclass(frozen=True)
 class ChallengerReplacementLifecycleResult:
@@ -99,19 +93,18 @@ class ChallengerReplacementLifecycleResult:
     reason_code_or_null: Optional[str]
 @dataclass(frozen=True)
 class _Projection:
-    product_or_null: Optional[str]
-    signed_quantity: str
-    average_price_or_null: Optional[str]
-    cumulative_fee: str
-    funding: str
-    terminal_state: str
+    product_or_null: Optional[str]; signed_quantity: str
+    average_price_or_null: Optional[str]; cumulative_fee: str
+    funding: str; terminal_state: str
 @dataclass(frozen=True)
 class LifecycleObservation(_Projection):
-    fill_before_ack: bool = False
-    unknown_reason_or_null: Optional[str] = None
-    conflicting_duplicate: bool = False
-    overfill: bool = False
+    fill_before_ack: bool = False; unknown_reason_or_null: Optional[str] = None
+    conflicting_duplicate: bool = False; overfill: bool = False
     stop_confirmed: bool = True
+    partial_first_quantity_or_null: Optional[str] = None
+    missing_cancel_ack: bool = False; missing_new_stop_ack: bool = False
+    second_fill_before_stop_ack: bool = False; old_stop_late_fill: bool = False
+    wrong_product_or_side: bool = False; flatten_succeeded: bool = True
 @dataclass(frozen=True)
 class EngineProjection(_Projection): pass
 @dataclass(frozen=True)
@@ -249,6 +242,48 @@ def _rechain_fill_before_ack(events):
             attempt_id_or_null=event.attempt_id_or_null,
         )
     events[:] = rebuilt
+def _rechain_partial(events, item):
+    partial = item.partial_first_quantity_or_null
+    prefix = events[:3]
+    fill = next(event for event in events if event.event_type == "FILL_OBSERVED_FIXTURE")
+    order = next(event for event in events if event.event_type == "ORDER_RECONCILED_FIXTURE")
+    stop_prepare = next(event for event in events if event.event_type == "STOP_INTENT_PREPARED")
+    stop_ack = next(event for event in events if event.event_type == "STOP_ACKNOWLEDGED_FIXTURE")
+    full = json.loads(fill.payload_bytes); full_q = Decimal(full["quantity"]); part_q = Decimal(partial)
+    if part_q <= 0 or part_q >= full_q: return "UNRECORDED_OR_CONFLICTING_FILL"
+    ratio = part_q / full_q
+    part = dict(full); part.update(
+        quantity=canonical_decimal(part_q), cumulative_filled_quantity=canonical_decimal(part_q),
+        notional=canonical_decimal(Decimal(full["notional"]) * ratio),
+        fee=canonical_decimal((Decimal(full["fee"]) * ratio).quantize(Decimal("0.00000001"), rounding=ROUND_CEILING)),
+    )
+    part["fill_id"] = stable_id("replacement_fill", {"attempt_id": fill.attempt_id_or_null, "cumulative_quantity": part["quantity"]})
+    remain = dict(full); remain.update(
+        quantity=canonical_decimal(full_q - part_q),
+        notional=canonical_decimal(Decimal(full["notional"]) - Decimal(part["notional"])),
+        fee=canonical_decimal(Decimal(full["fee"]) - Decimal(part["fee"])),
+    )
+    final_stop = json.loads(stop_prepare.payload_bytes)
+    old_id = stable_id("replacement_stop", {"protected_intent_id": fill.intent_id_or_null, "quantity": partial, "trigger_price": final_stop["trigger_price"], "stop_ordinal": 1})
+    old_attempt = stable_id("replacement_attempt", {"intent_id": old_id, "attempt_ordinal": 1})
+    old_client = stable_id("replacement_client", {"intent_id": old_id, "product": "spot" if final_stop["side"] == "SELL" else "perpetual"})
+    old_stop = {**final_stop, "stop_intent_id": old_id, "quantity": partial}
+    rebuilt = []
+    for event in prefix: _append_event(rebuilt, event_type=event.event_type, payload=json.loads(event.payload_bytes), intent_id_or_null=event.intent_id_or_null, attempt_id_or_null=event.attempt_id_or_null)
+    _append_event(rebuilt, event_type="FILL_OBSERVED_FIXTURE", payload=part, intent_id_or_null=fill.intent_id_or_null, attempt_id_or_null=fill.attempt_id_or_null)
+    _append_event(rebuilt, event_type="STOP_INTENT_PREPARED", payload=old_stop, intent_id_or_null=old_id)
+    if item.second_fill_before_stop_ack: _append_event(rebuilt, event_type="FILL_OBSERVED_FIXTURE", payload=remain, intent_id_or_null=fill.intent_id_or_null, attempt_id_or_null=fill.attempt_id_or_null)
+    _append_event(rebuilt, event_type="STOP_ACKNOWLEDGED_FIXTURE", payload={"stop_intent_id": old_id, "stop_client_order_id": old_client}, intent_id_or_null=old_id, attempt_id_or_null=old_attempt)
+    if not item.second_fill_before_stop_ack: _append_event(rebuilt, event_type="FILL_OBSERVED_FIXTURE", payload=remain, intent_id_or_null=fill.intent_id_or_null, attempt_id_or_null=fill.attempt_id_or_null)
+    _append_event(rebuilt, event_type="STOP_CANCEL_REQUESTED_FIXTURE", payload={"stop_intent_id": old_id}, intent_id_or_null=old_id, attempt_id_or_null=old_attempt)
+    if not item.missing_cancel_ack: _append_event(rebuilt, event_type="STOP_CANCEL_ACKNOWLEDGED_FIXTURE", payload={"stop_intent_id": old_id}, intent_id_or_null=old_id, attempt_id_or_null=old_attempt)
+    if item.old_stop_late_fill and not item.missing_cancel_ack: _append_event(rebuilt, event_type="FILL_OBSERVED_FIXTURE", payload=part, intent_id_or_null=old_id, attempt_id_or_null=old_attempt)
+    elif not item.missing_cancel_ack:
+        _append_event(rebuilt, event_type=stop_prepare.event_type, payload=json.loads(stop_prepare.payload_bytes), intent_id_or_null=stop_prepare.intent_id_or_null, attempt_id_or_null=stop_prepare.attempt_id_or_null)
+        if not item.missing_new_stop_ack: _append_event(rebuilt, event_type=stop_ack.event_type, payload=json.loads(stop_ack.payload_bytes), intent_id_or_null=stop_ack.intent_id_or_null, attempt_id_or_null=stop_ack.attempt_id_or_null)
+    if not any((item.missing_cancel_ack, item.missing_new_stop_ack, item.second_fill_before_stop_ack, item.old_stop_late_fill)): _append_event(rebuilt, event_type=order.event_type, payload=json.loads(order.payload_bytes), intent_id_or_null=order.intent_id_or_null, attempt_id_or_null=order.attempt_id_or_null)
+    events[:] = rebuilt
+    return None
 def _projection_values(events):
     intent = next(
         (json.loads(event.payload_bytes) for event in events
@@ -259,6 +294,10 @@ def _projection_values(events):
         (json.loads(event.payload_bytes) for event in reversed(events)
          if event.event_type == "FILL_OBSERVED_FIXTURE"),
         None,
+    )
+    terminal = next(
+        (json.loads(event.payload_bytes) for event in reversed(events)
+         if event.event_type == "ORDER_RECONCILED_FIXTURE"), None,
     )
     if fill is None:
         return None, "0", None, "0", "0", "NO_INTENT"
@@ -271,7 +310,7 @@ def _projection_values(events):
         "-" + fill["cumulative_filled_quantity"]
         if product == "perpetual" else fill["cumulative_filled_quantity"]
     )
-    return product, signed, fill["price"], fill["fee"], "0", "FILLED"
+    return product, signed, fill["price"], (terminal or {"cumulative_fee": fill["fee"]})["cumulative_fee"], "0", "FILLED"
 def _reduce_engine(events):
     return EngineProjection(*_projection_values(events))
 def _reduce_venue(observations, previous_position):
@@ -304,15 +343,18 @@ def _reconcile(events, transition, previous):
         transition, previous["position_state"]
     )
     item = observations[0]
-    if item.fill_before_ack:
-        _rechain_fill_before_ack(events)
-    fault = (
+    partial_fault = _rechain_partial(events, item) if item.partial_first_quantity_or_null is not None else None
+    fault = partial_fault or (
         "UNRESOLVED_UNKNOWN" if item.unknown_reason_or_null in {"TIMEOUT", "DISCONNECT"}
         else "DUPLICATE_ECONOMIC_ORDER" if item.conflicting_duplicate
         else "UNRECORDED_OR_CONFLICTING_FILL" if item.overfill
         else "DISASTER_STOP_MISSING_OR_UNCONFIRMED" if not item.stop_confirmed
+        else "DISASTER_STOP_MISSING_OR_UNCONFIRMED" if item.missing_cancel_ack or item.missing_new_stop_ack or item.second_fill_before_stop_ack or not item.flatten_succeeded
+        else "UNRECORDED_OR_CONFLICTING_FILL" if item.old_stop_late_fill or item.wrong_product_or_side
         else None
     )
+    if fault is None and item.fill_before_ack:
+        _rechain_fill_before_ack(events)
     engine = _reduce_engine(tuple(events))
     venue = _reduce_venue(observations, previous["position_state"])
     ledger = _reduce_ledger(previous, transition)

@@ -410,7 +410,7 @@ evidence.  Do not import or extend a generic Broker.
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m unittest \
+PYTHONPATH=src:tests python3 -m unittest \
   tests.test_challenger_replacement_binance_lifecycle \
   tests.test_challenger_replacement_simulation \
   tests.test_orders tests.test_ledger tests.test_risk -v
@@ -431,7 +431,10 @@ baseline = {
     "challenger_replacement_opportunities.py": 296,
 }
 root = Path("src/crypto_quant")
-current = {name: len((root / name).read_text().splitlines()) for name in baseline}
+current = {
+    name: len((root / name).read_text().splitlines()) if (root / name).exists() else 0
+    for name in baseline
+}
 assert all(lines <= 700 for lines in current.values()), current
 delta = sum(max(0, current[name] - baseline[name]) for name in baseline)
 print({"baseline_total": 1792, "current": current, "conservative_net_new": delta})
@@ -647,7 +650,10 @@ baseline = {
     "challenger_replacement_opportunities.py": 296,
 }
 root = Path("src/crypto_quant")
-current = {name: len((root / name).read_text().splitlines()) for name in baseline}
+current = {
+    name: len((root / name).read_text().splitlines()) if (root / name).exists() else 0
+    for name in baseline
+}
 assert all(lines <= 700 for lines in current.values()), current
 delta = sum(max(0, current[name] - baseline[name]) for name in baseline)
 print({"baseline_total": 1792, "current": current, "conservative_net_new": delta})
