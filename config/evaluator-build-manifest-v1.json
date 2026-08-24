@@ -221,7 +221,7 @@
     "docs/implementation-status-v0.67.0.md": "6a9fa1393084a8d8dc8abd6e14f6a750f2a1ef93bc361f0c02daa78f3b462bd5",
     "docs/implementation-status-v0.68.0.md": "5bc1ff5593fe0d32de3e90c1098e8229f5537944f1cdefa0eab6fd0627af20d1",
     "docs/implementation-status-v0.69.0.md": "3e883734f260d6504ecbc9aa9d08658bfb7bb9bb974ec43c342bb1adf3986b0d",
-    "docs/implementation-status-v0.70.0.md": "560337f7189f415a7798fbc19bcc0d6e8a5ae0289a5407745cf994f13e3b2dba",
+    "docs/implementation-status-v0.70.0.md": "5f3b44899a9dcc0ad18ffb2896a747e7b71c33b8da5420ab01f2373afe27eec6",
     "docs/runbooks/operations-dashboard.md": "2874680de443098fe0cf5e642b4dffc63853996661091fc836df8e7e8605868d",
     "docs/runbooks/system-paper-operations.md": "beee3603f76b1db0ecb1ef851dea25d6f700b5b67ece3cc320b8774a33a02523",
     "docs/superpowers/plans/2026-08-02-system-paper-wal-scheduler.md": "9ff21c585d907268728801ff472c0032ca4865b60f477120e95e16fe4b3fd3e4",
@@ -352,7 +352,7 @@
     "src/crypto_quant/challenger_replacement_installed_runtime_cli.py": "67fecad2cbced013cdd8d748e1c14d17698c0c80b8da117c54314f92ae8b2c97",
     "src/crypto_quant/challenger_replacement_live_input.py": "84640cbf81659d05d8abdfa935e8340eb565db20bd3006641a77033d59263536",
     "src/crypto_quant/challenger_replacement_live_runtime_cli.py": "0d35fb91e01d4d1950b9e445d7d68231ed728b20f0a637c9365f36ead1748170",
-    "src/crypto_quant/challenger_replacement_opportunities.py": "dab60143d871ebe4a7753e2c62320b141863b425ccabbb74859de81eeae47037",
+    "src/crypto_quant/challenger_replacement_opportunities.py": "699eb6f381c4c1cc994e582e395115007d23a33690f36a3c51071f39ff91adeb",
     "src/crypto_quant/challenger_replacement_opportunity_evidence.py": "f3b06d588f6dbf171a259eb116a080590bcb2ee7264d0baed030890047f1ae06",
     "src/crypto_quant/challenger_replacement_plan.py": "661abda1a956be2f607adbbf7af3435ed2baacfe8f5bf7864a08f2e23443d5ae",
     "src/crypto_quant/challenger_replacement_plan_supersession.py": "d1f051bd4b02c2954bf67bd8cdd9473e1188148106208da4b07f596056e6aa66",
@@ -552,7 +552,7 @@
     "tests/test_challenger_replacement_live_documents.py": "8eace14e33b619b4f4b8882c49b65bd65ea1ddccb9d2ef15f51442c7114ba5a9",
     "tests/test_challenger_replacement_live_input.py": "c3c21b2eb76ca4a4961dc5a0786384edda89841098fc95c80e878422721200a3",
     "tests/test_challenger_replacement_live_runtime.py": "1ef44e5a21501771f7ccae3368fdc19181c8053c2d479bc46946f7a2e8414d0d",
-    "tests/test_challenger_replacement_opportunities.py": "a12f18b7f1b00a266a2d095913b261b9a52d79909e3e45919c524e372d941a90",
+    "tests/test_challenger_replacement_opportunities.py": "c382a8aefd113ae718cfaa794ff9675b8899f25fccebefe7e2ecddff35248613",
     "tests/test_challenger_replacement_opportunity_evidence.py": "97b96c18bc441e76e8feae45a3ec4ca51e97c403f4df93d8e3b6008210218130",
     "tests/test_challenger_replacement_plan.py": "a9708ba025395d0d6da01ab404558908355c7f11b2008b7ecac377df0f4b1833",
     "tests/test_challenger_replacement_plan_supersession.py": "98a8250ac9128dc84d4f1a6aca79aa162ee4a10392ace7048cb25692eddf9ab1",
@@ -603,7 +603,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "cab125f986795a29c2eb9cc7869deb3a3d078fb7cc9de0822800be64d4a4f699",
+  "build_input_tree_hash": "7b13b7fdf27bd731bdb39b53b71ed85e22e0a3a096e554651d91404528fd07e9",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -611,5 +611,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "8532a6927a5071299574edc94ea5308cc5afad706a1059685e8b9eb97f03a301"
+  "manifest_hash": "1ef1ab44076cf33b574f14dcad62d0dd4d1fa0bfb754e47ecf2d99f0aeda4525"
 }
