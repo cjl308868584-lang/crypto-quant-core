@@ -344,7 +344,7 @@ git commit -m "feat: evaluate replacement operational readiness"
 - Consumes: Task 1 facts/boundary but only structural counts, lifecycle-complete boolean and unresolved-safety reasons.
 - Produces: `EconomicTailObservation`; no economic-final result type or publisher.
 
-- [ ] **Step 1: Add RED at no-start/day-89/day-90 boundaries**
+- [x] **Step 1: Add RED at no-start/day-89/day-90 boundaries**
 
 ```python
 def test_day_89_withholds_economics(self):
@@ -364,7 +364,7 @@ def test_day_90_reports_missing_preregistered_final_evaluator(self):
     )
 ```
 
-- [ ] **Step 2: Add post-sanitizer semantic-access RED**
+- [x] **Step 2: Add post-sanitizer semantic-access RED**
 
 Use a test-only object whose PnL/fee/funding/drawdown/return attributes raise
 and count semantic access after strict-loader validation. Pass only the
@@ -373,13 +373,13 @@ remain zero and no economic token occurs in `repr`, dataclass fields or
 canonical observer output. Do not claim the strict JSON loader avoided parsing
 the complete v0.72 document.
 
-- [ ] **Step 3: Add static API RED**
+- [x] **Step 3: Add static API RED**
 
 Assert no function/class matching `economic.*result`, `profit.*gate`,
 `publish.*economic`, or a public parameter named `pnl`, `fee`, `funding`,
 `return`, `drawdown`, `threshold` exists in the new module.
 
-- [ ] **Step 4: Implement four exact tail statuses**
+- [x] **Step 4: Implement four exact tail statuses**
 
 Implement only:
 
@@ -393,7 +393,7 @@ FAILED_CLOSED
 Return counts, coverage health, elapsed/minimum days, lifecycle completeness,
 unresolved-safety boolean and next boundary only.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [x] **Step 5: Run GREEN and commit**
 
 Run focused readiness tests and `git diff --check`. Commit:
 

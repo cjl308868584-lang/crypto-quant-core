@@ -1,17 +1,21 @@
 import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+import inspect
 
 from crypto_quant.challenger_replacement_opportunity_projection import (
     opportunity_id_for,
 )
 from crypto_quant.challenger_replacement_readiness import (
     ChallengerReplacementReadinessError,
+    EconomicTailObservation,
     OpportunityReadinessFact,
     ReplacementReadinessFacts,
     _ReplacementReadinessBoundary,
     evaluate_challenger_replacement_operational_readiness,
+    observe_challenger_replacement_economic_tail,
 )
+import crypto_quant.challenger_replacement_readiness as readiness_module
 
 
 _HASH_A = "a" * 64
@@ -115,6 +119,16 @@ def _seven_day_boundary():
         start_scheduled_for_or_null=_utc(_START),
         start_observed_at_or_null=_utc(_START + timedelta(minutes=5)),
         observed_at=_utc(_START + timedelta(days=7, minutes=5)),
+    )
+
+
+def _elapsed_boundary(days):
+    return _ReplacementReadinessBoundary(
+        qualification="COMMITTED_FIXTURE_BOUNDARY_NOT_OPERATIONAL",
+        start_opportunity_id_or_null=opportunity_id_for(_utc(_START)),
+        start_scheduled_for_or_null=_utc(_START),
+        start_observed_at_or_null=_utc(_START + timedelta(minutes=5)),
+        observed_at=_utc(_START + timedelta(days=days, minutes=5)),
     )
 
 
@@ -617,6 +631,96 @@ class ChallengerReplacementOperationalPolicyTests(unittest.TestCase):
             result.policy_status, "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
         )
         self.assertIn("ECONOMIC_GAP_LOCKED", result.reason_codes)
+
+
+class ChallengerReplacementEconomicTailTests(unittest.TestCase):
+    def test_no_start_reports_not_started_without_economic_fields(self):
+        value = observe_challenger_replacement_economic_tail(
+            _coverage_facts(observed=0, total=0),
+            _not_started_boundary(),
+        )
+
+        self.assertIsInstance(value, EconomicTailObservation)
+        self.assertEqual(value.status, "NOT_STARTED")
+        self.assertIsNone(value.next_boundary_or_null)
+
+    def test_day_89_withholds_economics_and_exposes_next_boundary(self):
+        value = observe_challenger_replacement_economic_tail(
+            _coverage_facts(observed=534, total=534),
+            _elapsed_boundary(89),
+        )
+
+        self.assertEqual(value.status, "WITHHELD_PRE_TAIL")
+        self.assertEqual(value.elapsed_complete_days, 89)
+        self.assertEqual(
+            value.next_boundary_or_null,
+            "2026-04-01T00:05:00.000Z",
+        )
+
+    def test_day_90_reports_unpreregistered_final_evaluator(self):
+        value = observe_challenger_replacement_economic_tail(
+            _coverage_facts(observed=540, total=540),
+            _elapsed_boundary(90),
+        )
+
+        self.assertEqual(
+            value.status,
+            "TAIL_REACHED_FINAL_EVALUATOR_NOT_PREREGISTERED",
+        )
+        self.assertIsNone(value.next_boundary_or_null)
+
+    def test_confirmed_safety_failure_precedes_tail_status(self):
+        facts = replace(
+            _coverage_facts(observed=534, total=534), incident_count=1
+        )
+
+        value = observe_challenger_replacement_economic_tail(
+            facts, _elapsed_boundary(89)
+        )
+
+        self.assertEqual(value.status, "FAILED_CLOSED")
+        self.assertTrue(value.unresolved_safety_failure)
+
+    def test_unsanitized_object_is_rejected_without_economic_access(self):
+        class Unsanitized:
+            accesses = 0
+
+            def __getattr__(self, name):
+                if name in {"pnl", "fee", "funding", "return", "drawdown"}:
+                    self.accesses += 1
+                    raise AssertionError("economic semantic access")
+                raise AttributeError(name)
+
+        value = Unsanitized()
+        with self.assertRaises(ChallengerReplacementReadinessError):
+            observe_challenger_replacement_economic_tail(
+                value, _elapsed_boundary(89)
+            )
+        self.assertEqual(value.accesses, 0)
+
+    def test_tail_result_and_public_api_have_no_economic_result_surface(self):
+        value = observe_challenger_replacement_economic_tail(
+            _coverage_facts(observed=534, total=534),
+            _elapsed_boundary(89),
+        )
+        forbidden = ("pnl", "fee", "funding", "return", "drawdown", "win_rate")
+        fields_and_repr = " ".join(
+            (*EconomicTailObservation.__slots__, repr(value))
+        ).lower()
+        self.assertFalse(any(token in fields_and_repr for token in forbidden))
+
+        for name, member in inspect.getmembers(readiness_module):
+            if (
+                name.startswith("_")
+                or not callable(member)
+                or getattr(member, "__module__", None)
+                != readiness_module.__name__
+            ):
+                continue
+            lowered = name.lower()
+            self.assertNotRegex(lowered, r"economic.*result|profit.*gate|publish.*economic")
+            parameters = inspect.signature(member).parameters
+            self.assertTrue(set(parameters).isdisjoint(forbidden))
 
 
 if __name__ == "__main__":

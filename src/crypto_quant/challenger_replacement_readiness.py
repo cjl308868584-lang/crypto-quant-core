@@ -184,6 +184,39 @@ class OperationalReadinessResult:
     reason_codes: Tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class EconomicTailObservation:
+    __slots__ = (
+        "evidence_qualification",
+        "status",
+        "elapsed_complete_days",
+        "minimum_calendar_days",
+        "due_opportunity_count",
+        "terminal_opportunity_count",
+        "observed_opportunity_count",
+        "missed_opportunity_count",
+        "meets_minimum_observed_coverage",
+        "terminal_coverage_complete",
+        "lifecycle_complete",
+        "unresolved_safety_failure",
+        "next_boundary_or_null",
+    )
+
+    evidence_qualification: str
+    status: str
+    elapsed_complete_days: int
+    minimum_calendar_days: int
+    due_opportunity_count: int
+    terminal_opportunity_count: int
+    observed_opportunity_count: int
+    missed_opportunity_count: int
+    meets_minimum_observed_coverage: bool
+    terminal_coverage_complete: bool
+    lifecycle_complete: bool
+    unresolved_safety_failure: bool
+    next_boundary_or_null: Optional[str]
+
+
 def _invalid() -> None:
     raise ChallengerReplacementReadinessError(
         "CHALLENGER_REPLACEMENT_READINESS_FACTS_INVALID"
@@ -491,4 +524,65 @@ def evaluate_challenger_replacement_operational_readiness(
         spot_roundtrip_count=spot_cycles,
         perpetual_roundtrip_count=perpetual_cycles,
         reason_codes=reason_codes,
+    )
+
+
+def observe_challenger_replacement_economic_tail(
+    facts: ReplacementReadinessFacts,
+    boundary: _ReplacementReadinessBoundary,
+) -> EconomicTailObservation:
+    """Expose structural progress only; no economic-final evaluator exists."""
+
+    operational = evaluate_challenger_replacement_operational_readiness(
+        facts, boundary
+    )
+    started = boundary.start_observed_at_or_null is not None
+    unresolved_safety = operational.policy_status == (
+        "OPERATIONAL_QUALIFICATION_DID_NOT_PASS"
+    )
+    evidence_unavailable = operational.policy_status == (
+        "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+    )
+    if unresolved_safety or evidence_unavailable:
+        status = "FAILED_CLOSED"
+    elif not started:
+        status = "NOT_STARTED"
+    elif operational.elapsed_complete_days < 90:
+        status = "WITHHELD_PRE_TAIL"
+    else:
+        status = "TAIL_REACHED_FINAL_EVALUATOR_NOT_PREREGISTERED"
+
+    next_boundary = None
+    if status == "WITHHELD_PRE_TAIL":
+        start_observed = _time(boundary.start_observed_at_or_null)
+        next_boundary = (
+            (start_observed + timedelta(days=90))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+    lifecycle_complete = (
+        not facts.active_opportunity_present
+        and facts.current_position == "FLAT"
+        and all(
+            fact.outcome != "OBSERVED"
+            or fact.lifecycle_status_or_null == "RECONCILED_FIXTURE"
+            for fact in facts.opportunities
+        )
+    )
+    return EconomicTailObservation(
+        evidence_qualification=_QUALIFICATION,
+        status=status,
+        elapsed_complete_days=operational.elapsed_complete_days,
+        minimum_calendar_days=90,
+        due_opportunity_count=operational.due_opportunity_count,
+        terminal_opportunity_count=operational.terminal_opportunity_count,
+        observed_opportunity_count=operational.observed_opportunity_count,
+        missed_opportunity_count=operational.missed_opportunity_count,
+        meets_minimum_observed_coverage=(
+            operational.meets_minimum_observed_coverage
+        ),
+        terminal_coverage_complete=operational.terminal_coverage_complete,
+        lifecycle_complete=lifecycle_complete,
+        unresolved_safety_failure=unresolved_safety,
+        next_boundary_or_null=next_boundary,
     )
