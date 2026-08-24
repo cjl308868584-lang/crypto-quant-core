@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 
 from jsonschema import Draft202012Validator
 
-from .canonical import canonical_decimal, canonical_json, stable_id, utc_datetime
+from .canonical import business_hash, canonical_decimal, canonical_json, stable_id, utc_datetime
 from .evidence import artifact_self_hash
 from .challenger_replacement_plan import (
     ChallengerReplacementPlanError,
@@ -300,12 +300,25 @@ def _validate_snapshot(snapshot):
         _v2_invalid()
     if snapshot.get("snapshot_hash") != artifact_self_hash(snapshot, "snapshot_hash"):
         _v2_invalid()
+    try:
+        from .challenger_replacement_simulation import _validate_snapshot as validate
+        validate(snapshot)
+    except (Exception,) as error:
+        if isinstance(error, (KeyboardInterrupt, SystemExit)):
+            raise
+        _v2_invalid()
 
 
-def _validate_events(lifecycle):
+def _validate_events(lifecycle, *, previous_snapshot, accounting, next_snapshot):
     from .challenger_replacement_binance_lifecycle import (
+        EngineProjection,
+        LifecycleEvent,
         _NULL_ID_EVENTS,
         _PAYLOAD_KEYS,
+        _normal_lifecycle_observations,
+        _reduce_engine,
+        _reduce_ledger,
+        _reduce_venue,
     )
 
     events = lifecycle.get("events")
@@ -341,6 +354,41 @@ def _validate_events(lifecycle):
     )
     if events[-1]["event_type"] != expected_terminal:
         _v2_invalid()
+    if expected_terminal == "LIFECYCLE_RECONCILED_FIXTURE":
+        typed = tuple(LifecycleEvent(
+            ordinal=event["ordinal"], event_type=event["event_type"],
+            event_hash=event["event_hash"],
+            parent_event_hash_or_null=event["parent_event_hash_or_null"],
+            intent_id_or_null=event["intent_id_or_null"],
+            attempt_id_or_null=event["attempt_id_or_null"],
+            payload_bytes=canonical_json(event["payload"]).encode("utf-8"),
+        ) for event in events[:-1])
+        transition = {"accounting": accounting, "next_snapshot": next_snapshot}
+        observations = _normal_lifecycle_observations(
+            transition, previous_snapshot["position_state"]
+        )
+        if accounting["fill_price"] is None:
+            product = {"SPOT_LONG": "spot", "PERP_SHORT": "perpetual"}.get(
+                next_snapshot["position_state"]
+            )
+            values = (
+                product, next_snapshot["signed_quantity"], None, "0",
+                accounting["funding_cashflow"], "NO_INTENT",
+            )
+            projections = (EngineProjection(*values),) * 3
+        else:
+            projections = (
+                _reduce_engine(typed, accounting["funding_cashflow"]),
+                _reduce_venue(observations, previous_snapshot["position_state"]),
+                _reduce_ledger(previous_snapshot, transition),
+            )
+        payload = events[-1]["payload"]
+        if payload != {
+            "engine_projection_hash": business_hash(projections[0]),
+            "venue_projection_hash": business_hash(projections[1]),
+            "ledger_projection_hash": business_hash(projections[2]),
+        }:
+            _v2_invalid()
 
 
 def _validate_v2(document, *, plan, contract, build_identity):
@@ -395,7 +443,12 @@ def _validate_v2(document, *, plan, contract, build_identity):
         != (lifecycle["status"] == "RECONCILED_FIXTURE")
     ):
         _v2_invalid()
-    _validate_events(lifecycle)
+    _validate_events(
+        lifecycle,
+        previous_snapshot=document["previous_snapshot"],
+        accounting=document["accounting"],
+        next_snapshot=document["next_snapshot"],
+    )
     if (
         document["result_id"]
         != stable_id("challenger_replacement_simulation_result", _result_identity(document))

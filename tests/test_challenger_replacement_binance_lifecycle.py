@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import canonical_json, stable_id
 import crypto_quant.challenger_replacement_binance_lifecycle as lifecycle
 from crypto_quant.challenger_replacement_binance_simulation_input import (
     load_challenger_replacement_binance_simulation_input_bytes,
@@ -315,6 +315,52 @@ class ChallengerReplacementBinanceLifecycleTests(unittest.TestCase):
             previous["protective_stop_or_null"],
         )
 
+    def test_perpetual_funding_boundary_close_reconciles_all_projections(self):
+        opened = self.simulate(source=self.source_for("SHORT"))
+        closed = self.simulate(
+            source=self.source_for(
+                "FLAT",
+                "2026-08-24T08:00:00.000Z",
+                funding_boundary_at_or_null="2026-08-24T08:00:00.000Z",
+                funding_rate_or_null="0.0001",
+            ),
+            previous_projection=json.loads(opened.next_snapshot_bytes),
+        )
+        self.assertEqual(closed.status, "RECONCILED_FIXTURE")
+        self.assertEqual(json.loads(closed.decision_bytes)["action"], "CLOSE_PERP_SHORT")
+        self.assertNotEqual(json.loads(closed.accounting_bytes)["funding_cashflow"], "0")
+
+    def test_nonflat_previous_snapshot_rejects_invalid_protective_stop(self):
+        opened = self.simulate(source=self.source_for("LONG"))
+        previous = json.loads(opened.next_snapshot_bytes)
+        previous["protective_stop_or_null"]["side"] = "BUY"
+        previous["protective_stop_or_null"]["quantity"] = "999"
+        previous["snapshot_hash"] = artifact_self_hash(previous, "snapshot_hash")
+        with self.assertRaisesRegex(
+            ChallengerReplacementLifecycleError,
+            "CHALLENGER_REPLACEMENT_LIFECYCLE_IDENTITY_INVALID",
+        ):
+            self.simulate(
+                source=self.source_for("LONG", "2026-08-24T04:00:00.000Z"),
+                previous_projection=previous,
+            )
+        for mutation in ("fake_ids", "missing"):
+            with self.subTest(mutation=mutation):
+                changed = json.loads(opened.next_snapshot_bytes)
+                if mutation == "missing":
+                    changed["protective_stop_or_null"] = None
+                else:
+                    stop = changed["protective_stop_or_null"]
+                    stop["stop_intent_id"] = "replacement_stop_" + "a" * 64
+                    stop["stop_attempt_id"] = "replacement_attempt_" + "b" * 64
+                    stop["stop_client_order_id"] = "replacement_client_" + "c" * 64
+                changed["snapshot_hash"] = artifact_self_hash(changed, "snapshot_hash")
+                with self.assertRaises(ChallengerReplacementLifecycleError):
+                    self.simulate(
+                        source=self.source_for("LONG", "2026-08-24T04:00:00.000Z"),
+                        previous_projection=changed,
+                    )
+
     def test_stop_trigger_precedes_strategy_and_uses_gap_adverse_fill(self):
         cases = (
             ("LONG", "spot", "STOP_CLOSE_SPOT_LONG", "1960.97", "low", "1900"),
@@ -436,6 +482,34 @@ class ChallengerReplacementBinanceLifecycleTests(unittest.TestCase):
                     result.lifecycle_events[-1].event_type,
                     "LIFECYCLE_FAILED_CLOSED",
                 )
+                snapshot = json.loads(result.next_snapshot_bytes)
+                if reason == "UNRESOLVED_UNKNOWN":
+                    unknown = next(event for event in result.lifecycle_events
+                                   if event.event_type == "ORDER_UNKNOWN_FIXTURE")
+                    self.assertEqual(json.loads(unknown.payload_bytes)["reason_code"], "TIMEOUT")
+                    self.assertEqual(snapshot["position_certainty"], "UNRESOLVED")
+                    self.assertEqual(len(snapshot["unresolved_intent_ids"]), 1)
+                    self.assertEqual(snapshot["position_state"], "FLAT")
+                    self.assertEqual(snapshot["signed_quantity"], "0")
+                if reason in {"DUPLICATE_ECONOMIC_ORDER", "UNRECORDED_OR_CONFLICTING_FILL"}:
+                    fills = [event for event in result.lifecycle_events
+                             if event.event_type == "FILL_OBSERVED_FIXTURE"]
+                    self.assertGreaterEqual(len(fills), 2)
+                    if "overfill" in changes:
+                        payload = json.loads(fills[-1].payload_bytes)
+                        self.assertEqual(payload["fee"], "0.00030046")
+                        self.assertEqual(payload["fill_id"], stable_id(
+                            "replacement_fill",
+                            {
+                                "attempt_id": fills[-1].attempt_id_or_null,
+                                "cumulative_quantity": payload["cumulative_filled_quantity"],
+                            },
+                        ))
+                if reason in {
+                    "UNRESOLVED_UNKNOWN", "UNRECORDED_OR_CONFLICTING_FILL",
+                    "DISASTER_STOP_MISSING_OR_UNCONFIRMED",
+                }:
+                    self.assertNotEqual(snapshot["risk_state"], "RISK_CLEAR")
 
     def test_partial_fill_rebuilds_one_quantity_exact_stop_before_success(self):
         original = lifecycle._normal_lifecycle_observations
@@ -483,10 +557,29 @@ class ChallengerReplacementBinanceLifecycleTests(unittest.TestCase):
         ]
         self.assertTrue(all(Decimal(item["fee"]).as_tuple().exponent >= -8 for item in fills))
         self.assertEqual(
+            [item["fee"] for item in fills],
+            ["0.03004515", "0.04476728"],
+        )
+        self.assertEqual(
             sum((Decimal(item["fee"]) for item in fills), Decimal("0")),
             Decimal(json.loads(result.accounting_bytes)["fee"]),
         )
         self.assertEqual(result.status, "RECONCILED_FIXTURE")
+
+    def test_partial_fill_each_fee_rounds_independently_and_total_reconciles(self):
+        original = lifecycle._normal_lifecycle_observations
+        def partial(*args):
+            return (replace(original(*args)[0], partial_first_quantity_or_null="0.0001"),)
+        with patch.object(lifecycle, "_normal_lifecycle_observations", side_effect=partial):
+            result = self.simulate(source=self.source_for("LONG"))
+        fills = [json.loads(event.payload_bytes) for event in result.lifecycle_events
+                 if event.event_type == "FILL_OBSERVED_FIXTURE"]
+        total = sum((Decimal(item["fee"]) for item in fills), Decimal("0"))
+        terminal = next(json.loads(event.payload_bytes) for event in result.lifecycle_events
+                        if event.event_type == "ORDER_RECONCILED_FIXTURE")
+        self.assertEqual(result.status, "RECONCILED_FIXTURE")
+        self.assertEqual(total, Decimal(terminal["cumulative_fee"]))
+        self.assertEqual(total, Decimal(json.loads(result.accounting_bytes)["fee"]))
 
     def test_partial_fill_protection_faults_never_return_reconciled(self):
         cases = (
@@ -515,7 +608,11 @@ class ChallengerReplacementBinanceLifecycleTests(unittest.TestCase):
                 self.assertEqual(result.reason_code_or_null, reason)
                 snapshot = json.loads(result.next_snapshot_bytes)
                 self.assertEqual(snapshot["risk_state"], "STAGE_FAILED_LOCKED")
-                self.assertEqual(snapshot["position_state"], "SPOT_LONG")
+                expected_state = (
+                    "FLAT" if field in {"old_stop_late_fill", "wrong_product_or_side"}
+                    else "SPOT_LONG"
+                )
+                self.assertEqual(snapshot["position_state"], expected_state)
                 self.assertIsNone(snapshot["protective_stop_or_null"])
                 types = [event.event_type for event in result.lifecycle_events]
                 if field == "missing_cancel_ack":

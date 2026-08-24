@@ -314,6 +314,25 @@ class OpportunityEvidenceV2Tests(unittest.TestCase):
         with self.assertRaises(ChallengerReplacementOpportunityEvidenceError):
             self.load(build_identity=wrong_build)
 
+    def test_loader_rejects_malformed_snapshot_decimal_with_rehashed_document(self):
+        document = self.build()
+        document["next_snapshot"]["cash"] = "not-a-decimal"
+        document["next_snapshot"]["snapshot_hash"] = artifact_self_hash(
+            document["next_snapshot"], "snapshot_hash"
+        )
+        document["result_hash"] = artifact_self_hash(document, "result_hash")
+        with self.assertRaises(ChallengerReplacementOpportunityEvidenceError):
+            self.load(document)
+
+    def test_loader_rejects_inconsistent_terminal_projection_hash(self):
+        document = self.build()
+        terminal = document["lifecycle"]["events"][-1]
+        terminal["payload"]["engine_projection_hash"] = "f" * 64
+        terminal["event_hash"] = artifact_self_hash(terminal, "event_hash")
+        document["result_hash"] = artifact_self_hash(document, "result_hash")
+        with self.assertRaises(ChallengerReplacementOpportunityEvidenceError):
+            self.load(document)
+
     def test_loader_rejects_unknown_event_payload_even_with_rehashed_chain(self):
         document = self.build()
         document["lifecycle"]["events"][0]["payload"]["unknown"] = "value"

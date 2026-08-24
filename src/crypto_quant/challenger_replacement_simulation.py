@@ -167,6 +167,64 @@ def _validate_snapshot(snapshot):
         invalid = quantity <= 0 or margin != 0
     else:
         invalid = quantity >= 0 or margin <= 0
+    stop = snapshot["protective_stop_or_null"]
+    if snapshot["position_state"] != "FLAT" and stop is None:
+        invalid = invalid or snapshot["risk_state"] != "STAGE_FAILED_LOCKED"
+    if snapshot["position_state"] != "FLAT" and stop is not None:
+        product = "spot" if snapshot["position_state"] == "SPOT_LONG" else "perpetual"
+        expected = {
+            "stop_intent_id", "stop_attempt_id", "stop_client_order_id",
+            "product", "side", "reduce_only", "quantity", "trigger_price",
+            "status",
+        }
+        try:
+            trigger = _d(stop["trigger_price"])
+            entry = _d(snapshot["entry_price_or_null"])
+            valid_stop = (
+                isinstance(stop, Mapping)
+                and set(stop) == expected
+                and stop["product"] == product
+                and stop["side"] == ("SELL" if product == "spot" else "BUY")
+                and stop["reduce_only"] is (product == "perpetual")
+                and stop["quantity"] == _c(abs(quantity))
+                and stop["trigger_price"] == _c(trigger)
+                and trigger > 0
+                and ((trigger < entry) if product == "spot" else (trigger > entry))
+                and stop["status"] == "CONFIRMED_FIXTURE"
+                and stop["stop_attempt_id"] == stable_id(
+                    "replacement_attempt",
+                    {"intent_id": stop["stop_intent_id"], "attempt_ordinal": 1},
+                )
+                and stop["stop_client_order_id"] == stable_id(
+                    "replacement_client",
+                    {"intent_id": stop["stop_intent_id"], "product": product},
+                )
+                and all(
+                    isinstance(stop[name], str)
+                    and stop[name].startswith(prefix)
+                    and len(stop[name]) == len(prefix) + 64
+                    and all(c in "0123456789abcdef" for c in stop[name][len(prefix):])
+                    for name, prefix in (
+                        ("stop_intent_id", "replacement_stop_"),
+                        ("stop_attempt_id", "replacement_attempt_"),
+                        ("stop_client_order_id", "replacement_client_"),
+                    )
+                )
+            )
+        except (KeyError, TypeError, ChallengerReplacementSimulationError, ValueError):
+            try:
+                trigger = _d(stop["trigger"])
+                entry = _d(snapshot["entry_price_or_null"])
+                valid_stop = (
+                    isinstance(stop, Mapping)
+                    and set(stop) == {"status", "trigger"}
+                    and stop["status"] == "CONFIRMED_FIXTURE"
+                    and stop["trigger"] == _c(trigger)
+                    and ((trigger < entry) if product == "spot" else (trigger > entry))
+                )
+            except (KeyError, TypeError, ChallengerReplacementSimulationError, ValueError):
+                valid_stop = False
+        invalid = invalid or not valid_stop
     if invalid:
         _invalid("CHALLENGER_REPLACEMENT_SIMULATION_SNAPSHOT_INVALID")
     if snapshot["position_certainty"] == "UNRESOLVED" and (
