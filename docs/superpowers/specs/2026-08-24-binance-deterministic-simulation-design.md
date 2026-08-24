@@ -33,7 +33,11 @@ v0.71 不修改 v0.69 plan bytes/hash、v0.70 event envelope 或历史 event sto
 
 - v0.69 plan ID/hash/file SHA；
 - v0.70 annotated tag/peeled commit/manifest identity；
-- 本版 schema、算法和 golden fixtures 的 exact hashes。
+- 本版 schema 版本与 canonical algorithm/policy hashes。
+
+golden fixture manifest 单向绑定 simulation contract hash 和每个 fixture SHA-256；
+release manifest 再同时绑定 contract/fixture manifest/code 文件。contract 不反向绑定
+尚未生成的 fixture manifest，因此不形成 hash cycle。
 
 simulation contract 在任何 natural start receipt 前发布，不是 post-hoc 经济参数调整。
 
@@ -469,15 +473,29 @@ challenger_replacement_opportunity_projection.py
 challenger-replacement-binance-simulation-input-v1.schema.json
 challenger-replacement-simulation-contract-v1.schema.json
 challenger-replacement-opportunity-result-evidence-v2.schema.json
+challenger-replacement-binance-golden-fixture-manifest-v1.schema.json
 artifacts/challenger-replacement/challenger-replacement-binance-simulation-contract-v0.71.0.json
 artifacts/challenger-replacement/challenger-replacement-binance-golden-fixture-manifest-v0.71.0.json
-tests/fixtures/challenger_replacement_v071/*.json
+tests/fixtures/challenger_replacement_v071/{spot-cycle,perp-cycle}/*-{input,result}.json
 ```
 
 simulation contract artifact 是 self-hashed canonical document，绑定 v0.69 plan 和 fee/slippage/
-rounding/accounting 合同。golden fixture manifest 列出排序后的 exact fixture paths/SHA-256
-和自身 self-hash。它们不反向嵌入未来 commit；最终 v0.71 release manifest/status/ADR
-绑定两个 artifact 的 file SHA、tag、peeled commit 和 CI。
+rounding/accounting 合同。golden fixture manifest 列出 simulation contract hash、排序后的
+exact fixture paths/SHA-256 和自身 self-hash。它们不反向嵌入未来 commit；
+最终 v0.71 release manifest/status/ADR 绑定两个 artifact 的 file SHA、tag、peeled
+commit 和 CI。
+
+golden 目录不发明第二套 bundle 格式。每个 `*-input.json` 都由 v0.71
+input loader 逐字节重放，每个 `*-result.json` 都由 v2 result loader 逐字节
+重放。event bytes 包含 fixture root 的 device/inode，不得作为跨机器 committed
+golden；测试必须在当前机器新建的 owner-only root 中从 exact input/result 重建
+event chain，比较 exact result bytes 以及投影中不含 root identity/event hash 的明确
+业务字段（terminal status、lifecycle status、next snapshot）。禁止通过删除或改写
+canonical event 字段制造伪 exact equality。
+manifest 只定义排序后的 path/SHA/schema-kind/opportunity-order 清单、contract hash
+和 self-hash，不是 runtime authority。fault lifecycle 依然由第 12.3 节的固定
+test-only private-boundary patches 验证，不把不可自我描述的故障场景伪装成 portable
+committed market fixture。
 
 v0.70 opportunities 模块已有 696 行，v0.71 不在其中堆入执行引擎。
 实现前先用行为不变的 TDD regression 将可复用的 envelope/projection 逻辑提取到
