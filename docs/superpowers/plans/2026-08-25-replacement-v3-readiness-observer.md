@@ -673,13 +673,13 @@ record that the HTTP boundary required no modification.
 - Consumes: all v0.73 public modules and released v0.69-v0.72/v0.60-v0.61 artifacts.
 - Produces: one focused cross-component acceptance suite and static authority scan.
 
-- [ ] **Step 1: Add cross-component RED**
+- [x] **Step 1: Add cross-component RED**
 
 Rebuild both v0.72 complete-cycle fixtures, observe them, evaluate policy,
 create projection-v2, derive alerts and build dashboard status bytes. Assert
 the entire flow is deterministic and remains fixture/not-started authority.
 
-- [ ] **Step 2: Add failure-flow RED**
+- [x] **Step 2: Add failure-flow RED**
 
 Inject an unresolved UNKNOWN, missing stop, ledger mismatch, MISSED gap and
 stale provenance through existing private fixture boundaries. Assert each
@@ -692,7 +692,7 @@ coverage threshold. Require a proved hash/identity/durability violation to be
 DID_NOT_PASS, while unavailable/unreadable/qualification-unknown evidence is
 INCONCLUSIVE.
 
-- [ ] **Step 3: Add frozen-byte and forbidden-authority scans**
+- [x] **Step 3: Add frozen-byte and forbidden-authority scans**
 
 Hash every committed v0.69-v0.72 artifact/fixture and the v1 projection fixture
 against the release baseline. AST-scan new modules for forbidden imports and
@@ -700,7 +700,7 @@ public parameter names. Patch network, subprocess, launchctl, keyring,
 filesystem-write, event publish, Broker and venue-order boundaries and require
 all counts zero.
 
-- [ ] **Step 4: Run focused and adjacent acceptance tests**
+- [x] **Step 4: Run focused and adjacent acceptance tests**
 
 ```bash
 python -m unittest \
@@ -718,7 +718,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-- [ ] **Step 5: Enforce line budgets and commit**
+- [x] **Step 5: Enforce line budgets and commit**
 
 ```bash
 wc -l \
