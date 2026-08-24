@@ -622,3 +622,56 @@ class ChallengerReplacementOpportunityState:
             raise
         except ChallengerReplacementEventError as error:
             raise ChallengerReplacementOpportunityError(error.reason_code) from error
+
+
+def catch_up_missed_opportunities(
+    *, state, start_scheduled_for, detected_at, worker_id, reason_code
+):
+    """Append only expired MISSED facts from explicit fixture boundaries."""
+
+    if (
+        not isinstance(state, ChallengerReplacementOpportunityState)
+        or not isinstance(start_scheduled_for, str)
+        or not isinstance(worker_id, str)
+        or not worker_id
+        or reason_code
+        not in state.plan["opportunity_policy"]["missed_reason_codes"]
+    ):
+        _invalid()
+    projection = state.replay()
+    eligible = None
+    for candidate in derive_due_opportunities(
+        start_scheduled_for=start_scheduled_for,
+        detected_at=detected_at,
+        terminal_scheduled_for=projection["terminal_scheduled_for"],
+    ):
+        if candidate["status"] != "EXPIRED":
+            eligible = candidate
+            break
+        active = projection["active_opportunity_id"]
+        if active not in (None, candidate["opportunity_id"]):
+            _invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_ACTIVE_CONFLICT")
+        if active is None:
+            boundary_hash = None
+            boundary_stage = None
+        else:
+            slot = projection["opportunities"][active]
+            boundary_hash = projection["last_event_hash"]
+            boundary_stage = slot["stage"]
+        state.append(
+            event_type="OPPORTUNITY_MISSED",
+            opportunity_id=candidate["opportunity_id"],
+            worker_id=worker_id,
+            recorded_at=detected_at,
+            payload={
+                "opportunity_id": candidate["opportunity_id"],
+                "scheduled_for": candidate["scheduled_for"],
+                "detected_at": detected_at,
+                "missed_after_event_hash_or_null": boundary_hash,
+                "missed_after_stage_or_null": boundary_stage,
+                "reason_code": reason_code,
+            },
+            expected_last_event_hash=projection["last_event_hash"],
+        )
+        projection = state.replay()
+    return {"projection": projection, "eligible_opportunity": eligible}

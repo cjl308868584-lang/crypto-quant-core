@@ -4,6 +4,7 @@ import copy
 import hashlib
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_events import (
@@ -15,6 +16,7 @@ from crypto_quant.challenger_replacement_opportunity_evidence import (
 from crypto_quant.challenger_replacement_opportunities import (
     ChallengerReplacementOpportunityError,
     ChallengerReplacementOpportunityState,
+    catch_up_missed_opportunities,
     derive_due_opportunities,
     opportunity_coverage,
     opportunity_health,
@@ -570,6 +572,202 @@ class OpportunityStateTests(unittest.TestCase):
                 )
         finally:
             decimal.setcontext(original)
+
+
+class OpportunityCatchUpTests(unittest.TestCase):
+    def setUp(self):
+        self.ws = OpportunityStateWorkspace()
+        self.state = self.ws.state()
+
+    def tearDown(self):
+        self.ws.close()
+
+    def test_expired_opportunities_become_ordered_missed_facts(self):
+        with patch(
+            "crypto_quant.challenger_replacement_opportunity_evidence."
+            "build_challenger_replacement_fixture_result_evidence",
+            side_effect=AssertionError("catch-up must not build evidence"),
+        ), patch("socket.socket", side_effect=AssertionError("no network")):
+            result = catch_up_missed_opportunities(
+                state=self.state,
+                start_scheduled_for="2026-08-24T00:00:00.000Z",
+                detected_at="2026-08-24T12:11:00.000Z",
+                worker_id="fixture-worker",
+                reason_code="PROCESS_NOT_RUNNING",
+            )
+        projection = result["projection"]
+        self.assertIsNone(result["eligible_opportunity"])
+        self.assertEqual(projection["missed_opportunity_count"], 4)
+        self.assertEqual(
+            projection["terminal_scheduled_for"],
+            (
+                "2026-08-24T00:00:00.000Z",
+                "2026-08-24T04:00:00.000Z",
+                "2026-08-24T08:00:00.000Z",
+                "2026-08-24T12:00:00.000Z",
+            ),
+        )
+        self.assertTrue(all(
+            opportunity["outcome"] == "MISSED"
+            for opportunity in projection["opportunities"].values()
+        ))
+        later = catch_up_missed_opportunities(
+            state=self.state,
+            start_scheduled_for="2026-08-24T00:00:00.000Z",
+            detected_at="2026-08-24T16:05:00.000Z",
+            worker_id="fixture-worker",
+            reason_code="PROCESS_NOT_RUNNING",
+        )
+        self.assertEqual(
+            later["eligible_opportunity"]["opportunity_id"],
+            "ETHUSDT@2026-08-24T16:00:00.000Z",
+        )
+        self.assertEqual(
+            later["projection"]["missed_opportunity_count"], 4
+        )
+
+    def test_later_fixture_observed_recovers_without_rewriting_misses(self):
+        catch_up_missed_opportunities(
+            state=self.state,
+            start_scheduled_for=DEFAULT_SCHEDULED_FOR,
+            detected_at="2026-08-24T12:11:00.000Z",
+            worker_id="fixture-worker",
+            reason_code="PROCESS_NOT_RUNNING",
+        )
+        opportunity_id = fixture_opportunity_id(
+            "2026-08-24T16:00:00.000Z"
+        )
+        observed_at = "2026-08-24T16:05:00.000Z"
+        evidence = build_challenger_replacement_fixture_result_evidence(
+            opportunity_id=opportunity_id,
+            scheduled_for="2026-08-24T16:00:00.000Z",
+            observed_at=observed_at,
+            source_bundle_sha256=self.ws.source_hash,
+            decision_sha256=self.ws.decision_hash,
+        )
+        evidence_bytes = canonical_json(evidence).encode("utf-8")
+        projection = self.state.replay()
+        input_event = self.state.append(
+            event_type="INPUT_PREPARED",
+            opportunity_id=opportunity_id,
+            worker_id="fixture-worker",
+            recorded_at=observed_at,
+            payload={
+                "opportunity_id": opportunity_id,
+                "scheduled_for": "2026-08-24T16:00:00.000Z",
+                "capture_open": "2026-08-24T16:02:00.000Z",
+                "capture_close": "2026-08-24T16:10:00.000Z",
+                "source_bundle_bytes_base64": base64.b64encode(
+                    self.ws.source_bytes
+                ).decode("ascii"),
+                "source_bundle_sha256": self.ws.source_hash,
+            },
+            expected_last_event_hash=projection["last_event_hash"],
+        )
+        projection = self.state.replay()
+        result_event = self.state.append(
+            event_type="RESULT_PREPARED",
+            opportunity_id=opportunity_id,
+            worker_id="fixture-worker",
+            recorded_at=observed_at,
+            payload={
+                "opportunity_id": opportunity_id,
+                "scheduled_for": "2026-08-24T16:00:00.000Z",
+                "input_event_hash": input_event.event_hash,
+                "input_event_sequence": input_event.sequence,
+                "source_bundle_sha256": self.ws.source_hash,
+                "decision_bytes_base64": base64.b64encode(
+                    self.ws.decision_bytes
+                ).decode("ascii"),
+                "decision_sha256": self.ws.decision_hash,
+                "result_evidence_bytes_base64": base64.b64encode(
+                    evidence_bytes
+                ).decode("ascii"),
+                "result_evidence_sha256": hashlib.sha256(
+                    evidence_bytes
+                ).hexdigest(),
+                "previous_observed_decision_hash_or_null": None,
+            },
+            expected_last_event_hash=projection["last_event_hash"],
+        )
+        projection = self.state.replay()
+        self.state.append(
+            event_type="OPPORTUNITY_OBSERVED",
+            opportunity_id=opportunity_id,
+            worker_id="fixture-worker",
+            recorded_at=observed_at,
+            payload={
+                "opportunity_id": opportunity_id,
+                "scheduled_for": "2026-08-24T16:00:00.000Z",
+                "input_event_hash": input_event.event_hash,
+                "input_event_sequence": input_event.sequence,
+                "result_event_hash": result_event.event_hash,
+                "result_event_sequence": result_event.sequence,
+                "source_bundle_sha256": self.ws.source_hash,
+                "decision_sha256": self.ws.decision_hash,
+                "result_evidence_sha256": hashlib.sha256(
+                    evidence_bytes
+                ).hexdigest(),
+                "observed_at": observed_at,
+            },
+            expected_last_event_hash=projection["last_event_hash"],
+        )
+        final = self.state.replay()
+        self.assertEqual(final["missed_opportunity_count"], 4)
+        self.assertEqual(final["observed_opportunity_count"], 1)
+        self.assertEqual(final["current_consecutive_missed"], 0)
+        self.assertEqual(final["maximum_consecutive_missed"], 4)
+
+    def test_partial_input_is_missed_without_rebuilding_source(self):
+        input_event = OpportunityStateTests._append_input(self)
+        with patch(
+            "crypto_quant.challenger_replacement_opportunity_evidence."
+            "build_challenger_replacement_fixture_result_evidence",
+            side_effect=AssertionError("must not rebuild"),
+        ):
+            catch_up_missed_opportunities(
+                state=self.state,
+                start_scheduled_for=DEFAULT_SCHEDULED_FOR,
+                detected_at="2026-08-24T00:11:00.000Z",
+                worker_id="fixture-worker",
+                reason_code="CAPTURE_WINDOW_EXPIRED",
+            )
+        slot = self.state.replay()["opportunities"][self.ws.opportunity_id]
+        self.assertEqual(slot["outcome"], "MISSED")
+        self.assertEqual(slot["stage"], "OPPORTUNITY_MISSED")
+        self.assertEqual(len(self.state.replay()["events"]), 2)
+        self.assertEqual(input_event.event_hash, slot["input_event_hash"])
+
+    def test_exact_retry_adds_no_events(self):
+        arguments = {
+            "state": self.state,
+            "start_scheduled_for": DEFAULT_SCHEDULED_FOR,
+            "detected_at": "2026-08-24T00:11:00.000Z",
+            "worker_id": "fixture-worker",
+            "reason_code": "PRECONDITION_FAILED_CLOSED",
+        }
+        catch_up_missed_opportunities(**arguments)
+        before = self.state.replay()
+        catch_up_missed_opportunities(**arguments)
+        after = self.state.replay()
+        self.assertEqual(len(after["events"]), len(before["events"]))
+        self.assertEqual(after["last_event_hash"], before["last_event_hash"])
+
+    def test_invalid_reason_and_missing_start_fail_without_events(self):
+        for start, reason in (
+            (None, "PROCESS_NOT_RUNNING"),
+            (DEFAULT_SCHEDULED_FOR, "NOT_ALLOWLISTED"),
+        ):
+            with self.subTest(start=start, reason=reason):
+                with self.assertRaises(ChallengerReplacementOpportunityError):
+                    catch_up_missed_opportunities(
+                        state=self.state,
+                        start_scheduled_for=start,
+                        detected_at="2026-08-24T00:11:00.000Z",
+                        worker_id="fixture-worker",
+                        reason_code=reason,
+                    )
+        self.assertEqual(len(self.state.replay()["events"]), 0)
 
 
 if __name__ == "__main__":
