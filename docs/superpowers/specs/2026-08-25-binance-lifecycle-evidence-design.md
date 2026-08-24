@@ -198,6 +198,12 @@ Product behavior is exact:
 - an opposite signal first requires cancel/reconcile/verified-flat and waits
   until the next DecisionOpportunity.
 
+A protective-stop trigger deterministically supersedes the same-opportunity
+strategy decision with exact action `STOP_CLOSE_SPOT_LONG` or
+`STOP_CLOSE_PERP_SHORT`, reason `PROTECTIVE_STOP_TRIGGERED`, and risk approval
+`REDUCE_ONLY`.  No caller can request that override; it is derived only from the
+validated completed bar and the previous confirmed stop.
+
 Same-intent exact retry returns the exact prior aggregate.  Same intent with
 different economic bytes is `DUPLICATE_ECONOMIC_ORDER`.  The state layer does
 not silently rebuild or rebase a different intent.
@@ -506,6 +512,12 @@ schema_version = 2.0.0
 mode = FIXTURE_SIMULATION_NO_NETWORK_NO_ACCOUNT_NO_BROKER_NO_REAL_ORDER
 evidence_qualification = COMMITTED_FIXTURE_NOT_LIVE_MARKET_OR_ACCOUNT
 ```
+
+`lifecycle.status` is exactly `RECONCILED_FIXTURE` or `FAILED_CLOSED`.
+`lifecycle.operationally_complete` is true if and only if status is
+`RECONCILED_FIXTURE`; `lifecycle.reason_code_or_null` is null only in that
+status and otherwise contains the single frozen failure reason.  These values
+are derived from the canonical lifecycle events and cannot be caller supplied.
 
 The result binds exact plan/contract/build/opportunity identities, input hash,
 decision bytes/hash, previous snapshot hash, risk approval/reason, intent and
