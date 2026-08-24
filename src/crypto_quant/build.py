@@ -407,6 +407,22 @@ _V070_RELEASE_PATHS = (
     "docs/implementation-status-v0.70.0.md",
 )
 
+_V071_RELEASE_PATHS = (
+    "config/challenger-replacement-simulation-contract-v1.schema.json",
+    "artifacts/challenger-replacement/challenger-replacement-binance-simulation-contract-v0.71.0.json",
+    "tests/test_challenger_replacement_simulation_contract.py",
+    "tests/test_challenger_replacement_binance_simulation_input.py",
+    "tests/test_challenger_replacement_simulation.py",
+    "tests/test_challenger_replacement_v071_artifacts.py",
+    "tests/test_challenger_replacement_v071_release.py",
+    "docs/superpowers/specs/2026-08-24-binance-deterministic-simulation-design.md",
+    "docs/superpowers/plans/2026-08-24-binance-deterministic-simulation.md",
+    "docs/superpowers/specs/2026-08-24-v071-accounting-core-version-split-design.md",
+    "docs/superpowers/plans/2026-08-24-v071-accounting-core-release.md",
+    "docs/adr/0071-binance-accounting-core.md",
+    "docs/implementation-status-v0.71.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -444,6 +460,7 @@ class EvaluatorBuild:
                 + list(_V068_RELEASE_PATHS)
                 + list(_V069_RELEASE_PATHS)
                 + list(_V070_RELEASE_PATHS)
+                + list(_V071_RELEASE_PATHS)
             )
         )
 
