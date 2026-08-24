@@ -56,8 +56,10 @@ INPUT_PREPARED -> RESULT_PREPARED -> OPPORTUNITY_OBSERVED
   file SHA-256：
   `1d4932712304a890c5ff0a393d9674c38e2459faa3954a957ac0439ea770a32d`。
 
-loader 必须验证 exact plan bytes、schema、plan ID/hash 和 authority。它不能接受调用方构造的“等价”
-dict，也不能从任意路径加载替代 plan。
+v0.70 state 接受 mapping，但必须用 `challenger_replacement_plan_v3_reasons` 和冻结常量验证其 canonical
+内容、schema、plan ID/hash、authority 与上述 v0.69 plan 完全相同；同内容 mapping 不被当成独立权威。
+本版本没有 production path loader，因此不声称可从 path provenance 证明调用方来源。未来 deployment/start
+版本必须以固定 release path、file SHA 和 manifest identity 另行建立文件来源信任。
 
 ### 2.2 前序证据保持
 
@@ -102,8 +104,8 @@ ETHUSDT@YYYY-MM-DDTHH:MM:SS.000Z
 固定网格为 UTC `00:00/04:00/08:00/12:00/16:00/20:00`：
 
 ```text
-capture_open  = scheduled_for + 120 seconds
-capture_close = scheduled_for + 600 seconds
+capture_open  = scheduled_for + 120 seconds  (inclusive)
+capture_close = scheduled_for + 600 seconds  (inclusive for OBSERVED)
 ```
 
 v0.70 的纯 catch-up 函数必须同时接收：
@@ -139,13 +141,15 @@ opportunity_id
 scheduled_for
 capture_open
 capture_close
-capture_sha256
 source_bundle_bytes_base64
 source_bundle_sha256
 ```
 
-source bundle 必须由严格 v3 loader 重放，绑定同一 opportunity、plan/build identity、前一已观察
-decision state，并证明 captured_at 位于 capture window。`MISSED` 不会伪造 source bundle。
+event header `recorded_at` 是 fixture observation time，必须位于 `[capture_open, capture_close]`。v0.70
+尚不实现 v3 Binance market/decision semantics。fixture 中的 source bytes 必须是 canonical JSON、
+hash 精确且非空，但 v0.70 不把它解释为可交易行情或合格 strategy input。其唯一语义绑定由下面的
+fixture-only result evidence 完成；因此这种 INPUT/RESULT/OBSERVED 只能证明 event state machine，不能
+进入 future start receipt 或 evaluator。`MISSED` 不会伪造 source bytes。
 
 ### 4.5 RESULT_PREPARED
 
@@ -172,6 +176,8 @@ schema_version = 1.0.0
 mode = FIXTURE_ONLY_NO_BROKER_NO_ORDER
 opportunity_id
 scheduled_for
+observed_at
+source_bundle_sha256
 decision_sha256
 authority = {
   network_requests: 0,
@@ -182,7 +188,9 @@ authority = {
 }
 ```
 
-v0.70 builder 仅为 tests/fixture 创建这种 proof-of-contract evidence；它不是模拟成交、风险批准、订单、
+`observed_at` 必须位于该 opportunity 的 capture window；source/decision hash 必须与 durable INPUT/RESULT
+逐字相等。v0.70 builder 仅为 tests/fixture 创建这种 proof-of-contract evidence；它不是完整 market
+capture 或 strategy semantic validation，也不是模拟成交、风险批准、订单、
 fill、fee、position 或 PnL。v0.71 必须以新的 schema supersede 它后，真实 simulation runner 才有资格
 产生 `OBSERVED`。v0.70 不提供自然 runner，也不对 production opportunity 调用该 fixture builder。
 
@@ -203,7 +211,7 @@ result_evidence_sha256
 observed_at
 ```
 
-`observed_at` 必须等于严格 capture/result evidence 所绑定的实际观察时间并位于 capture window。所有 hash
+`observed_at` 必须等于 fixture result evidence 所绑定的观察时间并位于 capture window。所有 hash
 必须与前两阶段 exact 相等。只有 `RESULT_PREPARED` 可以进入 OBSERVED。
 
 ### 4.7 OPPORTUNITY_MISSED
@@ -219,7 +227,8 @@ missed_after_stage_or_null
 reason_code
 ```
 
-reason 必须来自 v3 plan allowlist。`detected_at` 必须严格晚于 `capture_close`。没有 durable stage 时两个
+reason 必须来自 v3 plan allowlist。`detected_at` 必须严格晚于 `capture_close`；等于 close 仍属于可观察
+闭区间，不能记 MISSED。没有 durable stage 时两个
 `missed_after_*` 均为 null；从 INPUT 或 RESULT 终结时，它们必须精确绑定当前 stage 与 parent hash。
 
 过期 catch-up 路径在 append MISSED 前后必须保持：
@@ -253,9 +262,9 @@ opportunity 的不同 bytes、不同 reason 或 OBSERVED/MISSED 冲突固定失�
 decision，也不清除最近 OBSERVED parent。下一个 OBSERVED 的 strategy parent 因而跨过任意数量 MISSED，
 同时 projection 仍保存全部 missed facts。
 
-### 5.4 Public projection
+### 5.4 Canonical event projection
 
-只读公共 projection 固定包含：
+`state.replay()` 不接收 start/detected boundary，也不读取时钟。其只读 canonical projection 固定包含：
 
 ```text
 events
@@ -264,11 +273,9 @@ active_opportunity_id
 first_scheduled_for
 last_terminal_scheduled_for
 next_required_opportunity
-due_opportunity_count
 terminal_opportunity_count
 observed_opportunity_count
 missed_opportunity_count
-observed_coverage_decimal
 current_consecutive_missed
 maximum_consecutive_missed
 missed_reason_counts
@@ -279,8 +286,22 @@ orphan_staging_count
 orphan_staging_bytes
 ```
 
-coverage 使用 `Decimal(observed) / Decimal(due)`，canonical text 禁止 binary float。没有 due opportunity 时
-coverage 为 null。`due` 来自显式 start boundary 与 observation boundary，不能仅以日志中已有 event 数量代替。
+### 5.5 Boundary-qualified health projection
+
+`opportunity_health(projection, start_scheduled_for, detected_at)` 在 canonical replay 之上显式派生：
+
+```text
+due_opportunity_count
+coverage_numerator
+coverage_denominator
+meets_minimum_observed_coverage
+eligibility_status
+```
+
+numerator 固定为 observed count，denominator 固定为 due count；没有 due 时二者为 `0/0` 且 threshold
+结果为 null。95% 判断只用整数交叉乘 `observed * 100 >= due * 95`，不产生 Decimal 或 binary float，
+不受进程全局 precision/rounding context 影响。UI 若需要百分比只能从该 exact fraction 只读渲染，不能
+把显示文本写回权威证据。`due` 来自显式 start/observation boundary，不能仅以日志已有 event 数量代替。
 
 投影不得包含单笔或累计 PnL、收益率、胜率、排名、置信区间、功效或提前 PASS。
 
@@ -292,7 +313,8 @@ coverage 为 null。`due` 来自显式 start boundary 与 observation boundary�
 
 1. retained capability replay 全部 canonical events；
 2. 验证 plan/build/root identity 和 projection；
-3. 从显式 start/detected boundary 派生 due opportunities；
+3. 从显式 start/detected boundary 派生 due opportunities；v0.70 中它们只是 fixture/orchestration inputs，
+   不声称来自可信 production clock/detector；
 4. 对每个已过 capture close 且没有 terminal 的机会按时间顺序 append MISSED；
 5. replay/rebase；
 6. 仅返回当前仍在 window 的唯一 eligible opportunity；
@@ -317,7 +339,7 @@ fsync、close、root identity、symlink/hardlink/FIFO/special object、size 或 
 
 ## 7. Read-only eligibility projection
 
-v0.70 只提供健康/准备度，不发布 operational 或 economic final artifact：
+v0.70 只提供 fixture-qualified 健康/准备度，不发布 operational 或 economic final artifact：
 
 ```text
 NOT_STARTED_NO_START_BOUNDARY
@@ -388,7 +410,8 @@ generic UI、REST write endpoint、第三方 runtime dependency 或 production i
 
 ### 9.5 Projection arithmetic
 
-- 0 due coverage=null；1/1、19/20、18/20、large integer 使用 Decimal exact；
+- 0 due 为 exact `0/0` 且 threshold=null；1/1、19/20、18/20、large integer 使用 exact numerator/
+  denominator 与整数交叉乘；修改全局 Decimal context 不改变结果；
 - due opportunity gap、重复 scheduled time、out-of-order terminal 拒绝；
 - current/max consecutive missed 在 OBSERVED 边界正确重置；
 - no PnL/profit/return/win-rate/rank/power 字段静态门。
