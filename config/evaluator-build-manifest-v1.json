@@ -339,7 +339,7 @@
     "src/crypto_quant/challenger_launchd_install.py": "8f88f97f2629939d041628e1270e1bfd3ece1256a336a02abfdb590354d25b75",
     "src/crypto_quant/challenger_launchd_install_cli.py": "acc479aa6d5feffe9d297b21a91f1d0b701835c760910151b1225bf546a299ac",
     "src/crypto_quant/challenger_replacement_decision.py": "a72a93a7aec50e6d5d8ffb9424b33eb05453fef2f9396b1dac05a665c7b6c6ec",
-    "src/crypto_quant/challenger_replacement_deployment.py": "6d207fc12bfcd8da3351a07b01506d8d197e49f913486da8bf8eb722e6246e00",
+    "src/crypto_quant/challenger_replacement_deployment.py": "1b626e856d6f81cc789e2acbd3f30501dd7b1920898cdbec56d93b2eb1ad7720",
     "src/crypto_quant/challenger_replacement_events.py": "a9a521b0d384be00126ac40f87d24f07369e1822d086504fc6e5b81029ec0456",
     "src/crypto_quant/challenger_replacement_evidence.py": "920e84a77138509f94b42b416b1ce57adc84daad0a855ab39e9ac6a44799002f",
     "src/crypto_quant/challenger_replacement_install.py": "af23a668d1d99785f8b5346d61f3f836f162202ba8d5e1597884e35e432dbf50",
@@ -603,7 +603,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "d19bba10ae1032f2d7f05edba07b051698a3321326ce4adcb3c752a8fa34e5eb",
+  "build_input_tree_hash": "08102a427e32e9f476ad77e4aef3616a4288dd80f3789c44139cf74c7ad25ae0",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -611,5 +611,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "bfe60cd2c8109f38c564cc2372af9f2e29edcf6c31f171ebb87bc96e9d1cf392"
+  "manifest_hash": "770cad9d6e4841305ffa2a4c53ee28bb813ad4a06989a1a331518311a9628bf6"
 }
