@@ -16,7 +16,7 @@ from crypto_quant.operations_dashboard import (
 )
 from crypto_quant.operations_projection import load_operations_projection_bytes
 
-from tests.test_operations_alerts import _projection_body
+from tests.test_operations_alerts import _projection_body, _projection_v2_body
 
 
 EXPECTED_CSP = (
@@ -128,6 +128,22 @@ class OperationsDashboardConstructionTests(unittest.TestCase):
         )
         self.assertNotIn("Access-Control-Allow-Origin", headers)
         self.assertNotIn("Set-Cookie", headers)
+
+    def test_v2_api_uses_same_read_only_route_and_exact_status_bytes(self):
+        calls = []
+        projection = _projection_v2_body()
+
+        def provider():
+            calls.append("called")
+            return projection
+
+        with RunningServer(provider) as running:
+            status, _, body = running.request(
+                "GET", "/api/v1/status", host=f"127.0.0.1:{running.port}"
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(calls, ["called"])
+        self.assertEqual(body, build_operations_status_body(projection))
 
 
 class OperationsDashboardHTTPBoundaryTests(unittest.TestCase):
@@ -392,6 +408,28 @@ class OperationsDashboardAssetTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, script)
+
+    def test_javascript_has_allowlisted_replacement_readiness_labels(self):
+        with RunningServer(_projection_v2_body) as running:
+            _, _, body = running.request(
+                "GET", "/app.js", host=f"127.0.0.1:{running.port}"
+            )
+        script = body.decode("utf-8")
+        for label in (
+            "到期机会", "终态机会", "观察机会", "漏失机会",
+            "观察覆盖", "运行天数", "策略周期", "现货完整周期",
+            "永续完整周期", "对账", "保护止损", "单日边界",
+            "回撤边界", "NOT OPERATIONAL",
+        ):
+            with self.subTest(label=label):
+                self.assertIn(label, script)
+        lowered = script.lower()
+        for forbidden in (
+            "pnl", "win_rate", "fee_usdt", "api_key",
+            "profit", "return_rate", "drawdown_amount",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, lowered)
 
     def test_modules_import_no_operational_or_mutating_capability(self):
         root = Path(__file__).resolve().parents[1] / "src" / "crypto_quant"

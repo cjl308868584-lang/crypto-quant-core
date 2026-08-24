@@ -608,27 +608,27 @@ git commit -m "feat: add replacement operations projection v2"
 - Produces: existing `derive_operations_alerts` and `build_operations_status_body` APIs with strict schema dispatch.
 - Preserves: existing four routes, loopback binding, headers, method denial and v1 response bytes.
 
-- [ ] **Step 1: Freeze v1 compatibility with committed bytes**
+- [x] **Step 1: Freeze v1 compatibility with committed bytes**
 
 Add a golden SHA assertion for the existing v1 healthy fixture and exact status
 response before changing dispatch. Re-run current v1 alerts/dashboard tests as
 the RED baseline guard; they must remain green.
 
-- [ ] **Step 2: Add v2 RED for deterministic alerts**
+- [x] **Step 2: Add v2 RED for deterministic alerts**
 
 Test fixed alert ordering for terminal gaps, MISSED/coverage warning,
 automatic extension, UNKNOWN, stop missing, reconciliation mismatch,
 stage-failed lock, S0/S1 and release identity failure. Assert every critical
 condition yields `new_risk_allowed=false` and no economic value appears.
 
-- [ ] **Step 3: Add v2 RED for DOM and HTTP safety**
+- [x] **Step 3: Add v2 RED for DOM and HTTP safety**
 
 Assert v2 labels exist for opportunities, elapsed days, cycle/product
 coverage, reconciliation and boundary states. Require `textContent`, no
 `innerHTML`, no action form/button, no extra fetch/route/WebSocket/external URL,
 and no PnL/return/drawdown amount/credential/path tokens.
 
-- [ ] **Step 4: Run RED**
+- [x] **Step 4: Run RED**
 
 ```bash
 python -m unittest tests.test_operations_alerts tests.test_operations_dashboard -v
@@ -636,20 +636,20 @@ python -m unittest tests.test_operations_alerts tests.test_operations_dashboard 
 
 Expected: v2 schema dispatch and labels fail while v1 tests remain green.
 
-- [ ] **Step 5: Implement exact schema dispatch and allowlisted response**
+- [x] **Step 5: Implement exact schema dispatch and allowlisted response**
 
 Read only `$schema` and `schema_version` through the existing duplicate-key
 rejecting bounded decoder, then call exactly one strict loader. Do not catch a
 v2 loader error and retry as v1. Build the status body field-by-field and keep
 all fixed HTTP behavior unchanged.
 
-- [ ] **Step 6: Update the four existing read-only views**
+- [x] **Step 6: Update the four existing read-only views**
 
 Reuse existing DOM regions. Render replacement-v3 opportunity/readiness values
 without adding navigation, controls or a second server. Keep presentation
 labels neutral: fixture policy PASS must display `NOT OPERATIONAL`.
 
-- [ ] **Step 7: Run GREEN, static asset checks and commit**
+- [x] **Step 7: Run GREEN, static asset checks and commit**
 
 ```bash
 python -m unittest tests.test_operations_projection tests.test_operations_projection_v2 tests.test_operations_alerts tests.test_operations_dashboard -v

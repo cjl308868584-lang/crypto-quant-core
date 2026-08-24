@@ -1,9 +1,11 @@
 """Deterministic operations alert boundary tests."""
 
 import json
+import hashlib
 import unittest
+from dataclasses import replace
 
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import business_hash, canonical_json
 from crypto_quant.operations_alerts import (
     OperationsAlertsError,
     build_operations_status_body,
@@ -16,6 +18,11 @@ from crypto_quant.operations_projection import (
     SourceProvenance,
     SystemPaperOperationsSource,
     build_operations_projection,
+)
+from crypto_quant.operations_projection_v2 import build_operations_projection_v2
+from tests.test_operations_projection_v2 import (
+    boundary as _v2_boundary,
+    sources as _v2_sources,
 )
 
 
@@ -86,6 +93,20 @@ def _projection_body(*, challenger=None, paper=None):
     return canonical_json(projection).encode("utf-8")
 
 
+def _projection_v2_body(mutate=None):
+    value = json.loads(build_operations_projection_v2(
+        _v2_sources(), boundary=_v2_boundary()
+    ))
+    if mutate is not None:
+        mutate(value)
+        value.pop("projection_hash")
+        value["projection_hash"] = business_hash({
+            "purpose": "TAIL_BLIND_OPERATIONS_PROJECTION_V2",
+            **value,
+        })
+    return canonical_json(value).encode("utf-8")
+
+
 class OperationsAlertsStrictBoundaryTests(unittest.TestCase):
     def assert_invalid(self, body):
         with self.assertRaises(OperationsAlertsError) as caught:
@@ -107,6 +128,17 @@ class OperationsAlertsStrictBoundaryTests(unittest.TestCase):
             {"INFO": 0, "WARNING": 0, "CRITICAL": 0},
         )
         self.assertEqual(alerts["alerts"], [])
+
+    def test_v1_projection_and_status_bytes_remain_frozen(self):
+        body = _projection_body()
+        self.assertEqual(
+            hashlib.sha256(body).hexdigest(),
+            "bb1aec23580a2f18a723f33be86de3720a7b5a69342d5fbb82bc13a51707f0ba",
+        )
+        self.assertEqual(
+            hashlib.sha256(build_operations_status_body(body)).hexdigest(),
+            "e8760a068b7fc45f80a0abc1165e630a7d0d361136bd2e3f12e62f431917821f",
+        )
 
     def test_rejects_non_bytes_noncanonical_duplicate_float_hash_and_unknown(self):
         valid = _projection_body()
@@ -385,6 +417,83 @@ class OperationsAlertClassificationTests(unittest.TestCase):
         self.assertEqual(
             value["alert_summary"], derive_operations_alerts(body)
         )
+
+    def test_v2_alert_order_and_risk_block_are_deterministic(self):
+        def mutate(value):
+            replacement = value["replacement_v3"]
+            value["status"] = "FAILED_CLOSED"
+            replacement.update(
+                evidence_health="FAILED_CLOSED",
+                due_opportunity_count=2,
+                terminal_opportunity_count=1,
+                observed_opportunity_count=0,
+                missed_opportunity_count=1,
+                observed_coverage_numerator=0,
+                observed_coverage_denominator=2,
+                terminal_coverage_complete=False,
+                meets_minimum_observed_coverage=False,
+                current_consecutive_missed=1,
+                maximum_consecutive_missed=1,
+                last_missed_reason_or_null="FIXTURE_MISSED",
+                operational_elapsed_days=7,
+                operational_gate_status="PENDING_AUTOMATIC_EXTENSION",
+                unknown_order_count=1,
+                reconciliation_status="FAILED_CLOSED",
+                protective_stop_status="FAILED_CLOSED",
+                risk_state="HALT",
+                daily_loss_boundary_state="BREACHED",
+                incident_count=1,
+            )
+
+        first = derive_operations_alerts(_projection_v2_body(mutate))
+        second = derive_operations_alerts(_projection_v2_body(mutate))
+        self.assertEqual(first, second)
+        self.assertEqual(
+            [item["alert_id"] for item in first["alerts"]],
+            [
+                "OPS-SYSTEM-FAILED-CLOSED",
+                "OPS-REPLACEMENT-EVIDENCE-FAILED-CLOSED",
+                "OPS-REPLACEMENT-TERMINAL-GAP",
+                "OPS-REPLACEMENT-MISSED",
+                "OPS-REPLACEMENT-COVERAGE-BELOW-MINIMUM",
+                "OPS-REPLACEMENT-AUTOMATIC-EXTENSION",
+                "OPS-REPLACEMENT-UNKNOWN-ORDER",
+                "OPS-REPLACEMENT-RECONCILIATION-FAILED",
+                "OPS-REPLACEMENT-STOP-FAILED",
+                "OPS-REPLACEMENT-RISK-HALT",
+                "OPS-REPLACEMENT-BOUNDARY-BREACHED",
+                "OPS-REPLACEMENT-INCIDENT",
+            ],
+        )
+        self.assertFalse(first["new_risk_allowed"])
+        self.assertTrue(all(
+            item["risk_effect"] == "BLOCK_NEW_RISK"
+            for item in first["alerts"]
+            if item["severity"] == "CRITICAL"
+        ))
+        self.assertNotIn("pnl", canonical_json(first).lower())
+
+    def test_v2_status_response_is_canonical_and_not_operational(self):
+        body = _projection_v2_body()
+        status = json.loads(build_operations_status_body(body))
+        self.assertEqual(status["schema_version"], "2.0.0")
+        self.assertEqual(status["projection"], json.loads(body))
+        self.assertFalse(status["alert_summary"]["new_risk_allowed"])
+
+    def test_v2_release_identity_failure_is_critical_and_blocks_risk(self):
+        source = _v2_sources()
+        failed = replace(
+            source,
+            release=replace(source.release, identity_status="FAILED_CLOSED"),
+        )
+        body = build_operations_projection_v2(failed, boundary=_v2_boundary())
+        result = derive_operations_alerts(body)
+        self.assertEqual(json.loads(body)["status"], "FAILED_CLOSED")
+        self.assertIn(
+            "OPS-RELEASE-IDENTITY-FAILED",
+            [item["alert_id"] for item in result["alerts"]],
+        )
+        self.assertFalse(result["new_risk_allowed"])
 
 
 if __name__ == "__main__":

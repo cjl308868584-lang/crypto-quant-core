@@ -19,7 +19,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const render = (status) => {
     const projection = status.projection;
     const release = projection.release;
-    const challenge = projection.challenger;
+    const isV2 = projection.schema_version === "2.0.0";
+    const challenge = isV2 ? projection.replacement_v3 : projection.challenger;
     const systemPaper = projection.system_paper;
     const alertSummary = status.alert_summary;
 
@@ -37,10 +38,29 @@ document.addEventListener("DOMContentLoaded", () => {
     addFact(challenger, "阶段", challenge.phase);
     addFact(challenger, "服务", challenge.service_health);
     addFact(challenger, "证据", challenge.evidence_health);
-    addFact(challenger, "已验证槽位", challenge.verified_slot_count);
-    addFact(challenger, "已完成 Episode", challenge.completed_episode_count);
-    addFact(challenger, "下一槽位", challenge.next_required_slot);
-    addFact(challenger, "研究门", challenge.gate_status);
+    if (isV2) {
+      addFact(challenger, "权限", "NOT OPERATIONAL");
+      addFact(challenger, "到期机会", challenge.due_opportunity_count);
+      addFact(challenger, "终态机会", challenge.terminal_opportunity_count);
+      addFact(challenger, "观察机会", challenge.observed_opportunity_count);
+      addFact(challenger, "漏失机会", challenge.missed_opportunity_count);
+      addFact(challenger, "观察覆盖", `${challenge.observed_coverage_numerator}/${challenge.observed_coverage_denominator}`);
+      addFact(challenger, "运行天数", `${challenge.operational_elapsed_days}/${challenge.operational_minimum_days}`);
+      addFact(challenger, "策略周期", challenge.operational_strategy_cycle_count);
+      addFact(challenger, "现货完整周期", challenge.spot_roundtrip_count);
+      addFact(challenger, "永续完整周期", challenge.perpetual_roundtrip_count);
+      addFact(challenger, "对账", challenge.reconciliation_status);
+      addFact(challenger, "保护止损", challenge.protective_stop_status);
+      addFact(challenger, "单日边界", challenge.daily_loss_boundary_state);
+      addFact(challenger, "回撤边界", challenge.drawdown_boundary_state);
+      addFact(challenger, "运行门", challenge.operational_gate_status);
+      addFact(challenger, "经济尾部", challenge.economic_tail_status);
+    } else {
+      addFact(challenger, "已验证槽位", challenge.verified_slot_count);
+      addFact(challenger, "已完成 Episode", challenge.completed_episode_count);
+      addFact(challenger, "下一槽位", challenge.next_required_slot);
+      addFact(challenger, "研究门", challenge.gate_status);
+    }
 
     paper.replaceChildren();
     addFact(paper, "阶段", systemPaper.phase);

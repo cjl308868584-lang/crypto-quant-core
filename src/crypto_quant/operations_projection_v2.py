@@ -250,7 +250,10 @@ def build_operations_projection_v2(
     replacement = _replacement(sources.replacement_v3)
     status = (
         "FAILED_CLOSED"
-        if replacement["evidence_health"] == "FAILED_CLOSED"
+        if (
+            sources.release.identity_status != "VERIFIED"
+            or replacement["evidence_health"] == "FAILED_CLOSED"
+        )
         else "DEGRADED"
         if (
             sources.legacy_challenger.incident_count
@@ -331,6 +334,11 @@ def _strict(body):
 
 def _semantic(value):
     replacement = value["replacement_v3"]
+    if (
+        value["release"]["identity_status"] != "VERIFIED"
+        and value["status"] != "FAILED_CLOSED"
+    ):
+        _error("OPERATIONS_PROJECTION_V2_SEMANTIC_INVALID")
     counts = tuple(
         replacement[name] for name in (
             "due_opportunity_count", "terminal_opportunity_count",

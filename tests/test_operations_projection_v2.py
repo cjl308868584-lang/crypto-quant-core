@@ -292,6 +292,9 @@ class OperationsProjectionV2ContractTests(unittest.TestCase):
                     "freshness": "STALE",
                 },
             )),
+            ("release_failure_not_failed_closed", lambda d: d["release"].update(
+                identity_status="FAILED_CLOSED"
+            )),
         )
         for name, mutate in mutations:
             with self.subTest(name=name):
