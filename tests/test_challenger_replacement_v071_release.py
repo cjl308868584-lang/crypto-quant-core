@@ -30,7 +30,7 @@ class V071ReleaseTests(unittest.TestCase):
             ("0.71.0", "0.71.0", "1.65.0"),
         )
         self.assertIn(
-            "状态：`CANDIDATE_ACCOUNTING_CORE_LOCAL_VERIFICATION_PENDING`",
+            "状态：`FIXTURE_ACCOUNTING_CORE_VERIFIED_LIFECYCLE_NOT_IMPLEMENTED`",
             STATUS.read_text(),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))

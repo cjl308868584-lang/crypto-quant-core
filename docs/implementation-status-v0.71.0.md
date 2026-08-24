@@ -1,6 +1,6 @@
 # Implementation Status v0.71.0
 
-状态：`CANDIDATE_ACCOUNTING_CORE_LOCAL_VERIFICATION_PENDING`
+状态：`FIXTURE_ACCOUNTING_CORE_VERIFIED_LIFECYCLE_NOT_IMPLEMENTED`
 
 ## 已完成
 
@@ -13,10 +13,21 @@
 - Task 4 focused/adjacent：54 passed；独立定向审查 Critical 0 / Important 0 / Minor 0；
 - 六模块 2,042 行，减 v0.70 基线 843 后为 1,199 / 1,200。
 
-## 当前待完成门
+## 验证状态
 
-本文件当前只陈述 candidate 状态。完整本地 suite、`make validate`、完整独立审查、
-PR CI、main CI 和 annotated tag 尚未在本候选上完成，不预写成功。
+- 最终代码状态 `d448c0d2ce1d77430768e38fcbb25f838b3f00e7`；
+- final local full suite：1,962 passed，5 skipped，1,072.746s；
+- compileall、focused release/artifact replay、diff-check：passed；
+- `make validate`：process exit 0；release policy 正确保持
+  `FAIL / PRODUCTION_ACTIVATION_DISABLED`，没有因此取得生产资格；
+- 独立完整审查发现 Critical 0 / Important 2 / Minor 1；两个 Important
+  以 Decimal-context 隔离和公开 input schema manifest 绑定关闭；
+- 修复后定向复审：Critical 0 / Important 0 / Minor 1，批准最终候选；
+- 剩余 Minor：公开函数 decorator 未保留 introspection metadata，不影响调用、
+  结果、权限或确定性，记录到 v0.72；
+- PR CI、main CI 和 annotated tag：`PENDING_REMOTE_RELEASE_GATES`。
+
+远端 pending 只能在真实门完成后替换，不预写成功。
 
 ## 明确未实现
 

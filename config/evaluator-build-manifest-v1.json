@@ -226,7 +226,7 @@
     "docs/implementation-status-v0.68.0.md": "5bc1ff5593fe0d32de3e90c1098e8229f5537944f1cdefa0eab6fd0627af20d1",
     "docs/implementation-status-v0.69.0.md": "3e883734f260d6504ecbc9aa9d08658bfb7bb9bb974ec43c342bb1adf3986b0d",
     "docs/implementation-status-v0.70.0.md": "07e1eeacdd859e0c2752c7ebb7ad9bfddfee0e8c35768c2ed58dba11434cb309",
-    "docs/implementation-status-v0.71.0.md": "90b38f4dedf4c6161d3ffdd6323ea5c0303f36e31fe43d5ed3a2a61517ace968",
+    "docs/implementation-status-v0.71.0.md": "f7bd4a8880c2f324f56a4f88f67a03b74fb867d8d318ca1fe91c800dc273e161",
     "docs/runbooks/operations-dashboard.md": "2874680de443098fe0cf5e642b4dffc63853996661091fc836df8e7e8605868d",
     "docs/runbooks/system-paper-operations.md": "beee3603f76b1db0ecb1ef851dea25d6f700b5b67ece3cc320b8774a33a02523",
     "docs/superpowers/plans/2026-08-02-system-paper-wal-scheduler.md": "9ff21c585d907268728801ff472c0032ca4865b60f477120e95e16fe4b3fd3e4",
@@ -587,7 +587,7 @@
     "tests/test_challenger_replacement_v069_release.py": "7028ab0ac550b397ffc34be273c613bd7f645a5c181475643967c364a1e539e9",
     "tests/test_challenger_replacement_v070_release.py": "269a33f125f1cfcd0bff492b73016a007172b33a8e44bcaa0295486480fbd7c0",
     "tests/test_challenger_replacement_v071_artifacts.py": "b1418768d7be414b9db91d9ce3c923061f4d00fda75fb550cdd7f573b2765a3b",
-    "tests/test_challenger_replacement_v071_release.py": "05bbec92d7dd328b6b2b4705c1279ad6cc312de10b70493278e7cee5e00d8716",
+    "tests/test_challenger_replacement_v071_release.py": "fdcc8e18815fc7917a7224af6d314a1c68e71df8dfcb06924dae66ae5d7b2ac6",
     "tests/test_estimators.py": "0a22a637e532465fa01ca01eff143d4c8c3a7c930320fd4f28fbb4ffc4310653",
     "tests/test_nautilus_evidence_adapter.py": "70dd0688ef9163320cbe241f9e86d47f46ac5401c407a92ce5c14c7f2529dbf1",
     "tests/test_nautilus_sandbox_artifacts.py": "d674cbdfc044c129f0017059d35b7c66562b252df3b96de3dd6a02d0fde77245",
@@ -623,7 +623,7 @@
     "tests/test_v064_public_ci_r2_failure.py": "1a9cae159c3935fefabd0ffe128edd68e1d608ad8826851fab5fe3062e87955e",
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd"
   },
-  "build_input_tree_hash": "ed4e0e3dde2b586d9555e5997fbdad758c646206502f584bef6093c51f0a102f",
+  "build_input_tree_hash": "c3c74fdec96dbb6d587a3519e7a297dec5c2515e4fd97a784c0800c7ebeeba2d",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -631,5 +631,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "d5d9e1a8d1c1325bc42fef5ed7692194cd14d6ec001b82e63a2f10904da12c15"
+  "manifest_hash": "a7c4da12452c85cdab27eb6735e8496fb5090af073f2d53b9ce635a63afa2b54"
 }
