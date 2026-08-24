@@ -323,9 +323,14 @@ No next fill, economic intent, risk increase, result return or durable result
 publication is legal between the opening fill and the final new stop ACK.  The
 old stop remains the recorded stop until cancel ACK; after cancel ACK the pure
 in-memory reducer has no confirmed stop, but it has no external time or side
-effect and may execute only the new stop prepare/ACK pair.  The invariant is
-that every returned or durable non-flat result has exactly one confirmed stop,
-not that this fixture model proves continuous external-exchange protection.
+effect and may execute only the new stop prepare/ACK pair.  The strong stop
+invariant applies only to a returned or durable non-flat result with
+`operationally_complete=true` and terminal
+`LIFECYCLE_RECONCILED_FIXTURE`: it has exactly one quantity-exact confirmed
+stop.  A durable `FAILED_CLOSED` result may lack a valid stop so that the
+failure itself remains auditable; it must be risk-locked and must explicitly
+state that protection is not confirmed.  This fixture model does not prove
+continuous external-exchange protection.
 
 Missing old-stop cancel ACK, missing new-stop ACK, or a second opening fill
 before new-stop ACK appends `LIFECYCLE_FAILED_CLOSED` with exact reason
@@ -333,9 +338,11 @@ before new-stop ACK appends `LIFECYCLE_FAILED_CLOSED` with exact reason
 increase.  A fill from the old stop attempt after its cancel ACK is first
 recorded as `FILL_OBSERVED_FIXTURE` under that old stop intent/attempt and then
 terminates with `LIFECYCLE_FAILED_CLOSED` and exact reason
-`UNRECORDED_OR_CONFLICTING_FILL`.  The independent reducers determine whether
-the remaining position is VERIFIED or UNRESOLVED; the fill is never silently
-discarded, netted or treated as a successful replacement.
+`UNRECORDED_OR_CONFLICTING_FILL`.  A known remaining position may be VERIFIED
+only after a quantity-exact replacement stop is rebuilt and acknowledged.  If
+that fails, the reducer must produce a verified simulated flatten or an
+UNRESOLVED last-verified position with no protection claim.  The fill is never
+silently discarded, netted or treated as a successful replacement.
 
 `ORDER_UNKNOWN_FIXTURE` may be followed only by an exact
 `ORDER_RECONCILED_FIXTURE` or terminal `LIFECYCLE_FAILED_CLOSED`.  Conflicting
@@ -373,8 +380,8 @@ risk.  An order-event fill with a different price, quantity, fee or product is
 
 ## 8. Protective stop semantics
 
-After every opening or partial-opening fill, the simulated position must have
-one confirmed persistent stop:
+Every `operationally_complete=true`, reconciled non-flat result after an opening
+or partial-opening fill must have one confirmed persistent stop:
 
 - Spot long trigger: entry × 0.98, rounded down to price tick;
 - perpetual short trigger: entry × 1.02, rounded up to price tick;
@@ -399,6 +406,13 @@ status
 `status` is exactly `CONFIRMED_FIXTURE`; the three identities, product, side,
 quantity and trigger must equal the acknowledged stop lifecycle events.  A
 close, trigger or replacement consumes these stored identities.
+
+`protective_stop_or_null` may be null for FLAT or `FAILED_CLOSED`.  A non-flat
+FAILED_CLOSED result with null stop must have `risk_state=STAGE_FAILED_LOCKED`,
+`operationally_complete=false`, and may not contain any field claiming that the
+position is protected.  If a late fill changes a known remaining position,
+VERIFIED requires a newly acknowledged stop whose quantity equals that exact
+position; otherwise only verified-flat or UNRESOLVED is legal.
 
 On each completed bar, stop evaluation precedes strategy exit.  Spot triggers
 when `low <= trigger`; perpetual triggers when `high >= trigger`.  Gap reference
@@ -637,6 +651,8 @@ not published as an unversioned or caller-selectable portable scenario.
   reconciles the same immutable in-process fault-observation tuple;
 - late close/stop fill, impossible overfill and wrong product/side;
 - missing stop, failed stop rebuild and failed flatten;
+- late-fill VERIFIED requires quantity-exact stop rebuild; failed rebuild
+  permits only verified-flat or UNRESOLVED with no protection claim;
 - ledger/venue/order mismatch;
 - no risk increase under every frozen lock reason;
 - known remaining position versus unresolved last-verified position.
