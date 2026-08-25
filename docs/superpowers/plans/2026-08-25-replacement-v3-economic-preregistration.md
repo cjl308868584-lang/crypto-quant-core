@@ -411,7 +411,7 @@ git commit -m "test: close v074 economic plan authority"
 - Consumes: final Task 1–4 candidate and independent findings.
 - Produces: locally verified v0.74.0 candidate; no operational artifact.
 
-- [ ] **Step 1: Request one independent complete review**
+- [x] **Step 1: Request one independent complete review**
 
 Provide:
 
