@@ -1,4 +1,6 @@
+import ast
 import hashlib
+import json
 import unittest
 from pathlib import Path
 
@@ -125,6 +127,142 @@ class V075ArtifactTests(unittest.TestCase):
             plan["projection_contract"]["ceremony_economic_use"],
             "EXCLUDED_FROM_STRATEGY_AND_ECONOMIC_EVIDENCE",
         )
+
+
+class V075CrossContractTests(unittest.TestCase):
+    def test_ceremony_is_excluded_from_every_strategy_and_economic_count(self):
+        plan = load_challenger_replacement_accelerated_canary_plan(PLAN_PATH)
+        self.assertEqual(
+            plan["operational_ceremony"]["label"],
+            "OPERATIONAL_CEREMONY_NOT_STRATEGY_EVIDENCE",
+        )
+        self.assertEqual(
+            plan["operational_ceremony"]["evidence_exclusions"],
+            {
+                "strategy_cycle_count": True,
+                "economic_population": True,
+                "simulation_performance": True,
+                "stage_strategy_cycle_count": True,
+            },
+        )
+
+    def test_operational_unlock_cannot_rewrite_failure_or_economic_window(self):
+        plan = load_challenger_replacement_accelerated_canary_plan(PLAN_PATH)
+        record = load_challenger_replacement_accelerated_canary_supersession(
+            RECORD_PATH
+        )
+        self.assertEqual(
+            plan["operational_ceremony"]["retry_policy"],
+            "FAILED_BLOCK_RETAINED_NEW_EXACT_APPROVAL_AFTER_INCIDENT_ACCEPTANCE",
+        )
+        self.assertEqual(
+            record["effectivity"]["failed_blocks_disposition"],
+            "IMMUTABLE_RETAINED",
+        )
+        self.assertEqual(
+            record["effectivity"]["existing_events_disposition"],
+            "IMMUTABLE_RETAINED",
+        )
+        self.assertEqual(
+            record["effectivity"]["economic_window_disposition"],
+            "V074_UNCHANGED",
+        )
+        self.assertFalse(
+            record["preserved_economic_authority"][
+                "economic_start_or_window_changed"
+            ]
+        )
+
+    def test_disconnected_segments_never_sum_to_72_hours(self):
+        plan = load_challenger_replacement_accelerated_canary_plan(PLAN_PATH)
+        qualification = plan["simulation_qualification"]
+        self.assertEqual(qualification["minimum_continuous_seconds"], 259_200)
+        self.assertEqual(
+            qualification["healthy_segment_rule"],
+            "ONE_FINAL_UNINTERRUPTED_SEGMENT_DISCONNECTED_SECONDS_NEVER_SUMMED",
+        )
+        self.assertEqual(
+            qualification["flat_missed_action"],
+            "CLOSE_SEGMENT_RECOVERABLE_START_NEW_SEGMENT_AT_NEXT_NATURAL_OBSERVED",
+        )
+
+    def test_hard_stops_and_ladder_are_exact_v069_values(self):
+        v069 = json.loads(V069_PATH.read_text())
+        plan = load_challenger_replacement_accelerated_canary_plan(PLAN_PATH)
+        self.assertEqual(
+            plan["hard_stop_policy"]["absolute_classes"],
+            [
+                "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN",
+                "VENUE_LOCAL_POSITION_MISMATCH",
+                "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+                "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT",
+            ],
+        )
+        for stage in ("E0", "E1", "E2"):
+            for key in (
+                "capital_limit_usdt",
+                "gross_exposure_limit",
+                "minimum_calendar_days",
+                "minimum_strategy_cycles",
+            ):
+                self.assertEqual(
+                    plan["canary_ladder"][stage][key],
+                    v069["canary_ladder"][stage][key],
+                )
+            for key in (
+                "daily_loss_limit_kind",
+                "daily_loss_limit",
+                "daily_limit_action",
+                "drawdown_limit_kind",
+                "drawdown_limit",
+                "drawdown_limit_action",
+            ):
+                self.assertEqual(
+                    plan["canary_ladder"][stage][key],
+                    v069["risk_policy"][stage][key],
+                )
+
+    def test_new_modules_have_no_runtime_network_secret_or_write_capability(self):
+        forbidden_import_roots = {
+            "sqlite3",
+            "requests",
+            "urllib",
+            "http",
+            "socket",
+            "subprocess",
+            "keyring",
+            "binance",
+        }
+        forbidden_calls = {
+            "open",
+            "write_text",
+            "write_bytes",
+            "mkdir",
+            "chmod",
+            "replace",
+            "rename",
+            "unlink",
+            "getenv",
+        }
+        for relative in (
+            "src/crypto_quant/challenger_replacement_accelerated_canary_plan.py",
+            "src/crypto_quant/challenger_replacement_accelerated_canary_supersession.py",
+        ):
+            tree = ast.parse((ROOT / relative).read_text())
+            imported = set()
+            called = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported.update(alias.name.split(".")[0] for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported.add(node.module.split(".")[0])
+                elif isinstance(node, ast.Call):
+                    if isinstance(node.func, ast.Name):
+                        called.add(node.func.id)
+                    elif isinstance(node.func, ast.Attribute):
+                        called.add(node.func.attr)
+            self.assertEqual(imported & forbidden_import_roots, set(), relative)
+            self.assertEqual(called & forbidden_calls, set(), relative)
 
 
 if __name__ == "__main__":
