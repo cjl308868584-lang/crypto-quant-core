@@ -261,7 +261,7 @@
     "docs/superpowers/plans/2026-08-24-decision-opportunity-event-runtime.md": "788dad335e2452127345b35ba2ef2337341df157cfcd2089fc7b030603a259d0",
     "docs/superpowers/plans/2026-08-24-v071-accounting-core-release.md": "2affb1c4d2764f3b7dea3d5da90a91714a9910f0f56211d754657273404891e6",
     "docs/superpowers/plans/2026-08-25-binance-lifecycle-evidence.md": "229e980417beff2d2cde66d8e1e38d00a445b87516e5d3da25f8489b53099f45",
-    "docs/superpowers/plans/2026-08-25-replacement-v3-readiness-observer.md": "0fc35b9e6c0ad12d635dcdd3166770c85f30f2aa42de9c85579b3f9565dad331",
+    "docs/superpowers/plans/2026-08-25-replacement-v3-readiness-observer.md": "5e8d27309271cc90dcfe308a36166f8d18f9f9aa111e29a713fb4ee2d9d65231",
     "docs/superpowers/specs/2026-08-02-system-paper-wal-scheduler-design.md": "ba7a327bb3d243045b9522796135521adba0c38acf708749220be558c473b549",
     "docs/superpowers/specs/2026-08-03-system-paper-deployment-trust-chain-design.md": "acf72abafc844ac98a7c2e11334d31278a5af626c8b54a2c639fe5e93e0372f8",
     "docs/superpowers/specs/2026-08-04-system-paper-deployment-review-hardening-design.md": "38244e35ee0782dc66f2430d81655f6101fcb5e8e4b232317a7b72ca77b32b30",
@@ -665,7 +665,7 @@
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd",
     "tests/test_v073_authority_boundaries.py": "4643df6690e5e530cdbfc3edb1d9576a789d1246ca629d57744feb35beaee795"
   },
-  "build_input_tree_hash": "f44a33a8d98b1e744bd7fcc62e57484c7f661a2f161573c08f0cb8677508254f",
+  "build_input_tree_hash": "569afbae2352932a05a6c5daeb1c52049c9a3ec74034d666664579aa2bd0a97e",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -673,5 +673,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "667e8b7be112e136bfb86b992063a5e5b4ab5076e50582cae9ae52ef903505eb"
+  "manifest_hash": "0117d3a17bdea7e2a22004d675175083e9d863722c6c176632d29e3c4c6e62d0"
 }

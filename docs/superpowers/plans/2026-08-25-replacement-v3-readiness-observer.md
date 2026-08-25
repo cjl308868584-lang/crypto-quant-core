@@ -789,7 +789,7 @@ git status --short
 Record exact executed/pass/skip/failure counts, manifest hash, build-input-tree
 hash, module line counts and authority scan. Any failure stops release.
 
-- [ ] **Step 5: Commit the final candidate**
+- [x] **Step 5: Commit the final candidate**
 
 ```bash
 git add README.md pyproject.toml config src docs tests
