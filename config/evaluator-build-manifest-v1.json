@@ -241,7 +241,7 @@
     "docs/implementation-status-v0.72.0.md": "3d8ce714929f859125345338eda448d5938ba7b5c4d93fbd3ed2a00a931117f4",
     "docs/implementation-status-v0.73.0.md": "f5c09114e39536840368e216dea52dc85afc13a8dae81da6eea18858e5519ced",
     "docs/implementation-status-v0.74.0.md": "13883402a71bc70125cd75912e3a83f2f56dda51c887dca244358d96cb847e0b",
-    "docs/implementation-status-v0.75.0.md": "557685009328818c6aec38211dbc4a118e1892ee0f6352666b4a5b7324da4fbe",
+    "docs/implementation-status-v0.75.0.md": "d9a919bd27f358ef14af631a1b1275b2c968038c597306197b5261fc5ce0b631",
     "docs/runbooks/operations-dashboard.md": "2874680de443098fe0cf5e642b4dffc63853996661091fc836df8e7e8605868d",
     "docs/runbooks/system-paper-operations.md": "beee3603f76b1db0ecb1ef851dea25d6f700b5b67ece3cc320b8774a33a02523",
     "docs/superpowers/plans/2026-08-02-system-paper-wal-scheduler.md": "9ff21c585d907268728801ff472c0032ca4865b60f477120e95e16fe4b3fd3e4",
@@ -490,7 +490,7 @@
     "src/crypto_quant/schemas/challenger-launchd-install-receipt-v1.schema.json": "577c65582d5dede5230b45a42632e2a4dacd897e325e1bccbe72873b3bc40277",
     "src/crypto_quant/schemas/challenger-prequential-snapshot-v1.schema.json": "55a39743984fa70ef7bf323c1fbb5d5db83e66c3be5188e81c8b6bab9f70e74a",
     "src/crypto_quant/schemas/challenger-replacement-accelerated-canary-plan-v1.schema.json": "68b437c13a9ab8026ba62da63672d56bf0891497af924f22c1ee1867b9e033f5",
-    "src/crypto_quant/schemas/challenger-replacement-accelerated-canary-supersession-v1.schema.json": "1e100ed958cdc308e764a2a8e31fd88111e5df58dec5c98de34171b9923029f9",
+    "src/crypto_quant/schemas/challenger-replacement-accelerated-canary-supersession-v1.schema.json": "235adb3e873e56a11af0dab4801d5a7b3778fbbfec2eae54a450f7f279d28801",
     "src/crypto_quant/schemas/challenger-replacement-binance-simulation-input-v1.schema.json": "29016998de04fff5b1c11b5aa804acf81712fc36c1fc4c8a9ac9d889334c429f",
     "src/crypto_quant/schemas/challenger-replacement-decision-v1.schema.json": "c5be2b73a38a53efe19c7abbcb0113cf5ffe62bc0f2c938118af29f0f88361d7",
     "src/crypto_quant/schemas/challenger-replacement-decision-v2.schema.json": "1f4614892962b95e497b81a16c4524bf3a1bb0b28de31ef83fd88b08c1b4a7e1",
@@ -606,8 +606,8 @@
     "tests/fixtures/nautilus-v065/ethusdt-4h-input-v2.json": "a8a077830048bc642983ac440de9a47b334322cc8dbecbfc80aa595525f1cd5d",
     "tests/fixtures/operations-projection-healthy.json": "bb1aec23580a2f18a723f33be86de3720a7b5a69342d5fbb82bc13a51707f0ba",
     "tests/system_paper_fixtures.py": "2c3ca742d23044392e7da1c2142f4d183a593216af6f59f17501b3c2ac5233db",
-    "tests/test_challenger_replacement_accelerated_canary_plan.py": "e6dd28c49641e42bc1a8ebf9891d6205f7425c3b6a22d7af0fab904de37617f9",
-    "tests/test_challenger_replacement_accelerated_canary_supersession.py": "24b899da9890fc90ee1cb1fbd542fd3529390a618740f494a2745c2e9dbaf0ba",
+    "tests/test_challenger_replacement_accelerated_canary_plan.py": "382f800043b10c7a8009215818b84ff8f9f42e4c85e084b2c6420a36fce5862c",
+    "tests/test_challenger_replacement_accelerated_canary_supersession.py": "792981d9d67ad739395d4bcb1f9096f200bca766398a21704a33971a7d2fcbb6",
     "tests/test_challenger_replacement_binance_lifecycle.py": "7f399fbd842468e350b8a6cbf808e24d873c65ae0c1295bef9b7e896c04966b7",
     "tests/test_challenger_replacement_binance_simulation_input.py": "1a1846cac3b79bcd9885f9b3f3dd32a8127d708e3690665f1e49ab11fb12588b",
     "tests/test_challenger_replacement_decision.py": "3eaea6783e47bdd1775dbdc1d97f8dc869a0c6ecdfab156fdb5a1e01ad94c64a",
@@ -649,7 +649,7 @@
     "tests/test_challenger_replacement_v072_release.py": "2354d15c526a752d2333b6631a7bdea83cac0b517a9d944df5ce90f7e3234494",
     "tests/test_challenger_replacement_v073_release.py": "2842480f89b24420cad362975bd525b164e41f8bb589df263812c56dd6108516",
     "tests/test_challenger_replacement_v074_release.py": "6a743d67dbc58d458154856c7deecef17a567dc4e5d31c865ce1c862a462843d",
-    "tests/test_challenger_replacement_v075_release.py": "b2551475291a1d98fc41ac9c30516077ad9a8bcadbcdcc4925ab91163653e3e4",
+    "tests/test_challenger_replacement_v075_release.py": "ca7e1ffcb20ac0283f754b4b17c142d0beff66efc9326d8be1695a728c2a1800",
     "tests/test_estimators.py": "6403d34611d3501dcfbbfb19c80f9998410e64ee0a2779ba68a4aa8ef515c95d",
     "tests/test_nautilus_evidence_adapter.py": "70dd0688ef9163320cbe241f9e86d47f46ac5401c407a92ce5c14c7f2529dbf1",
     "tests/test_nautilus_sandbox_artifacts.py": "d674cbdfc044c129f0017059d35b7c66562b252df3b96de3dd6a02d0fde77245",
@@ -687,7 +687,7 @@
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd",
     "tests/test_v073_authority_boundaries.py": "4643df6690e5e530cdbfc3edb1d9576a789d1246ca629d57744feb35beaee795"
   },
-  "build_input_tree_hash": "5d6f74cf1d3652ec038dd2b15db82882f12289db31c1862ede0322f24781aaed",
+  "build_input_tree_hash": "07812c0a352dabab3742aa1c3417eaa8a8363e46a5059e49323f2b1c0d8a4a78",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -695,5 +695,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "1074f0a4dbe5cb2319c3df27c60a8107b4a930f4d240067f40d6ca6ee503879d"
+  "manifest_hash": "b15479590536c302e173a41a758c9113cd7452b0000d8b6c5cb5c2ad8b9404d9"
 }

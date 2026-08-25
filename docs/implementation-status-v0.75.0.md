@@ -20,8 +20,16 @@
 计划 artifact SHA-256：
 `31b9545a18850d068e858ae434a79e43967efd584df2cee9ff0833b1b203d6ee`
 
+`plan_id=challenger_replacement_accelerated_canary_plan_b63c7416d6e317c2b4515bcfdbf72653cbaf64cb70b2c86f5a2c17995c9c3859`
+
+`plan_hash=3e86dc07d2cc96f3ea6f9005e1e02d4c8ddc9b2261f0abe28d53d029d2e53a80`
+
 supersession artifact SHA-256：
 `8f7d2d551b20154dc5bc26316376386e721929fc81a2392fcb1ea692ad09049e`
+
+`record_id=challenger_replacement_accelerated_canary_supersession_a89b315ad23b3e4616f6e64dcada5dd9c1fdea7056cff6cf225d055740bdef62`
+
+`record_hash=6829feedd51c397d2847329a237eb1188d8344894008d5a9ca38617c12be73cd`
 
 ## 未完成：代码、运行和资金阶段
 

@@ -122,7 +122,18 @@ class V075ArtifactTests(unittest.TestCase):
             build_challenger_replacement_accelerated_canary_plan(),
             build_challenger_replacement_accelerated_canary_supersession(),
         ):
-            self.assertEqual(set(value["authority"].values()), {False, 0})
+            counter_keys = {
+                "market_requests",
+                "private_account_requests",
+                "production_state_writes",
+                "economic_outcome_reads",
+            }
+            for key, authority_value in value["authority"].items():
+                if key in counter_keys:
+                    self.assertIs(type(authority_value), int, key)
+                    self.assertEqual(authority_value, 0, key)
+                else:
+                    self.assertIs(authority_value, False, key)
         plan = build_challenger_replacement_accelerated_canary_plan()
         self.assertFalse(plan["supersession_scope"]["economic_contract_changed"])
         self.assertEqual(
@@ -309,6 +320,10 @@ class V075ReleaseMetadataTests(unittest.TestCase):
             "no 72-hour timer started",
             "no 90-day timer started",
             "v0.74 economic contract remains immutable",
+            "plan_id=challenger_replacement_accelerated_canary_plan_b63c7416d6e317c2b4515bcfdbf72653cbaf64cb70b2c86f5a2c17995c9c3859",
+            "plan_hash=3e86dc07d2cc96f3ea6f9005e1e02d4c8ddc9b2261f0abe28d53d029d2e53a80",
+            "record_id=challenger_replacement_accelerated_canary_supersession_a89b315ad23b3e4616f6e64dcada5dd9c1fdea7056cff6cf225d055740bdef62",
+            "record_hash=6829feedd51c397d2847329a237eb1188d8344894008d5a9ca38617c12be73cd",
         ):
             self.assertIn(required, status)
 

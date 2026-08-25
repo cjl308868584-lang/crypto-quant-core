@@ -152,7 +152,18 @@ class AcceleratedCanarySupersessionBuilderTests(unittest.TestCase):
                 "BROAD_TERMINAL_OPERATIONAL_FAILURES_TO_FOUR_ABSOLUTE_STAGE_HARD_STOPS",
             ],
         )
-        self.assertEqual(set(record["authority"].values()), {False, 0})
+        counter_keys = {
+            "market_requests",
+            "private_account_requests",
+            "production_state_writes",
+            "economic_outcome_reads",
+        }
+        for key, value in record["authority"].items():
+            if key in counter_keys:
+                self.assertIs(type(value), int, key)
+                self.assertEqual(value, 0, key)
+            else:
+                self.assertIs(value, False, key)
 
     def test_builder_derives_stable_id_and_self_hash(self):
         module = self._api()
