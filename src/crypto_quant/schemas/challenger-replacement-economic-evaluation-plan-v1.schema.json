@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-economic-evaluation-plan-v1.schema.json",
+  "title": "Replacement Challenger Economic Evaluation Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "plan_id", "plan_hash", "foundation", "population_contract", "economic_measurement", "missingness_policy", "statistical_design", "sample_gates", "economic_gates", "final_state_machine", "interim_policy", "authority", "status", "eligibility", "warnings"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-economic-evaluation-plan-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "plan_id": {"type": "string", "pattern": "^challenger_replacement_economic_evaluation_plan_[0-9a-f]{64}$"},
+    "plan_hash": {"$ref": "#/$defs/hash"},
+    "foundation": {"$ref": "#/$defs/foundation"},
+    "population_contract": {"$ref": "#/$defs/populationContract"},
+    "economic_measurement": {"$ref": "#/$defs/economicMeasurement"},
+    "missingness_policy": {"$ref": "#/$defs/missingnessPolicy"},
+    "statistical_design": {"$ref": "#/$defs/statisticalDesign"},
+    "sample_gates": {"$ref": "#/$defs/sampleGates"},
+    "economic_gates": {"$ref": "#/$defs/economicGates"},
+    "final_state_machine": {"$ref": "#/$defs/finalStateMachine"},
+    "interim_policy": {"$ref": "#/$defs/interimPolicy"},
+    "authority": {"$ref": "#/$defs/authority"},
+    "status": {"const": "ECONOMIC_EVALUATION_PLAN_PREREGISTERED_NOT_STARTED"},
+    "eligibility": {"$ref": "#/$defs/eligibility"},
+    "warnings": {"$ref": "#/$defs/warnings"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "timestampOrNull": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+    "decimal": {"type": "string", "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"},
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file_sha256"],
+      "properties": {"file_sha256": {"$ref": "#/$defs/hash"}, "plan_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*_[0-9a-f]{64}$"}, "plan_hash": {"$ref": "#/$defs/hash"}, "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "manifest_hash": {"$ref": "#/$defs/hash"}, "tree_hash": {"$ref": "#/$defs/hash"}}
+    },
+    "foundation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["v069_plan", "v069_owner_attestation", "v070_result_evidence_schema", "v071_simulation_contract", "v072_golden_manifest", "v073_release"],
+      "properties": {
+        "v069_plan": {"$ref": "#/$defs/identity"}, "v069_owner_attestation": {"$ref": "#/$defs/identity"}, "v070_result_evidence_schema": {"$ref": "#/$defs/identity"}, "v071_simulation_contract": {"$ref": "#/$defs/identity"}, "v072_golden_manifest": {"$ref": "#/$defs/identity"}, "v073_release": {"$ref": "#/$defs/identity"}
+      }
+    },
+    "populationContract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["start_source", "start_identity_fields", "cadence_seconds", "minimum_calendar_days", "start_scheduled_for_or_null", "tail_scheduled_for_or_null", "window_kind", "terminal_outcomes", "historical_backfill_allowed", "window_reset_allowed", "alternate_start_allowed", "tail_pre_action_mark_required", "policy_hash"],
+      "properties": {
+        "start_source": {"const": "FIRST_VERIFIED_NATURAL_OBSERVED_DECISION_OPPORTUNITY"},
+        "start_identity_fields": {"type": "array", "prefixItems": [{"const": "opportunity_id"}, {"const": "event_hash"}, {"const": "scheduled_for"}, {"const": "observed_at"}, {"const": "plan_id"}, {"const": "plan_hash"}, {"const": "deployment_identity"}, {"const": "event_root_identity"}], "items": false, "minItems": 8, "maxItems": 8},
+        "cadence_seconds": {"const": 14400}, "minimum_calendar_days": {"const": 90}, "start_scheduled_for_or_null": {"$ref": "#/$defs/timestampOrNull"}, "tail_scheduled_for_or_null": {"$ref": "#/$defs/timestampOrNull"}, "window_kind": {"const": "HALF_OPEN_SCHEDULED_FOR_START_INCLUSIVE_TAIL_EXCLUSIVE"},
+        "terminal_outcomes": {"type": "array", "prefixItems": [{"const": "OBSERVED"}, {"const": "MISSED"}], "items": false, "minItems": 2, "maxItems": 2},
+        "historical_backfill_allowed": {"const": false}, "window_reset_allowed": {"const": false}, "alternate_start_allowed": {"const": false}, "tail_pre_action_mark_required": {"const": true}, "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "economicMeasurement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["starting_virtual_equity_usdt", "capital_limit_usdt", "gross_exposure_limit", "technical_leverage_cap", "configured_simulation_leverage", "economic_asset", "daily_boundary_count", "daily_return_count", "daily_return_formula", "decimal_arithmetic_only", "binary_float_allowed", "spot_mark", "perpetual_mark", "fee_treatment", "funding_treatment", "policy_hash"],
+      "properties": {
+        "starting_virtual_equity_usdt": {"const": "100"}, "capital_limit_usdt": {"const": "100"}, "gross_exposure_limit": {"const": "0.5"}, "technical_leverage_cap": {"const": "2"}, "configured_simulation_leverage": {"const": "1"}, "economic_asset": {"const": "ETH"}, "daily_boundary_count": {"const": 91}, "daily_return_count": {"const": 90}, "daily_return_formula": {"const": "BOUNDARY_EQUITY_DELTA_DIVIDED_BY_100"}, "decimal_arithmetic_only": {"const": true}, "binary_float_allowed": {"const": false}, "spot_mark": {"const": "CONSERVATIVE_BID_MARK"}, "perpetual_mark": {"const": "CANONICAL_MARK_PRICE_AND_CONTRACT_MULTIPLIER"}, "fee_treatment": {"const": "ACCRUED_ONCE_ONLY"}, "funding_treatment": {"const": "SIGNED_CASHFLOW_ONCE_ONLY"}, "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "missingnessPolicy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["observed_coverage_minimum", "terminal_coverage_required", "exposed_miss_result", "optimistic_flat_miss", "pessimistic_flat_miss", "flat_miss_notional_usdt", "protective_stop_distance", "market_slippage_per_side", "taker_fee_per_side", "flat_miss_loss_rate", "flat_miss_loss_usdt", "pass_requires_both_bounds", "disagreement_result", "policy_hash"],
+      "properties": {
+        "observed_coverage_minimum": {"const": "0.95"}, "terminal_coverage_required": {"const": "1"}, "exposed_miss_result": {"const": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"}, "optimistic_flat_miss": {"const": "ZERO_ECONOMIC_CHANGE"}, "pessimistic_flat_miss": {"const": "ONE_FROZEN_STOPPED_CYCLE_LOSS_PER_DISTINCT_FLAT_MISS"}, "flat_miss_notional_usdt": {"const": "50"}, "protective_stop_distance": {"const": "0.02"}, "market_slippage_per_side": {"const": "0.001"}, "taker_fee_per_side": {"const": "0.0015"}, "flat_miss_loss_rate": {"const": "0.025"}, "flat_miss_loss_usdt": {"const": "1.25"}, "pass_requires_both_bounds": {"const": true}, "disagreement_result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"}, "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "statisticalDesign": {
+      "type": "object", "additionalProperties": false,
+      "required": ["primary_null", "primary_alternative", "family_size", "family_wise_alpha", "method", "block_length_days", "sample_length", "resample_count", "seed", "draw_start_method", "quantile", "confidence_level", "primary_endpoint", "minimum_economic_effect_daily", "power_method", "policy_hash"],
+      "properties": {
+        "primary_null": {"const": "MEAN_DAILY_NET_RETURN_LTE_ZERO"}, "primary_alternative": {"const": "MEAN_DAILY_NET_RETURN_GT_ZERO"}, "family_size": {"const": 1}, "family_wise_alpha": {"const": "0.05"}, "method": {"const": "OVERLAPPING_NON_CIRCULAR_MOVING_BLOCK_BOOTSTRAP"}, "block_length_days": {"const": 7}, "sample_length": {"const": 90}, "resample_count": {"const": 10000}, "seed": {"const": 2026082574}, "draw_start_method": {"const": "SHA256_REJECTION_SAMPLED_MBB_V1"}, "quantile": {"const": "CONSERVATIVE_NEAREST_RANK_0_05"}, "confidence_level": {"const": "0.95"}, "primary_endpoint": {"const": "MEAN_DAILY_NET_RETURN_LCB95"}, "minimum_economic_effect_daily": {"const": "0.0005"}, "power_method": {"const": "CENTERED_BOOTSTRAP_CRITICAL_VALUE_ACHIEVED_POWER"}, "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "gate": {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"type": "string"}, "operator": {"type": "string"}, "threshold": {"$ref": "#/$defs/decimal"}, "denominator": {"$ref": "#/$defs/decimal"}}},
+    "sampleGates": {"type": "array", "prefixItems": [
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "CALENDAR_DAYS"}, "operator": {"const": "EQ"}, "threshold": {"const": "90"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "DAILY_RETURN_COUNT"}, "operator": {"const": "EQ"}, "threshold": {"const": "90"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "TERMINAL_COVERAGE"}, "operator": {"const": "EQ"}, "threshold": {"const": "1"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "OBSERVED_COVERAGE"}, "operator": {"const": "GTE"}, "threshold": {"const": "0.95"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "COMPLETED_CYCLES"}, "operator": {"const": "GTE"}, "threshold": {"const": "12"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "SPOT_COMPLETED_CYCLES"}, "operator": {"const": "GTE"}, "threshold": {"const": "3"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "PERPETUAL_COMPLETED_CYCLES"}, "operator": {"const": "GTE"}, "threshold": {"const": "3"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "NONEMPTY_FIXED_BLOCKS"}, "operator": {"const": "EQ"}, "threshold": {"const": "6"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "MINIMUM_MBB_BLOCKS"}, "operator": {"const": "GTE"}, "threshold": {"const": "12"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "ACHIEVED_POWER_AT_MERE"}, "operator": {"const": "GTE"}, "threshold": {"const": "0.80"}}}
+    ], "items": false, "minItems": 10, "maxItems": 10},
+    "economicGates": {"type": "array", "prefixItems": [
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "MEAN_DAILY_NET_RETURN_LCB95"}, "operator": {"const": "GT"}, "threshold": {"const": "0"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "TOTAL_NET_PNL_USDT"}, "operator": {"const": "GT"}, "threshold": {"const": "0"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "MAX_DRAWDOWN_FRACTION"}, "operator": {"const": "LT"}, "threshold": {"const": "0.05"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold", "denominator"], "properties": {"metric": {"const": "NONNEGATIVE_FIXED_15_DAY_BLOCKS"}, "operator": {"const": "GTE"}, "threshold": {"const": "5"}, "denominator": {"const": "6"}}},
+      {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "STRESS_1_5X_ADVERSE_FRICTION_TOTAL_NET_PNL_USDT"}, "operator": {"const": "GTE"}, "threshold": {"const": "0"}}}
+    ], "items": false, "minItems": 5, "maxItems": 5},
+    "finalStateMachine": {"type": "object", "additionalProperties": false, "required": ["terminal_outcomes", "first_final_artifact_immutable", "rerun_allowed", "threshold_override_allowed", "sample_deletion_allowed", "alternate_seed_allowed", "alternate_start_allowed", "favorable_result_selection_allowed", "policy_hash"], "properties": {"terminal_outcomes": {"type": "array", "prefixItems": [{"const": "RESEARCH_CONTINUATION_GATE_PASS"}, {"const": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"}, {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"}], "items": false, "minItems": 3, "maxItems": 3}, "first_final_artifact_immutable": {"const": true}, "rerun_allowed": {"const": false}, "threshold_override_allowed": {"const": false}, "sample_deletion_allowed": {"const": false}, "alternate_seed_allowed": {"const": false}, "alternate_start_allowed": {"const": false}, "favorable_result_selection_allowed": {"const": false}, "policy_hash": {"$ref": "#/$defs/hash"}}},
+    "interimPolicy": {"type": "object", "additionalProperties": false, "required": ["economics_withheld_before_tail", "early_success_allowed", "pnl_based_early_stop_allowed", "threshold_override_allowed", "sample_override_allowed", "rerun_to_seek_better_result_allowed", "policy_hash"], "properties": {"economics_withheld_before_tail": {"const": true}, "early_success_allowed": {"const": false}, "pnl_based_early_stop_allowed": {"const": false}, "threshold_override_allowed": {"const": false}, "sample_override_allowed": {"const": false}, "rerun_to_seek_better_result_allowed": {"const": false}, "policy_hash": {"$ref": "#/$defs/hash"}}},
+    "authority": {"type": "object", "additionalProperties": false, "required": ["production_activation", "runtime_install_authorized", "replacement_start_authorized", "account_requests_allowed", "credentials_allowed", "broker_requests_allowed", "real_orders_allowed", "market_requests", "production_state_writes", "economic_outcome_reads"], "properties": {"production_activation": {"const": false}, "runtime_install_authorized": {"const": false}, "replacement_start_authorized": {"const": false}, "account_requests_allowed": {"const": false}, "credentials_allowed": {"const": false}, "broker_requests_allowed": {"const": false}, "real_orders_allowed": {"const": false}, "market_requests": {"const": 0}, "production_state_writes": {"const": 0}, "economic_outcome_reads": {"const": 0}}},
+    "eligibility": {"type": "object", "additionalProperties": false, "required": ["research_continuation_discussion", "canary", "live_trading", "profitability_claim"], "properties": {"research_continuation_discussion": {"const": "ELIGIBLE_ONLY_AFTER_FUTURE_GATE_PASS"}, "canary": {"const": "INELIGIBLE"}, "live_trading": {"const": "INELIGIBLE"}, "profitability_claim": {"const": "INELIGIBLE"}}},
+    "warnings": {"type": "array", "prefixItems": [{"const": "NO_ECONOMIC_OUTCOME_WAS_READ"}, {"const": "NO_90_DAY_ECONOMIC_CLOCK_WAS_STARTED"}, {"const": "NO_PRODUCTION_AUTHORITY_WAS_GRANTED"}], "items": false, "minItems": 3, "maxItems": 3}
+  }
+}
