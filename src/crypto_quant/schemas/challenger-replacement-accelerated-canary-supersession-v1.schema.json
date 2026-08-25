@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-accelerated-canary-supersession-v1.schema.json",
+  "title": "Challenger Replacement Accelerated Canary Supersession",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "record_id",
+    "record_hash",
+    "reason",
+    "predecessor",
+    "successor",
+    "changed_operational_rules",
+    "preserved_economic_authority",
+    "effectivity",
+    "authority",
+    "status",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-accelerated-canary-supersession-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "record_id": {
+      "type": "string",
+      "pattern": "^challenger_replacement_accelerated_canary_supersession_[0-9a-f]{64}$"
+    },
+    "record_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "reason": {
+      "const": "SUPERSEDED_FUTURE_ACTIVATION_ACCELERATED_OPERATIONAL_QUALIFICATION"
+    },
+    "predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v069_operational_plan",
+        "v073_readiness_release",
+        "v074_economic_plan",
+        "v074_release"
+      ],
+      "properties": {
+        "v069_operational_plan": {
+          "$ref": "#/$defs/planIdentity"
+        },
+        "v073_readiness_release": {
+          "$ref": "#/$defs/releaseIdentity"
+        },
+        "v074_economic_plan": {
+          "$ref": "#/$defs/planIdentity"
+        },
+        "v074_release": {
+          "$ref": "#/$defs/v074ReleaseIdentity"
+        }
+      }
+    },
+    "successor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file_sha256",
+        "plan_id",
+        "plan_hash",
+        "target_release"
+      ],
+      "properties": {
+        "file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plan_id": {
+          "type": "string",
+          "pattern": "^challenger_replacement_accelerated_canary_plan_[0-9a-f]{64}$"
+        },
+        "plan_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "target_release": {
+          "const": "v0.75.0"
+        }
+      }
+    },
+    "changed_operational_rules": {
+      "$ref": "#/$defs/changedRules"
+    },
+    "preserved_economic_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v074_economic_plan_disposition",
+        "file_sha256",
+        "plan_id",
+        "plan_hash",
+        "economic_start_or_window_changed"
+      ],
+      "properties": {
+        "v074_economic_plan_disposition": {
+          "const": "IMMUTABLE_UNCHANGED_AUTHORITY"
+        },
+        "file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plan_id": {
+          "type": "string",
+          "pattern": "^challenger_replacement_economic_evaluation_plan_[0-9a-f]{64}$"
+        },
+        "plan_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "economic_start_or_window_changed": {
+          "const": false
+        }
+      }
+    },
+    "effectivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "applies_to",
+        "retroactive_effect",
+        "existing_events_disposition",
+        "failed_blocks_disposition",
+        "economic_window_disposition"
+      ],
+      "properties": {
+        "applies_to": {
+          "const": "ONLY_START_RECEIPTS_CREATED_AFTER_V075_AND_BINDING_SUCCESSOR_PLAN"
+        },
+        "retroactive_effect": {
+          "const": "NONE"
+        },
+        "existing_events_disposition": {
+          "const": "IMMUTABLE_RETAINED"
+        },
+        "failed_blocks_disposition": {
+          "const": "IMMUTABLE_RETAINED"
+        },
+        "economic_window_disposition": {
+          "const": "V074_UNCHANGED"
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "production_activation",
+        "runtime_install_authorized",
+        "replacement_start_authorized",
+        "credentials_allowed",
+        "account_requests_allowed",
+        "broker_requests_allowed",
+        "real_orders_allowed",
+        "fund_movement_allowed",
+        "ceremony_authorized",
+        "e0_activation_authorized",
+        "market_requests",
+        "private_account_requests",
+        "production_state_writes",
+        "economic_outcome_reads"
+      ],
+      "properties": {
+        "production_activation": {
+          "const": false
+        },
+        "runtime_install_authorized": {
+          "const": false
+        },
+        "replacement_start_authorized": {
+          "const": false
+        },
+        "credentials_allowed": {
+          "const": false
+        },
+        "account_requests_allowed": {
+          "const": false
+        },
+        "broker_requests_allowed": {
+          "const": false
+        },
+        "real_orders_allowed": {
+          "const": false
+        },
+        "fund_movement_allowed": {
+          "const": false
+        },
+        "ceremony_authorized": {
+          "const": false
+        },
+        "e0_activation_authorized": {
+          "const": false
+        },
+        "market_requests": {
+          "const": 0
+        },
+        "private_account_requests": {
+          "const": 0
+        },
+        "production_state_writes": {
+          "const": 0
+        },
+        "economic_outcome_reads": {
+          "const": 0
+        }
+      }
+    },
+    "status": {
+      "const": "SUPERSESSION_PREREGISTERED_NOT_ACTIVATED"
+    },
+    "warnings": {
+      "$ref": "#/$defs/warnings"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "planIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file_sha256",
+        "plan_id",
+        "plan_hash"
+      ],
+      "properties": {
+        "file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plan_id": {
+          "type": "string",
+          "minLength": 65,
+          "maxLength": 160
+        },
+        "plan_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "releaseIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_tag",
+        "peeled_commit",
+        "manifest_hash"
+      ],
+      "properties": {
+        "release_tag": {
+          "const": "v0.73.0"
+        },
+        "peeled_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifest_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "v074ReleaseIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_tag",
+        "tag_object",
+        "peeled_commit",
+        "manifest_file_sha256",
+        "manifest_hash",
+        "tree_hash"
+      ],
+      "properties": {
+        "release_tag": {
+          "const": "v0.74.0"
+        },
+        "tag_object": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "peeled_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifest_file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "manifest_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tree_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "changedRules": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "SEVEN_DAY_NATURAL_CYCLE_GATE_TO_CONTINUOUS_72_HOUR_QUALIFICATION"
+        },
+        {
+          "const": "NATURAL_PRE_E0_PRODUCT_ROUNDTRIPS_TO_EXCLUDED_OPERATIONAL_CEREMONY"
+        },
+        {
+          "const": "PERMANENT_STREAM_LOCK_TO_IMMUTABLE_FAILED_BLOCK_AND_APPROVED_NEW_BLOCK"
+        },
+        {
+          "const": "BROAD_TERMINAL_OPERATIONAL_FAILURES_TO_FOUR_ABSOLUTE_STAGE_HARD_STOPS"
+        }
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "warnings": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "V074_ECONOMIC_AUTHORITY_PRESERVED"
+        },
+        {
+          "const": "SUPERSESSION_HAS_NO_RETROACTIVE_EFFECT"
+        },
+        {
+          "const": "NO_INSTALL_START_CREDENTIAL_ORDER_FUND_OR_CANARY_AUTHORITY"
+        }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    }
+  }
+}
+
