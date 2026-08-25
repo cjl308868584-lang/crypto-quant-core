@@ -27,12 +27,12 @@ MODULE_BASELINES = {
 
 class V072ReleaseTests(unittest.TestCase):
     def test_versions_manifest_and_candidate_status_are_exact(self):
-        self.assertRegex((ROOT / "pyproject.toml").read_text(), r'(?m)^version = "0\.72\.0"$')
-        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.72\.0"')
+        self.assertRegex((ROOT / "pyproject.toml").read_text(), r'(?m)^version = "0\.73\.0"$')
+        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.73\.0"')
         manifest = json.loads((ROOT / "config/evaluator-build-manifest-v1.json").read_text())
         self.assertEqual(
             (crypto_quant.__version__, manifest["package_version"], manifest["manifest_version"]),
-            ("0.72.0", "0.72.0", "1.66.0"),
+            ("0.73.0", "0.73.0", "1.67.0"),
         )
         status = STATUS.read_text()
         self.assertIn(

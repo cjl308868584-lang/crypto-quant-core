@@ -753,20 +753,20 @@ git commit -m "test: close v073 readiness authority gates"
 - Consumes: final reviewed code and exact test evidence.
 - Produces: v0.73 candidate metadata and public release evidence; no runtime artifact.
 
-- [ ] **Step 1: Request one independent complete review**
+- [x] **Step 1: Request one independent complete review**
 
 Give the reviewer the spec, plan, full diff from `v0.72.0^{}` and focused test
 evidence. Require Critical and Important zero. Fix findings through targeted
 RED/GREEN commits and request only targeted rereview.
 
-- [ ] **Step 2: Write ADR and implementation status**
+- [x] **Step 2: Write ADR and implementation status**
 
 Record the selected split, rejected post-hoc economic evaluator, exact
 authority zeros, fixture-only qualification, economic preregistration gap and
 next milestone. Do not claim Paper started, operational PASS, economic PASS,
 Canary eligibility or live readiness.
 
-- [ ] **Step 3: Update package/build identity once**
+- [x] **Step 3: Update package/build identity once**
 
 Set package version `0.73.0` in `pyproject.toml` and
 `src/crypto_quant/__init__.py`, set manifest version `1.67.0`,
@@ -774,7 +774,7 @@ and enumerate every changed production/schema/static/doc/test file. Recompute
 the manifest through the repository's canonical build command only after all
 other candidate bytes are final.
 
-- [ ] **Step 4: Run one final local full verification**
+- [x] **Step 4: Run one final local full verification**
 
 Run exactly once for the final code state:
 
