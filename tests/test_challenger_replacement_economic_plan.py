@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,8 +49,9 @@ FROZEN_PREDECESSOR_PATHS = (
     ROOT / "src/crypto_quant/schemas/challenger-replacement-opportunity-result-evidence-v2.schema.json",
     ROOT / "artifacts/challenger-replacement/challenger-replacement-binance-simulation-contract-v0.71.0.json",
     ROOT / "artifacts/challenger-replacement/challenger-replacement-binance-golden-fixture-manifest-v0.72.0.json",
-    ROOT / "config/evaluator-build-manifest-v1.json",
 )
+V073_PEELED_COMMIT = "34bd0e9ba96c769b7301c482730a03fb975c24ce"
+V073_MANIFEST_GIT_PATH = "config/evaluator-build-manifest-v1.json"
 PACKAGE_SCHEMA = (
     ROOT
     / "src/crypto_quant/schemas/"
@@ -121,6 +123,27 @@ FORBIDDEN_IMPORTS = {
     "runner", "observer", "dashboard", "opportunity_events",
     "opportunity_projection", "simulation", "lifecycle",
 }
+
+
+def _read_frozen_v073_manifest_blob():
+    try:
+        completed = subprocess.run(
+            (
+                "git",
+                "-C",
+                str(ROOT),
+                "show",
+                f"{V073_PEELED_COMMIT}:{V073_MANIFEST_GIT_PATH}",
+            ),
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise AssertionError(
+            "frozen v0.73 manifest blob unavailable"
+        ) from error
+    return completed.stdout
 
 
 def _packaged_schema_failure(error):
@@ -795,7 +818,7 @@ class EconomicPlanBuilderTests(unittest.TestCase):
             hashlib.sha256(v070_body).hexdigest(),
             foundation["v070_result_evidence_schema"]["file_sha256"],
         )
-        manifest_body = FROZEN_PREDECESSOR_PATHS[5].read_bytes()
+        manifest_body = _read_frozen_v073_manifest_blob()
         manifest = json.loads(manifest_body)
         self.assertEqual(
             hashlib.sha256(manifest_body).hexdigest(),
@@ -816,6 +839,44 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 )
             },
         )
+
+    def test_v073_foundation_manifest_uses_exact_git_blob_and_fails_closed(self):
+        """Catches mutable-path fallback or skipped historical authority."""
+        reader = globals().get("_read_frozen_v073_manifest_blob")
+        self.assertIsNotNone(
+            reader,
+            "v0.73 foundation must have an exact peeled-commit blob reader",
+        )
+        body = reader()
+        self.assertEqual(
+            hashlib.sha256(body).hexdigest(),
+            "c41a46442993bac947773d383f722dfbaa358417ba67e87bf1e81db37c5e1c74",
+        )
+        manifest = json.loads(body)
+        self.assertEqual(
+            (
+                manifest["package_version"],
+                manifest["manifest_version"],
+                manifest["manifest_hash"],
+                manifest["build_input_tree_hash"],
+            ),
+            (
+                "0.73.0",
+                "1.67.0",
+                "0117d3a17bdea7e2a22004d675175083e9d863722c6c176632d29e3c4c6e62d0",
+                "569afbae2352932a05a6c5daeb1c52049c9a3ec74034d666664579aa2bd0a97e",
+            ),
+        )
+        with mock.patch.object(
+            subprocess,
+            "run",
+            side_effect=OSError("git unavailable"),
+        ):
+            with self.assertRaisesRegex(
+                AssertionError,
+                "frozen v0.73 manifest blob unavailable",
+            ):
+                reader()
 
     def test_builder_freezes_the_ordered_final_result_reducer(self):
         """Catches a changed precedence, condition class, or terminal result."""

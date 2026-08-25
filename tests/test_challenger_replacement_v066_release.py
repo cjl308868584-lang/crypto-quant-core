@@ -61,11 +61,11 @@ class V066RuntimeScopeTests(unittest.TestCase):
 class V066ReleaseIdentityTests(unittest.TestCase):
     def test_release_versions_and_build_inputs_are_frozen(self):
         pyproject = (ROOT / "pyproject.toml").read_text()
-        self.assertIsNotNone(re.search(r'^version = "0\.73\.0"$', pyproject, re.MULTILINE))
+        self.assertIsNotNone(re.search(r'^version = "0\.74\.0"$', pyproject, re.MULTILINE))
         manifest = json.loads((ROOT / "config/evaluator-build-manifest-v1.json").read_text())
-        self.assertEqual(crypto_quant.__version__, "0.73.0")
-        self.assertEqual(manifest["package_version"], "0.73.0")
-        self.assertEqual(manifest["manifest_version"], "1.67.0")
+        self.assertEqual(crypto_quant.__version__, "0.74.0")
+        self.assertEqual(manifest["package_version"], "0.74.0")
+        self.assertEqual(manifest["manifest_version"], "1.68.0")
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {
             "config/challenger-replacement-source-bundle-v1.schema.json",

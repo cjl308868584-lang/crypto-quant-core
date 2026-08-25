@@ -125,6 +125,50 @@ class DeploymentCandidateTests(unittest.TestCase):
             build_challenger_replacement_deployment(),
         )
 
+    def test_loader_accepts_exact_v074_current_manifest_identity(self):
+        """Catches a stale current-release compatibility seam."""
+        from crypto_quant.build import EvaluatorBuild
+        from crypto_quant.canonical import business_hash
+        from crypto_quant.challenger_replacement_deployment import (
+            build_challenger_replacement_deployment,
+            load_challenger_replacement_deployment,
+        )
+        from crypto_quant.evidence import artifact_self_hash
+
+        with tempfile.TemporaryDirectory() as directory:
+            clone = Path(directory) / "workspace"
+            shutil.copytree(
+                ROOT,
+                clone,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+            )
+            manifest_path = clone / "config/evaluator-build-manifest-v1.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            paths = EvaluatorBuild.expected_file_paths(clone)
+            hashes = EvaluatorBuild.file_hashes(clone, paths)
+            manifest["manifest_version"] = "1.68.0"
+            manifest["package_version"] = "0.74.0"
+            manifest["file_hashes"] = hashes
+            manifest["build_input_tree_hash"] = business_hash(hashes)
+            manifest["manifest_hash"] = "0" * 64
+            manifest["manifest_hash"] = artifact_self_hash(
+                manifest, "manifest_hash"
+            )
+            manifest_path.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                load_challenger_replacement_deployment(
+                    clone
+                    / "artifacts/challenger-replacement/"
+                    "challenger-replacement-deployment-v0.67.0.json",
+                    manifest_path=manifest_path,
+                ),
+                build_challenger_replacement_deployment(),
+            )
+
     def test_loader_rejects_rehashed_wrong_current_package_version(self):
         from crypto_quant.challenger_replacement_deployment import (
             ChallengerReplacementDeploymentError,

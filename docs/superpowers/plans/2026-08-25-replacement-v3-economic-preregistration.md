@@ -39,11 +39,15 @@
 **Modify:**
 
 - `src/crypto_quant/build.py` — append `_V074_RELEASE_PATHS` only.
+- `src/crypto_quant/challenger_replacement_deployment.py` — advance only the
+  current evaluator-manifest compatibility seam to v0.74.0/v1.68.0.
 - `src/crypto_quant/__init__.py`, `pyproject.toml`, `setup.py` — version `0.74.0`.
 - `config/evaluator-build-manifest-v1.json` — canonical refresh to `1.68.0` only after candidate bytes settle.
 - `scripts/refresh_evaluator_build_manifest.py` — expected package `0.74.0`
   and manifest `1.68.0` for the single refresh.
 - `README.md` and only current-release expectations found by `rg -l '0\.73\.0|1\.67\.0' tests`.
+- `tests/test_challenger_replacement_deployment.py` — exact current-manifest
+  compatibility regression.
 - This plan — check boxes only after evidence exists.
 
 ---
@@ -402,6 +406,8 @@ git commit -m "test: close v074 economic plan authority"
 - Create: `docs/adr/0074-replacement-v3-economic-preregistration.md`
 - Create: `docs/implementation-status-v0.74.0.md`
 - Modify: `README.md`, `pyproject.toml`, `setup.py`, `src/crypto_quant/__init__.py`
+- Modify: `src/crypto_quant/challenger_replacement_deployment.py`
+- Modify: `tests/test_challenger_replacement_deployment.py`
 - Modify: current-release expectation tests found by the fixed `rg` command.
 - Modify: `config/evaluator-build-manifest-v1.json`
 - Modify: `scripts/refresh_evaluator_build_manifest.py`
@@ -466,7 +472,13 @@ preregistration from all not-started runtime/economic claims. Set package
 `0.74.0` in three version files and set the refresh script's exact expected
 package/manifest constants to `0.74.0`/`1.68.0`. Mechanically update only
 current-release expectations from 0.73.0/1.67.0 to 0.74.0/1.68.0; preserve
-historical foundation constants and artifacts.
+historical foundation constants and artifacts. Advance the deployment loader's
+current-manifest compatibility seam to the same versions with an exact loader
+regression; do not change its historical v0.66/v0.67 artifact identities. Make
+the v0.73 foundation source assertion read the exact
+`34bd0e9ba96c769b7301c482730a03fb975c24ce:config/evaluator-build-manifest-v1.json`
+Git blob and fail closed if that blob is unavailable; never fall back to the
+mutable worktree path or skip the assertion.
 
 - [ ] **Step 5: Refresh the manifest once after all candidate bytes settle**
 
