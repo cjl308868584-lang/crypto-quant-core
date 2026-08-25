@@ -58,7 +58,7 @@
 - Consumes: approved spec and Draft 2020-12.
 - Produces: package Schema consumed by the Task 2 builder and loader.
 
-- [ ] **Step 1: Write Schema RED tests**
+- [x] **Step 1: Write Schema RED tests**
 
 Create `EconomicPlanSchemaTests` with:
 
@@ -84,7 +84,7 @@ def test_schema_is_exact_key_draft_202012(self):
 
 Walk every object Schema and require `additionalProperties is False`. Require exact terminal enum `[RESEARCH_CONTINUATION_GATE_PASS, RESEARCH_CONTINUATION_GATE_DID_NOT_PASS, INCONCLUSIVE_INSUFFICIENT_EVIDENCE]`. Require exact false/zero authority consts.
 
-- [ ] **Step 2: Run the RED**
+- [x] **Step 2: Run the RED**
 
 ```bash
 PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_plan.EconomicPlanSchemaTests -v
@@ -92,7 +92,7 @@ PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_pl
 
 Expected: ERROR/FAIL because the Schema does not exist.
 
-- [ ] **Step 3: Add the minimal exact Schema**
+- [x] **Step 3: Add the minimal exact Schema**
 
 Use `apply_patch`. Set Draft 2020-12 `$schema`, a fixed `$id`, `type: object`, `additionalProperties: false`, and all expected keys. Freeze exact nested keys:
 
@@ -133,7 +133,7 @@ authority: production_activation, runtime_install_authorized,
 
 Use `prefixItems` plus `items: false` for ordered fixed arrays. Use lowercase SHA-256/stable-ID regexes, canonical Decimal regexes and canonical millisecond UTC timestamps.
 
-- [ ] **Step 4: Run Schema tests GREEN and commit**
+- [x] **Step 4: Run Schema tests GREEN and commit**
 
 ```bash
 PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_plan.EconomicPlanSchemaTests -v
