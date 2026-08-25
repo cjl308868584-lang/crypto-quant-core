@@ -452,6 +452,19 @@ _V072_RELEASE_PATHS = (
     "docs/implementation-status-v0.72.0.md",
 )
 
+_V073_RELEASE_PATHS = (
+    "config/operations-projection-v2.schema.json",
+    "tests/test_challenger_replacement_readiness.py",
+    "tests/test_challenger_replacement_readiness_observer.py",
+    "tests/test_operations_projection_v2.py",
+    "tests/test_v073_authority_boundaries.py",
+    "tests/test_challenger_replacement_v073_release.py",
+    "docs/superpowers/specs/2026-08-25-replacement-v3-readiness-observer-design.md",
+    "docs/superpowers/plans/2026-08-25-replacement-v3-readiness-observer.md",
+    "docs/adr/0073-replacement-v3-readiness-and-tail-blind-observation.md",
+    "docs/implementation-status-v0.73.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -491,6 +504,7 @@ class EvaluatorBuild:
                 + list(_V070_RELEASE_PATHS)
                 + list(_V071_RELEASE_PATHS)
                 + list(_V072_RELEASE_PATHS)
+                + list(_V073_RELEASE_PATHS)
             )
         )
 
