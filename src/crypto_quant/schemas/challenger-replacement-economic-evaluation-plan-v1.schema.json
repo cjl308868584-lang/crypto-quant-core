@@ -98,11 +98,11 @@
     },
     "populationContract": {
       "type": "object", "additionalProperties": false,
-      "required": ["start_source", "start_identity_fields", "cadence_seconds", "minimum_calendar_days", "start_scheduled_for_or_null", "tail_scheduled_for_or_null", "window_kind", "terminal_outcomes", "historical_backfill_allowed", "window_reset_allowed", "alternate_start_allowed", "tail_pre_action_mark_required", "tail_pre_action_mark_source", "tail_action", "untrusted_tail_mark_input_allowed", "last_convenient_price_fallback_allowed", "missing_tail_mark_result", "policy_hash"],
+      "required": ["start_source", "start_identity_fields", "cadence_seconds", "minimum_calendar_days", "start_scheduled_for_or_null", "tail_scheduled_for_or_null", "tail_scheduled_for_base", "tail_scheduled_for_offset_seconds", "window_kind", "terminal_outcomes", "historical_backfill_allowed", "window_reset_allowed", "alternate_start_allowed", "tail_pre_action_mark_required", "tail_pre_action_mark_source", "tail_action", "untrusted_tail_mark_input_allowed", "last_convenient_price_fallback_allowed", "missing_tail_mark_result", "policy_hash"],
       "properties": {
         "start_source": {"const": "FIRST_VERIFIED_NATURAL_OBSERVED_DECISION_OPPORTUNITY"},
         "start_identity_fields": {"type": "array", "prefixItems": [{"const": "opportunity_id"}, {"const": "event_hash"}, {"const": "scheduled_for"}, {"const": "observed_at"}, {"const": "plan_id"}, {"const": "plan_hash"}, {"const": "deployment_identity"}, {"const": "event_root_identity"}], "items": false, "minItems": 8, "maxItems": 8},
-        "cadence_seconds": {"const": 14400}, "minimum_calendar_days": {"const": 90}, "start_scheduled_for_or_null": {"$ref": "#/$defs/timestampOrNull"}, "tail_scheduled_for_or_null": {"$ref": "#/$defs/timestampOrNull"}, "window_kind": {"const": "HALF_OPEN_SCHEDULED_FOR_START_INCLUSIVE_TAIL_EXCLUSIVE"},
+        "cadence_seconds": {"const": 14400}, "minimum_calendar_days": {"const": 90}, "start_scheduled_for_or_null": {"$ref": "#/$defs/timestampOrNull"}, "tail_scheduled_for_or_null": {"$ref": "#/$defs/timestampOrNull"}, "tail_scheduled_for_base": {"const": "START_SCHEDULED_FOR"}, "tail_scheduled_for_offset_seconds": {"const": 7776000}, "window_kind": {"const": "HALF_OPEN_SCHEDULED_FOR_START_INCLUSIVE_TAIL_EXCLUSIVE"},
         "terminal_outcomes": {"type": "array", "prefixItems": [{"const": "OBSERVED"}, {"const": "MISSED"}], "items": false, "minItems": 2, "maxItems": 2},
         "historical_backfill_allowed": {"const": false}, "window_reset_allowed": {"const": false}, "alternate_start_allowed": {"const": false}, "tail_pre_action_mark_required": {"const": true},
         "tail_pre_action_mark_source": {"const": "CANONICAL_SOURCE_AND_PRIOR_PROJECTION_AT_TAIL_SCHEDULED_FOR"},
@@ -190,7 +190,7 @@
         "length_days": {"const": 15},
         "interval": {"const": "HALF_OPEN"},
         "start_formula": {"const": "START_SCHEDULED_FOR_PLUS_N_TIMES_15_DAYS"},
-        "end_formula": {"const": "START_SCHEDULED_FOR_PLUS_N_PLUS_1_TIMES_15_DAYS"},
+        "end_formula": {"const": "START_SCHEDULED_FOR_PLUS_(N_PLUS_1)_TIMES_15_DAYS"},
         "n_values": {"type": "array", "prefixItems": [{"const": 0}, {"const": 1}, {"const": 2}, {"const": 3}, {"const": 4}, {"const": 5}], "items": false, "minItems": 6, "maxItems": 6},
         "value_formula": {"const": "SUM_OF_DAILY_NET_RETURNS"},
         "nonnegative_operator": {"const": "GTE_ZERO"}
@@ -213,7 +213,7 @@
         "flat_miss_funding_benefit_usdt": {"const": "0"},
         "charges_per_distinct_flat_missed_opportunity": {"const": 1},
         "duplicate_flat_miss_charge_allowed": {"const": false},
-        "observed_coverage_formula": {"const": "OBSERVED_DIVIDED_BY_OBSERVED_PLUS_MISSED_IN_EXACT_HALF_OPEN_WINDOW"},
+        "observed_coverage_formula": {"const": "OBSERVED_DIVIDED_BY_(OBSERVED_PLUS_MISSED)_IN_EXACT_HALF_OPEN_WINDOW"},
         "favorable_bound_selection_allowed": {"const": false},
         "policy_hash": {"$ref": "#/$defs/hash"}
       }
@@ -247,7 +247,7 @@
     },
     "achievedPowerCalculation": {
       "type": "object", "additionalProperties": false,
-      "required": ["minimum_economic_effect_is_alternate_pass_threshold", "centered_error_formula", "critical_value", "comparison_left", "comparison_operator", "centered_error_count", "shortfall_result"],
+      "required": ["minimum_economic_effect_is_alternate_pass_threshold", "centered_error_formula", "critical_value", "comparison_left", "comparison_operator", "centered_error_count", "satisfying_error_aggregation", "result_formula", "result_denominator", "shortfall_result"],
       "properties": {
         "minimum_economic_effect_is_alternate_pass_threshold": {"const": false},
         "centered_error_formula": {"const": "BOOTSTRAP_MEAN_MINUS_OBSERVED_SAMPLE_MEAN"},
@@ -255,6 +255,9 @@
         "comparison_left": {"const": "MINIMUM_ECONOMIC_EFFECT_DAILY_PLUS_CENTERED_ERROR"},
         "comparison_operator": {"const": "STRICT_GT_CRITICAL_VALUE"},
         "centered_error_count": {"const": 10000},
+        "satisfying_error_aggregation": {"const": "COUNT_ALL_CENTERED_ERRORS_SATISFYING_COMPARISON"},
+        "result_formula": {"const": "SATISFYING_ERROR_AGGREGATION_DIVIDED_BY_RESULT_DENOMINATOR"},
+        "result_denominator": {"const": 10000},
         "shortfall_result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"}
       }
     },
@@ -302,7 +305,7 @@
               "required": ["priority", "when_any", "result", "research_continuation_discussion_eligible"],
               "properties": {
                 "priority": {"const": 1},
-                "when_any": {"type": "array", "prefixItems": [{"const": "INVALID_PLAN"}, {"const": "FOUNDATION_IDENTITY_MISMATCH"}, {"const": "MALFORMED_EVENT"}, {"const": "DUPLICATE_AUTHORITY"}, {"const": "MISSING_TAIL_PRE_ACTION_MARK"}, {"const": "UNREADABLE_EVIDENCE"}], "items": false, "minItems": 6, "maxItems": 6},
+                "when_any": {"type": "array", "prefixItems": [{"const": "INVALID_PLAN"}, {"const": "IDENTITY_MISMATCH"}, {"const": "MALFORMED_EVENT"}, {"const": "DUPLICATE_AUTHORITY"}, {"const": "MISSING_TAIL_PRE_ACTION_MARK"}, {"const": "UNREADABLE_EVIDENCE"}], "items": false, "minItems": 6, "maxItems": 6},
                 "result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"},
                 "research_continuation_discussion_eligible": {"const": false}
               }

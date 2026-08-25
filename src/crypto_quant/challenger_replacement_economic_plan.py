@@ -27,7 +27,7 @@ from .evidence import artifact_self_hash
 
 _SCHEMA = "challenger-replacement-economic-evaluation-plan-v1.schema.json"
 _ARTIFACT_SHA256 = (
-    "726baaab76f3288c0a440af26837facdfa1eeb5dbc253bb3fff8588a47824fc4"
+    "24fba7579ac36c037aaef4fbf34a69b56503358edbd64addbe01f30a70c33297"
 )
 _ZERO_HASH = "0" * 64
 
@@ -122,6 +122,8 @@ def build_challenger_replacement_economic_plan() -> Dict[str, Any]:
             "minimum_calendar_days": 90,
             "start_scheduled_for_or_null": None,
             "tail_scheduled_for_or_null": None,
+            "tail_scheduled_for_base": "START_SCHEDULED_FOR",
+            "tail_scheduled_for_offset_seconds": 7_776_000,
             "window_kind": "HALF_OPEN_SCHEDULED_FOR_START_INCLUSIVE_TAIL_EXCLUSIVE",
             "terminal_outcomes": ["OBSERVED", "MISSED"],
             "historical_backfill_allowed": False,
@@ -205,7 +207,7 @@ def build_challenger_replacement_economic_plan() -> Dict[str, Any]:
                 "interval": "HALF_OPEN",
                 "start_formula": "START_SCHEDULED_FOR_PLUS_N_TIMES_15_DAYS",
                 "end_formula": (
-                    "START_SCHEDULED_FOR_PLUS_N_PLUS_1_TIMES_15_DAYS"
+                    "START_SCHEDULED_FOR_PLUS_(N_PLUS_1)_TIMES_15_DAYS"
                 ),
                 "n_values": [0, 1, 2, 3, 4, 5],
                 "value_formula": "SUM_OF_DAILY_NET_RETURNS",
@@ -257,7 +259,7 @@ def build_challenger_replacement_economic_plan() -> Dict[str, Any]:
             "charges_per_distinct_flat_missed_opportunity": 1,
             "duplicate_flat_miss_charge_allowed": False,
             "observed_coverage_formula": (
-                "OBSERVED_DIVIDED_BY_OBSERVED_PLUS_MISSED_IN_EXACT_HALF_OPEN_WINDOW"
+                "OBSERVED_DIVIDED_BY_(OBSERVED_PLUS_MISSED)_IN_EXACT_HALF_OPEN_WINDOW"
             ),
             "favorable_bound_selection_allowed": False,
         }
@@ -304,6 +306,13 @@ def build_challenger_replacement_economic_plan() -> Dict[str, Any]:
                 ),
                 "comparison_operator": "STRICT_GT_CRITICAL_VALUE",
                 "centered_error_count": 10_000,
+                "satisfying_error_aggregation": (
+                    "COUNT_ALL_CENTERED_ERRORS_SATISFYING_COMPARISON"
+                ),
+                "result_formula": (
+                    "SATISFYING_ERROR_AGGREGATION_DIVIDED_BY_RESULT_DENOMINATOR"
+                ),
+                "result_denominator": 10_000,
                 "shortfall_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
             },
             "completed_cycle_counting": {
@@ -333,7 +342,7 @@ def build_challenger_replacement_economic_plan() -> Dict[str, Any]:
                     "priority": 1,
                     "when_any": [
                         "INVALID_PLAN",
-                        "FOUNDATION_IDENTITY_MISMATCH",
+                        "IDENTITY_MISMATCH",
                         "MALFORMED_EVENT",
                         "DUPLICATE_AUTHORITY",
                         "MISSING_TAIL_PRE_ACTION_MARK",

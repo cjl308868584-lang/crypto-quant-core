@@ -31,15 +31,15 @@ ARTIFACT_PATH = ROOT / (
     "artifacts/challenger-replacement/"
     "challenger-replacement-economic-evaluation-plan-v0.74.0.json"
 )
-ARTIFACT_SHA256 = "726baaab76f3288c0a440af26837facdfa1eeb5dbc253bb3fff8588a47824fc4"
-PLAN_ID = "challenger_replacement_economic_evaluation_plan_a90f161b660ea1bda73d57a0a72137d26970c501f518823e6745504c85a0f9e6"
-PLAN_HASH = "5f56c414435839e8061de075835811825eae9a6944def0513a6bd88fd3a82a57"
+ARTIFACT_SHA256 = "24fba7579ac36c037aaef4fbf34a69b56503358edbd64addbe01f30a70c33297"
+PLAN_ID = "challenger_replacement_economic_evaluation_plan_13ba2b74dd8c330732789a3fccd36f017847047f9fd07ea0bcf36b66f54a943e"
+PLAN_HASH = "7c02267a0895cb3d8ceea79b6a38415140de23fb1cfcf3350c7fddff62089fa4"
 POLICY_HASHES = {
-    "population_contract": "194e70e9ce94bcdc6258420ef85eedaaa74cf8e25762bc9f0560ecaafbcde72d",
-    "economic_measurement": "4b7adf2489c8c6ff2b8833c4bc3e9059c4a21689810c3e0c826a04d7d3ae9b7a",
-    "missingness_policy": "2012a16f944fb39cd878e0a830b33088d314843545027510a7ec50b99aebab68",
-    "statistical_design": "7eeb0efa46faaeaefd9afdd56254beea28a17f9f3f3bd1840d1852fa9f317e02",
-    "final_state_machine": "276ff184fbc9b8e96959eba55e3432864e2d0b2bb4b58293acee291313901e48",
+    "population_contract": "7ec30b3a53c26dc1209773e860eb68de7081b4683d2e8535f2ea7b3ecc754e58",
+    "economic_measurement": "844901a2fcadb5d1405bf4cf504bf84a42cacab7ec91b3ad4a4516a5f96ff42b",
+    "missingness_policy": "d29a2347a70c6fff2d9ac9c945e174f687c1cfda68c894e3b2046f0efee078f6",
+    "statistical_design": "343c3214d2c2ebe407cf07a0783339db68abf04bb837303f61999a7075950968",
+    "final_state_machine": "0ac5e02fe9fd8ef29f95e6cf4981ea039d085322bb9c7ede9d4c82059dae54f7",
     "interim_policy": "6d9e542b5880b6fa1a6085a2c369efd81db44ba261ca082c913afaf8b023308d",
 }
 FROZEN_PREDECESSOR_PATHS = (
@@ -215,12 +215,25 @@ class EconomicPlanSchemaTests(unittest.TestCase):
                 "RESEARCH_CONTINUATION_GATE_PASS",
             ],
         )
+        self.assertEqual(
+            [
+                item["const"]
+                for item in rules["prefixItems"][0]["properties"]["when_any"]
+                ["prefixItems"]
+            ],
+            [
+                "INVALID_PLAN", "IDENTITY_MISMATCH", "MALFORMED_EVENT",
+                "DUPLICATE_AUTHORITY", "MISSING_TAIL_PRE_ACTION_MARK",
+                "UNREADABLE_EVIDENCE",
+            ],
+        )
 
     def test_schema_requires_every_new_computation_contract_key(self):
         """Catches an optional or permissive tail, economic, sample, or miss rule."""
         schema = json.loads(PACKAGE_SCHEMA.read_text())
         expected_required = {
             "populationContract": {
+                "tail_scheduled_for_base", "tail_scheduled_for_offset_seconds",
                 "tail_pre_action_mark_source", "tail_action",
                 "untrusted_tail_mark_input_allowed",
                 "last_convenient_price_fallback_allowed",
@@ -291,7 +304,9 @@ class EconomicPlanSchemaTests(unittest.TestCase):
             "achievedPowerCalculation": {
                 "minimum_economic_effect_is_alternate_pass_threshold",
                 "centered_error_formula", "critical_value", "comparison_left",
-                "comparison_operator", "centered_error_count", "shortfall_result",
+                "comparison_operator", "centered_error_count",
+                "satisfying_error_aggregation", "result_formula",
+                "result_denominator", "shortfall_result",
             },
             "completedCycleCounting": {
                 "begins", "ends", "partial_fills_belong_to_matching_cycle",
@@ -305,6 +320,62 @@ class EconomicPlanSchemaTests(unittest.TestCase):
                 definition = self._definition(schema, definition_name)
                 self.assertEqual(set(definition["required"]), required)
                 self.assertEqual(set(definition["properties"]), required)
+
+    def test_schema_freezes_the_exact_tail_offset(self):
+        """Catches a tail that is not start plus exactly 7,776,000 seconds."""
+        schema = json.loads(PACKAGE_SCHEMA.read_text())
+        population = self._definition(schema, "populationContract")["properties"]
+        self.assertEqual(
+            {
+                "tail_scheduled_for_base": population["tail_scheduled_for_base"]["const"],
+                "tail_scheduled_for_offset_seconds": population[
+                    "tail_scheduled_for_offset_seconds"
+                ]["const"],
+            },
+            {
+                "tail_scheduled_for_base": "START_SCHEDULED_FOR",
+                "tail_scheduled_for_offset_seconds": 7_776_000,
+            },
+        )
+
+    def test_schema_freezes_grouped_coverage_and_block_end_formulas(self):
+        """Catches formulas whose required addition grouping is ambiguous."""
+        schema = json.loads(PACKAGE_SCHEMA.read_text())
+        self.assertEqual(
+            self._definition(schema, "missingnessPolicy")["properties"]
+            ["observed_coverage_formula"]["const"],
+            "OBSERVED_DIVIDED_BY_(OBSERVED_PLUS_MISSED)_IN_EXACT_HALF_OPEN_WINDOW",
+        )
+        self.assertEqual(
+            self._definition(schema, "fixed15DayBlocks")["properties"]
+            ["end_formula"]["const"],
+            "START_SCHEDULED_FOR_PLUS_(N_PLUS_1)_TIMES_15_DAYS",
+        )
+
+    def test_schema_freezes_achieved_power_as_the_fraction_of_all_errors(self):
+        """Catches a count/Boolean result or a fraction with another denominator."""
+        schema = json.loads(PACKAGE_SCHEMA.read_text())
+        achieved_power = self._definition(
+            schema, "achievedPowerCalculation"
+        )["properties"]
+        self.assertEqual(
+            {
+                key: achieved_power[key]["const"]
+                for key in (
+                    "satisfying_error_aggregation", "result_formula",
+                    "result_denominator",
+                )
+            },
+            {
+                "satisfying_error_aggregation": (
+                    "COUNT_ALL_CENTERED_ERRORS_SATISFYING_COMPARISON"
+                ),
+                "result_formula": (
+                    "SATISFYING_ERROR_AGGREGATION_DIVIDED_BY_RESULT_DENOMINATOR"
+                ),
+                "result_denominator": 10_000,
+            },
+        )
 
     def test_decimal_grammar_matches_canonical_decimal_rendering(self):
         """Catches Decimal spellings that canonical_decimal would normalize or reject."""
@@ -435,6 +506,8 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 "start_identity_fields": ["opportunity_id", "event_hash", "scheduled_for", "observed_at", "plan_id", "plan_hash", "deployment_identity", "event_root_identity"],
                 "cadence_seconds": 14_400, "minimum_calendar_days": 90,
                 "start_scheduled_for_or_null": None, "tail_scheduled_for_or_null": None,
+                "tail_scheduled_for_base": "START_SCHEDULED_FOR",
+                "tail_scheduled_for_offset_seconds": 7_776_000,
                 "window_kind": "HALF_OPEN_SCHEDULED_FOR_START_INCLUSIVE_TAIL_EXCLUSIVE",
                 "terminal_outcomes": ["OBSERVED", "MISSED"],
                 "historical_backfill_allowed": False, "window_reset_allowed": False,
@@ -499,7 +572,7 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                     "length_days": 15,
                     "interval": "HALF_OPEN",
                     "start_formula": "START_SCHEDULED_FOR_PLUS_N_TIMES_15_DAYS",
-                    "end_formula": "START_SCHEDULED_FOR_PLUS_N_PLUS_1_TIMES_15_DAYS",
+                    "end_formula": "START_SCHEDULED_FOR_PLUS_(N_PLUS_1)_TIMES_15_DAYS",
                     "n_values": [0, 1, 2, 3, 4, 5],
                     "value_formula": "SUM_OF_DAILY_NET_RETURNS",
                     "nonnegative_operator": "GTE_ZERO",
@@ -531,7 +604,7 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 "flat_miss_funding_benefit_usdt": "0",
                 "charges_per_distinct_flat_missed_opportunity": 1,
                 "duplicate_flat_miss_charge_allowed": False,
-                "observed_coverage_formula": "OBSERVED_DIVIDED_BY_OBSERVED_PLUS_MISSED_IN_EXACT_HALF_OPEN_WINDOW",
+                "observed_coverage_formula": "OBSERVED_DIVIDED_BY_(OBSERVED_PLUS_MISSED)_IN_EXACT_HALF_OPEN_WINDOW",
                 "favorable_bound_selection_allowed": False,
             },
             "statistical_design": {
@@ -560,6 +633,13 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                     "comparison_left": "MINIMUM_ECONOMIC_EFFECT_DAILY_PLUS_CENTERED_ERROR",
                     "comparison_operator": "STRICT_GT_CRITICAL_VALUE",
                     "centered_error_count": 10_000,
+                    "satisfying_error_aggregation": (
+                        "COUNT_ALL_CENTERED_ERRORS_SATISFYING_COMPARISON"
+                    ),
+                    "result_formula": (
+                        "SATISFYING_ERROR_AGGREGATION_DIVIDED_BY_RESULT_DENOMINATOR"
+                    ),
+                    "result_denominator": 10_000,
                     "shortfall_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
                 },
                 "completed_cycle_counting": {
@@ -580,7 +660,7 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                     {
                         "priority": 1,
                         "when_any": [
-                            "INVALID_PLAN", "FOUNDATION_IDENTITY_MISMATCH",
+                            "INVALID_PLAN", "IDENTITY_MISMATCH",
                             "MALFORMED_EVENT", "DUPLICATE_AUTHORITY",
                             "MISSING_TAIL_PRE_ACTION_MARK", "UNREADABLE_EVIDENCE",
                         ],
@@ -746,7 +826,7 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 {
                     "priority": 1,
                     "when_any": [
-                        "INVALID_PLAN", "FOUNDATION_IDENTITY_MISMATCH",
+                        "INVALID_PLAN", "IDENTITY_MISMATCH",
                         "MALFORMED_EVENT", "DUPLICATE_AUTHORITY",
                         "MISSING_TAIL_PRE_ACTION_MARK", "UNREADABLE_EVIDENCE",
                     ],
@@ -793,6 +873,8 @@ class EconomicPlanBuilderTests(unittest.TestCase):
             {
                 key: plan["population_contract"][key]
                 for key in (
+                    "tail_scheduled_for_base",
+                    "tail_scheduled_for_offset_seconds",
                     "tail_pre_action_mark_source", "tail_action",
                     "untrusted_tail_mark_input_allowed",
                     "last_convenient_price_fallback_allowed",
@@ -800,6 +882,8 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 )
             },
             {
+                "tail_scheduled_for_base": "START_SCHEDULED_FOR",
+                "tail_scheduled_for_offset_seconds": 7_776_000,
                 "tail_pre_action_mark_source": "CANONICAL_SOURCE_AND_PRIOR_PROJECTION_AT_TAIL_SCHEDULED_FOR",
                 "tail_action": "NO_NEW_ENTRY_OR_REVERSAL",
                 "untrusted_tail_mark_input_allowed": False,
@@ -837,11 +921,19 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 "length_days": 15,
                 "interval": "HALF_OPEN",
                 "start_formula": "START_SCHEDULED_FOR_PLUS_N_TIMES_15_DAYS",
-                "end_formula": "START_SCHEDULED_FOR_PLUS_N_PLUS_1_TIMES_15_DAYS",
+                "end_formula": "START_SCHEDULED_FOR_PLUS_(N_PLUS_1)_TIMES_15_DAYS",
                 "n_values": [0, 1, 2, 3, 4, 5],
                 "value_formula": "SUM_OF_DAILY_NET_RETURNS",
                 "nonnegative_operator": "GTE_ZERO",
             },
+        )
+
+    def test_builder_freezes_the_grouped_fixed_block_end_formula(self):
+        """Catches treating the block end as start + n + (1 * 15 days)."""
+        self.assertEqual(
+            build_challenger_replacement_economic_plan()["economic_measurement"]
+            ["fixed_15_day_blocks"]["end_formula"],
+            "START_SCHEDULED_FOR_PLUS_(N_PLUS_1)_TIMES_15_DAYS",
         )
 
     def test_builder_freezes_flat_miss_failure_and_counting_rules(self):
@@ -874,7 +966,7 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 "flat_miss_funding_benefit_usdt": "0",
                 "charges_per_distinct_flat_missed_opportunity": 1,
                 "duplicate_flat_miss_charge_allowed": False,
-                "observed_coverage_formula": "OBSERVED_DIVIDED_BY_OBSERVED_PLUS_MISSED_IN_EXACT_HALF_OPEN_WINDOW",
+                "observed_coverage_formula": "OBSERVED_DIVIDED_BY_(OBSERVED_PLUS_MISSED)_IN_EXACT_HALF_OPEN_WINDOW",
                 "favorable_bound_selection_allowed": False,
             },
         )
@@ -891,6 +983,13 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 "comparison_left": "MINIMUM_ECONOMIC_EFFECT_DAILY_PLUS_CENTERED_ERROR",
                 "comparison_operator": "STRICT_GT_CRITICAL_VALUE",
                 "centered_error_count": 10_000,
+                "satisfying_error_aggregation": (
+                    "COUNT_ALL_CENTERED_ERRORS_SATISFYING_COMPARISON"
+                ),
+                "result_formula": (
+                    "SATISFYING_ERROR_AGGREGATION_DIVIDED_BY_RESULT_DENOMINATOR"
+                ),
+                "result_denominator": 10_000,
                 "shortfall_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
             },
         )
