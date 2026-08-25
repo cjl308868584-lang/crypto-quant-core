@@ -326,7 +326,7 @@ def load_challenger_replacement_economic_plan(path: Path) -> Dict[str, Any]:
 
     try:
         plan_path = Path(path)
-    except (TypeError, ValueError) as error:
+    except (OSError, TypeError, ValueError, RecursionError) as error:
         raise ChallengerReplacementEconomicPlanError(
             "CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_PATH_INVALID"
         ) from error

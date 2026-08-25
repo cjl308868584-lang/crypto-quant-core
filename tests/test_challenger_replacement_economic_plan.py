@@ -331,6 +331,24 @@ class EconomicPlanLoaderTests(_EconomicPlanFileTests):
         ):
             load_challenger_replacement_economic_plan(Path("plan.json"))
 
+    def test_loader_reduces_raising_pathlike_conversion_failures(self):
+        """Catches raw path-protocol exceptions leaking past the public boundary."""
+
+        class RaisingPathLike(os.PathLike):
+            def __init__(self, error):
+                self.error = error
+
+            def __fspath__(self):
+                raise self.error
+
+        for error in (OSError("path conversion failed"), RecursionError("loop")):
+            with self.subTest(error=type(error).__name__):
+                with self.assertRaisesRegex(
+                    ChallengerReplacementEconomicPlanError,
+                    "CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_PATH_INVALID",
+                ):
+                    load_challenger_replacement_economic_plan(RaisingPathLike(error))
+
     def test_loader_reduces_strict_json_and_byte_failures_to_public_codes(self):
         """Catches permissive JSON or noncanonical byte acceptance."""
         cases = (
