@@ -1,7 +1,7 @@
 # Replacement v3 90-Day Economic Preregistration Design
 
-**Status:** Approved design; plan-only implementation not yet started  
-**Target release:** v0.74.0  
+**Status:** Approved design; plan-only implementation not yet started
+**Target release:** v0.74.0
 **Authority:** v0.69 replacement-v3 governance and the exact v0.73.0 release
 
 ## 1. Purpose

@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 
 import crypto_quant.challenger_replacement_economic_plan as economic_plan
 import crypto_quant.build as build
@@ -30,10 +31,21 @@ ARTIFACT_PATH = ROOT / (
     "artifacts/challenger-replacement/"
     "challenger-replacement-economic-evaluation-plan-v0.74.0.json"
 )
-ARTIFACT_SHA256 = "8374e304e573e45addcad2140c0c43e7496e6200047d77192ca184b8f510e22a"
+ARTIFACT_SHA256 = "726baaab76f3288c0a440af26837facdfa1eeb5dbc253bb3fff8588a47824fc4"
+PLAN_ID = "challenger_replacement_economic_evaluation_plan_a90f161b660ea1bda73d57a0a72137d26970c501f518823e6745504c85a0f9e6"
+PLAN_HASH = "5f56c414435839e8061de075835811825eae9a6944def0513a6bd88fd3a82a57"
+POLICY_HASHES = {
+    "population_contract": "194e70e9ce94bcdc6258420ef85eedaaa74cf8e25762bc9f0560ecaafbcde72d",
+    "economic_measurement": "4b7adf2489c8c6ff2b8833c4bc3e9059c4a21689810c3e0c826a04d7d3ae9b7a",
+    "missingness_policy": "2012a16f944fb39cd878e0a830b33088d314843545027510a7ec50b99aebab68",
+    "statistical_design": "7eeb0efa46faaeaefd9afdd56254beea28a17f9f3f3bd1840d1852fa9f317e02",
+    "final_state_machine": "276ff184fbc9b8e96959eba55e3432864e2d0b2bb4b58293acee291313901e48",
+    "interim_policy": "6d9e542b5880b6fa1a6085a2c369efd81db44ba261ca082c913afaf8b023308d",
+}
 FROZEN_PREDECESSOR_PATHS = (
     ROOT / "artifacts/challenger-replacement/challenger-replacement-plan-v0.69.0.json",
     ROOT / "artifacts/challenger-replacement/challenger-replacement-v3-owner-attestation-v0.69.0.json",
+    ROOT / "src/crypto_quant/schemas/challenger-replacement-opportunity-result-evidence-v2.schema.json",
     ROOT / "artifacts/challenger-replacement/challenger-replacement-binance-simulation-contract-v0.71.0.json",
     ROOT / "artifacts/challenger-replacement/challenger-replacement-binance-golden-fixture-manifest-v0.72.0.json",
     ROOT / "config/evaluator-build-manifest-v1.json",
@@ -79,6 +91,7 @@ AUTHORITY_CONSTS = {
     "production_state_writes": 0,
     "economic_outcome_reads": 0,
 }
+SCHEMA_INVALID_REASON = "CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_SCHEMA_INVALID"
 V074_INVENTORY_PATHS = {
     "src/crypto_quant/challenger_replacement_economic_plan.py",
     "src/crypto_quant/schemas/challenger-replacement-economic-evaluation-plan-v1.schema.json",
@@ -108,6 +121,33 @@ FORBIDDEN_IMPORTS = {
     "runner", "observer", "dashboard", "opportunity_events",
     "opportunity_projection", "simulation", "lifecycle",
 }
+
+
+def _packaged_schema_failure(error):
+    if isinstance(error, SchemaError):
+        return mock.patch.object(
+            economic_plan.Draft202012Validator,
+            "check_schema",
+            side_effect=error,
+        )
+
+    class RaisingSchemaResource:
+        def read_text(self, *, encoding):
+            if encoding != "utf-8":
+                raise AssertionError("unexpected Schema encoding")
+            raise error
+
+    class SchemaPackage:
+        def joinpath(self, *parts):
+            if parts != ("schemas", economic_plan._SCHEMA):
+                raise AssertionError(f"unexpected Schema path: {parts!r}")
+            return RaisingSchemaResource()
+
+    return mock.patch.object(
+        economic_plan.resources,
+        "files",
+        return_value=SchemaPackage(),
+    )
 
 
 class EconomicPlanSchemaTests(unittest.TestCase):
@@ -154,6 +194,118 @@ class EconomicPlanSchemaTests(unittest.TestCase):
             TERMINAL_OUTCOMES,
         )
 
+    def test_schema_requires_the_ordered_final_result_reducer(self):
+        """Catches a Schema that admits reordered or incomplete decision rules."""
+        schema = json.loads(PACKAGE_SCHEMA.read_text())
+        state_machine = self._definition(schema, "finalStateMachine")
+        self.assertIn("decision_rules", state_machine["required"])
+        rules = state_machine["properties"]["decision_rules"]
+        self.assertEqual((rules["minItems"], rules["maxItems"]), (4, 4))
+        self.assertIs(rules["items"], False)
+        self.assertEqual(
+            [item["properties"]["priority"]["const"] for item in rules["prefixItems"]],
+            [1, 2, 3, 4],
+        )
+        self.assertEqual(
+            [item["properties"]["result"]["const"] for item in rules["prefixItems"]],
+            [
+                "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+                "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                "RESEARCH_CONTINUATION_GATE_PASS",
+            ],
+        )
+
+    def test_schema_requires_every_new_computation_contract_key(self):
+        """Catches an optional or permissive tail, economic, sample, or miss rule."""
+        schema = json.loads(PACKAGE_SCHEMA.read_text())
+        expected_required = {
+            "populationContract": {
+                "tail_pre_action_mark_source", "tail_action",
+                "untrusted_tail_mark_input_allowed",
+                "last_convenient_price_fallback_allowed",
+                "missing_tail_mark_result",
+            },
+            "economicMeasurement": {
+                "slippage_treatment", "marked_equity_calculation",
+                "daily_boundary_construction", "daily_return_calculation",
+                "maximum_drawdown_calculation", "stress_replay",
+                "fixed_15_day_blocks",
+            },
+            "missingnessPolicy": {
+                "confirmed_failure_boundaries", "confirmed_failure_result",
+                "confirmed_failure_imputation_allowed",
+                "confirmed_failure_repair_allowed", "flat_miss_included_in_population",
+                "flat_miss_history_alteration_allowed", "flat_miss_notional_formula",
+                "flat_miss_loss_rate_formula", "taker_fee_rate_selection",
+                "flat_miss_funding_benefit_usdt",
+                "charges_per_distinct_flat_missed_opportunity",
+                "duplicate_flat_miss_charge_allowed", "observed_coverage_formula",
+                "favorable_bound_selection_allowed",
+            },
+            "statisticalDesign": {
+                "multiple_testing_adjustment", "resample_construction",
+                "achieved_power_calculation", "completed_cycle_counting",
+                "sample_gate_shortfall_result", "window_extension_allowed",
+                "post_tail_evidence_changes_population",
+            },
+        }
+        for definition_name, required in expected_required.items():
+            with self.subTest(definition=definition_name):
+                definition = self._definition(schema, definition_name)
+                self.assertTrue(required.issubset(definition["required"]))
+                self.assertTrue(required.issubset(definition["properties"]))
+
+        nested_required = {
+            "markedEquityCalculation": {
+                "cash_coefficient", "conservative_marked_position_value_coefficient",
+                "all_accrued_fees_coefficient",
+                "signed_funding_cashflow_coefficient",
+                "accounting_semantics_source",
+            },
+            "dailyBoundaryConstruction": {
+                "kind", "offset_formula", "k_minimum", "k_maximum",
+            },
+            "dailyReturnCalculation": {
+                "numerator", "fixed_capital_denominator_usdt",
+                "intermediate_rounding_allowed", "canonical_output_encoder",
+                "compounded", "annualized",
+            },
+            "maximumDrawdownCalculation": {
+                "peak_source", "formula", "nonpositive_equity_result",
+            },
+            "stressReplay": {
+                "nonnegative_fee_multiplier", "adverse_slippage_multiplier",
+                "negative_funding_cashflow_multiplier",
+                "positive_funding_benefit_multiplier", "unchanged_components",
+                "unreconstructable_cost_result", "zero_cost_substitution_allowed",
+            },
+            "fixed15DayBlocks": {
+                "count", "length_days", "interval", "start_formula", "end_formula",
+                "n_values", "value_formula", "nonnegative_operator",
+            },
+            "resampleConstruction": {
+                "block_selection", "within_block_order", "concatenation",
+                "truncation_length", "lower_bound", "language_prng_allowed",
+            },
+            "achievedPowerCalculation": {
+                "minimum_economic_effect_is_alternate_pass_threshold",
+                "centered_error_formula", "critical_value", "comparison_left",
+                "comparison_operator", "centered_error_count", "shortfall_result",
+            },
+            "completedCycleCounting": {
+                "begins", "ends", "partial_fills_belong_to_matching_cycle",
+                "partial_fills_create_additional_cycles",
+                "retries_create_additional_cycles",
+                "duplicate_observations_create_additional_cycles",
+            },
+        }
+        for definition_name, required in nested_required.items():
+            with self.subTest(definition=definition_name):
+                definition = self._definition(schema, definition_name)
+                self.assertEqual(set(definition["required"]), required)
+                self.assertEqual(set(definition["properties"]), required)
+
     def test_decimal_grammar_matches_canonical_decimal_rendering(self):
         """Catches Decimal spellings that canonical_decimal would normalize or reject."""
         schema = json.loads(PACKAGE_SCHEMA.read_text())
@@ -190,6 +342,48 @@ class EconomicPlanSchemaTests(unittest.TestCase):
             AUTHORITY_CONSTS,
         )
 
+    def test_foundation_uses_separate_exact_key_identity_schemas(self):
+        """Catches a generic identity Schema that admits incomplete foundations."""
+        schema = json.loads(PACKAGE_SCHEMA.read_text())
+        foundation = self._definition(schema, "foundation")
+        expected = {
+            "v069_plan": ("v069PlanIdentity", {"file_sha256", "plan_id", "plan_hash"}),
+            "v069_owner_attestation": (
+                "v069OwnerAttestationIdentity",
+                {"file_sha256", "attestation_id", "attestation_hash"},
+            ),
+            "v070_result_evidence_schema": (
+                "v070ResultEvidenceSchemaIdentity",
+                {"file_sha256"},
+            ),
+            "v071_simulation_contract": (
+                "v071SimulationContractIdentity",
+                {"file_sha256", "contract_id", "contract_hash"},
+            ),
+            "v072_golden_manifest": (
+                "v072GoldenManifestIdentity",
+                {"file_sha256", "manifest_id", "manifest_hash"},
+            ),
+            "v073_release": (
+                "v073ReleaseIdentity",
+                {
+                    "release_tag", "peeled_commit", "package_version",
+                    "manifest_version", "manifest_hash", "tree_hash",
+                    "file_sha256",
+                },
+            ),
+        }
+        for member, (definition_name, keys) in expected.items():
+            with self.subTest(member=member):
+                self.assertEqual(
+                    foundation["properties"][member],
+                    {"$ref": f"#/$defs/{definition_name}"},
+                )
+                definition = self._definition(schema, definition_name)
+                self.assertIs(definition["additionalProperties"], False)
+                self.assertEqual(set(definition["required"]), keys)
+                self.assertEqual(set(definition["properties"]), keys)
+
 
 class EconomicPlanBuilderTests(unittest.TestCase):
     """Behavioral contract for the parameterless preregistration builder."""
@@ -208,18 +402,27 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 },
                 "v069_owner_attestation": {
                     "file_sha256": "b1ec38575b2e4f2b93b9f4838aa04633f382b60aef65843e4812d9b5c799b9c7",
+                    "attestation_id": "challenger_replacement_v3_owner_attestation_18626ea8f79c90f5924b50317635ce07c1c933879de42463f0e79095fb8e4388",
+                    "attestation_hash": "99d99968eb5aa12bad064864d02aac4f37248a0fafb36d633c8c18315206fb21",
                 },
                 "v070_result_evidence_schema": {
                     "file_sha256": "755f4e049da22ab4300ce5ed68b73c0d9462581792b7b3955fff1712f6ca6dca",
                 },
                 "v071_simulation_contract": {
                     "file_sha256": "65a0af1cccee5ad60aeaa7b0266bb217fab680d866ea3191ca77d214a292d86f",
+                    "contract_id": "challenger_replacement_simulation_contract_c95cee71f23e58cf40bc4739e5063824de1a77fd5c6fcc72794ff42e1f84f791",
+                    "contract_hash": "b21beb877101590aabcc65927539d58eb001c4dc5de89ead0306ac840450f501",
                 },
                 "v072_golden_manifest": {
                     "file_sha256": "c86993a5d56805eee3b703301f92d704cf0e7dacd06d4725a7ad9c3c16dd2b5f",
+                    "manifest_id": "challenger_replacement_binance_golden_fixture_manifest_b2ce1d97bd41c812a5f58907602519da7df8d4543e33298389f0e5232e5c1821",
+                    "manifest_hash": "6977acff468689aeba64f1d814842c77ffa394f28bf686fdc82d02f5b61efbb4",
                 },
                 "v073_release": {
+                    "release_tag": "v0.73.0",
                     "peeled_commit": "34bd0e9ba96c769b7301c482730a03fb975c24ce",
+                    "package_version": "0.73.0",
+                    "manifest_version": "1.67.0",
                     "manifest_hash": "0117d3a17bdea7e2a22004d675175083e9d863722c6c176632d29e3c4c6e62d0",
                     "tree_hash": "569afbae2352932a05a6c5daeb1c52049c9a3ec74034d666664579aa2bd0a97e",
                     "file_sha256": "c41a46442993bac947773d383f722dfbaa358417ba67e87bf1e81db37c5e1c74",
@@ -236,6 +439,11 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 "terminal_outcomes": ["OBSERVED", "MISSED"],
                 "historical_backfill_allowed": False, "window_reset_allowed": False,
                 "alternate_start_allowed": False, "tail_pre_action_mark_required": True,
+                "tail_pre_action_mark_source": "CANONICAL_SOURCE_AND_PRIOR_PROJECTION_AT_TAIL_SCHEDULED_FOR",
+                "tail_action": "NO_NEW_ENTRY_OR_REVERSAL",
+                "untrusted_tail_mark_input_allowed": False,
+                "last_convenient_price_fallback_allowed": False,
+                "missing_tail_mark_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
             },
             "economic_measurement": {
                 "starting_virtual_equity_usdt": "100", "capital_limit_usdt": "100",
@@ -247,6 +455,55 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 "spot_mark": "CONSERVATIVE_BID_MARK",
                 "perpetual_mark": "CANONICAL_MARK_PRICE_AND_CONTRACT_MULTIPLIER",
                 "fee_treatment": "ACCRUED_ONCE_ONLY", "funding_treatment": "SIGNED_CASHFLOW_ONCE_ONLY",
+                "slippage_treatment": "ADVERSE_COST_INCLUDED_ONCE_ONLY",
+                "marked_equity_calculation": {
+                    "cash_coefficient": "1",
+                    "conservative_marked_position_value_coefficient": "1",
+                    "all_accrued_fees_coefficient": "-1",
+                    "signed_funding_cashflow_coefficient": "1",
+                    "accounting_semantics_source": "V071_SIMULATION_CONTRACT_ACCOUNTING",
+                },
+                "daily_boundary_construction": {
+                    "kind": "PRE_ACTION_UTC_ALIGNED",
+                    "offset_formula": "START_SCHEDULED_FOR_PLUS_K_TIMES_86400_SECONDS",
+                    "k_minimum": 0,
+                    "k_maximum": 90,
+                },
+                "daily_return_calculation": {
+                    "numerator": "BOUNDARY_EQUITY_K_MINUS_BOUNDARY_EQUITY_K_MINUS_1",
+                    "fixed_capital_denominator_usdt": "100",
+                    "intermediate_rounding_allowed": False,
+                    "canonical_output_encoder": "REPOSITORY_DECIMAL_ENCODER",
+                    "compounded": False,
+                    "annualized": False,
+                },
+                "maximum_drawdown_calculation": {
+                    "peak_source": "CONTINUOUS_HIGH_WATER_MARKED_EQUITY",
+                    "formula": "(PEAK_MINUS_CURRENT)_DIVIDED_BY_PEAK",
+                    "nonpositive_equity_result": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+                },
+                "stress_replay": {
+                    "nonnegative_fee_multiplier": "1.5",
+                    "adverse_slippage_multiplier": "1.5",
+                    "negative_funding_cashflow_multiplier": "1.5",
+                    "positive_funding_benefit_multiplier": "0.5",
+                    "unchanged_components": [
+                        "GROSS_MARKET_MOVEMENT", "QUANTITIES",
+                        "PRODUCT_SELECTION", "EVENT_ORDER",
+                    ],
+                    "unreconstructable_cost_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                    "zero_cost_substitution_allowed": False,
+                },
+                "fixed_15_day_blocks": {
+                    "count": 6,
+                    "length_days": 15,
+                    "interval": "HALF_OPEN",
+                    "start_formula": "START_SCHEDULED_FOR_PLUS_N_TIMES_15_DAYS",
+                    "end_formula": "START_SCHEDULED_FOR_PLUS_N_PLUS_1_TIMES_15_DAYS",
+                    "n_values": [0, 1, 2, 3, 4, 5],
+                    "value_formula": "SUM_OF_DAILY_NET_RETURNS",
+                    "nonnegative_operator": "GTE_ZERO",
+                },
             },
             "missingness_policy": {
                 "observed_coverage_minimum": "0.95", "terminal_coverage_required": "1",
@@ -258,6 +515,24 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 "flat_miss_loss_rate": "0.025", "flat_miss_loss_usdt": "1.25",
                 "pass_requires_both_bounds": True,
                 "disagreement_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                "confirmed_failure_boundaries": [
+                    "EXPOSED_MISSED", "UNRESOLVED_POSITION", "ECONOMIC_GAP_LOCK",
+                    "UNRECORDED_FILL", "DUPLICATE_ECONOMIC_ORDER",
+                    "RECONCILIATION_FAILURE",
+                ],
+                "confirmed_failure_result": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+                "confirmed_failure_imputation_allowed": False,
+                "confirmed_failure_repair_allowed": False,
+                "flat_miss_included_in_population": True,
+                "flat_miss_history_alteration_allowed": False,
+                "flat_miss_notional_formula": "STARTING_VIRTUAL_EQUITY_USDT_TIMES_GROSS_EXPOSURE_LIMIT",
+                "flat_miss_loss_rate_formula": "PROTECTIVE_STOP_DISTANCE_PLUS_2_TIMES_MARKET_SLIPPAGE_PER_SIDE_PLUS_2_TIMES_MAX_FROZEN_TAKER_FEE_PER_SIDE",
+                "taker_fee_rate_selection": "MAX_FROZEN_SPOT_AND_PERPETUAL_TAKER_RATE",
+                "flat_miss_funding_benefit_usdt": "0",
+                "charges_per_distinct_flat_missed_opportunity": 1,
+                "duplicate_flat_miss_charge_allowed": False,
+                "observed_coverage_formula": "OBSERVED_DIVIDED_BY_OBSERVED_PLUS_MISSED_IN_EXACT_HALF_OPEN_WINDOW",
+                "favorable_bound_selection_allowed": False,
             },
             "statistical_design": {
                 "primary_null": "MEAN_DAILY_NET_RETURN_LTE_ZERO",
@@ -269,9 +544,80 @@ class EconomicPlanBuilderTests(unittest.TestCase):
                 "primary_endpoint": "MEAN_DAILY_NET_RETURN_LCB95",
                 "minimum_economic_effect_daily": "0.0005",
                 "power_method": "CENTERED_BOOTSTRAP_CRITICAL_VALUE_ACHIEVED_POWER",
+                "multiple_testing_adjustment": "NONE_SINGLE_PRIMARY_HYPOTHESIS",
+                "resample_construction": {
+                    "block_selection": "UNIFORM_OVERLAPPING_SEVEN_DAY_BLOCKS",
+                    "within_block_order": "ORIGINAL",
+                    "concatenation": "CONCATENATE_SELECTED_BLOCKS",
+                    "truncation_length": 90,
+                    "lower_bound": "CONSERVATIVE_NEAREST_RANK_5TH_PERCENTILE_OF_10000_RESAMPLED_MEANS",
+                    "language_prng_allowed": False,
+                },
+                "achieved_power_calculation": {
+                    "minimum_economic_effect_is_alternate_pass_threshold": False,
+                    "centered_error_formula": "BOOTSTRAP_MEAN_MINUS_OBSERVED_SAMPLE_MEAN",
+                    "critical_value": "CONSERVATIVE_NEAREST_RANK_95TH_PERCENTILE_OF_CENTERED_ERRORS",
+                    "comparison_left": "MINIMUM_ECONOMIC_EFFECT_DAILY_PLUS_CENTERED_ERROR",
+                    "comparison_operator": "STRICT_GT_CRITICAL_VALUE",
+                    "centered_error_count": 10_000,
+                    "shortfall_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                },
+                "completed_cycle_counting": {
+                    "begins": "VERIFIED_FLAT_TO_EXPOSED_TRANSITION",
+                    "ends": "MATCHING_VERIFIED_EXPOSED_TO_FLAT_TRANSITION",
+                    "partial_fills_belong_to_matching_cycle": True,
+                    "partial_fills_create_additional_cycles": False,
+                    "retries_create_additional_cycles": False,
+                    "duplicate_observations_create_additional_cycles": False,
+                },
+                "sample_gate_shortfall_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                "window_extension_allowed": False,
+                "post_tail_evidence_changes_population": False,
             },
             "final_state_machine": {
                 "terminal_outcomes": TERMINAL_OUTCOMES,
+                "decision_rules": [
+                    {
+                        "priority": 1,
+                        "when_any": [
+                            "INVALID_PLAN", "FOUNDATION_IDENTITY_MISMATCH",
+                            "MALFORMED_EVENT", "DUPLICATE_AUTHORITY",
+                            "MISSING_TAIL_PRE_ACTION_MARK", "UNREADABLE_EVIDENCE",
+                        ],
+                        "result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                        "research_continuation_discussion_eligible": False,
+                    },
+                    {
+                        "priority": 2,
+                        "when_any": [
+                            "CONFIRMED_SAFETY_OR_RISK_BOUNDARY", "EXPOSED_MISSED",
+                            "ECONOMIC_GAP_LOCK", "NONPOSITIVE_EQUITY",
+                            "TRUSTED_SUFFICIENT_EVIDENCE_FAILS_ANY_ECONOMIC_GATE",
+                        ],
+                        "result": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+                        "research_continuation_discussion_eligible": False,
+                    },
+                    {
+                        "priority": 3,
+                        "when_any": [
+                            "TRUSTED_EVIDENCE_FAILS_ANY_SAMPLE_GATE",
+                            "OPTIMISTIC_PESSIMISTIC_FLAT_MISS_BOUND_DISAGREEMENT",
+                        ],
+                        "result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                        "research_continuation_discussion_eligible": False,
+                    },
+                    {
+                        "priority": 4,
+                        "when_all": [
+                            "TRUSTED_EVIDENCE", "SUFFICIENT_EVIDENCE",
+                            "ALL_SAMPLE_GATES_PASS",
+                            "ALL_ECONOMIC_GATES_PASS_UNDER_OPTIMISTIC_FLAT_MISS_BOUND",
+                            "ALL_ECONOMIC_GATES_PASS_UNDER_PESSIMISTIC_FLAT_MISS_BOUND",
+                        ],
+                        "result": "RESEARCH_CONTINUATION_GATE_PASS",
+                        "research_continuation_discussion_eligible": True,
+                    },
+                ],
                 "first_final_artifact_immutable": True, "rerun_allowed": False,
                 "threshold_override_allowed": False, "sample_deletion_allowed": False,
                 "alternate_seed_allowed": False, "alternate_start_allowed": False,
@@ -330,6 +676,236 @@ class EconomicPlanBuilderTests(unittest.TestCase):
         self.assertNotIn("result", plan)
         self.assertNotIn("observations", plan)
 
+    def test_builder_foundation_matches_immutable_checked_in_sources(self):
+        """Catches guessed or stale object identities despite plausible file names."""
+        foundation = build_challenger_replacement_economic_plan()["foundation"]
+        source_expectations = (
+            (
+                FROZEN_PREDECESSOR_PATHS[0], "v069_plan",
+                {"plan_id": "plan_id", "plan_hash": "plan_hash"},
+            ),
+            (
+                FROZEN_PREDECESSOR_PATHS[1], "v069_owner_attestation",
+                {"attestation_id": "attestation_id", "attestation_hash": "attestation_hash"},
+            ),
+            (
+                FROZEN_PREDECESSOR_PATHS[3], "v071_simulation_contract",
+                {"contract_id": "contract_id", "contract_hash": "contract_hash"},
+            ),
+            (
+                FROZEN_PREDECESSOR_PATHS[4], "v072_golden_manifest",
+                {"manifest_id": "manifest_id", "manifest_hash": "manifest_hash"},
+            ),
+        )
+        for path, member, source_fields in source_expectations:
+            with self.subTest(member=member):
+                body = path.read_bytes()
+                source = json.loads(body)
+                self.assertEqual(
+                    hashlib.sha256(body).hexdigest(),
+                    foundation[member]["file_sha256"],
+                )
+                for source_field, identity_field in source_fields.items():
+                    self.assertEqual(
+                        source[source_field], foundation[member][identity_field]
+                    )
+
+        v070_body = FROZEN_PREDECESSOR_PATHS[2].read_bytes()
+        self.assertEqual(
+            hashlib.sha256(v070_body).hexdigest(),
+            foundation["v070_result_evidence_schema"]["file_sha256"],
+        )
+        manifest_body = FROZEN_PREDECESSOR_PATHS[5].read_bytes()
+        manifest = json.loads(manifest_body)
+        self.assertEqual(
+            hashlib.sha256(manifest_body).hexdigest(),
+            foundation["v073_release"]["file_sha256"],
+        )
+        self.assertEqual(
+            {
+                "package_version": manifest["package_version"],
+                "manifest_version": manifest["manifest_version"],
+                "manifest_hash": manifest["manifest_hash"],
+                "tree_hash": manifest["build_input_tree_hash"],
+            },
+            {
+                key: foundation["v073_release"][key]
+                for key in (
+                    "package_version", "manifest_version", "manifest_hash",
+                    "tree_hash",
+                )
+            },
+        )
+
+    def test_builder_freezes_the_ordered_final_result_reducer(self):
+        """Catches a changed precedence, condition class, or terminal result."""
+        self.assertEqual(
+            build_challenger_replacement_economic_plan()["final_state_machine"]
+            ["decision_rules"],
+            [
+                {
+                    "priority": 1,
+                    "when_any": [
+                        "INVALID_PLAN", "FOUNDATION_IDENTITY_MISMATCH",
+                        "MALFORMED_EVENT", "DUPLICATE_AUTHORITY",
+                        "MISSING_TAIL_PRE_ACTION_MARK", "UNREADABLE_EVIDENCE",
+                    ],
+                    "result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                    "research_continuation_discussion_eligible": False,
+                },
+                {
+                    "priority": 2,
+                    "when_any": [
+                        "CONFIRMED_SAFETY_OR_RISK_BOUNDARY", "EXPOSED_MISSED",
+                        "ECONOMIC_GAP_LOCK", "NONPOSITIVE_EQUITY",
+                        "TRUSTED_SUFFICIENT_EVIDENCE_FAILS_ANY_ECONOMIC_GATE",
+                    ],
+                    "result": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+                    "research_continuation_discussion_eligible": False,
+                },
+                {
+                    "priority": 3,
+                    "when_any": [
+                        "TRUSTED_EVIDENCE_FAILS_ANY_SAMPLE_GATE",
+                        "OPTIMISTIC_PESSIMISTIC_FLAT_MISS_BOUND_DISAGREEMENT",
+                    ],
+                    "result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                    "research_continuation_discussion_eligible": False,
+                },
+                {
+                    "priority": 4,
+                    "when_all": [
+                        "TRUSTED_EVIDENCE", "SUFFICIENT_EVIDENCE",
+                        "ALL_SAMPLE_GATES_PASS",
+                        "ALL_ECONOMIC_GATES_PASS_UNDER_OPTIMISTIC_FLAT_MISS_BOUND",
+                        "ALL_ECONOMIC_GATES_PASS_UNDER_PESSIMISTIC_FLAT_MISS_BOUND",
+                    ],
+                    "result": "RESEARCH_CONTINUATION_GATE_PASS",
+                    "research_continuation_discussion_eligible": True,
+                },
+            ],
+        )
+
+    def test_builder_freezes_tail_and_economic_gate_calculations(self):
+        """Catches omitted tail-mark, drawdown, stress, or fixed-block semantics."""
+        plan = build_challenger_replacement_economic_plan()
+        self.assertEqual(
+            {
+                key: plan["population_contract"][key]
+                for key in (
+                    "tail_pre_action_mark_source", "tail_action",
+                    "untrusted_tail_mark_input_allowed",
+                    "last_convenient_price_fallback_allowed",
+                    "missing_tail_mark_result",
+                )
+            },
+            {
+                "tail_pre_action_mark_source": "CANONICAL_SOURCE_AND_PRIOR_PROJECTION_AT_TAIL_SCHEDULED_FOR",
+                "tail_action": "NO_NEW_ENTRY_OR_REVERSAL",
+                "untrusted_tail_mark_input_allowed": False,
+                "last_convenient_price_fallback_allowed": False,
+                "missing_tail_mark_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+            },
+        )
+        self.assertEqual(
+            plan["economic_measurement"]["maximum_drawdown_calculation"],
+            {
+                "peak_source": "CONTINUOUS_HIGH_WATER_MARKED_EQUITY",
+                "formula": "(PEAK_MINUS_CURRENT)_DIVIDED_BY_PEAK",
+                "nonpositive_equity_result": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+            },
+        )
+        self.assertEqual(
+            plan["economic_measurement"]["stress_replay"],
+            {
+                "nonnegative_fee_multiplier": "1.5",
+                "adverse_slippage_multiplier": "1.5",
+                "negative_funding_cashflow_multiplier": "1.5",
+                "positive_funding_benefit_multiplier": "0.5",
+                "unchanged_components": [
+                    "GROSS_MARKET_MOVEMENT", "QUANTITIES",
+                    "PRODUCT_SELECTION", "EVENT_ORDER",
+                ],
+                "unreconstructable_cost_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                "zero_cost_substitution_allowed": False,
+            },
+        )
+        self.assertEqual(
+            plan["economic_measurement"]["fixed_15_day_blocks"],
+            {
+                "count": 6,
+                "length_days": 15,
+                "interval": "HALF_OPEN",
+                "start_formula": "START_SCHEDULED_FOR_PLUS_N_TIMES_15_DAYS",
+                "end_formula": "START_SCHEDULED_FOR_PLUS_N_PLUS_1_TIMES_15_DAYS",
+                "n_values": [0, 1, 2, 3, 4, 5],
+                "value_formula": "SUM_OF_DAILY_NET_RETURNS",
+                "nonnegative_operator": "GTE_ZERO",
+            },
+        )
+
+    def test_builder_freezes_flat_miss_failure_and_counting_rules(self):
+        """Catches omitted failure, greater-fee, zero-funding, or charge-once rules."""
+        missingness = build_challenger_replacement_economic_plan()[
+            "missingness_policy"
+        ]
+        self.assertEqual(
+            missingness["confirmed_failure_boundaries"],
+            [
+                "EXPOSED_MISSED", "UNRESOLVED_POSITION", "ECONOMIC_GAP_LOCK",
+                "UNRECORDED_FILL", "DUPLICATE_ECONOMIC_ORDER",
+                "RECONCILIATION_FAILURE",
+            ],
+        )
+        self.assertEqual(
+            {
+                key: missingness[key]
+                for key in (
+                    "taker_fee_rate_selection",
+                    "flat_miss_funding_benefit_usdt",
+                    "charges_per_distinct_flat_missed_opportunity",
+                    "duplicate_flat_miss_charge_allowed",
+                    "observed_coverage_formula",
+                    "favorable_bound_selection_allowed",
+                )
+            },
+            {
+                "taker_fee_rate_selection": "MAX_FROZEN_SPOT_AND_PERPETUAL_TAKER_RATE",
+                "flat_miss_funding_benefit_usdt": "0",
+                "charges_per_distinct_flat_missed_opportunity": 1,
+                "duplicate_flat_miss_charge_allowed": False,
+                "observed_coverage_formula": "OBSERVED_DIVIDED_BY_OBSERVED_PLUS_MISSED_IN_EXACT_HALF_OPEN_WINDOW",
+                "favorable_bound_selection_allowed": False,
+            },
+        )
+
+    def test_builder_freezes_bootstrap_power_and_cycle_counting_rules(self):
+        """Catches altered centering, rank, strict comparison, or cycle counts."""
+        design = build_challenger_replacement_economic_plan()["statistical_design"]
+        self.assertEqual(
+            design["achieved_power_calculation"],
+            {
+                "minimum_economic_effect_is_alternate_pass_threshold": False,
+                "centered_error_formula": "BOOTSTRAP_MEAN_MINUS_OBSERVED_SAMPLE_MEAN",
+                "critical_value": "CONSERVATIVE_NEAREST_RANK_95TH_PERCENTILE_OF_CENTERED_ERRORS",
+                "comparison_left": "MINIMUM_ECONOMIC_EFFECT_DAILY_PLUS_CENTERED_ERROR",
+                "comparison_operator": "STRICT_GT_CRITICAL_VALUE",
+                "centered_error_count": 10_000,
+                "shortfall_result": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+            },
+        )
+        self.assertEqual(
+            design["completed_cycle_counting"],
+            {
+                "begins": "VERIFIED_FLAT_TO_EXPOSED_TRANSITION",
+                "ends": "MATCHING_VERIFIED_EXPOSED_TO_FLAT_TRANSITION",
+                "partial_fills_belong_to_matching_cycle": True,
+                "partial_fills_create_additional_cycles": False,
+                "retries_create_additional_cycles": False,
+                "duplicate_observations_create_additional_cycles": False,
+            },
+        )
+
     def test_builder_returns_a_valid_independent_plan(self):
         """Catches an invalid artifact, broken self-hash, or leaked mutation."""
         first = build_challenger_replacement_economic_plan()
@@ -340,6 +916,25 @@ class EconomicPlanBuilderTests(unittest.TestCase):
             build_challenger_replacement_economic_plan()["authority"]["market_requests"],
             0,
         )
+
+    def test_builder_reduces_packaged_schema_failures_to_a_public_error(self):
+        """Catches raw Schema I/O, construction, or recursion errors from builder."""
+        for error in (
+            OSError("schema unavailable"),
+            SchemaError("schema invalid"),
+            RecursionError("schema recursion"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                economic_plan._validator.cache_clear()
+                try:
+                    with _packaged_schema_failure(error):
+                        with self.assertRaises(
+                            ChallengerReplacementEconomicPlanError
+                        ) as raised:
+                            build_challenger_replacement_economic_plan()
+                    self.assertEqual(raised.exception.reason_code, SCHEMA_INVALID_REASON)
+                finally:
+                    economic_plan._validator.cache_clear()
 
 
 class _EconomicPlanFileTests(unittest.TestCase):
@@ -361,14 +956,39 @@ class _EconomicPlanFileTests(unittest.TestCase):
 class EconomicPlanLoaderTests(_EconomicPlanFileTests):
     """Boundary tests for the owner-controlled canonical plan loader."""
 
-    def test_loader_accepts_canonical_bytes_and_one_optional_final_lf(self):
-        """Catches rejection of the only two allowed canonical encodings."""
-        for suffix in (b"", b"\n"):
-            self._write(self._canonical_plan_bytes() + suffix)
-            self.assertEqual(
-                load_challenger_replacement_economic_plan(self.path),
-                build_challenger_replacement_economic_plan(),
-            )
+    def test_loader_accepts_only_exact_canonical_plus_lf_bytes(self):
+        """Catches optional-LF acceptance for a distinct byte identity."""
+        self._write(self._canonical_plan_bytes() + b"\n")
+        self.assertEqual(
+            load_challenger_replacement_economic_plan(self.path),
+            build_challenger_replacement_economic_plan(),
+        )
+
+        self._write(self._canonical_plan_bytes())
+        with self.assertRaises(
+            ChallengerReplacementEconomicPlanError
+        ) as raised:
+            load_challenger_replacement_economic_plan(self.path)
+        self.assertEqual(
+            raised.exception.reason_code,
+            "CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_CANONICAL_BYTES_REQUIRED",
+        )
+
+    def test_loader_requires_the_literal_committed_artifact_sha256(self):
+        """Catches canonical alternate content that is not the committed authority."""
+        self.assertEqual(economic_plan._ARTIFACT_SHA256, ARTIFACT_SHA256)
+        mutated = build_challenger_replacement_economic_plan()
+        mutated["warnings"][0] = "MUTATED_BUT_CANONICAL"
+        mutated["plan_hash"] = challenger_replacement_economic_plan_hash(mutated)
+        self._write(canonical_json(mutated).encode("utf-8") + b"\n")
+        with self.assertRaises(
+            ChallengerReplacementEconomicPlanError
+        ) as raised:
+            load_challenger_replacement_economic_plan(self.path)
+        self.assertEqual(
+            raised.exception.reason_code,
+            "CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_FILE_SHA256_MISMATCH",
+        )
 
     def test_loader_rejects_relative_path(self):
         """Catches a relative path that could escape explicit caller authority."""
@@ -434,6 +1054,26 @@ class EconomicPlanLoaderTests(_EconomicPlanFileTests):
                 ):
                     load_challenger_replacement_economic_plan(candidate)
 
+    def test_loader_reduces_packaged_schema_failures_to_a_public_error(self):
+        """Catches raw Schema I/O, construction, or recursion errors from loader."""
+        self._write(self._canonical_plan_bytes() + b"\n")
+        for error in (
+            OSError("schema unavailable"),
+            SchemaError("schema invalid"),
+            RecursionError("schema recursion"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                economic_plan._validator.cache_clear()
+                try:
+                    with _packaged_schema_failure(error):
+                        with self.assertRaises(
+                            ChallengerReplacementEconomicPlanError
+                        ) as raised:
+                            load_challenger_replacement_economic_plan(self.path)
+                    self.assertEqual(raised.exception.reason_code, SCHEMA_INVALID_REASON)
+                finally:
+                    economic_plan._validator.cache_clear()
+
 
 class EconomicPlanArtifactTests(unittest.TestCase):
     """The committed preregistration is exact builder output and authority."""
@@ -465,6 +1105,21 @@ class EconomicPlanArtifactTests(unittest.TestCase):
             hashlib.sha256(ARTIFACT_PATH.read_bytes()).hexdigest(),
             ARTIFACT_SHA256,
         )
+
+    def test_artifact_has_frozen_literal_plan_and_policy_identities(self):
+        """Catches a rehashed plan that silently changes formal authority."""
+        artifact = json.loads(ARTIFACT_PATH.read_bytes())
+        built = build_challenger_replacement_economic_plan()
+        for plan in (artifact, built):
+            self.assertEqual(plan["plan_id"], PLAN_ID)
+            self.assertEqual(plan["plan_hash"], PLAN_HASH)
+            self.assertEqual(
+                {
+                    section: plan[section]["policy_hash"]
+                    for section in POLICY_HASHES
+                },
+                POLICY_HASHES,
+            )
 
 
 class EconomicPlanAuthorityTests(unittest.TestCase):
@@ -642,6 +1297,25 @@ class EconomicPlanMutationTests(unittest.TestCase):
         self.assertIn("CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_HASH_MISMATCH", reasons)
         self.assertIn("CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_POLICY_HASH_MISMATCH", reasons)
         self.assertIn("CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_ID_MISMATCH", reasons)
+
+    def test_reasons_reduce_packaged_schema_failures_to_a_public_reason(self):
+        """Catches raw or misclassified Schema boundary failures from reasons."""
+        plan = build_challenger_replacement_economic_plan()
+        for error in (
+            OSError("schema unavailable"),
+            SchemaError("schema invalid"),
+            RecursionError("schema recursion"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                economic_plan._validator.cache_clear()
+                try:
+                    with _packaged_schema_failure(error):
+                        self.assertEqual(
+                            challenger_replacement_economic_plan_reasons(plan),
+                            (SCHEMA_INVALID_REASON,),
+                        )
+                finally:
+                    economic_plan._validator.cache_clear()
 
 
 if __name__ == "__main__":

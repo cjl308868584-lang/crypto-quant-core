@@ -28,51 +28,248 @@
     "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "timestampOrNull": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
     "decimal": {"type": "string", "pattern": "^(?:0|-?[1-9][0-9]*|-?(?:0|[1-9][0-9]*)\\.[0-9]*[1-9])$"},
-    "identity": {
+    "v069PlanIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file_sha256", "plan_id", "plan_hash"],
+      "properties": {
+        "file_sha256": {"const": "6fae2ae0df4b8402ddc1df1b5bca611e11df41eee8d42f591d5d7b5fb24a31c3"},
+        "plan_id": {"const": "challenger_replacement_plan_v3_e1b6a4187cb4bb4b371ea503f83284056d4f0c6c504feb7827971869a52f666f"},
+        "plan_hash": {"const": "f29474a1700b0c3cf313047e2d6e85182e68104d9584ec9df7b492aa7ab00486"}
+      }
+    },
+    "v069OwnerAttestationIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file_sha256", "attestation_id", "attestation_hash"],
+      "properties": {
+        "file_sha256": {"const": "b1ec38575b2e4f2b93b9f4838aa04633f382b60aef65843e4812d9b5c799b9c7"},
+        "attestation_id": {"const": "challenger_replacement_v3_owner_attestation_18626ea8f79c90f5924b50317635ce07c1c933879de42463f0e79095fb8e4388"},
+        "attestation_hash": {"const": "99d99968eb5aa12bad064864d02aac4f37248a0fafb36d633c8c18315206fb21"}
+      }
+    },
+    "v070ResultEvidenceSchemaIdentity": {
       "type": "object", "additionalProperties": false,
       "required": ["file_sha256"],
-      "properties": {"file_sha256": {"$ref": "#/$defs/hash"}, "plan_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*_[0-9a-f]{64}$"}, "plan_hash": {"$ref": "#/$defs/hash"}, "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "manifest_hash": {"$ref": "#/$defs/hash"}, "tree_hash": {"$ref": "#/$defs/hash"}}
+      "properties": {
+        "file_sha256": {"const": "755f4e049da22ab4300ce5ed68b73c0d9462581792b7b3955fff1712f6ca6dca"}
+      }
+    },
+    "v071SimulationContractIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file_sha256", "contract_id", "contract_hash"],
+      "properties": {
+        "file_sha256": {"const": "65a0af1cccee5ad60aeaa7b0266bb217fab680d866ea3191ca77d214a292d86f"},
+        "contract_id": {"const": "challenger_replacement_simulation_contract_c95cee71f23e58cf40bc4739e5063824de1a77fd5c6fcc72794ff42e1f84f791"},
+        "contract_hash": {"const": "b21beb877101590aabcc65927539d58eb001c4dc5de89ead0306ac840450f501"}
+      }
+    },
+    "v072GoldenManifestIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file_sha256", "manifest_id", "manifest_hash"],
+      "properties": {
+        "file_sha256": {"const": "c86993a5d56805eee3b703301f92d704cf0e7dacd06d4725a7ad9c3c16dd2b5f"},
+        "manifest_id": {"const": "challenger_replacement_binance_golden_fixture_manifest_b2ce1d97bd41c812a5f58907602519da7df8d4543e33298389f0e5232e5c1821"},
+        "manifest_hash": {"const": "6977acff468689aeba64f1d814842c77ffa394f28bf686fdc82d02f5b61efbb4"}
+      }
+    },
+    "v073ReleaseIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_tag", "peeled_commit", "package_version", "manifest_version", "manifest_hash", "tree_hash", "file_sha256"],
+      "properties": {
+        "release_tag": {"const": "v0.73.0"},
+        "peeled_commit": {"const": "34bd0e9ba96c769b7301c482730a03fb975c24ce"},
+        "package_version": {"const": "0.73.0"},
+        "manifest_version": {"const": "1.67.0"},
+        "manifest_hash": {"const": "0117d3a17bdea7e2a22004d675175083e9d863722c6c176632d29e3c4c6e62d0"},
+        "tree_hash": {"const": "569afbae2352932a05a6c5daeb1c52049c9a3ec74034d666664579aa2bd0a97e"},
+        "file_sha256": {"const": "c41a46442993bac947773d383f722dfbaa358417ba67e87bf1e81db37c5e1c74"}
+      }
     },
     "foundation": {
       "type": "object", "additionalProperties": false,
       "required": ["v069_plan", "v069_owner_attestation", "v070_result_evidence_schema", "v071_simulation_contract", "v072_golden_manifest", "v073_release"],
       "properties": {
-        "v069_plan": {"$ref": "#/$defs/identity"}, "v069_owner_attestation": {"$ref": "#/$defs/identity"}, "v070_result_evidence_schema": {"$ref": "#/$defs/identity"}, "v071_simulation_contract": {"$ref": "#/$defs/identity"}, "v072_golden_manifest": {"$ref": "#/$defs/identity"}, "v073_release": {"$ref": "#/$defs/identity"}
+        "v069_plan": {"$ref": "#/$defs/v069PlanIdentity"},
+        "v069_owner_attestation": {"$ref": "#/$defs/v069OwnerAttestationIdentity"},
+        "v070_result_evidence_schema": {"$ref": "#/$defs/v070ResultEvidenceSchemaIdentity"},
+        "v071_simulation_contract": {"$ref": "#/$defs/v071SimulationContractIdentity"},
+        "v072_golden_manifest": {"$ref": "#/$defs/v072GoldenManifestIdentity"},
+        "v073_release": {"$ref": "#/$defs/v073ReleaseIdentity"}
       }
     },
     "populationContract": {
       "type": "object", "additionalProperties": false,
-      "required": ["start_source", "start_identity_fields", "cadence_seconds", "minimum_calendar_days", "start_scheduled_for_or_null", "tail_scheduled_for_or_null", "window_kind", "terminal_outcomes", "historical_backfill_allowed", "window_reset_allowed", "alternate_start_allowed", "tail_pre_action_mark_required", "policy_hash"],
+      "required": ["start_source", "start_identity_fields", "cadence_seconds", "minimum_calendar_days", "start_scheduled_for_or_null", "tail_scheduled_for_or_null", "window_kind", "terminal_outcomes", "historical_backfill_allowed", "window_reset_allowed", "alternate_start_allowed", "tail_pre_action_mark_required", "tail_pre_action_mark_source", "tail_action", "untrusted_tail_mark_input_allowed", "last_convenient_price_fallback_allowed", "missing_tail_mark_result", "policy_hash"],
       "properties": {
         "start_source": {"const": "FIRST_VERIFIED_NATURAL_OBSERVED_DECISION_OPPORTUNITY"},
         "start_identity_fields": {"type": "array", "prefixItems": [{"const": "opportunity_id"}, {"const": "event_hash"}, {"const": "scheduled_for"}, {"const": "observed_at"}, {"const": "plan_id"}, {"const": "plan_hash"}, {"const": "deployment_identity"}, {"const": "event_root_identity"}], "items": false, "minItems": 8, "maxItems": 8},
         "cadence_seconds": {"const": 14400}, "minimum_calendar_days": {"const": 90}, "start_scheduled_for_or_null": {"$ref": "#/$defs/timestampOrNull"}, "tail_scheduled_for_or_null": {"$ref": "#/$defs/timestampOrNull"}, "window_kind": {"const": "HALF_OPEN_SCHEDULED_FOR_START_INCLUSIVE_TAIL_EXCLUSIVE"},
         "terminal_outcomes": {"type": "array", "prefixItems": [{"const": "OBSERVED"}, {"const": "MISSED"}], "items": false, "minItems": 2, "maxItems": 2},
-        "historical_backfill_allowed": {"const": false}, "window_reset_allowed": {"const": false}, "alternate_start_allowed": {"const": false}, "tail_pre_action_mark_required": {"const": true}, "policy_hash": {"$ref": "#/$defs/hash"}
+        "historical_backfill_allowed": {"const": false}, "window_reset_allowed": {"const": false}, "alternate_start_allowed": {"const": false}, "tail_pre_action_mark_required": {"const": true},
+        "tail_pre_action_mark_source": {"const": "CANONICAL_SOURCE_AND_PRIOR_PROJECTION_AT_TAIL_SCHEDULED_FOR"},
+        "tail_action": {"const": "NO_NEW_ENTRY_OR_REVERSAL"},
+        "untrusted_tail_mark_input_allowed": {"const": false},
+        "last_convenient_price_fallback_allowed": {"const": false},
+        "missing_tail_mark_result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"},
+        "policy_hash": {"$ref": "#/$defs/hash"}
       }
     },
     "economicMeasurement": {
       "type": "object", "additionalProperties": false,
-      "required": ["starting_virtual_equity_usdt", "capital_limit_usdt", "gross_exposure_limit", "technical_leverage_cap", "configured_simulation_leverage", "economic_asset", "daily_boundary_count", "daily_return_count", "daily_return_formula", "decimal_arithmetic_only", "binary_float_allowed", "spot_mark", "perpetual_mark", "fee_treatment", "funding_treatment", "policy_hash"],
+      "required": ["starting_virtual_equity_usdt", "capital_limit_usdt", "gross_exposure_limit", "technical_leverage_cap", "configured_simulation_leverage", "economic_asset", "daily_boundary_count", "daily_return_count", "daily_return_formula", "decimal_arithmetic_only", "binary_float_allowed", "spot_mark", "perpetual_mark", "fee_treatment", "funding_treatment", "slippage_treatment", "marked_equity_calculation", "daily_boundary_construction", "daily_return_calculation", "maximum_drawdown_calculation", "stress_replay", "fixed_15_day_blocks", "policy_hash"],
       "properties": {
-        "starting_virtual_equity_usdt": {"const": "100"}, "capital_limit_usdt": {"const": "100"}, "gross_exposure_limit": {"const": "0.5"}, "technical_leverage_cap": {"const": "2"}, "configured_simulation_leverage": {"const": "1"}, "economic_asset": {"const": "ETH"}, "daily_boundary_count": {"const": 91}, "daily_return_count": {"const": 90}, "daily_return_formula": {"const": "BOUNDARY_EQUITY_DELTA_DIVIDED_BY_100"}, "decimal_arithmetic_only": {"const": true}, "binary_float_allowed": {"const": false}, "spot_mark": {"const": "CONSERVATIVE_BID_MARK"}, "perpetual_mark": {"const": "CANONICAL_MARK_PRICE_AND_CONTRACT_MULTIPLIER"}, "fee_treatment": {"const": "ACCRUED_ONCE_ONLY"}, "funding_treatment": {"const": "SIGNED_CASHFLOW_ONCE_ONLY"}, "policy_hash": {"$ref": "#/$defs/hash"}
+        "starting_virtual_equity_usdt": {"const": "100"}, "capital_limit_usdt": {"const": "100"}, "gross_exposure_limit": {"const": "0.5"}, "technical_leverage_cap": {"const": "2"}, "configured_simulation_leverage": {"const": "1"}, "economic_asset": {"const": "ETH"}, "daily_boundary_count": {"const": 91}, "daily_return_count": {"const": 90}, "daily_return_formula": {"const": "BOUNDARY_EQUITY_DELTA_DIVIDED_BY_100"}, "decimal_arithmetic_only": {"const": true}, "binary_float_allowed": {"const": false}, "spot_mark": {"const": "CONSERVATIVE_BID_MARK"}, "perpetual_mark": {"const": "CANONICAL_MARK_PRICE_AND_CONTRACT_MULTIPLIER"}, "fee_treatment": {"const": "ACCRUED_ONCE_ONLY"}, "funding_treatment": {"const": "SIGNED_CASHFLOW_ONCE_ONLY"}, "slippage_treatment": {"const": "ADVERSE_COST_INCLUDED_ONCE_ONLY"},
+        "marked_equity_calculation": {"$ref": "#/$defs/markedEquityCalculation"},
+        "daily_boundary_construction": {"$ref": "#/$defs/dailyBoundaryConstruction"},
+        "daily_return_calculation": {"$ref": "#/$defs/dailyReturnCalculation"},
+        "maximum_drawdown_calculation": {"$ref": "#/$defs/maximumDrawdownCalculation"},
+        "stress_replay": {"$ref": "#/$defs/stressReplay"},
+        "fixed_15_day_blocks": {"$ref": "#/$defs/fixed15DayBlocks"},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "markedEquityCalculation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cash_coefficient", "conservative_marked_position_value_coefficient", "all_accrued_fees_coefficient", "signed_funding_cashflow_coefficient", "accounting_semantics_source"],
+      "properties": {
+        "cash_coefficient": {"const": "1"},
+        "conservative_marked_position_value_coefficient": {"const": "1"},
+        "all_accrued_fees_coefficient": {"const": "-1"},
+        "signed_funding_cashflow_coefficient": {"const": "1"},
+        "accounting_semantics_source": {"const": "V071_SIMULATION_CONTRACT_ACCOUNTING"}
+      }
+    },
+    "dailyBoundaryConstruction": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "offset_formula", "k_minimum", "k_maximum"],
+      "properties": {
+        "kind": {"const": "PRE_ACTION_UTC_ALIGNED"},
+        "offset_formula": {"const": "START_SCHEDULED_FOR_PLUS_K_TIMES_86400_SECONDS"},
+        "k_minimum": {"const": 0},
+        "k_maximum": {"const": 90}
+      }
+    },
+    "dailyReturnCalculation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["numerator", "fixed_capital_denominator_usdt", "intermediate_rounding_allowed", "canonical_output_encoder", "compounded", "annualized"],
+      "properties": {
+        "numerator": {"const": "BOUNDARY_EQUITY_K_MINUS_BOUNDARY_EQUITY_K_MINUS_1"},
+        "fixed_capital_denominator_usdt": {"const": "100"},
+        "intermediate_rounding_allowed": {"const": false},
+        "canonical_output_encoder": {"const": "REPOSITORY_DECIMAL_ENCODER"},
+        "compounded": {"const": false},
+        "annualized": {"const": false}
+      }
+    },
+    "maximumDrawdownCalculation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["peak_source", "formula", "nonpositive_equity_result"],
+      "properties": {
+        "peak_source": {"const": "CONTINUOUS_HIGH_WATER_MARKED_EQUITY"},
+        "formula": {"const": "(PEAK_MINUS_CURRENT)_DIVIDED_BY_PEAK"},
+        "nonpositive_equity_result": {"const": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"}
+      }
+    },
+    "stressReplay": {
+      "type": "object", "additionalProperties": false,
+      "required": ["nonnegative_fee_multiplier", "adverse_slippage_multiplier", "negative_funding_cashflow_multiplier", "positive_funding_benefit_multiplier", "unchanged_components", "unreconstructable_cost_result", "zero_cost_substitution_allowed"],
+      "properties": {
+        "nonnegative_fee_multiplier": {"const": "1.5"},
+        "adverse_slippage_multiplier": {"const": "1.5"},
+        "negative_funding_cashflow_multiplier": {"const": "1.5"},
+        "positive_funding_benefit_multiplier": {"const": "0.5"},
+        "unchanged_components": {"type": "array", "prefixItems": [{"const": "GROSS_MARKET_MOVEMENT"}, {"const": "QUANTITIES"}, {"const": "PRODUCT_SELECTION"}, {"const": "EVENT_ORDER"}], "items": false, "minItems": 4, "maxItems": 4},
+        "unreconstructable_cost_result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"},
+        "zero_cost_substitution_allowed": {"const": false}
+      }
+    },
+    "fixed15DayBlocks": {
+      "type": "object", "additionalProperties": false,
+      "required": ["count", "length_days", "interval", "start_formula", "end_formula", "n_values", "value_formula", "nonnegative_operator"],
+      "properties": {
+        "count": {"const": 6},
+        "length_days": {"const": 15},
+        "interval": {"const": "HALF_OPEN"},
+        "start_formula": {"const": "START_SCHEDULED_FOR_PLUS_N_TIMES_15_DAYS"},
+        "end_formula": {"const": "START_SCHEDULED_FOR_PLUS_N_PLUS_1_TIMES_15_DAYS"},
+        "n_values": {"type": "array", "prefixItems": [{"const": 0}, {"const": 1}, {"const": 2}, {"const": 3}, {"const": 4}, {"const": 5}], "items": false, "minItems": 6, "maxItems": 6},
+        "value_formula": {"const": "SUM_OF_DAILY_NET_RETURNS"},
+        "nonnegative_operator": {"const": "GTE_ZERO"}
       }
     },
     "missingnessPolicy": {
       "type": "object", "additionalProperties": false,
-      "required": ["observed_coverage_minimum", "terminal_coverage_required", "exposed_miss_result", "optimistic_flat_miss", "pessimistic_flat_miss", "flat_miss_notional_usdt", "protective_stop_distance", "market_slippage_per_side", "taker_fee_per_side", "flat_miss_loss_rate", "flat_miss_loss_usdt", "pass_requires_both_bounds", "disagreement_result", "policy_hash"],
+      "required": ["observed_coverage_minimum", "terminal_coverage_required", "exposed_miss_result", "optimistic_flat_miss", "pessimistic_flat_miss", "flat_miss_notional_usdt", "protective_stop_distance", "market_slippage_per_side", "taker_fee_per_side", "flat_miss_loss_rate", "flat_miss_loss_usdt", "pass_requires_both_bounds", "disagreement_result", "confirmed_failure_boundaries", "confirmed_failure_result", "confirmed_failure_imputation_allowed", "confirmed_failure_repair_allowed", "flat_miss_included_in_population", "flat_miss_history_alteration_allowed", "flat_miss_notional_formula", "flat_miss_loss_rate_formula", "taker_fee_rate_selection", "flat_miss_funding_benefit_usdt", "charges_per_distinct_flat_missed_opportunity", "duplicate_flat_miss_charge_allowed", "observed_coverage_formula", "favorable_bound_selection_allowed", "policy_hash"],
       "properties": {
-        "observed_coverage_minimum": {"const": "0.95"}, "terminal_coverage_required": {"const": "1"}, "exposed_miss_result": {"const": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"}, "optimistic_flat_miss": {"const": "ZERO_ECONOMIC_CHANGE"}, "pessimistic_flat_miss": {"const": "ONE_FROZEN_STOPPED_CYCLE_LOSS_PER_DISTINCT_FLAT_MISS"}, "flat_miss_notional_usdt": {"const": "50"}, "protective_stop_distance": {"const": "0.02"}, "market_slippage_per_side": {"const": "0.001"}, "taker_fee_per_side": {"const": "0.0015"}, "flat_miss_loss_rate": {"const": "0.025"}, "flat_miss_loss_usdt": {"const": "1.25"}, "pass_requires_both_bounds": {"const": true}, "disagreement_result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"}, "policy_hash": {"$ref": "#/$defs/hash"}
+        "observed_coverage_minimum": {"const": "0.95"}, "terminal_coverage_required": {"const": "1"}, "exposed_miss_result": {"const": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"}, "optimistic_flat_miss": {"const": "ZERO_ECONOMIC_CHANGE"}, "pessimistic_flat_miss": {"const": "ONE_FROZEN_STOPPED_CYCLE_LOSS_PER_DISTINCT_FLAT_MISS"}, "flat_miss_notional_usdt": {"const": "50"}, "protective_stop_distance": {"const": "0.02"}, "market_slippage_per_side": {"const": "0.001"}, "taker_fee_per_side": {"const": "0.0015"}, "flat_miss_loss_rate": {"const": "0.025"}, "flat_miss_loss_usdt": {"const": "1.25"}, "pass_requires_both_bounds": {"const": true}, "disagreement_result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"},
+        "confirmed_failure_boundaries": {"type": "array", "prefixItems": [{"const": "EXPOSED_MISSED"}, {"const": "UNRESOLVED_POSITION"}, {"const": "ECONOMIC_GAP_LOCK"}, {"const": "UNRECORDED_FILL"}, {"const": "DUPLICATE_ECONOMIC_ORDER"}, {"const": "RECONCILIATION_FAILURE"}], "items": false, "minItems": 6, "maxItems": 6},
+        "confirmed_failure_result": {"const": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"},
+        "confirmed_failure_imputation_allowed": {"const": false},
+        "confirmed_failure_repair_allowed": {"const": false},
+        "flat_miss_included_in_population": {"const": true},
+        "flat_miss_history_alteration_allowed": {"const": false},
+        "flat_miss_notional_formula": {"const": "STARTING_VIRTUAL_EQUITY_USDT_TIMES_GROSS_EXPOSURE_LIMIT"},
+        "flat_miss_loss_rate_formula": {"const": "PROTECTIVE_STOP_DISTANCE_PLUS_2_TIMES_MARKET_SLIPPAGE_PER_SIDE_PLUS_2_TIMES_MAX_FROZEN_TAKER_FEE_PER_SIDE"},
+        "taker_fee_rate_selection": {"const": "MAX_FROZEN_SPOT_AND_PERPETUAL_TAKER_RATE"},
+        "flat_miss_funding_benefit_usdt": {"const": "0"},
+        "charges_per_distinct_flat_missed_opportunity": {"const": 1},
+        "duplicate_flat_miss_charge_allowed": {"const": false},
+        "observed_coverage_formula": {"const": "OBSERVED_DIVIDED_BY_OBSERVED_PLUS_MISSED_IN_EXACT_HALF_OPEN_WINDOW"},
+        "favorable_bound_selection_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
       }
     },
     "statisticalDesign": {
       "type": "object", "additionalProperties": false,
-      "required": ["primary_null", "primary_alternative", "family_size", "family_wise_alpha", "method", "block_length_days", "sample_length", "resample_count", "seed", "draw_start_method", "quantile", "confidence_level", "primary_endpoint", "minimum_economic_effect_daily", "power_method", "policy_hash"],
+      "required": ["primary_null", "primary_alternative", "family_size", "family_wise_alpha", "method", "block_length_days", "sample_length", "resample_count", "seed", "draw_start_method", "quantile", "confidence_level", "primary_endpoint", "minimum_economic_effect_daily", "power_method", "multiple_testing_adjustment", "resample_construction", "achieved_power_calculation", "completed_cycle_counting", "sample_gate_shortfall_result", "window_extension_allowed", "post_tail_evidence_changes_population", "policy_hash"],
       "properties": {
-        "primary_null": {"const": "MEAN_DAILY_NET_RETURN_LTE_ZERO"}, "primary_alternative": {"const": "MEAN_DAILY_NET_RETURN_GT_ZERO"}, "family_size": {"const": 1}, "family_wise_alpha": {"const": "0.05"}, "method": {"const": "OVERLAPPING_NON_CIRCULAR_MOVING_BLOCK_BOOTSTRAP"}, "block_length_days": {"const": 7}, "sample_length": {"const": 90}, "resample_count": {"const": 10000}, "seed": {"const": 2026082574}, "draw_start_method": {"const": "SHA256_REJECTION_SAMPLED_MBB_V1"}, "quantile": {"const": "CONSERVATIVE_NEAREST_RANK_0_05"}, "confidence_level": {"const": "0.95"}, "primary_endpoint": {"const": "MEAN_DAILY_NET_RETURN_LCB95"}, "minimum_economic_effect_daily": {"const": "0.0005"}, "power_method": {"const": "CENTERED_BOOTSTRAP_CRITICAL_VALUE_ACHIEVED_POWER"}, "policy_hash": {"$ref": "#/$defs/hash"}
+        "primary_null": {"const": "MEAN_DAILY_NET_RETURN_LTE_ZERO"}, "primary_alternative": {"const": "MEAN_DAILY_NET_RETURN_GT_ZERO"}, "family_size": {"const": 1}, "family_wise_alpha": {"const": "0.05"}, "method": {"const": "OVERLAPPING_NON_CIRCULAR_MOVING_BLOCK_BOOTSTRAP"}, "block_length_days": {"const": 7}, "sample_length": {"const": 90}, "resample_count": {"const": 10000}, "seed": {"const": 2026082574}, "draw_start_method": {"const": "SHA256_REJECTION_SAMPLED_MBB_V1"}, "quantile": {"const": "CONSERVATIVE_NEAREST_RANK_0_05"}, "confidence_level": {"const": "0.95"}, "primary_endpoint": {"const": "MEAN_DAILY_NET_RETURN_LCB95"}, "minimum_economic_effect_daily": {"const": "0.0005"}, "power_method": {"const": "CENTERED_BOOTSTRAP_CRITICAL_VALUE_ACHIEVED_POWER"},
+        "multiple_testing_adjustment": {"const": "NONE_SINGLE_PRIMARY_HYPOTHESIS"},
+        "resample_construction": {"$ref": "#/$defs/resampleConstruction"},
+        "achieved_power_calculation": {"$ref": "#/$defs/achievedPowerCalculation"},
+        "completed_cycle_counting": {"$ref": "#/$defs/completedCycleCounting"},
+        "sample_gate_shortfall_result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"},
+        "window_extension_allowed": {"const": false},
+        "post_tail_evidence_changes_population": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
       }
     },
-    "gate": {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"type": "string"}, "operator": {"type": "string"}, "threshold": {"$ref": "#/$defs/decimal"}, "denominator": {"$ref": "#/$defs/decimal"}}},
+    "resampleConstruction": {
+      "type": "object", "additionalProperties": false,
+      "required": ["block_selection", "within_block_order", "concatenation", "truncation_length", "lower_bound", "language_prng_allowed"],
+      "properties": {
+        "block_selection": {"const": "UNIFORM_OVERLAPPING_SEVEN_DAY_BLOCKS"},
+        "within_block_order": {"const": "ORIGINAL"},
+        "concatenation": {"const": "CONCATENATE_SELECTED_BLOCKS"},
+        "truncation_length": {"const": 90},
+        "lower_bound": {"const": "CONSERVATIVE_NEAREST_RANK_5TH_PERCENTILE_OF_10000_RESAMPLED_MEANS"},
+        "language_prng_allowed": {"const": false}
+      }
+    },
+    "achievedPowerCalculation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["minimum_economic_effect_is_alternate_pass_threshold", "centered_error_formula", "critical_value", "comparison_left", "comparison_operator", "centered_error_count", "shortfall_result"],
+      "properties": {
+        "minimum_economic_effect_is_alternate_pass_threshold": {"const": false},
+        "centered_error_formula": {"const": "BOOTSTRAP_MEAN_MINUS_OBSERVED_SAMPLE_MEAN"},
+        "critical_value": {"const": "CONSERVATIVE_NEAREST_RANK_95TH_PERCENTILE_OF_CENTERED_ERRORS"},
+        "comparison_left": {"const": "MINIMUM_ECONOMIC_EFFECT_DAILY_PLUS_CENTERED_ERROR"},
+        "comparison_operator": {"const": "STRICT_GT_CRITICAL_VALUE"},
+        "centered_error_count": {"const": 10000},
+        "shortfall_result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"}
+      }
+    },
+    "completedCycleCounting": {
+      "type": "object", "additionalProperties": false,
+      "required": ["begins", "ends", "partial_fills_belong_to_matching_cycle", "partial_fills_create_additional_cycles", "retries_create_additional_cycles", "duplicate_observations_create_additional_cycles"],
+      "properties": {
+        "begins": {"const": "VERIFIED_FLAT_TO_EXPOSED_TRANSITION"},
+        "ends": {"const": "MATCHING_VERIFIED_EXPOSED_TO_FLAT_TRANSITION"},
+        "partial_fills_belong_to_matching_cycle": {"const": true},
+        "partial_fills_create_additional_cycles": {"const": false},
+        "retries_create_additional_cycles": {"const": false},
+        "duplicate_observations_create_additional_cycles": {"const": false}
+      }
+    },
     "sampleGates": {"type": "array", "prefixItems": [
       {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "CALENDAR_DAYS"}, "operator": {"const": "EQ"}, "threshold": {"const": "90"}}},
       {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "DAILY_RETURN_COUNT"}, "operator": {"const": "EQ"}, "threshold": {"const": "90"}}},
@@ -92,7 +289,66 @@
       {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold", "denominator"], "properties": {"metric": {"const": "NONNEGATIVE_FIXED_15_DAY_BLOCKS"}, "operator": {"const": "GTE"}, "threshold": {"const": "5"}, "denominator": {"const": "6"}}},
       {"type": "object", "additionalProperties": false, "required": ["metric", "operator", "threshold"], "properties": {"metric": {"const": "STRESS_1_5X_ADVERSE_FRICTION_TOTAL_NET_PNL_USDT"}, "operator": {"const": "GTE"}, "threshold": {"const": "0"}}}
     ], "items": false, "minItems": 5, "maxItems": 5},
-    "finalStateMachine": {"type": "object", "additionalProperties": false, "required": ["terminal_outcomes", "first_final_artifact_immutable", "rerun_allowed", "threshold_override_allowed", "sample_deletion_allowed", "alternate_seed_allowed", "alternate_start_allowed", "favorable_result_selection_allowed", "policy_hash"], "properties": {"terminal_outcomes": {"type": "array", "prefixItems": [{"const": "RESEARCH_CONTINUATION_GATE_PASS"}, {"const": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"}, {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"}], "items": false, "minItems": 3, "maxItems": 3}, "first_final_artifact_immutable": {"const": true}, "rerun_allowed": {"const": false}, "threshold_override_allowed": {"const": false}, "sample_deletion_allowed": {"const": false}, "alternate_seed_allowed": {"const": false}, "alternate_start_allowed": {"const": false}, "favorable_result_selection_allowed": {"const": false}, "policy_hash": {"$ref": "#/$defs/hash"}}},
+    "finalStateMachine": {
+      "type": "object", "additionalProperties": false,
+      "required": ["terminal_outcomes", "decision_rules", "first_final_artifact_immutable", "rerun_allowed", "threshold_override_allowed", "sample_deletion_allowed", "alternate_seed_allowed", "alternate_start_allowed", "favorable_result_selection_allowed", "policy_hash"],
+      "properties": {
+        "terminal_outcomes": {"type": "array", "prefixItems": [{"const": "RESEARCH_CONTINUATION_GATE_PASS"}, {"const": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"}, {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"}], "items": false, "minItems": 3, "maxItems": 3},
+        "decision_rules": {
+          "type": "array", "items": false, "minItems": 4, "maxItems": 4,
+          "prefixItems": [
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["priority", "when_any", "result", "research_continuation_discussion_eligible"],
+              "properties": {
+                "priority": {"const": 1},
+                "when_any": {"type": "array", "prefixItems": [{"const": "INVALID_PLAN"}, {"const": "FOUNDATION_IDENTITY_MISMATCH"}, {"const": "MALFORMED_EVENT"}, {"const": "DUPLICATE_AUTHORITY"}, {"const": "MISSING_TAIL_PRE_ACTION_MARK"}, {"const": "UNREADABLE_EVIDENCE"}], "items": false, "minItems": 6, "maxItems": 6},
+                "result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"},
+                "research_continuation_discussion_eligible": {"const": false}
+              }
+            },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["priority", "when_any", "result", "research_continuation_discussion_eligible"],
+              "properties": {
+                "priority": {"const": 2},
+                "when_any": {"type": "array", "prefixItems": [{"const": "CONFIRMED_SAFETY_OR_RISK_BOUNDARY"}, {"const": "EXPOSED_MISSED"}, {"const": "ECONOMIC_GAP_LOCK"}, {"const": "NONPOSITIVE_EQUITY"}, {"const": "TRUSTED_SUFFICIENT_EVIDENCE_FAILS_ANY_ECONOMIC_GATE"}], "items": false, "minItems": 5, "maxItems": 5},
+                "result": {"const": "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"},
+                "research_continuation_discussion_eligible": {"const": false}
+              }
+            },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["priority", "when_any", "result", "research_continuation_discussion_eligible"],
+              "properties": {
+                "priority": {"const": 3},
+                "when_any": {"type": "array", "prefixItems": [{"const": "TRUSTED_EVIDENCE_FAILS_ANY_SAMPLE_GATE"}, {"const": "OPTIMISTIC_PESSIMISTIC_FLAT_MISS_BOUND_DISAGREEMENT"}], "items": false, "minItems": 2, "maxItems": 2},
+                "result": {"const": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"},
+                "research_continuation_discussion_eligible": {"const": false}
+              }
+            },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["priority", "when_all", "result", "research_continuation_discussion_eligible"],
+              "properties": {
+                "priority": {"const": 4},
+                "when_all": {"type": "array", "prefixItems": [{"const": "TRUSTED_EVIDENCE"}, {"const": "SUFFICIENT_EVIDENCE"}, {"const": "ALL_SAMPLE_GATES_PASS"}, {"const": "ALL_ECONOMIC_GATES_PASS_UNDER_OPTIMISTIC_FLAT_MISS_BOUND"}, {"const": "ALL_ECONOMIC_GATES_PASS_UNDER_PESSIMISTIC_FLAT_MISS_BOUND"}], "items": false, "minItems": 5, "maxItems": 5},
+                "result": {"const": "RESEARCH_CONTINUATION_GATE_PASS"},
+                "research_continuation_discussion_eligible": {"const": true}
+              }
+            }
+          ]
+        },
+        "first_final_artifact_immutable": {"const": true},
+        "rerun_allowed": {"const": false},
+        "threshold_override_allowed": {"const": false},
+        "sample_deletion_allowed": {"const": false},
+        "alternate_seed_allowed": {"const": false},
+        "alternate_start_allowed": {"const": false},
+        "favorable_result_selection_allowed": {"const": false},
+        "policy_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
     "interimPolicy": {"type": "object", "additionalProperties": false, "required": ["economics_withheld_before_tail", "early_success_allowed", "pnl_based_early_stop_allowed", "threshold_override_allowed", "sample_override_allowed", "rerun_to_seek_better_result_allowed", "policy_hash"], "properties": {"economics_withheld_before_tail": {"const": true}, "early_success_allowed": {"const": false}, "pnl_based_early_stop_allowed": {"const": false}, "threshold_override_allowed": {"const": false}, "sample_override_allowed": {"const": false}, "rerun_to_seek_better_result_allowed": {"const": false}, "policy_hash": {"$ref": "#/$defs/hash"}}},
     "authority": {"type": "object", "additionalProperties": false, "required": ["production_activation", "runtime_install_authorized", "replacement_start_authorized", "account_requests_allowed", "credentials_allowed", "broker_requests_allowed", "real_orders_allowed", "market_requests", "production_state_writes", "economic_outcome_reads"], "properties": {"production_activation": {"const": false}, "runtime_install_authorized": {"const": false}, "replacement_start_authorized": {"const": false}, "account_requests_allowed": {"const": false}, "credentials_allowed": {"const": false}, "broker_requests_allowed": {"const": false}, "real_orders_allowed": {"const": false}, "market_requests": {"const": 0}, "production_state_writes": {"const": 0}, "economic_outcome_reads": {"const": 0}}},
     "eligibility": {"type": "object", "additionalProperties": false, "required": ["research_continuation_discussion", "canary", "live_trading", "profitability_claim"], "properties": {"research_continuation_discussion": {"const": "ELIGIBLE_ONLY_AFTER_FUTURE_GATE_PASS"}, "canary": {"const": "INELIGIBLE"}, "live_trading": {"const": "INELIGIBLE"}, "profitability_claim": {"const": "INELIGIBLE"}}},

@@ -235,7 +235,7 @@ Run Step 2. Expected: PASS.
 
 - [x] **Step 5: Write loader/mutation RED tests**
 
-Cover relative path, canonical bytes with optional single LF, duplicate key, float, whitespace, multiple LF, symlink, directory, wrong mode, hardlink and oversized file. Mutate every foundation/policy/gate/authority/warning/status/eligibility leaf, recompute claimed hashes/ID, and require semantic mismatch. Freeze public reason codes:
+Cover relative path, exact canonical bytes plus one final LF, literal committed file SHA-256, duplicate key, float, whitespace, missing or multiple LF, symlink, directory, wrong mode, hardlink and oversized file. Mutate every foundation/policy/gate/authority/warning/status/eligibility leaf, recompute claimed hashes/ID, and require semantic mismatch. Freeze public reason codes:
 
 ```text
 CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_SCHEMA_INVALID
@@ -243,6 +243,7 @@ CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_HASH_MISMATCH
 CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_POLICY_HASH_MISMATCH
 CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_ID_MISMATCH
 CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_SEMANTIC_MISMATCH
+CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_FILE_SHA256_MISMATCH
 CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_PATH_INVALID
 CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_JSON_DUPLICATE_KEY
 CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_JSON_FLOAT_FORBIDDEN
@@ -260,7 +261,7 @@ Expected: FAIL because reason reduction/loading are absent.
 
 - [x] **Step 7: Implement strict reasons and loader**
 
-Use the released v3 order: Schema, self-hash, policy hashes, stable ID, rebuilt semantic equality. Require absolute owner-controlled regular-file path, strict JSON, canonical bytes or canonical+one LF. Map all expected lower-level errors to fixed public codes; never leak raw `OSError`, `KeyError`, `TypeError`, `ValueError`, recursion or canonicalization errors.
+Use the released v3 order: exact canonical-plus-one-LF bytes and literal committed file SHA, Schema, self-hash, policy hashes, stable ID, rebuilt semantic equality. Require an absolute owner-controlled regular-file path and strict JSON. Map packaged-Schema I/O/construction failures and all other expected lower-level errors to fixed public codes; never leak raw `OSError`, Schema construction errors, `KeyError`, `TypeError`, `ValueError`, recursion or canonicalization errors.
 
 - [x] **Step 8: Run Task 2 tests and commit**
 
