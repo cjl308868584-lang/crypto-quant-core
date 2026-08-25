@@ -283,11 +283,11 @@ git commit -m "feat: preregister replacement economic plan"
 - Consumes: Task 2 builder/loader.
 - Produces: exact committed bytes and frozen future authority identity.
 
-- [ ] **Step 1: Write artifact RED tests**
+- [x] **Step 1: Write artifact RED tests**
 
 Require artifact bytes equal `canonical_json(builder()).encode() + b"\n"`, strict loader replay equal builder, and a literal non-placeholder file SHA-256. Snapshot/recheck exact bytes for v0.69 plan/attestation, v0.71 contract, v0.72 golden manifest and the v0.73 manifest until final refresh.
 
-- [ ] **Step 2: Run artifact RED**
+- [x] **Step 2: Run artifact RED**
 
 ```bash
 PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_plan.EconomicPlanArtifactTests -v
@@ -295,7 +295,7 @@ PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_pl
 
 Expected: missing formal plan file.
 
-- [ ] **Step 3: Add exact canonical bytes**
+- [x] **Step 3: Add exact canonical bytes**
 
 Print the parameterless builder result to stdout:
 
@@ -309,7 +309,7 @@ PY
 
 Use `apply_patch` to add that exact one-line JSON plus LF. Compute `sha256sum`, insert the literal digest in tests with `apply_patch`, and expose no production output-path/publisher API.
 
-- [ ] **Step 4: Run replay and adjacent frozen tests**
+- [x] **Step 4: Run replay and adjacent frozen tests**
 
 ```bash
 PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_plan.EconomicPlanArtifactTests tests.test_challenger_replacement_plan_v3 tests.test_challenger_replacement_plan_v3_supersession tests.test_challenger_replacement_simulation_contract tests.test_challenger_replacement_v072_artifacts tests.test_challenger_replacement_readiness -v
@@ -317,7 +317,7 @@ PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_pl
 
 Expected: PASS and no frozen-byte mutation.
 
-- [ ] **Step 5: Commit exact bytes**
+- [x] **Step 5: Commit exact bytes**
 
 ```bash
 git add artifacts/challenger-replacement/challenger-replacement-economic-evaluation-plan-v0.74.0.json tests/test_challenger_replacement_economic_plan.py
