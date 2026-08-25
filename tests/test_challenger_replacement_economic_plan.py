@@ -1,16 +1,21 @@
-import json
 import copy
+import ast
 import hashlib
+import json
 import os
 import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from jsonschema import Draft202012Validator
 
+import crypto_quant.challenger_replacement_economic_plan as economic_plan
+import crypto_quant.build as build
 from crypto_quant.canonical import business_hash, canonical_decimal, canonical_json, stable_id
 from crypto_quant.errors import CanonicalizationError
+from crypto_quant.build import EvaluatorBuild
 from crypto_quant.challenger_replacement_economic_plan import (
     ChallengerReplacementEconomicPlanError,
     build_challenger_replacement_economic_plan,
@@ -73,6 +78,35 @@ AUTHORITY_CONSTS = {
     "market_requests": 0,
     "production_state_writes": 0,
     "economic_outcome_reads": 0,
+}
+V074_INVENTORY_PATHS = {
+    "src/crypto_quant/challenger_replacement_economic_plan.py",
+    "src/crypto_quant/schemas/challenger-replacement-economic-evaluation-plan-v1.schema.json",
+    "artifacts/challenger-replacement/challenger-replacement-economic-evaluation-plan-v0.74.0.json",
+    "tests/test_challenger_replacement_economic_plan.py",
+    "tests/test_challenger_replacement_v074_release.py",
+    "docs/superpowers/specs/2026-08-25-replacement-v3-economic-preregistration-design.md",
+    "docs/superpowers/plans/2026-08-25-replacement-v3-economic-preregistration.md",
+    "docs/adr/0074-replacement-v3-economic-preregistration.md",
+    "docs/implementation-status-v0.74.0.md",
+}
+V074_RELEASE_PATHS = (
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-economic-evaluation-plan-v0.74.0.json",
+    "tests/test_challenger_replacement_economic_plan.py",
+    "tests/test_challenger_replacement_v074_release.py",
+    "docs/superpowers/specs/"
+    "2026-08-25-replacement-v3-economic-preregistration-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-25-replacement-v3-economic-preregistration.md",
+    "docs/adr/0074-replacement-v3-economic-preregistration.md",
+    "docs/implementation-status-v0.74.0.md",
+)
+FORBIDDEN_IMPORTS = {
+    "requests", "urllib", "socket", "http", "websocket", "binance",
+    "broker", "order", "credential", "install", "launchctl", "scheduler",
+    "runner", "observer", "dashboard", "opportunity_events",
+    "opportunity_projection", "simulation", "lifecycle",
 }
 
 
@@ -430,6 +464,89 @@ class EconomicPlanArtifactTests(unittest.TestCase):
         self.assertEqual(
             hashlib.sha256(ARTIFACT_PATH.read_bytes()).hexdigest(),
             ARTIFACT_SHA256,
+        )
+
+
+class EconomicPlanAuthorityTests(unittest.TestCase):
+    """The preregistration remains a plan-only, deterministic boundary."""
+
+    def test_module_has_no_forbidden_imports(self):
+        """Catches an import that could grant runtime, network, or outcome authority."""
+        tree = ast.parse(Path(economic_plan.__file__).read_text(encoding="utf-8"))
+        imported_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_names.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imported_names.add(node.module or "")
+                imported_names.update(alias.name for alias in node.names)
+        for forbidden in FORBIDDEN_IMPORTS:
+            with self.subTest(forbidden=forbidden):
+                self.assertFalse(
+                    any(forbidden in imported for imported in imported_names),
+                    msg=f"forbidden import: {forbidden}",
+                )
+
+    def test_builder_reads_only_the_package_schema_without_side_effects(self):
+        """Catches builder access to artifacts, events, production, processes, or networks."""
+        schema_text = PACKAGE_SCHEMA.read_text(encoding="utf-8")
+        resource_calls = []
+        test_case = self
+
+        class SchemaResource:
+            def read_text(self, *, encoding):
+                test_case.assertEqual(encoding, "utf-8")
+                return schema_text
+
+        class SchemaPackage:
+            def joinpath(self, *parts):
+                resource_calls.append(parts)
+                return SchemaResource()
+
+        def fail_boundary(*_args, **_kwargs):
+            raise AssertionError("unexpected side effect")
+
+        economic_plan._validator.cache_clear()
+        try:
+            with (
+                mock.patch.object(
+                    economic_plan.resources,
+                    "files",
+                    return_value=SchemaPackage(),
+                ) as resource_files,
+                mock.patch("builtins.open", side_effect=fail_boundary),
+                mock.patch.object(Path, "open", side_effect=fail_boundary),
+                mock.patch.object(Path, "read_bytes", side_effect=fail_boundary),
+                mock.patch.object(Path, "read_text", side_effect=fail_boundary),
+                mock.patch.object(Path, "write_bytes", side_effect=fail_boundary),
+                mock.patch.object(Path, "write_text", side_effect=fail_boundary),
+                mock.patch("os.system", side_effect=fail_boundary),
+                mock.patch("os.popen", side_effect=fail_boundary),
+                mock.patch("subprocess.run", side_effect=fail_boundary),
+                mock.patch("subprocess.call", side_effect=fail_boundary),
+                mock.patch("subprocess.check_call", side_effect=fail_boundary),
+                mock.patch("subprocess.check_output", side_effect=fail_boundary),
+                mock.patch("subprocess.Popen", side_effect=fail_boundary),
+                mock.patch("socket.socket", side_effect=fail_boundary),
+                mock.patch("socket.create_connection", side_effect=fail_boundary),
+                mock.patch("urllib.request.urlopen", side_effect=fail_boundary),
+                mock.patch("http.client.HTTPConnection", side_effect=fail_boundary),
+                mock.patch("http.client.HTTPSConnection", side_effect=fail_boundary),
+            ):
+                plan = build_challenger_replacement_economic_plan()
+        finally:
+            economic_plan._validator.cache_clear()
+
+        self.assertEqual(plan["authority"], AUTHORITY_CONSTS)
+        resource_files.assert_called_once_with("crypto_quant")
+        self.assertEqual(resource_calls, [("schemas", economic_plan._SCHEMA)])
+
+    def test_evaluator_build_inventory_covers_the_v074_formal_inputs(self):
+        """Catches a formal v0.74 input omitted from deterministic build coverage."""
+        self.assertEqual(build._V074_RELEASE_PATHS, V074_RELEASE_PATHS)
+        self.assertTrue(
+            V074_INVENTORY_PATHS.issubset(EvaluatorBuild.expected_file_paths(ROOT)),
+            msg="v0.74 formal inputs missing from evaluator build inventory",
         )
 
 

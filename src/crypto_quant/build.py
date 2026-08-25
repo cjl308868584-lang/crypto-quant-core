@@ -465,6 +465,19 @@ _V073_RELEASE_PATHS = (
     "docs/implementation-status-v0.73.0.md",
 )
 
+_V074_RELEASE_PATHS = (
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-economic-evaluation-plan-v0.74.0.json",
+    "tests/test_challenger_replacement_economic_plan.py",
+    "tests/test_challenger_replacement_v074_release.py",
+    "docs/superpowers/specs/"
+    "2026-08-25-replacement-v3-economic-preregistration-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-25-replacement-v3-economic-preregistration.md",
+    "docs/adr/0074-replacement-v3-economic-preregistration.md",
+    "docs/implementation-status-v0.74.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -505,6 +518,7 @@ class EvaluatorBuild:
                 + list(_V071_RELEASE_PATHS)
                 + list(_V072_RELEASE_PATHS)
                 + list(_V073_RELEASE_PATHS)
+                + list(_V074_RELEASE_PATHS)
             )
         )
 
