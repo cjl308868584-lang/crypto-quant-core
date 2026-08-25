@@ -478,6 +478,28 @@ _V074_RELEASE_PATHS = (
     "docs/implementation-status-v0.74.0.md",
 )
 
+_V075_RELEASE_PATHS = (
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-accelerated-canary-plan-v0.75.0.json",
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-accelerated-canary-supersession-v0.75.0.json",
+    "src/crypto_quant/challenger_replacement_accelerated_canary_plan.py",
+    "src/crypto_quant/challenger_replacement_accelerated_canary_supersession.py",
+    "src/crypto_quant/schemas/"
+    "challenger-replacement-accelerated-canary-plan-v1.schema.json",
+    "src/crypto_quant/schemas/"
+    "challenger-replacement-accelerated-canary-supersession-v1.schema.json",
+    "tests/test_challenger_replacement_accelerated_canary_plan.py",
+    "tests/test_challenger_replacement_accelerated_canary_supersession.py",
+    "tests/test_challenger_replacement_v075_release.py",
+    "docs/superpowers/specs/"
+    "2026-08-25-accelerated-code-complete-canary-supersession-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-25-accelerated-code-complete-canary-supersession.md",
+    "docs/adr/0075-accelerated-code-complete-canary-supersession.md",
+    "docs/implementation-status-v0.75.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -503,22 +525,25 @@ class EvaluatorBuild:
         )
         return tuple(
             sorted(
-                source
-                + package_resources
-                + list(_FROZEN_CONFIG_PATHS)
-                + list(_FROZEN_ARTIFACT_PATHS)
-                + list(_FROZEN_RELEASE_PATHS)
-                + list(_V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS)
-                + list(_V065_RELEASE_PATHS)
-                + list(_V066_RELEASE_PATHS)
-                + list(_V067_RELEASE_PATHS)
-                + list(_V068_RELEASE_PATHS)
-                + list(_V069_RELEASE_PATHS)
-                + list(_V070_RELEASE_PATHS)
-                + list(_V071_RELEASE_PATHS)
-                + list(_V072_RELEASE_PATHS)
-                + list(_V073_RELEASE_PATHS)
-                + list(_V074_RELEASE_PATHS)
+                set(
+                    source
+                    + package_resources
+                    + list(_FROZEN_CONFIG_PATHS)
+                    + list(_FROZEN_ARTIFACT_PATHS)
+                    + list(_FROZEN_RELEASE_PATHS)
+                    + list(_V064_PUBLIC_CI_PRIVATE_CONTRACT_PATHS)
+                    + list(_V065_RELEASE_PATHS)
+                    + list(_V066_RELEASE_PATHS)
+                    + list(_V067_RELEASE_PATHS)
+                    + list(_V068_RELEASE_PATHS)
+                    + list(_V069_RELEASE_PATHS)
+                    + list(_V070_RELEASE_PATHS)
+                    + list(_V071_RELEASE_PATHS)
+                    + list(_V072_RELEASE_PATHS)
+                    + list(_V073_RELEASE_PATHS)
+                    + list(_V074_RELEASE_PATHS)
+                    + list(_V075_RELEASE_PATHS)
+                )
             )
         )
 

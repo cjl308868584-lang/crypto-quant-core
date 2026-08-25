@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
+import crypto_quant
 from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_accelerated_canary_plan import (
     build_challenger_replacement_accelerated_canary_plan,
@@ -36,6 +37,7 @@ V074_PATH = (
     / "artifacts/challenger-replacement/"
     "challenger-replacement-economic-evaluation-plan-v0.74.0.json"
 )
+STATUS_PATH = ROOT / "docs/implementation-status-v0.75.0.md"
 
 
 class V075ArtifactTests(unittest.TestCase):
@@ -263,6 +265,60 @@ class V075CrossContractTests(unittest.TestCase):
                         called.add(node.func.attr)
             self.assertEqual(imported & forbidden_import_roots, set(), relative)
             self.assertEqual(called & forbidden_calls, set(), relative)
+
+
+class V075ReleaseMetadataTests(unittest.TestCase):
+    def test_versions_manifest_and_candidate_inventory_are_exact(self):
+        from crypto_quant.build import EvaluatorBuild, _V075_RELEASE_PATHS
+
+        self.assertRegex(
+            (ROOT / "pyproject.toml").read_text(),
+            r'(?m)^version = "0\.75\.0"$',
+        )
+        self.assertRegex(
+            (ROOT / "setup.py").read_text(),
+            r'version="0\.75\.0"',
+        )
+        manifest = json.loads(
+            (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
+        )
+        self.assertEqual(
+            (
+                crypto_quant.__version__,
+                manifest["package_version"],
+                manifest["manifest_version"],
+            ),
+            ("0.75.0", "0.75.0", "1.69.0"),
+        )
+        expected = set(EvaluatorBuild.expected_file_paths(ROOT))
+        self.assertEqual(set(manifest["file_hashes"]), expected)
+        self.assertEqual(set(_V075_RELEASE_PATHS) - expected, set())
+        expected_paths = EvaluatorBuild.expected_file_paths(ROOT)
+        self.assertEqual(len(expected_paths), len(set(expected_paths)))
+
+    def test_status_preserves_plan_only_nonactivation_boundary(self):
+        status = STATUS_PATH.read_text()
+        for required in (
+            "ACCELERATED_CANARY_PLAN_PREREGISTERED_NOT_ACTIVATED",
+            "CODE_COMPLETE_NOT_ACTIVATED_NOT_YET_REACHED",
+            "production_activation=false",
+            "runtime_install_authorized=false",
+            "credentials_allowed=false",
+            "real_orders_allowed=false",
+            "fund_movement_allowed=false",
+            "no 72-hour timer started",
+            "no 90-day timer started",
+            "v0.74 economic contract remains immutable",
+        ):
+            self.assertIn(required, status)
+
+    def test_readme_reports_v075_and_keeps_v076_v077_future(self):
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn("当前代码版本为 `0.75.0`", readme)
+        self.assertIn("实施追踪 v0.75.0", readme)
+        self.assertIn("v0.76", readme)
+        self.assertIn("v0.77", readme)
+        self.assertIn("CODE_COMPLETE_NOT_ACTIVATED", readme)
 
 
 if __name__ == "__main__":
