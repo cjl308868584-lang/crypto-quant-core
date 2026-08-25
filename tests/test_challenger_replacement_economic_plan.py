@@ -1,5 +1,6 @@
 import json
 import copy
+import hashlib
 import os
 import re
 import tempfile
@@ -20,6 +21,18 @@ from crypto_quant.challenger_replacement_economic_plan import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+ARTIFACT_PATH = ROOT / (
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-economic-evaluation-plan-v0.74.0.json"
+)
+ARTIFACT_SHA256 = "8374e304e573e45addcad2140c0c43e7496e6200047d77192ca184b8f510e22a"
+FROZEN_PREDECESSOR_PATHS = (
+    ROOT / "artifacts/challenger-replacement/challenger-replacement-plan-v0.69.0.json",
+    ROOT / "artifacts/challenger-replacement/challenger-replacement-v3-owner-attestation-v0.69.0.json",
+    ROOT / "artifacts/challenger-replacement/challenger-replacement-binance-simulation-contract-v0.71.0.json",
+    ROOT / "artifacts/challenger-replacement/challenger-replacement-binance-golden-fixture-manifest-v0.72.0.json",
+    ROOT / "config/evaluator-build-manifest-v1.json",
+)
 PACKAGE_SCHEMA = (
     ROOT
     / "src/crypto_quant/schemas/"
@@ -386,6 +399,38 @@ class EconomicPlanLoaderTests(_EconomicPlanFileTests):
                     "CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_PATH_INVALID",
                 ):
                     load_challenger_replacement_economic_plan(candidate)
+
+
+class EconomicPlanArtifactTests(unittest.TestCase):
+    """The committed preregistration is exact builder output and authority."""
+
+    def test_artifact_is_exact_canonical_builder_bytes_and_strictly_replays(self):
+        """Catches a missing, hand-edited, or non-replayable formal plan file."""
+        predecessor_bytes = {
+            path: path.read_bytes() for path in FROZEN_PREDECESSOR_PATHS
+        }
+        self.assertTrue(ARTIFACT_PATH.is_file())
+        expected = canonical_json(
+            build_challenger_replacement_economic_plan()
+        ).encode("utf-8") + b"\n"
+        self.assertEqual(ARTIFACT_PATH.read_bytes(), expected)
+        self.assertEqual(
+            load_challenger_replacement_economic_plan(ARTIFACT_PATH),
+            build_challenger_replacement_economic_plan(),
+        )
+        for path, before in predecessor_bytes.items():
+            with self.subTest(path=path.name):
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_artifact_has_the_frozen_literal_sha256(self):
+        """Catches a changed future authority artifact even if it still parses."""
+        self.assertTrue(ARTIFACT_PATH.is_file())
+        self.assertRegex(ARTIFACT_SHA256, r"^[0-9a-f]{64}$")
+        self.assertNotEqual(ARTIFACT_SHA256, "0" * 64)
+        self.assertEqual(
+            hashlib.sha256(ARTIFACT_PATH.read_bytes()).hexdigest(),
+            ARTIFACT_SHA256,
+        )
 
 
 class EconomicPlanMutationTests(unittest.TestCase):
