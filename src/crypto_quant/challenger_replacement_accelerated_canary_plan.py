@@ -27,7 +27,9 @@ from .evidence import artifact_self_hash
 
 _SCHEMA = "challenger-replacement-accelerated-canary-plan-v1.schema.json"
 _ZERO_HASH = "0" * 64
-_ARTIFACT_SHA256 = _ZERO_HASH
+_ARTIFACT_SHA256 = (
+    "31b9545a18850d068e858ae434a79e43967efd584df2cee9ff0833b1b203d6ee"
+)
 _POLICY_SECTIONS = (
     "supersession_scope",
     "projection_contract",

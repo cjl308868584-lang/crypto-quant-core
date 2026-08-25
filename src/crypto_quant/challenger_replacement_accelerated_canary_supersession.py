@@ -29,7 +29,9 @@ _SCHEMA = (
     "challenger-replacement-accelerated-canary-supersession-v1.schema.json"
 )
 _ZERO_HASH = "0" * 64
-_ARTIFACT_SHA256 = _ZERO_HASH
+_ARTIFACT_SHA256 = (
+    "8f7d2d551b20154dc5bc26316376386e721929fc81a2392fcb1ea692ad09049e"
+)
 
 
 class ChallengerReplacementAcceleratedCanarySupersessionError(ValueError):
