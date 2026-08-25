@@ -336,7 +336,7 @@ git commit -m "feat: freeze replacement economic evaluation plan"
 - Consumes: completed Task 1–3 files.
 - Produces: static/runtime proof that v0.74 remains plan-only and deterministic build inventory includes its formal inputs.
 
-- [ ] **Step 1: Write authority/inventory RED tests**
+- [x] **Step 1: Write authority/inventory RED tests**
 
 Parse the new module AST and reject imports containing:
 
@@ -368,7 +368,7 @@ docs/adr/0074-replacement-v3-economic-preregistration.md
 docs/implementation-status-v0.74.0.md
 ```
 
-- [ ] **Step 2: Run authority RED**
+- [x] **Step 2: Run authority RED**
 
 ```bash
 PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_plan.EconomicPlanAuthorityTests -v
@@ -376,7 +376,7 @@ PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_pl
 
 Expected: inventory failure because `_V074_RELEASE_PATHS` is absent. The AST and no-side-effect subtests should already pass.
 
-- [ ] **Step 3: Add the minimal build inventory**
+- [x] **Step 3: Add the minimal build inventory**
 
 Add `_V074_RELEASE_PATHS` after `_V073_RELEASE_PATHS` with only the artifact,
 two tests, spec, plan, ADR and status paths. Append
@@ -385,7 +385,7 @@ repeat the module or package Schema already captured by existing globs, change
 old tuples or add dynamic artifact/docs/test globs. Missing Task 5 files remain
 an intentional inventory RED until created.
 
-- [ ] **Step 4: Commit the authority boundary**
+- [x] **Step 4: Commit the authority boundary**
 
 ```bash
 git add src/crypto_quant/build.py tests/test_challenger_replacement_economic_plan.py
