@@ -1,0 +1,1058 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-accelerated-canary-plan-v1.schema.json",
+  "title": "Challenger Replacement Accelerated Canary Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "plan_id",
+    "plan_hash",
+    "foundation",
+    "supersession_scope",
+    "projection_contract",
+    "code_complete_program",
+    "simulation_qualification",
+    "operational_ceremony",
+    "hard_stop_policy",
+    "canary_ladder",
+    "credential_boundary",
+    "approval_ledger",
+    "authority",
+    "status",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-accelerated-canary-plan-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^challenger_replacement_accelerated_canary_plan_[0-9a-f]{64}$"
+    },
+    "plan_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "foundation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v069_plan",
+        "v073_release",
+        "v074_economic_plan",
+        "v074_release"
+      ],
+      "properties": {
+        "v069_plan": {
+          "$ref": "#/$defs/planFoundation"
+        },
+        "v073_release": {
+          "$ref": "#/$defs/releaseFoundation"
+        },
+        "v074_economic_plan": {
+          "$ref": "#/$defs/planFoundation"
+        },
+        "v074_release": {
+          "$ref": "#/$defs/releaseFoundationWithTagObject"
+        }
+      }
+    },
+    "supersession_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed_rules",
+        "unchanged_rules",
+        "effective_for_future_bound_start_only",
+        "retroactive_rewrite_allowed",
+        "economic_contract_changed",
+        "policy_hash"
+      ],
+      "properties": {
+        "changed_rules": {
+          "$ref": "#/$defs/changedRules"
+        },
+        "unchanged_rules": {
+          "$ref": "#/$defs/unchangedRules"
+        },
+        "effective_for_future_bound_start_only": {
+          "const": true
+        },
+        "retroactive_rewrite_allowed": {
+          "const": false
+        },
+        "economic_contract_changed": {
+          "const": false
+        },
+        "policy_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "projection_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_source",
+        "economic_projection",
+        "operational_projection",
+        "projection_write_authority",
+        "exports_authoritative",
+        "ceremony_economic_use",
+        "policy_hash"
+      ],
+      "properties": {
+        "fact_source": {
+          "const": "APPEND_ONLY_CANONICAL_DECISION_OPPORTUNITY_EVENT_LOG"
+        },
+        "economic_projection": {
+          "const": "V074_ECONOMIC_RESEARCH_PROJECTION_V1_UNCHANGED"
+        },
+        "operational_projection": {
+          "const": "ACCELERATED_OPERATIONAL_CANARY_PROJECTION_V2"
+        },
+        "projection_write_authority": {
+          "const": false
+        },
+        "exports_authoritative": {
+          "const": false
+        },
+        "ceremony_economic_use": {
+          "const": "EXCLUDED_FROM_STRATEGY_AND_ECONOMIC_EVIDENCE"
+        },
+        "policy_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "code_complete_program": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_target_days",
+        "maximum_target_days",
+        "release_sequence",
+        "milestone",
+        "activation_at_milestone",
+        "policy_hash"
+      ],
+      "properties": {
+        "minimum_target_days": {
+          "const": 10
+        },
+        "maximum_target_days": {
+          "const": 14
+        },
+        "release_sequence": {
+          "$ref": "#/$defs/releaseSequence"
+        },
+        "milestone": {
+          "const": "CODE_COMPLETE_NOT_ACTIVATED"
+        },
+        "activation_at_milestone": {
+          "const": false
+        },
+        "policy_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "simulation_qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_source",
+        "minimum_continuous_seconds",
+        "cadence_seconds",
+        "fixture_time_counts",
+        "healthy_segment_rule",
+        "flat_missed_action",
+        "short_disconnect_action",
+        "exposed_miss_action",
+        "terminal_outcomes",
+        "complete_fault_matrix_required",
+        "replay_required",
+        "policy_hash"
+      ],
+      "properties": {
+        "start_source": {
+          "const": "FIRST_NATURAL_PRODUCTION_QUALIFIED_OBSERVED_AFTER_INSTALL_AND_PREFLIGHT"
+        },
+        "minimum_continuous_seconds": {
+          "const": 259200
+        },
+        "cadence_seconds": {
+          "const": 14400
+        },
+        "fixture_time_counts": {
+          "const": false
+        },
+        "healthy_segment_rule": {
+          "const": "ONE_FINAL_UNINTERRUPTED_SEGMENT_DISCONNECTED_SECONDS_NEVER_SUMMED"
+        },
+        "flat_missed_action": {
+          "const": "CLOSE_SEGMENT_RECOVERABLE_START_NEW_SEGMENT_AT_NEXT_NATURAL_OBSERVED"
+        },
+        "short_disconnect_action": {
+          "const": "CLOSE_SEGMENT_RECOVERABLE_AFTER_FLAT_RECONCILIATION"
+        },
+        "exposed_miss_action": {
+          "const": "REJECT_NEW_RISK_FLATTEN_FAIL_BLOCK_REQUIRE_INCIDENT_UNLOCK"
+        },
+        "terminal_outcomes": {
+          "$ref": "#/$defs/terminalOutcomes"
+        },
+        "complete_fault_matrix_required": {
+          "const": true
+        },
+        "replay_required": {
+          "const": true
+        },
+        "policy_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "operational_ceremony": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "start_state",
+        "ordered_states",
+        "amount_source",
+        "spot_instrument",
+        "perpetual_instrument",
+        "perpetual_position_mode",
+        "perpetual_margin_mode",
+        "technical_leverage_cap",
+        "product_mutual_exclusion",
+        "protective_stop_required_while_exposed",
+        "close_reduce_only_required",
+        "evidence_exclusions",
+        "retry_policy",
+        "policy_hash"
+      ],
+      "properties": {
+        "label": {
+          "const": "OPERATIONAL_CEREMONY_NOT_STRATEGY_EVIDENCE"
+        },
+        "start_state": {
+          "const": "CEREMONY_READY_FLAT"
+        },
+        "ordered_states": {
+          "$ref": "#/$defs/ceremonyStates"
+        },
+        "amount_source": {
+          "const": "VENUE_VERIFIED_MINIMUM_PERMISSIBLE_AMOUNT_AT_APPROVED_PREFLIGHT"
+        },
+        "spot_instrument": {
+          "const": "ETHUSDT_SPOT"
+        },
+        "perpetual_instrument": {
+          "const": "ETHUSDT_USDM_PERPETUAL"
+        },
+        "perpetual_position_mode": {
+          "const": "ONE_WAY"
+        },
+        "perpetual_margin_mode": {
+          "const": "ISOLATED"
+        },
+        "technical_leverage_cap": {
+          "const": "2"
+        },
+        "product_mutual_exclusion": {
+          "const": true
+        },
+        "protective_stop_required_while_exposed": {
+          "const": true
+        },
+        "close_reduce_only_required": {
+          "const": true
+        },
+        "evidence_exclusions": {
+          "$ref": "#/$defs/evidenceExclusions"
+        },
+        "retry_policy": {
+          "const": "FAILED_BLOCK_RETAINED_NEW_EXACT_APPROVAL_AFTER_INCIDENT_ACCEPTANCE"
+        },
+        "policy_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "hard_stop_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_classes",
+        "duplicate_order_mapping",
+        "unrecorded_fill_mapping",
+        "block_effect",
+        "project_effect",
+        "recovery_requirements",
+        "recoverable_flat_conditions",
+        "policy_hash"
+      ],
+      "properties": {
+        "absolute_classes": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN"
+            },
+            {
+              "const": "VENUE_LOCAL_POSITION_MISMATCH"
+            },
+            {
+              "const": "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP"
+            },
+            {
+              "const": "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT"
+            }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "duplicate_order_mapping": {
+          "const": "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN_OR_VENUE_LOCAL_POSITION_MISMATCH"
+        },
+        "unrecorded_fill_mapping": {
+          "const": "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN_OR_VENUE_LOCAL_POSITION_MISMATCH"
+        },
+        "block_effect": {
+          "const": "REJECT_NEW_RISK_RECONCILE_FLATTEN_AND_PERMANENTLY_FAIL_CURRENT_BLOCK"
+        },
+        "project_effect": {
+          "const": "PROJECT_NOT_PERMANENTLY_ABANDONED"
+        },
+        "recovery_requirements": {
+          "$ref": "#/$defs/recoveryRequirements"
+        },
+        "recoverable_flat_conditions": {
+          "$ref": "#/$defs/recoverableFlatConditions"
+        },
+        "policy_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "canary_ladder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "E0",
+        "E1",
+        "E2",
+        "product_cycle_requirements",
+        "promotion_automatic",
+        "policy_hash"
+      ],
+      "properties": {
+        "E0": {
+          "$ref": "#/$defs/stageE0"
+        },
+        "E1": {
+          "$ref": "#/$defs/stageE1"
+        },
+        "E2": {
+          "$ref": "#/$defs/stageE2"
+        },
+        "product_cycle_requirements": {
+          "$ref": "#/$defs/productCycleRequirements"
+        },
+        "promotion_automatic": {
+          "const": false
+        },
+        "policy_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "credential_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "venue",
+        "repository_external",
+        "owner_only",
+        "withdrawal_allowed",
+        "ip_allowlist_required",
+        "least_privilege_required",
+        "secret_logging_allowed",
+        "policy_hash"
+      ],
+      "properties": {
+        "venue": {
+          "const": "BINANCE_ONLY"
+        },
+        "repository_external": {
+          "const": true
+        },
+        "owner_only": {
+          "const": true
+        },
+        "withdrawal_allowed": {
+          "const": false
+        },
+        "ip_allowlist_required": {
+          "const": true
+        },
+        "least_privilege_required": {
+          "const": true
+        },
+        "secret_logging_allowed": {
+          "const": false
+        },
+        "policy_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "approval_ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "separately_approved_actions",
+        "inference_from_general_approval_allowed",
+        "binding_fields",
+        "policy_hash"
+      ],
+      "properties": {
+        "separately_approved_actions": {
+          "$ref": "#/$defs/approvalActions"
+        },
+        "inference_from_general_approval_allowed": {
+          "const": false
+        },
+        "binding_fields": {
+          "$ref": "#/$defs/approvalBindingFields"
+        },
+        "policy_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "production_activation",
+        "runtime_install_authorized",
+        "replacement_start_authorized",
+        "credentials_allowed",
+        "account_requests_allowed",
+        "broker_requests_allowed",
+        "real_orders_allowed",
+        "fund_movement_allowed",
+        "ceremony_authorized",
+        "e0_activation_authorized",
+        "market_requests",
+        "private_account_requests",
+        "production_state_writes",
+        "economic_outcome_reads"
+      ],
+      "properties": {
+        "production_activation": {
+          "const": false
+        },
+        "runtime_install_authorized": {
+          "const": false
+        },
+        "replacement_start_authorized": {
+          "const": false
+        },
+        "credentials_allowed": {
+          "const": false
+        },
+        "account_requests_allowed": {
+          "const": false
+        },
+        "broker_requests_allowed": {
+          "const": false
+        },
+        "real_orders_allowed": {
+          "const": false
+        },
+        "fund_movement_allowed": {
+          "const": false
+        },
+        "ceremony_authorized": {
+          "const": false
+        },
+        "e0_activation_authorized": {
+          "const": false
+        },
+        "market_requests": {
+          "const": 0
+        },
+        "private_account_requests": {
+          "const": 0
+        },
+        "production_state_writes": {
+          "const": 0
+        },
+        "economic_outcome_reads": {
+          "const": 0
+        }
+      }
+    },
+    "status": {
+      "const": "ACCELERATED_CANARY_PLAN_PREREGISTERED_NOT_ACTIVATED"
+    },
+    "warnings": {
+      "$ref": "#/$defs/warnings"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "planFoundation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file_sha256",
+        "plan_id",
+        "plan_hash"
+      ],
+      "properties": {
+        "file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plan_id": {
+          "type": "string",
+          "minLength": 65,
+          "maxLength": 160
+        },
+        "plan_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "releaseFoundation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_tag",
+        "peeled_commit",
+        "package_version",
+        "manifest_version",
+        "manifest_hash"
+      ],
+      "properties": {
+        "release_tag": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "peeled_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "package_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "manifest_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "manifest_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "releaseFoundationWithTagObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_tag",
+        "tag_object",
+        "peeled_commit",
+        "package_version",
+        "manifest_version",
+        "manifest_file_sha256",
+        "manifest_hash",
+        "tree_hash"
+      ],
+      "properties": {
+        "release_tag": {
+          "const": "v0.74.0"
+        },
+        "tag_object": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "peeled_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "package_version": {
+          "const": "0.74.0"
+        },
+        "manifest_version": {
+          "const": "1.68.0"
+        },
+        "manifest_file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "manifest_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tree_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "changedRules": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "SEVEN_DAY_NATURAL_CYCLE_GATE_TO_CONTINUOUS_72_HOUR_QUALIFICATION"
+        },
+        {
+          "const": "NATURAL_PRE_E0_PRODUCT_ROUNDTRIPS_TO_EXCLUDED_OPERATIONAL_CEREMONY"
+        },
+        {
+          "const": "PERMANENT_STREAM_LOCK_TO_IMMUTABLE_FAILED_BLOCK_AND_APPROVED_NEW_BLOCK"
+        },
+        {
+          "const": "BROAD_TERMINAL_OPERATIONAL_FAILURES_TO_FOUR_ABSOLUTE_STAGE_HARD_STOPS"
+        }
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "unchangedRules": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "FOUR_HOUR_DECISION_OPPORTUNITY_CADENCE"
+        },
+        {
+          "const": "MISSED_RETAINED_NO_BACKFILL"
+        },
+        {
+          "const": "V074_NINETY_DAY_ECONOMIC_RESEARCH_UNCHANGED"
+        },
+        {
+          "const": "BINANCE_ONLY_MUTUALLY_EXCLUSIVE_SPOT_LONG_PERP_SHORT"
+        },
+        {
+          "const": "ONE_WAY_ISOLATED_PERPETUAL_TECHNICAL_CAP_2X"
+        },
+        {
+          "const": "E0_E1_E2_CAPITAL_EXPOSURE_AND_LOSS_LIMITS"
+        },
+        {
+          "const": "NO_SHORT_WINDOW_PROFITABILITY_OR_AI_ADVANTAGE_CLAIM"
+        }
+      ],
+      "items": false,
+      "minItems": 7,
+      "maxItems": 7
+    },
+    "releaseSequence": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "V075_GOVERNANCE_SUPERSESSION"
+        },
+        {
+          "const": "V076_PUBLIC_SIMULATION_AND_RESEARCH_BUNDLE"
+        },
+        {
+          "const": "V077_BINANCE_PRIVATE_BOUNDARY_AND_CANARY_BUNDLE"
+        }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "terminalOutcomes": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "OBSERVED"
+        },
+        {
+          "const": "MISSED"
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "ceremonyStates": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "CEREMONY_READY_FLAT"
+        },
+        {
+          "const": "SPOT_BUY_SUBMITTED"
+        },
+        {
+          "const": "SPOT_LONG_RECONCILED"
+        },
+        {
+          "const": "SPOT_SELL_SUBMITTED"
+        },
+        {
+          "const": "FLAT_RECONCILED_AFTER_SPOT"
+        },
+        {
+          "const": "PERP_SHORT_SUBMITTED"
+        },
+        {
+          "const": "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED"
+        },
+        {
+          "const": "PERP_CLOSE_REDUCE_ONLY_SUBMITTED"
+        },
+        {
+          "const": "FLAT_RECONCILED_AFTER_PERP"
+        },
+        {
+          "const": "CEREMONY_QUALIFIED"
+        }
+      ],
+      "items": false,
+      "minItems": 10,
+      "maxItems": 10
+    },
+    "evidenceExclusions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy_cycle_count",
+        "economic_population",
+        "simulation_performance",
+        "stage_strategy_cycle_count"
+      ],
+      "properties": {
+        "strategy_cycle_count": {
+          "const": true
+        },
+        "economic_population": {
+          "const": true
+        },
+        "simulation_performance": {
+          "const": true
+        },
+        "stage_strategy_cycle_count": {
+          "const": true
+        }
+      }
+    },
+    "recoveryRequirements": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "IMMUTABLE_INCIDENT_RECORD"
+        },
+        {
+          "const": "VERIFIED_FLAT_POSITION"
+        },
+        {
+          "const": "EXPLICIT_INCIDENT_UNLOCK_APPROVAL"
+        },
+        {
+          "const": "NEW_STAGE_BLOCK_IDENTITY"
+        }
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "recoverableFlatConditions": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "SHORT_NETWORK_INTERRUPTION"
+        },
+        {
+          "const": "FLAT_MISSED_OPPORTUNITY"
+        },
+        {
+          "const": "INSUFFICIENT_SAMPLE"
+        },
+        {
+          "const": "INCOMPLETE_PRODUCT_COVERAGE"
+        },
+        {
+          "const": "NEGATIVE_SHORT_WINDOW_RETURN"
+        }
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "stageE0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capital_limit_usdt",
+        "gross_exposure_limit",
+        "gross_exposure_notional_limit_usdt",
+        "minimum_calendar_days",
+        "minimum_strategy_cycles",
+        "daily_loss_limit_kind",
+        "daily_loss_limit",
+        "daily_limit_action",
+        "drawdown_limit_kind",
+        "drawdown_limit",
+        "drawdown_limit_action"
+      ],
+      "properties": {
+        "capital_limit_usdt": {
+          "const": "100"
+        },
+        "gross_exposure_limit": {
+          "const": "0.5"
+        },
+        "gross_exposure_notional_limit_usdt": {
+          "const": "50"
+        },
+        "minimum_calendar_days": {
+          "const": 7
+        },
+        "minimum_strategy_cycles": {
+          "const": 3
+        },
+        "daily_loss_limit_kind": {
+          "const": "ABSOLUTE_USDT"
+        },
+        "daily_loss_limit": {
+          "const": "2"
+        },
+        "daily_limit_action": {
+          "const": "STOP_NEW_RISK_UNTIL_NEXT_UTC_DAY"
+        },
+        "drawdown_limit_kind": {
+          "const": "ABSOLUTE_USDT"
+        },
+        "drawdown_limit": {
+          "const": "5"
+        },
+        "drawdown_limit_action": {
+          "const": "FLATTEN_AND_STAGE_FAIL"
+        }
+      }
+    },
+    "stageE1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capital_limit_usdt",
+        "gross_exposure_limit",
+        "minimum_calendar_days",
+        "minimum_strategy_cycles",
+        "daily_loss_limit_kind",
+        "daily_loss_limit",
+        "daily_limit_action",
+        "drawdown_limit_kind",
+        "drawdown_limit",
+        "drawdown_limit_action"
+      ],
+      "properties": {
+        "capital_limit_usdt": {
+          "const": "300"
+        },
+        "gross_exposure_limit": {
+          "const": "1"
+        },
+        "minimum_calendar_days": {
+          "const": 14
+        },
+        "minimum_strategy_cycles": {
+          "const": 5
+        },
+        "daily_loss_limit_kind": {
+          "const": "ABSOLUTE_USDT"
+        },
+        "daily_loss_limit": {
+          "const": "2"
+        },
+        "daily_limit_action": {
+          "const": "STOP_NEW_RISK_UNTIL_NEXT_UTC_DAY"
+        },
+        "drawdown_limit_kind": {
+          "const": "ABSOLUTE_USDT"
+        },
+        "drawdown_limit": {
+          "const": "5"
+        },
+        "drawdown_limit_action": {
+          "const": "FLATTEN_AND_STAGE_FAIL"
+        }
+      }
+    },
+    "stageE2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capital_limit_usdt",
+        "gross_exposure_limit",
+        "technical_leverage_cap",
+        "minimum_calendar_days",
+        "minimum_strategy_cycles",
+        "daily_loss_limit_kind",
+        "daily_loss_limit",
+        "daily_limit_action",
+        "drawdown_limit_kind",
+        "drawdown_limit",
+        "drawdown_limit_action"
+      ],
+      "properties": {
+        "capital_limit_usdt": {
+          "const": "1000"
+        },
+        "gross_exposure_limit": {
+          "const": "2"
+        },
+        "technical_leverage_cap": {
+          "const": "2"
+        },
+        "minimum_calendar_days": {
+          "const": 30
+        },
+        "minimum_strategy_cycles": {
+          "const": 10
+        },
+        "daily_loss_limit_kind": {
+          "const": "FRACTION_OF_STAGE_CAPITAL"
+        },
+        "daily_loss_limit": {
+          "const": "0.02"
+        },
+        "daily_limit_action": {
+          "const": "STOP_NEW_RISK_UNTIL_NEXT_UTC_DAY"
+        },
+        "drawdown_limit_kind": {
+          "const": "FRACTION_OF_HIGH_WATER_EQUITY"
+        },
+        "drawdown_limit": {
+          "const": "0.075"
+        },
+        "drawdown_limit_action": {
+          "const": "FLATTEN_AND_STAGE_FAIL"
+        }
+      }
+    },
+    "productCycleRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "spot_complete_cycle_each_stage",
+        "perpetual_complete_cycle_each_stage",
+        "ceremony_cycles_count"
+      ],
+      "properties": {
+        "spot_complete_cycle_each_stage": {
+          "const": 1
+        },
+        "perpetual_complete_cycle_each_stage": {
+          "const": 1
+        },
+        "ceremony_cycles_count": {
+          "const": false
+        }
+      }
+    },
+    "approvalActions": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "INSTALL_PRODUCTION_LIKE_SIMULATION_SERVICE"
+        },
+        {
+          "const": "BOOTSTRAP_START_SERVICE_AND_CREATE_START_RECEIPTS"
+        },
+        {
+          "const": "CREATE_OR_READ_REAL_BINANCE_API_KEY"
+        },
+        {
+          "const": "FUND_OR_TRANSFER_CEREMONY_OR_E0_CAPITAL"
+        },
+        {
+          "const": "ACTIVATE_SPOT_CEREMONY_ORDERS"
+        },
+        {
+          "const": "ACTIVATE_PERPETUAL_CEREMONY_ORDERS"
+        },
+        {
+          "const": "ACTIVATE_E0"
+        },
+        {
+          "const": "PROMOTE_E1"
+        },
+        {
+          "const": "PROMOTE_E2"
+        },
+        {
+          "const": "UNLOCK_FAILED_BLOCK_AFTER_INCIDENT_REVIEW"
+        }
+      ],
+      "items": false,
+      "minItems": 10,
+      "maxItems": 10
+    },
+    "approvalBindingFields": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "RELEASED_BUILD_IDENTITY"
+        },
+        {
+          "const": "CONFIGURATION_HASH"
+        },
+        {
+          "const": "ACCOUNT_IDENTITY"
+        },
+        {
+          "const": "CAPITAL_LIMIT"
+        },
+        {
+          "const": "EXPIRY"
+        },
+        {
+          "const": "RISK_LIMITS"
+        }
+      ],
+      "items": false,
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "warnings": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "V074_ECONOMIC_RESEARCH_REMAINS_IMMUTABLE"
+        },
+        {
+          "const": "SEVENTY_TWO_HOURS_IS_OPERATIONAL_NOT_PROFITABILITY_EVIDENCE"
+        },
+        {
+          "const": "CEREMONY_IS_NOT_STRATEGY_OR_ECONOMIC_EVIDENCE"
+        },
+        {
+          "const": "CODE_COMPLETE_NOT_ACTIVATED_NOT_YET_REACHED"
+        },
+        {
+          "const": "NO_INSTALL_START_CREDENTIAL_ORDER_FUND_OR_CANARY_AUTHORITY"
+        }
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    }
+  }
+}

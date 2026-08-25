@@ -146,8 +146,8 @@ class DeploymentCandidateTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             paths = EvaluatorBuild.expected_file_paths(clone)
             hashes = EvaluatorBuild.file_hashes(clone, paths)
-            manifest["manifest_version"] = "1.68.0"
-            manifest["package_version"] = "0.74.0"
+            manifest["manifest_version"] = "1.69.0"
+            manifest["package_version"] = "0.75.0"
             manifest["file_hashes"] = hashes
             manifest["build_input_tree_hash"] = business_hash(hashes)
             manifest["manifest_hash"] = "0" * 64
