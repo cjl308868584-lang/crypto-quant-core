@@ -163,7 +163,7 @@ def challenger_replacement_economic_plan_reasons(plan: Mapping[str, Any]) -> Tup
 def load_challenger_replacement_economic_plan(path: Path) -> Dict[str, Any]: ...
 ```
 
-- [ ] **Step 1: Write builder RED tests**
+- [x] **Step 1: Write builder RED tests**
 
 Require an empty builder signature. Freeze these identities:
 
@@ -183,7 +183,7 @@ V073_MANIFEST_FILE_SHA = "c41a46442993bac947773d383f722dfbaa358417ba67e87bf1e81d
 
 Assert every value from Spec §§5–11: 90 daily returns, seven-day blocks, 10,000 resamples, seed `2026082574`, MERE `0.0005`, cycle gates 12/3/3, 5-of-6 blocks, 5% drawdown, 1.5x friction and 1.25-USDT flat-miss penalty. Assert start/tail are null, status is `ECONOMIC_EVALUATION_PLAN_PREREGISTERED_NOT_STARTED`, and result/observations are absent.
 
-- [ ] **Step 2: Run builder RED**
+- [x] **Step 2: Run builder RED**
 
 ```bash
 PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_plan.EconomicPlanBuilderTests -v
@@ -191,7 +191,7 @@ PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_pl
 
 Expected: import failure.
 
-- [ ] **Step 3: Implement the pure builder**
+- [x] **Step 3: Implement the pure builder**
 
 Reuse `business_hash`, `canonical_json`, `stable_id`, `artifact_self_hash`, `_read_owner_controlled_regular_file` and `_strict_json_bytes`. Add `policy_hash` with:
 
@@ -229,11 +229,11 @@ STRESS_1_5X_ADVERSE_FRICTION_TOTAL_NET_PNL_USDT GTE 0
 
 Stable ID covers foundation identities, all policy hashes, ordered gate-array hashes and final-state-machine hash. `plan_hash` excludes only itself. Validate against Task 1 Schema and return a deep copy.
 
-- [ ] **Step 4: Run builder GREEN**
+- [x] **Step 4: Run builder GREEN**
 
 Run Step 2. Expected: PASS.
 
-- [ ] **Step 5: Write loader/mutation RED tests**
+- [x] **Step 5: Write loader/mutation RED tests**
 
 Cover relative path, canonical bytes with optional single LF, duplicate key, float, whitespace, multiple LF, symlink, directory, wrong mode, hardlink and oversized file. Mutate every foundation/policy/gate/authority/warning/status/eligibility leaf, recompute claimed hashes/ID, and require semantic mismatch. Freeze public reason codes:
 
@@ -250,7 +250,7 @@ CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_JSON_INVALID
 CHALLENGER_REPLACEMENT_ECONOMIC_PLAN_CANONICAL_BYTES_REQUIRED
 ```
 
-- [ ] **Step 6: Run loader RED**
+- [x] **Step 6: Run loader RED**
 
 ```bash
 PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_plan.EconomicPlanLoaderTests tests.test_challenger_replacement_economic_plan.EconomicPlanMutationTests -v
@@ -258,11 +258,11 @@ PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_pl
 
 Expected: FAIL because reason reduction/loading are absent.
 
-- [ ] **Step 7: Implement strict reasons and loader**
+- [x] **Step 7: Implement strict reasons and loader**
 
 Use the released v3 order: Schema, self-hash, policy hashes, stable ID, rebuilt semantic equality. Require absolute owner-controlled regular-file path, strict JSON, canonical bytes or canonical+one LF. Map all expected lower-level errors to fixed public codes; never leak raw `OSError`, `KeyError`, `TypeError`, `ValueError`, recursion or canonicalization errors.
 
-- [ ] **Step 8: Run Task 2 tests and commit**
+- [x] **Step 8: Run Task 2 tests and commit**
 
 ```bash
 PYTHONPATH=src python3 -m unittest tests.test_challenger_replacement_economic_plan -v
