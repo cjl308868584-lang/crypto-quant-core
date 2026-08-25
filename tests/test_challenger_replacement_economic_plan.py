@@ -1,8 +1,12 @@
 import json
+import re
 import unittest
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
+
+from crypto_quant.canonical import canonical_decimal
+from crypto_quant.errors import CanonicalizationError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,6 +96,29 @@ class EconomicPlanSchemaTests(unittest.TestCase):
             ],
             TERMINAL_OUTCOMES,
         )
+
+    def test_decimal_grammar_matches_canonical_decimal_rendering(self):
+        """Catches Decimal spellings that canonical_decimal would normalize or reject."""
+        schema = json.loads(PACKAGE_SCHEMA.read_text())
+        pattern = self._definition(schema, "decimal")["pattern"]
+        for value in ("0", "1", "-1", "0.5", "-0.5", "123.004"):
+            self.assertEqual(canonical_decimal(value), value)
+            self.assertIsNotNone(re.fullmatch(pattern, value))
+
+        with self.assertRaises(CanonicalizationError):
+            canonical_decimal("-0")
+        for value, canonical_value in (
+            ("-0", None),
+            ("0.0", "0"),
+            ("1.0", "1"),
+            ("-1.0", "-1"),
+            ("00", "0"),
+            ("01", "1"),
+            ("1.", "1"),
+        ):
+            if canonical_value is not None:
+                self.assertEqual(canonical_decimal(value), canonical_value)
+            self.assertIsNone(re.fullmatch(pattern, value))
 
     def test_authority_is_fixed_to_plan_only_zeros_and_falses(self):
         """Catches any schema path that could grant runtime or outcome authority."""
