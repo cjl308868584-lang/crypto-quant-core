@@ -2,6 +2,7 @@ import base64
 import hashlib
 from importlib import resources
 import json
+from types import SimpleNamespace
 import unittest
 
 from jsonschema import Draft202012Validator
@@ -10,6 +11,7 @@ from crypto_quant.challenger_replacement_binance_private_contract import (
     BINANCE_PRIVATE_ENDPOINTS,
     BinanceAccountApproval,
     BinancePrivateActivation,
+    apply_challenger_replacement_private_event,
     load_binance_account_approval_bytes,
     load_binance_private_activation_bytes,
     require_binance_private_endpoint,
@@ -699,6 +701,67 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "old_client_algo_id": old_client,
             "new_client_algo_id": new_client,
             "reason_code": "NEW_STOP_NOT_ACKNOWLEDGED",
+        })
+
+    def test_flat_close_stop_cleanup_has_one_query_first_durable_chain(self):
+        opportunity_id = self.workspace.opportunity_id
+        intent_id = "close-intent-" + "1" * 64
+        client = "cq77" + "a" * 32
+        projection = {"opportunities": {opportunity_id: {
+            "outcome": "OBSERVED", "stage": "OPPORTUNITY_OBSERVED",
+            "private": {
+                "stage": "BINANCE_FILLS_FEES_REPLAYED", "terminal": False,
+                "intent_id": intent_id, "product": "PERPETUAL",
+                "action": "CLOSE_SHORT", "fill_ids": [402],
+            },
+        }}}
+        events = (
+            ("BINANCE_STOP_CLEANUP_AUTHORIZED", {
+                "intent_id": intent_id, "client_algo_id": client,
+                "prior_reconciliation_id": "binance_reconciliation_" + "b" * 64,
+            }),
+            ("BINANCE_STOP_CLEANUP_REQUEST_PREPARED", {
+                "intent_id": intent_id, "client_algo_id": client,
+                "request_id": "binance_private_request_" + "d" * 64,
+                "request_sha256": "e" * 64, "timestamp_ms": 1787832000000,
+                "query_response_sha256": "c" * 64, "algo_id": 901,
+            }),
+            ("BINANCE_STOP_CLEANUP_SEND_STARTED", {
+                "intent_id": intent_id, "client_algo_id": client,
+                "request_id": "binance_private_request_" + "d" * 64,
+            }),
+            ("BINANCE_STOP_CLEANUP_RECONCILED", {
+                "intent_id": intent_id, "client_algo_id": client,
+                "query_response_sha256": "f" * 64,
+                "status": "BINANCE_FLAT_STOP_CLEANED",
+            }),
+        )
+        for sequence, (event_type, payload) in enumerate(events, 10):
+            header = {
+                "event_type": event_type, "slot_id": opportunity_id,
+                "payload_bytes_base64": base64.b64encode(
+                    canonical_json(payload).encode()
+                ).decode(),
+            }
+            apply_challenger_replacement_private_event(
+                projection,
+                SimpleNamespace(
+                    final_bytes=canonical_json(header).encode(),
+                    event_hash=format(sequence, "064x"), sequence=sequence,
+                ),
+            )
+        cleanup = projection["opportunities"][opportunity_id]["private"][
+            "stop_cleanup"
+        ]
+        self.assertEqual(cleanup, {
+            "stage": "BINANCE_STOP_CLEANUP_RECONCILED",
+            "client_algo_id": client,
+            "prior_reconciliation_id": "binance_reconciliation_" + "b" * 64,
+            "query_response_sha256": "f" * 64, "algo_id": 901,
+            "request_id": "binance_private_request_" + "d" * 64,
+            "request_sha256": "e" * 64,
+            "request_timestamp_ms": 1787832000000,
+            "status": "BINANCE_FLAT_STOP_CLEANED",
         })
 
 

@@ -8,7 +8,7 @@
   "properties": {
     "$schema": {"const": "./challenger-replacement-binance-private-event-v1.schema.json"},
     "schema_version": {"const": "1.0.0"},
-    "event_type": {"enum": ["BINANCE_INTENT_AUTHORIZED", "BINANCE_ABSENCE_CHECKED", "BINANCE_SIGNED_REQUEST_PREPARED", "BINANCE_REQUEST_SEND_STARTED", "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_ORDER_REJECTED", "BINANCE_ORDER_UNKNOWN", "BINANCE_ORDER_PARTIALLY_FILLED", "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED", "BINANCE_ORDER_EXPIRED", "BINANCE_FILL_OBSERVED", "BINANCE_FILLS_FEES_REPLAYED", "BINANCE_POSITION_BALANCE_RECONCILED", "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED", "BINANCE_RECONCILIATION_SUCCEEDED", "BINANCE_RECONCILIATION_FAILED", "BINANCE_STOP_INTENT_AUTHORIZED", "BINANCE_STOP_ABSENCE_CHECKED", "BINANCE_STOP_SIGNED_REQUEST_PREPARED", "BINANCE_STOP_REQUEST_SEND_STARTED", "BINANCE_STOP_ACKNOWLEDGED", "BINANCE_STOP_RECONCILED", "BINANCE_STOP_REPLACEMENT_STARTED", "BINANCE_STOP_REPLACEMENT_SUCCEEDED", "BINANCE_STOP_REPLACEMENT_FAILED"]},
+    "event_type": {"enum": ["BINANCE_INTENT_AUTHORIZED", "BINANCE_ABSENCE_CHECKED", "BINANCE_SIGNED_REQUEST_PREPARED", "BINANCE_REQUEST_SEND_STARTED", "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_ORDER_REJECTED", "BINANCE_ORDER_UNKNOWN", "BINANCE_ORDER_PARTIALLY_FILLED", "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED", "BINANCE_ORDER_EXPIRED", "BINANCE_FILL_OBSERVED", "BINANCE_FILLS_FEES_REPLAYED", "BINANCE_POSITION_BALANCE_RECONCILED", "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED", "BINANCE_RECONCILIATION_SUCCEEDED", "BINANCE_RECONCILIATION_FAILED", "BINANCE_STOP_INTENT_AUTHORIZED", "BINANCE_STOP_ABSENCE_CHECKED", "BINANCE_STOP_SIGNED_REQUEST_PREPARED", "BINANCE_STOP_REQUEST_SEND_STARTED", "BINANCE_STOP_ACKNOWLEDGED", "BINANCE_STOP_RECONCILED", "BINANCE_STOP_REPLACEMENT_STARTED", "BINANCE_STOP_REPLACEMENT_SUCCEEDED", "BINANCE_STOP_REPLACEMENT_FAILED", "BINANCE_STOP_CLEANUP_AUTHORIZED", "BINANCE_STOP_CLEANUP_REQUEST_PREPARED", "BINANCE_STOP_CLEANUP_SEND_STARTED", "BINANCE_STOP_CLEANUP_RECONCILED"]},
     "opportunity_id": {"$ref": "#/$defs/opportunityId"},
     "payload": {"type": "object"}
   },
@@ -34,7 +34,11 @@
     {"if": {"properties": {"event_type": {"const": "BINANCE_STOP_ACKNOWLEDGED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopAcknowledged"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_STOP_RECONCILED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopReconciled"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_STOP_REPLACEMENT_STARTED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopReplacementStarted"}}}},
-    {"if": {"properties": {"event_type": {"enum": ["BINANCE_STOP_REPLACEMENT_SUCCEEDED", "BINANCE_STOP_REPLACEMENT_FAILED"]}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopReplacementTerminal"}}}}
+    {"if": {"properties": {"event_type": {"enum": ["BINANCE_STOP_REPLACEMENT_SUCCEEDED", "BINANCE_STOP_REPLACEMENT_FAILED"]}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopReplacementTerminal"}}}},
+    {"if": {"properties": {"event_type": {"const": "BINANCE_STOP_CLEANUP_AUTHORIZED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopCleanupAuthorized"}}}},
+    {"if": {"properties": {"event_type": {"const": "BINANCE_STOP_CLEANUP_REQUEST_PREPARED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopCleanupPrepared"}}}},
+    {"if": {"properties": {"event_type": {"const": "BINANCE_STOP_CLEANUP_SEND_STARTED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopCleanupSend"}}}},
+    {"if": {"properties": {"event_type": {"const": "BINANCE_STOP_CLEANUP_RECONCILED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopCleanupReconciled"}}}}
   ],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -152,6 +156,26 @@
       "type": "object", "additionalProperties": false,
       "required": ["protected_intent_id", "old_client_algo_id", "new_client_algo_id", "reason_code_or_null"],
       "properties": {"protected_intent_id": {"$ref": "#/$defs/intentId"}, "old_client_algo_id": {"$ref": "#/$defs/clientOrderId"}, "new_client_algo_id": {"$ref": "#/$defs/clientOrderId"}, "reason_code_or_null": {"type": ["string", "null"], "minLength": 1, "maxLength": 128}}
+    },
+    "stopCleanupAuthorized": {
+      "type": "object", "additionalProperties": false,
+      "required": ["intent_id", "client_algo_id", "prior_reconciliation_id"],
+      "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "client_algo_id": {"$ref": "#/$defs/clientOrderId"}, "prior_reconciliation_id": {"type": "string", "pattern": "^binance_reconciliation_[0-9a-f]{64}$"}}
+    },
+    "stopCleanupPrepared": {
+      "type": "object", "additionalProperties": false,
+      "required": ["intent_id", "client_algo_id", "query_response_sha256", "algo_id", "request_id", "request_sha256", "timestamp_ms"],
+      "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "client_algo_id": {"$ref": "#/$defs/clientOrderId"}, "query_response_sha256": {"$ref": "#/$defs/sha256"}, "algo_id": {"type": "integer", "minimum": 1}, "request_id": {"$ref": "#/$defs/intentId"}, "request_sha256": {"$ref": "#/$defs/sha256"}, "timestamp_ms": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}}
+    },
+    "stopCleanupSend": {
+      "type": "object", "additionalProperties": false,
+      "required": ["intent_id", "client_algo_id", "request_id"],
+      "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "client_algo_id": {"$ref": "#/$defs/clientOrderId"}, "request_id": {"$ref": "#/$defs/intentId"}}
+    },
+    "stopCleanupReconciled": {
+      "type": "object", "additionalProperties": false,
+      "required": ["intent_id", "client_algo_id", "query_response_sha256", "status"],
+      "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "client_algo_id": {"$ref": "#/$defs/clientOrderId"}, "query_response_sha256": {"$ref": "#/$defs/sha256"}, "status": {"const": "BINANCE_FLAT_STOP_CLEANED"}}
     }
   }
 }

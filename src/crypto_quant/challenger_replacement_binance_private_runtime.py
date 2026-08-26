@@ -602,7 +602,8 @@ def _perpetual_facts(state, attempt, activation, position, incomes, stop,
         return {**facts, "ledger_projection": dict(facts)}
     except (KeyError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID", error)
-def _finish_perpetual(state, attempt, activation, stop, context):
+def _finish_perpetual(state, attempt, activation, stop, context,
+                      previous_reconciliation_bytes_or_null=None):
     order_result = _query_order(attempt, context)
     order = _document(order_result.body)
     order_id = order.get("orderId")
@@ -632,16 +633,144 @@ def _finish_perpetual(state, attempt, activation, stop, context):
     )
     income_documents = _tuple_documents(income.body)
     algo_documents = _tuple_documents(algos.body)
+    previous = (previous_reconciliation_bytes_or_null
+                if previous_reconciliation_bytes_or_null is not None else
+                _previous_reconciliation_bytes(
+                    state, product="PERPETUAL",
+                    before_opportunity_id=attempt["opportunity_id"],
+                ))
+    facts = _perpetual_facts(
+        state, attempt, activation, position.body, income_documents, stop,
+        previous_reconciliation_bytes_or_null=previous,
+    )
     data = reconcile_binance_private_state(
-        event_projection=_perpetual_facts(
-            state, attempt, activation, position.body, income_documents, stop,
-        ), order_documents=(order_result.body,),
+        event_projection=facts, order_documents=(order_result.body,),
         trade_documents=_tuple_documents(trades.body),
         account_document=account.body, position_document=position.body,
         income_documents=income_documents, algo_documents=algo_documents,
+        previous_reconciliation_bytes_or_null=previous,
     )
+    client = facts["protective_stop_client_id_or_null"]
+    required = client is not None
     return _publish_reconciliation(
-        state, attempt, data, True, stop["client_algo_id"], context.recorded_at,
+        state, attempt, data, required, client, context.recorded_at,
+    )
+def _cleanup_query_observation(result, client):
+    if _proven_absent(result):
+        return False, None
+    if result.response_class != "QUERY_SUCCEEDED":
+        _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
+    try:
+        document = _document(result.body)
+        algo_id = document["algoId"]
+        if (document["clientAlgoId"] != client
+                or isinstance(algo_id, bool) or not isinstance(algo_id, int)
+                or algo_id <= 0):
+            raise ValueError
+        if document["algoStatus"] == "NEW":
+            return True, algo_id
+        if document["algoStatus"] in {
+                "CANCELED", "REJECTED", "EXPIRED", "FINISHED",
+            }:
+            return False, algo_id
+        raise ValueError
+    except (KeyError, TypeError, ValueError) as error:
+        _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP", error)
+def _cleanup_perpetual_stop(state, attempt, previous, context):
+    loaded = load_binance_reconciliation_bytes(previous)
+    prior = loaded["event_projection"]
+    client = prior["protective_stop_client_id_or_null"]
+    if (Decimal(prior["signed_quantity"]) >= 0 or not isinstance(client, str)):
+        _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
+    private = state.replay()["opportunities"][attempt["opportunity_id"]][
+        "private"
+    ]
+    cleanup = private.get("stop_cleanup")
+    if cleanup is None:
+        _append_intent(
+            state, attempt, "BINANCE_STOP_CLEANUP_AUTHORIZED",
+            context.recorded_at, client_algo_id=client,
+            prior_reconciliation_id=loaded["reconciliation_id"],
+        )
+        cleanup = state.replay()["opportunities"][
+            attempt["opportunity_id"]
+        ]["private"]["stop_cleanup"]
+    if cleanup["client_algo_id"] != client:
+        _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
+    if cleanup["stage"] == "BINANCE_STOP_CLEANUP_AUTHORIZED":
+        observed = _execute(_stop_request(
+            "FUTURES_ALGO_QUERY", {"client_algo_id": client},
+            context.timestamp_ms,
+        ), context)
+        active, algo_id = _cleanup_query_observation(observed, client)
+        if active:
+            request = _stop_request(
+                "FUTURES_ALGO_CANCEL", {"client_algo_id": client},
+                context.timestamp_ms,
+            )
+            _append_intent(
+                state, attempt, "BINANCE_STOP_CLEANUP_REQUEST_PREPARED",
+                context.recorded_at, client_algo_id=client,
+                query_response_sha256=observed.response_sha256,
+                algo_id=algo_id, request_id=request.request_id,
+                request_sha256=hashlib.sha256(
+                    request.encoded_parameters
+                ).hexdigest(), timestamp_ms=context.timestamp_ms,
+            )
+        else:
+            _append_intent(
+                state, attempt, "BINANCE_STOP_CLEANUP_RECONCILED",
+                context.recorded_at, client_algo_id=client,
+                query_response_sha256=observed.response_sha256,
+                status="BINANCE_FLAT_STOP_CLEANED",
+            )
+        cleanup = state.replay()["opportunities"][
+            attempt["opportunity_id"]
+        ]["private"]["stop_cleanup"]
+    if cleanup["stage"] == "BINANCE_STOP_CLEANUP_REQUEST_PREPARED":
+        request = _stop_request(
+            "FUTURES_ALGO_CANCEL", {"client_algo_id": client},
+            cleanup["request_timestamp_ms"],
+        )
+        if (request.request_id != cleanup["request_id"]
+                or hashlib.sha256(request.encoded_parameters).hexdigest()
+                != cleanup["request_sha256"]):
+            _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
+        _append_intent(
+            state, attempt, "BINANCE_STOP_CLEANUP_SEND_STARTED",
+            context.recorded_at, client_algo_id=client,
+            request_id=request.request_id,
+        )
+        result = _execute(request, context)
+        if result.response_class not in {"ACKNOWLEDGED", "UNKNOWN"}:
+            _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
+        cleanup = state.replay()["opportunities"][
+            attempt["opportunity_id"]
+        ]["private"]["stop_cleanup"]
+    if cleanup["stage"] == "BINANCE_STOP_CLEANUP_SEND_STARTED":
+        observed = _execute(_stop_request(
+            "FUTURES_ALGO_QUERY", {"client_algo_id": client},
+            context.timestamp_ms,
+        ), context)
+        active, algo_id = _cleanup_query_observation(observed, client)
+        if active:
+            _fail("BINANCE_FLAT_ORPHAN_STOP_ACTIVE")
+        if algo_id is not None and algo_id != cleanup["algo_id"]:
+            _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
+        _append_intent(
+            state, attempt, "BINANCE_STOP_CLEANUP_RECONCILED",
+            context.recorded_at, client_algo_id=client,
+            query_response_sha256=observed.response_sha256,
+            status="BINANCE_FLAT_STOP_CLEANED",
+        )
+        cleanup = state.replay()["opportunities"][
+            attempt["opportunity_id"]
+        ]["private"]["stop_cleanup"]
+    if cleanup["stage"] != "BINANCE_STOP_CLEANUP_RECONCILED":
+        _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
+    return _finish_perpetual(
+        state, attempt, context.activation, None, context,
+        previous_reconciliation_bytes_or_null=previous,
     )
 def _resume_stop(state, attempt, private, context):
     stop = _expected_stop(state, attempt)
@@ -731,6 +860,16 @@ def _observe_order(*, state, attempt, order_result, context):
                 context.recorded_at,
             )
         _append_fills_fees(state, attempt, context.recorded_at)
+        if attempt["action"] == "CLOSE_SHORT":
+            previous = _previous_reconciliation_bytes(
+                state, product="PERPETUAL",
+                before_opportunity_id=attempt["opportunity_id"],
+            )
+            if previous is None:
+                _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
+            return _cleanup_perpetual_stop(
+                state, attempt, previous, context,
+            )
         return _ensure_stop(
             state, attempt, account_result.body, context,
         )
@@ -821,9 +960,21 @@ def run_challenger_replacement_binance_private_intent(
                 order_result=_query_order(attempt, context), context=context,
             )
         if (existing["stage"] == "BINANCE_FILLS_FEES_REPLAYED"
-                and attempt["product"] == "PERPETUAL"
-                and isinstance(existing.get("stop"), dict)):
-            return _resume_stop(state, attempt, existing, context)
+                and attempt["product"] == "PERPETUAL"):
+            if attempt["action"] == "CLOSE_SHORT":
+                previous = _previous_reconciliation_bytes(
+                    state, product="PERPETUAL",
+                    before_opportunity_id=attempt["opportunity_id"],
+                )
+                if previous is None:
+                    _fail(
+                        "BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID"
+                    )
+                return _cleanup_perpetual_stop(
+                    state, attempt, previous, context,
+                )
+            if isinstance(existing.get("stop"), dict):
+                return _resume_stop(state, attempt, existing, context)
         if existing["stage"] == "BINANCE_REQUEST_SEND_STARTED":
             return _recover_after_send(
                 state=state, attempt=attempt, context=context,
