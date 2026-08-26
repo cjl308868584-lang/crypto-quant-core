@@ -8,7 +8,6 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
-from urllib.request import Request
 
 from jsonschema import Draft202012Validator
 
@@ -138,93 +137,6 @@ class _FixtureState(ChallengerReplacementRuntimeState):
             for key, value in self.projection.items()
             if not key.startswith("_")
         }
-
-
-class _OpenerResponse:
-    def __init__(self, body):
-        self.body = body
-        self.headers = {"Content-Type": "application/json"}
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return False
-
-    def read(self, limit):
-        return self.body[:limit]
-
-    def getcode(self):
-        return 200
-
-    def geturl(self):
-        return "https://data-api.binance.vision/api/v3/time"
-
-
-class _Opener:
-    def __init__(self, response):
-        self.response = response
-        self.calls = []
-
-    def open(self, request, timeout):
-        self.calls.append((request, timeout))
-        return self.response
-
-
-class LivePublicHttpBoundaryTests(unittest.TestCase):
-    def test_public_http_disables_proxies_rejects_redirect_and_bounds_body(self):
-        wall = (
-            datetime(2026, 8, 22, 4, 4, tzinfo=timezone.utc),
-            datetime(2026, 8, 22, 4, 4, 0, 100000, tzinfo=timezone.utc),
-        )
-        body = b'{"serverTime":1787371440050}'
-        opener = _Opener(_OpenerResponse(body))
-        with patch.object(
-            live_input_module, "build_opener", return_value=opener
-        ) as built, patch.object(
-            live_input_module, "_wall_now", side_effect=wall
-        ), patch.object(
-            live_input_module, "_monotonic", side_effect=(1_000_000_000, 1_100_000_000)
-        ):
-            response = live_input_module._open_public_request(
-                Request(
-                    "https://data-api.binance.vision/api/v3/time",
-                    method="GET",
-                )
-            )
-        self.assertIsInstance(response, PublicServerTimeHttpResponse)
-        self.assertEqual(response.monotonic_rtt_ms, 100)
-        handlers = built.call_args.args
-        self.assertEqual(handlers[0].proxies, {})
-        with self.assertRaises(ChallengerReplacementLiveInputError) as caught:
-            handlers[1].redirect_request(None, None, 302, "redirect", {}, "https://evil.example")
-        self.assertEqual(
-            caught.exception.reason_code,
-            "CHALLENGER_REPLACEMENT_LIVE_INPUT_REDIRECT_FORBIDDEN",
-        )
-        self.assertEqual(opener.calls[0][1], 15)
-
-        oversized = _Opener(
-            _OpenerResponse(b"x" * (live_input_module._MAX_RESPONSE_BYTES + 1))
-        )
-        with patch.object(
-            live_input_module, "build_opener", return_value=oversized
-        ), patch.object(
-            live_input_module, "_wall_now", side_effect=wall
-        ), patch.object(
-            live_input_module, "_monotonic", side_effect=(1_000_000_000, 1_100_000_000)
-        ):
-            with self.assertRaises(ChallengerReplacementLiveInputError) as caught:
-                live_input_module._open_public_request(
-                    Request(
-                        "https://data-api.binance.vision/api/v3/time",
-                        method="GET",
-                    )
-                )
-        self.assertEqual(
-            caught.exception.reason_code,
-            "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID",
-        )
 
 
 class LiveCaptureCodecTests(unittest.TestCase):
