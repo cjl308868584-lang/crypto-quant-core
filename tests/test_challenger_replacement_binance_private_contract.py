@@ -509,7 +509,7 @@ class BinancePrivateEventContractTests(unittest.TestCase):
                 "venue_client_order_id": intent["venue_client_order_id"],
             })
 
-    def test_perpetual_stop_events_use_substate_without_advancing_order_stage(self):
+    def _perpetual_with_verified_stop(self):
         self._observe_opportunity()
         intent = self._intent_payload()
         intent.update(product="PERPETUAL", action="OPEN_SHORT")
@@ -569,12 +569,107 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "algo_id": 901, "quantity": "0.025",
             "trigger_price": "2036.43",
         })
+        return intent, client
+
+    def test_perpetual_stop_events_use_substate_without_advancing_order_stage(self):
+        _, client = self._perpetual_with_verified_stop()
         private = self.state.replay()["opportunities"][
             self.workspace.opportunity_id
         ]["private"]
         self.assertEqual(private["stage"], "BINANCE_FILLS_FEES_REPLAYED")
         self.assertEqual(private["stop"]["stage"], "BINANCE_STOP_RECONCILED")
         self.assertEqual(private["stop"]["client_algo_id"], client)
+
+    def test_stop_replacement_starts_only_from_verified_old_stop(self):
+        intent, old_client = self._perpetual_with_verified_stop()
+        new_client = "cq77" + "b" * 32
+        self._append_private("BINANCE_STOP_REPLACEMENT_STARTED", {
+            "protected_intent_id": intent["intent_id"],
+            "old_client_algo_id": old_client,
+            "new_client_algo_id": new_client,
+        })
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_FILLS_FEES_REPLAYED")
+        self.assertEqual(private["stop"]["stage"], "BINANCE_STOP_RECONCILED")
+        self.assertEqual(private["stop"]["client_algo_id"], old_client)
+        self.assertEqual(private["stop"]["replacement"], {
+            "stage": "BINANCE_STOP_REPLACEMENT_STARTED",
+            "old_client_algo_id": old_client,
+            "new_client_algo_id": new_client,
+        })
+
+    def test_stop_replacement_promotes_only_a_reconciled_new_stop(self):
+        intent, old_client = self._perpetual_with_verified_stop()
+        new_client = "cq77" + "b" * 32
+        self._append_private("BINANCE_STOP_REPLACEMENT_STARTED", {
+            "protected_intent_id": intent["intent_id"],
+            "old_client_algo_id": old_client,
+            "new_client_algo_id": new_client,
+        })
+        self._append_private("BINANCE_STOP_INTENT_AUTHORIZED", {
+            "protected_intent_id": intent["intent_id"], "symbol": "ETHUSDT",
+            "algo_type": "CONDITIONAL", "order_type": "STOP_MARKET",
+            "side": "BUY", "position_side": "BOTH",
+            "working_type": "MARK_PRICE", "quantity": "0.02",
+            "trigger_price": "2029", "reduce_only": True,
+            "close_position": False, "client_algo_id": new_client,
+            "required_first_endpoint": "FUTURES_ALGO_QUERY",
+            "send_permitted": False,
+        })
+        self._append_private("BINANCE_STOP_ACKNOWLEDGED", {
+            "protected_intent_id": intent["intent_id"],
+            "client_algo_id": new_client, "algo_id": 902,
+        })
+        self._append_private("BINANCE_STOP_RECONCILED", {
+            "status": "BINANCE_PROTECTIVE_STOP_VERIFIED", "exposed": True,
+            "new_risk_blocked": False, "client_algo_id": new_client,
+            "algo_id": 902, "quantity": "0.02", "trigger_price": "2029",
+        })
+        self._append_private("BINANCE_STOP_REPLACEMENT_SUCCEEDED", {
+            "protected_intent_id": intent["intent_id"],
+            "old_client_algo_id": old_client,
+            "new_client_algo_id": new_client,
+            "reason_code_or_null": None,
+        })
+        stop = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]["stop"]
+        self.assertEqual(stop["client_algo_id"], new_client)
+        self.assertEqual(stop["algo_id"], 902)
+        self.assertEqual(stop["quantity"], "0.02")
+        self.assertEqual(stop["trigger_price"], "2029")
+        self.assertEqual(
+            stop["replacement"]["stage"],
+            "BINANCE_STOP_REPLACEMENT_SUCCEEDED",
+        )
+
+    def test_failed_stop_replacement_keeps_verified_old_stop(self):
+        intent, old_client = self._perpetual_with_verified_stop()
+        new_client = "cq77" + "b" * 32
+        self._append_private("BINANCE_STOP_REPLACEMENT_STARTED", {
+            "protected_intent_id": intent["intent_id"],
+            "old_client_algo_id": old_client,
+            "new_client_algo_id": new_client,
+        })
+        self._append_private("BINANCE_STOP_REPLACEMENT_FAILED", {
+            "protected_intent_id": intent["intent_id"],
+            "old_client_algo_id": old_client,
+            "new_client_algo_id": new_client,
+            "reason_code_or_null": "NEW_STOP_NOT_ACKNOWLEDGED",
+        })
+        stop = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]["stop"]
+        self.assertEqual(stop["client_algo_id"], old_client)
+        self.assertEqual(stop["stage"], "BINANCE_STOP_RECONCILED")
+        self.assertEqual(stop["replacement"], {
+            "stage": "BINANCE_STOP_REPLACEMENT_FAILED",
+            "old_client_algo_id": old_client,
+            "new_client_algo_id": new_client,
+            "reason_code": "NEW_STOP_NOT_ACKNOWLEDGED",
+        })
 
 
 if __name__ == "__main__":

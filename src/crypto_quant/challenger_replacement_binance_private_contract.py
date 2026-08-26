@@ -483,6 +483,17 @@ def _stop_client(value):
             and _lower_hash(value[4:], length=32))
 
 
+def _stop_target(stop, stage):
+    if isinstance(stop, dict) and stop.get("stage") == stage:
+        return stop
+    replacement = stop.get("replacement") if isinstance(stop, dict) else None
+    candidate = (replacement.get("candidate")
+                 if isinstance(replacement, dict) else None)
+    if isinstance(candidate, dict) and candidate.get("stage") == stage:
+        return candidate
+    return None
+
+
 def _apply_stop_transition(private, event_type, payload, event):
     stop = private.get("stop")
     if event_type == "BINANCE_STOP_INTENT_AUTHORIZED":
@@ -497,7 +508,17 @@ def _apply_stop_transition(private, event_type, payload, event):
             trigger = canonical_decimal(payload["trigger_price"])
         except (KeyError, TypeError, ValueError) as error:
             _invalid(error)
-        if (stop is not None or private["product"] != "PERPETUAL"
+        replacement = stop.get("replacement") if isinstance(stop, dict) else None
+        replacing = (
+            isinstance(replacement, dict)
+            and replacement.get("stage") == "BINANCE_STOP_REPLACEMENT_STARTED"
+            and "candidate" not in replacement
+            and payload.get("client_algo_id") == replacement.get(
+                "new_client_algo_id"
+            )
+        )
+        if ((stop is not None and not replacing)
+                or private["product"] != "PERPETUAL"
                 or private["stage"] != "BINANCE_FILLS_FEES_REPLAYED"
                 or set(payload) != keys
                 or payload["protected_intent_id"] != private["intent_id"]
@@ -515,26 +536,30 @@ def _apply_stop_transition(private, event_type, payload, event):
                 or payload["required_first_endpoint"] != "FUTURES_ALGO_QUERY"
                 or payload["send_permitted"] is not False):
             _invalid()
-        private["stop"] = {
+        candidate = {
             "stage": event_type, "client_algo_id": payload["client_algo_id"],
             "quantity": quantity, "trigger_price": trigger,
         }
+        if replacing:
+            replacement["candidate"] = candidate
+        else:
+            private["stop"] = candidate
     elif event_type == "BINANCE_STOP_ACKNOWLEDGED":
-        if (not isinstance(stop, dict)
-                or stop["stage"] != "BINANCE_STOP_INTENT_AUTHORIZED"
+        target = _stop_target(stop, "BINANCE_STOP_INTENT_AUTHORIZED")
+        if (target is None
                 or set(payload) != {
                     "protected_intent_id", "client_algo_id", "algo_id",
                 }
                 or payload["protected_intent_id"] != private["intent_id"]
-                or payload["client_algo_id"] != stop["client_algo_id"]
+                or payload["client_algo_id"] != target["client_algo_id"]
                 or isinstance(payload["algo_id"], bool)
                 or not isinstance(payload["algo_id"], int)
                 or payload["algo_id"] <= 0):
             _invalid()
-        stop.update(stage=event_type, algo_id=payload["algo_id"])
+        target.update(stage=event_type, algo_id=payload["algo_id"])
     elif event_type == "BINANCE_STOP_RECONCILED":
-        if (not isinstance(stop, dict)
-                or stop["stage"] != "BINANCE_STOP_ACKNOWLEDGED"
+        target = _stop_target(stop, "BINANCE_STOP_ACKNOWLEDGED")
+        if (target is None
                 or set(payload) != {
                     "status", "exposed", "new_risk_blocked",
                     "client_algo_id", "algo_id", "quantity", "trigger_price",
@@ -542,12 +567,82 @@ def _apply_stop_transition(private, event_type, payload, event):
                 or payload["status"] != "BINANCE_PROTECTIVE_STOP_VERIFIED"
                 or payload["exposed"] is not True
                 or payload["new_risk_blocked"] is not False
-                or payload["client_algo_id"] != stop["client_algo_id"]
-                or payload["algo_id"] != stop["algo_id"]
-                or payload["quantity"] != stop["quantity"]
-                or payload["trigger_price"] != stop["trigger_price"]):
+                or payload["client_algo_id"] != target["client_algo_id"]
+                or payload["algo_id"] != target["algo_id"]
+                or payload["quantity"] != target["quantity"]
+                or payload["trigger_price"] != target["trigger_price"]):
             _invalid()
-        stop["stage"] = event_type
+        target["stage"] = event_type
+    elif event_type == "BINANCE_STOP_REPLACEMENT_STARTED":
+        if (not isinstance(stop, dict)
+                or stop["stage"] != "BINANCE_STOP_RECONCILED"
+                or "replacement" in stop
+                or set(payload) != {
+                    "protected_intent_id", "old_client_algo_id",
+                    "new_client_algo_id",
+                }
+                or payload["protected_intent_id"] != private["intent_id"]
+                or payload["old_client_algo_id"] != stop["client_algo_id"]
+                or not _stop_client(payload["new_client_algo_id"])
+                or payload["new_client_algo_id"] == stop["client_algo_id"]):
+            _invalid()
+        stop["replacement"] = {
+            "stage": event_type,
+            "old_client_algo_id": payload["old_client_algo_id"],
+            "new_client_algo_id": payload["new_client_algo_id"],
+        }
+    elif event_type == "BINANCE_STOP_REPLACEMENT_SUCCEEDED":
+        replacement = stop.get("replacement") if isinstance(stop, dict) else None
+        candidate = (replacement.get("candidate")
+                     if isinstance(replacement, dict) else None)
+        if (not isinstance(candidate, dict)
+                or candidate.get("stage") != "BINANCE_STOP_RECONCILED"
+                or set(payload) != {
+                    "protected_intent_id", "old_client_algo_id",
+                    "new_client_algo_id", "reason_code_or_null",
+                }
+                or payload["protected_intent_id"] != private["intent_id"]
+                or payload["old_client_algo_id"] != stop["client_algo_id"]
+                or payload["old_client_algo_id"] != replacement.get(
+                    "old_client_algo_id"
+                )
+                or payload["new_client_algo_id"] != candidate["client_algo_id"]
+                or payload["new_client_algo_id"] != replacement.get(
+                    "new_client_algo_id"
+                )
+                or payload["reason_code_or_null"] is not None):
+            _invalid()
+        replacement.pop("candidate")
+        replacement["stage"] = event_type
+        candidate["replacement"] = replacement
+        private["stop"] = candidate
+    elif event_type == "BINANCE_STOP_REPLACEMENT_FAILED":
+        replacement = stop.get("replacement") if isinstance(stop, dict) else None
+        reason = payload.get("reason_code_or_null")
+        if (not isinstance(replacement, dict)
+                or replacement.get("stage")
+                != "BINANCE_STOP_REPLACEMENT_STARTED"
+                or set(payload) != {
+                    "protected_intent_id", "old_client_algo_id",
+                    "new_client_algo_id", "reason_code_or_null",
+                }
+                or payload["protected_intent_id"] != private["intent_id"]
+                or payload["old_client_algo_id"] != stop["client_algo_id"]
+                or payload["old_client_algo_id"] != replacement.get(
+                    "old_client_algo_id"
+                )
+                or payload["new_client_algo_id"] != replacement.get(
+                    "new_client_algo_id"
+                )
+                or not isinstance(reason, str) or not reason
+                or len(reason) > 128):
+            _invalid()
+        stop["replacement"] = {
+            "stage": event_type,
+            "old_client_algo_id": payload["old_client_algo_id"],
+            "new_client_algo_id": payload["new_client_algo_id"],
+            "reason_code": reason,
+        }
     else:
         _invalid()
     private["last_private_event_hash"] = event.event_hash
