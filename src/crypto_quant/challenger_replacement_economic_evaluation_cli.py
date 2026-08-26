@@ -3,20 +3,14 @@
 import sys
 
 from .canonical import canonical_json
-from .challenger_replacement_economic_evaluation import (
-    ChallengerReplacementEconomicEvaluationError,
-    evaluate_challenger_replacement_economic_result,
-)
+from .challenger_replacement_economic_evaluation import ChallengerReplacementEconomicEvaluationError
 
 
-_SOURCE_KEYS = {"facts", "economic_plan", "build_identity"}
-
-
-def _load_fixed_evaluation_sources():
+def _load_fixed_evaluation_result():
     from .challenger_replacement_v3_observer import (
-        _load_fixed_economic_sources,
+        _evaluate_fixed_economic_result,
     )
-    return _load_fixed_economic_sources()
+    return _evaluate_fixed_economic_result()
 
 
 def main(argv=None):
@@ -28,12 +22,11 @@ def main(argv=None):
         print("ECONOMIC_EVALUATION_ARGUMENTS_FORBIDDEN", file=sys.stderr)
         return 2
     try:
-        sources = _load_fixed_evaluation_sources()
-        if not isinstance(sources, dict) or set(sources) != _SOURCE_KEYS:
+        result = _load_fixed_evaluation_result()
+        if not isinstance(result, dict):
             raise ChallengerReplacementEconomicEvaluationError(
                 "ECONOMIC_EVALUATION_FIXED_SOURCES_INVALID"
             )
-        result = evaluate_challenger_replacement_economic_result(**sources)
     except OSError:
         print("ECONOMIC_EVALUATION_NOT_ACTIVATED", file=sys.stderr)
         return 3

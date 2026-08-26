@@ -16,6 +16,7 @@ from .challenger_replacement_economic_evaluation import (
     ChallengerReplacementEconomicEvaluationError,
     build_economic_evaluation_facts_from_state,
     build_economic_progress_facts_from_state,
+    evaluate_challenger_replacement_economic_result,
     observe_challenger_replacement_economic_progress,
 )
 from .challenger_replacement_economic_plan import (
@@ -223,7 +224,7 @@ def _load_installed_observation(root):
         )
 
 
-def _load_fixed_economic_sources():
+def _evaluate_fixed_economic_result():
     root = _runtime_entry()
     if root is None:
         raise OSError("fixed runtime root absent")
@@ -241,14 +242,14 @@ def _load_fixed_economic_sources():
                 raise ChallengerReplacementEconomicEvaluationError(
                     "ECONOMIC_TAIL_NOT_REACHED"
                 )
-            return {
-                "facts": build_economic_evaluation_facts_from_state(
+            facts = build_economic_evaluation_facts_from_state(
                     state=state, start_receipt=receipt,
                     observed_at=observed_at, tail_mark_or_null=None,
-                ),
-                "economic_plan": build_challenger_replacement_economic_plan(),
-                "build_identity": deployment["candidate_build"],
-            }
+                )
+            return evaluate_challenger_replacement_economic_result(
+                facts, economic_plan=build_challenger_replacement_economic_plan(),
+                build_identity=deployment["candidate_build"],
+            )
     finally:
         os.close(root)
 

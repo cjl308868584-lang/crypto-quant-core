@@ -556,6 +556,7 @@ def _document(build_identity: Mapping[str, Any], runtime_core_identity, *, exerc
                 not isinstance(path, str)
                 or not (
                     path == _DEPLOYMENT_ARTIFACT
+                    or path == "artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json"
                     or (path.startswith("src/crypto_quant/")
                         and path.endswith((".py", ".json")))
                 )

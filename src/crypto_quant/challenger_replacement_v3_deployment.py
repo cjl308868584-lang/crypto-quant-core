@@ -60,10 +60,12 @@ schemas/challenger-replacement-fault-matrix-receipt-v1.schema.json
 schemas/challenger-replacement-operational-qualification-v1.schema.json
 schemas/challenger-replacement-economic-evaluation-v1.schema.json
 schemas/challenger-replacement-plan-v3.schema.json schemas/challenger-replacement-economic-evaluation-plan-v1.schema.json schemas/challenger-replacement-accelerated-canary-plan-v1.schema.json schemas/challenger-replacement-simulation-contract-v1.schema.json schemas/challenger-replacement-live-capture-v1.schema.json schemas/challenger-replacement-binance-simulation-input-v1.schema.json schemas/challenger-replacement-opportunity-result-evidence-v2.schema.json
+schemas/challenger-replacement-plan-v1.schema.json schemas/challenger-replacement-plan-v2.schema.json artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json
 schemas/operations-projection-v3.schema.json
 fixtures/challenger-replacement-v076/binance-lifecycle-long-input.json""".split()
 _CORE_PATHS = {"src/crypto_quant/" + name + ".py" for name in _CORE_MODULES} | {
-    "src/crypto_quant/" + name for name in _CORE_RESOURCES
+    (name if name.startswith("artifacts/") else "src/crypto_quant/" + name)
+    for name in _CORE_RESOURCES
 }
 _PREDECESSOR = {
     "release_tag": "v0.75.0",

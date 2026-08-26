@@ -1,6 +1,11 @@
 import ast
 import hashlib
 import plistlib
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 from copy import deepcopy
 
@@ -133,10 +138,30 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
             "src/crypto_quant/schemas/challenger-replacement-live-capture-v1.schema.json",
             "src/crypto_quant/schemas/challenger-replacement-binance-simulation-input-v1.schema.json",
             "src/crypto_quant/schemas/challenger-replacement-opportunity-result-evidence-v2.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-plan-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-plan-v2.schema.json",
+            "artifacts/challenger-replacement/challenger-replacement-plan-v0.62.0.json",
             "src/crypto_quant/schemas/operations-projection-v3.schema.json",
             "src/crypto_quant/fixtures/challenger-replacement-v076/binance-lifecycle-long-input.json",
         ):
             self.assertIn(path, _CORE_PATHS)
+
+    def test_inventory_snapshot_can_build_v2_plan_in_a_fresh_process(self):
+        root = __import__("pathlib").Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(prefix="cq-v076-core-") as directory:
+            snapshot = __import__("pathlib").Path(directory)
+            for relative in _CORE_PATHS:
+                target = snapshot / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(root / relative, target)
+            environment = dict(os.environ, PYTHONPATH=str(snapshot / "src"))
+            result = subprocess.run([
+                sys.executable, "-c",
+                "from crypto_quant.challenger_replacement_plan_v2 import "
+                "build_challenger_replacement_plan_v2 as build; build()",
+            ], cwd=snapshot, env=environment, capture_output=True, text=True,
+               timeout=10, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_plist_retains_six_natural_invocations_and_no_secret_surface(self):
         plist_bytes = render_challenger_replacement_v3_plist(self.build())
