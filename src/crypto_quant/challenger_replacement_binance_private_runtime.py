@@ -95,6 +95,39 @@ def _status(status, attempt, **extra):
         "intent_id": attempt["intent_id"],
         "venue_client_order_id": attempt["venue_client_order_id"], **extra,
     }
+def _reconciliation(private):
+    try:
+        data = base64.b64decode(
+            private["reconciliation_bytes_base64"], validate=True,
+        )
+        loaded = load_binance_reconciliation_bytes(data)
+        if (hashlib.sha256(data).hexdigest()
+                != private["reconciliation_sha256"]
+                or loaded["reconciliation_id"]
+                != private["reconciliation_id"]):
+            raise ValueError
+        return loaded
+    except (KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID", error)
+def _resume_reconciliation(state, attempt, private, recorded_at):
+    loaded = _reconciliation(private)
+    if private["stage"] == "BINANCE_POSITION_BALANCE_RECONCILED":
+        if attempt["product"] != "SPOT":
+            _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_STAGE_UNSUPPORTED")
+        _append(state, "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
+                attempt["opportunity_id"], {
+            "intent_id": attempt["intent_id"], "required": False,
+            "client_algo_id_or_null": None, "status": "NOT_REQUIRED",
+        }, recorded_at)
+    _append(state, "BINANCE_RECONCILIATION_SUCCEEDED",
+            attempt["opportunity_id"], {
+        "intent_id": attempt["intent_id"],
+        "reconciliation_id": loaded["reconciliation_id"],
+    }, recorded_at)
+    return _status(
+        "TERMINAL_RECONCILED", attempt,
+        reconciliation_id=loaded["reconciliation_id"],
+    )
 def _request(endpoint_id, attempt, timestamp_ms):
     if endpoint_id.endswith("ORDER_QUERY"):
         parameters = {
@@ -216,14 +249,16 @@ def _spot_facts(state, attempt, activation):
     return {**facts, "ledger_projection": dict(facts)}
 def _finish_spot(state, attempt, activation, order, trades, account, recorded_at):
     private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
-    _append(state, "BINANCE_FILLS_FEES_REPLAYED", attempt["opportunity_id"], {
-        "intent_id": attempt["intent_id"], "fill_ids": private["fill_ids"],
-        "cumulative_fee": canonical_decimal(sum(
-            (Decimal(payload["fee"]) for event_type, payload in _private_payloads(
-                state, attempt["opportunity_id"]
-            ) if event_type == "BINANCE_FILL_OBSERVED"), Decimal(0),
-        )),
-    }, recorded_at)
+    if private["stage"] != "BINANCE_FILLS_FEES_REPLAYED":
+        _append(state, "BINANCE_FILLS_FEES_REPLAYED", attempt["opportunity_id"], {
+            "intent_id": attempt["intent_id"], "fill_ids": private["fill_ids"],
+            "cumulative_fee": canonical_decimal(sum(
+                (Decimal(payload["fee"])
+                 for event_type, payload in _private_payloads(
+                     state, attempt["opportunity_id"]
+                 ) if event_type == "BINANCE_FILL_OBSERVED"), Decimal(0),
+            )),
+        }, recorded_at)
     data = reconcile_binance_private_state(
         event_projection=_spot_facts(state, attempt, activation),
         order_documents=(order,), trade_documents=trades,
@@ -361,18 +396,38 @@ def run_challenger_replacement_binance_private_intent(
     )
     if existing is not None:
         if existing["stage"] == "BINANCE_RECONCILIATION_SUCCEEDED":
-            data = base64.b64decode(
-                existing["reconciliation_bytes_base64"], validate=True,
-            )
-            loaded = load_binance_reconciliation_bytes(data)
-            if (hashlib.sha256(data).hexdigest()
-                    != existing["reconciliation_sha256"]
-                    or loaded["reconciliation_id"]
-                    != existing["reconciliation_id"]):
-                _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
+            loaded = _reconciliation(existing)
             return _status(
                 "TERMINAL_RECONCILED", attempt,
                 reconciliation_id=existing["reconciliation_id"],
+            )
+        if existing["stage"] in {
+            "BINANCE_POSITION_BALANCE_RECONCILED",
+            "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
+        }:
+            return _resume_reconciliation(
+                state, attempt, existing, recorded_at,
+            )
+        if (existing["stage"] in {
+                "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED",
+                "BINANCE_ORDER_EXPIRED", "BINANCE_ORDER_REJECTED",
+                "BINANCE_FILLS_FEES_REPLAYED",
+            }
+                and attempt["product"] == "SPOT"):
+            order_result = _query_order(attempt, context)
+            order = _document(order_result.body)
+            order_id = order.get("orderId")
+            if (isinstance(order_id, bool) or not isinstance(order_id, int)
+                    or order_id <= 0):
+                _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID")
+            trades = _query(
+                "SPOT_TRADES", {"symbol": "ETHUSDT",
+                                "orderId": str(order_id)}, context,
+            )
+            account = _query("SPOT_ACCOUNT", {}, context)
+            return _finish_spot(
+                state, attempt, activation, order_result.body,
+                _tuple_documents(trades.body), account.body, recorded_at,
             )
         if existing["stage"] == "BINANCE_REQUEST_SEND_STARTED":
             return _recover_after_send(

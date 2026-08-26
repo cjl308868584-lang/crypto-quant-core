@@ -528,6 +528,207 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN")
 
+    def test_crash_after_exact_reconciliation_resumes_without_network(self):
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode("utf-8")
+        client_id = "cq7773f849fd1e2d457895f97675d4f7b776"
+        filled = canonical_json({
+            "symbol": "ETHUSDT", "orderId": 101,
+            "clientOrderId": client_id, "price": "0",
+            "origQty": "0.001", "executedQty": "0.001",
+            "cummulativeQuoteQty": "2", "status": "FILLED",
+            "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
+            "transactTime": 1787832000000,
+        }).encode("utf-8")
+        trades = canonical_json([{
+            "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+            "qty": "0.001", "price": "2000", "quoteQty": "2",
+            "commission": "0.002", "commissionAsset": "USDT",
+            "time": 1787832000001, "isBuyer": True,
+        }]).encode("utf-8")
+        account = self._spot_account("0.001", "97.998")
+        responses = tuple(
+            BinancePrivateTransportResult(
+                response_class, status, body,
+                hashlib.sha256(body).hexdigest(), (),
+            )
+            for response_class, status, body in (
+                ("RESPONSE_INVALID", 400, absent),
+                ("ACKNOWLEDGED", 200, filled),
+                ("QUERY_SUCCEEDED", 200, filled),
+                ("QUERY_SUCCEEDED", 200, trades),
+                ("QUERY_SUCCEEDED", 200, account),
+            )
+        )
+
+        class SimulatedCrash(BaseException):
+            pass
+
+        original_append = self.state.append
+
+        def append_then_crash(**kwargs):
+            result = original_append(**kwargs)
+            if kwargs["event_type"] == "BINANCE_POSITION_BALANCE_RECONCILED":
+                raise SimulatedCrash()
+            return result
+
+        with patch.object(self.state, "append", side_effect=append_then_crash), \
+                patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "_wall_now", return_value=self.NOW,
+                ), patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "execute_binance_private_request", side_effect=responses,
+                ):
+            with self.assertRaises(SimulatedCrash):
+                run_challenger_replacement_binance_private_intent(
+                    state=self.state, event_root=self.workspace.root,
+                    intent=self.intent, preflight=self.preflight,
+                    activation=self.activation, credential=object(),
+                    build_identity=self.workspace.build,
+                )
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"],
+                         "BINANCE_POSITION_BALANCE_RECONCILED")
+
+        fresh = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+        ) as transport:
+            result = run_challenger_replacement_binance_private_intent(
+                state=fresh, event_root=self.workspace.root,
+                intent=self.intent, preflight=self.preflight,
+                activation=self.activation, credential=object(),
+                build_identity=self.workspace.build,
+            )
+        transport.assert_not_called()
+        self.assertEqual(result["status"], "TERMINAL_RECONCILED")
+        self.assertEqual(
+            fresh.replay()["opportunities"][self.workspace.opportunity_id]
+            ["private"]["stage"],
+            "BINANCE_RECONCILIATION_SUCCEEDED",
+        )
+
+    def test_terminal_and_fill_replay_crashes_requery_but_never_resend(self):
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode("utf-8")
+        client_id = "cq7773f849fd1e2d457895f97675d4f7b776"
+        filled = canonical_json({
+            "symbol": "ETHUSDT", "orderId": 101,
+            "clientOrderId": client_id, "price": "0",
+            "origQty": "0.001", "executedQty": "0.001",
+            "cummulativeQuoteQty": "2", "status": "FILLED",
+            "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
+            "transactTime": 1787832000000,
+        }).encode("utf-8")
+        trades = canonical_json([{
+            "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+            "qty": "0.001", "price": "2000", "quoteQty": "2",
+            "commission": "0.002", "commissionAsset": "USDT",
+            "time": 1787832000001, "isBuyer": True,
+        }]).encode("utf-8")
+        account = self._spot_account("0.001", "97.998")
+        result = lambda kind, status, body: BinancePrivateTransportResult(
+            kind, status, body, hashlib.sha256(body).hexdigest(), (),
+        )
+
+        class SimulatedCrash(BaseException):
+            pass
+
+        original_append = self.state.append
+
+        def append_then_crash(**kwargs):
+            publication = original_append(**kwargs)
+            if kwargs["event_type"] == "BINANCE_ORDER_FILLED":
+                raise SimulatedCrash()
+            return publication
+
+        first = (
+            result("RESPONSE_INVALID", 400, absent),
+            result("ACKNOWLEDGED", 200, filled),
+            result("QUERY_SUCCEEDED", 200, filled),
+            result("QUERY_SUCCEEDED", 200, trades),
+            result("QUERY_SUCCEEDED", 200, account),
+        )
+        with patch.object(self.state, "append", side_effect=append_then_crash), \
+                patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "_wall_now", return_value=self.NOW,
+                ), patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "execute_binance_private_request", side_effect=first,
+                ):
+            with self.assertRaises(SimulatedCrash):
+                run_challenger_replacement_binance_private_intent(
+                    state=self.state, event_root=self.workspace.root,
+                    intent=self.intent, preflight=self.preflight,
+                    activation=self.activation, credential=object(),
+                    build_identity=self.workspace.build,
+                )
+        self.assertEqual(
+            self.state.replay()["opportunities"][self.workspace.opportunity_id]
+            ["private"]["stage"], "BINANCE_ORDER_FILLED",
+        )
+
+        fresh = self.workspace.state()
+        second = (
+            result("QUERY_SUCCEEDED", 200, filled),
+            result("QUERY_SUCCEEDED", 200, trades),
+            result("QUERY_SUCCEEDED", 200, account),
+        )
+        original_fresh_append = fresh.append
+
+        def replay_then_crash(**kwargs):
+            publication = original_fresh_append(**kwargs)
+            if kwargs["event_type"] == "BINANCE_FILLS_FEES_REPLAYED":
+                raise SimulatedCrash()
+            return publication
+
+        with patch.object(fresh, "append", side_effect=replay_then_crash), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=second,
+        ) as transport:
+            with self.assertRaises(SimulatedCrash):
+                run_challenger_replacement_binance_private_intent(
+                    state=fresh, event_root=self.workspace.root,
+                    intent=self.intent, preflight=self.preflight,
+                    activation=self.activation, credential=object(),
+                    build_identity=self.workspace.build,
+                )
+        self.assertEqual(
+            [call.args[0].endpoint_id for call in transport.call_args_list],
+            ["SPOT_ORDER_QUERY", "SPOT_TRADES", "SPOT_ACCOUNT"],
+        )
+        self.assertEqual(
+            fresh.replay()["opportunities"][self.workspace.opportunity_id]
+            ["private"]["stage"], "BINANCE_FILLS_FEES_REPLAYED",
+        )
+        terminal = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=(
+                result("QUERY_SUCCEEDED", 200, filled),
+                result("QUERY_SUCCEEDED", 200, trades),
+                result("QUERY_SUCCEEDED", 200, account),
+            ),
+        ) as transport:
+            completed = run_challenger_replacement_binance_private_intent(
+                state=terminal, event_root=self.workspace.root,
+                intent=self.intent, preflight=self.preflight,
+                activation=self.activation, credential=object(),
+                build_identity=self.workspace.build,
+            )
+        self.assertEqual(
+            [call.args[0].endpoint_id for call in transport.call_args_list],
+            ["SPOT_ORDER_QUERY", "SPOT_TRADES", "SPOT_ACCOUNT"],
+        )
+        self.assertEqual(completed["status"], "TERMINAL_RECONCILED")
+
 
 if __name__ == "__main__":
     unittest.main()
