@@ -33,13 +33,23 @@ PREDECESSOR_RELEASE = {
     "manifest_hash": "b15479590536c302e173a41a758c9113cd7452b0000d8b6c5cb5c2ad8b9404d9",
 }
 INVENTORY = {
-    path: str(index) * 64
+    path: format(index, "x") * 64
     for index, path in enumerate((
+        "src/crypto_quant/challenger_replacement_public_http.py",
         "src/crypto_quant/challenger_replacement_events.py",
         "src/crypto_quant/challenger_replacement_opportunity_projection.py",
         "src/crypto_quant/challenger_replacement_public_market_capture.py",
+        "src/crypto_quant/challenger_replacement_public_simulation_contract.py",
         "src/crypto_quant/challenger_replacement_public_simulation.py",
         "src/crypto_quant/challenger_replacement_v3_runtime.py",
+        "src/crypto_quant/challenger_replacement_v3_deployment.py",
+        "src/crypto_quant/challenger_replacement_v3_start.py",
+        "src/crypto_quant/challenger_replacement_fault_matrix.py",
+        "src/crypto_quant/challenger_replacement_operational_qualification.py",
+        "src/crypto_quant/challenger_replacement_economic_evaluation.py",
+        "src/crypto_quant/challenger_replacement_economic_evaluation_cli.py",
+        "src/crypto_quant/challenger_replacement_v3_observer.py",
+        "src/crypto_quant/operations_projection_v3.py",
     ), 1)
 }
 

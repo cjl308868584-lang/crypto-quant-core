@@ -30,13 +30,14 @@ from .evidence import artifact_self_hash
 _SCHEMA = "challenger-replacement-v3-deployment-v1.schema.json"
 _RUNTIME = "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1"
 _SNAPSHOT = _RUNTIME + "/deployment/snapshot"
-_CORE_PATHS = {
-    "src/crypto_quant/challenger_replacement_events.py",
-    "src/crypto_quant/challenger_replacement_opportunity_projection.py",
-    "src/crypto_quant/challenger_replacement_public_market_capture.py",
-    "src/crypto_quant/challenger_replacement_public_simulation.py",
-    "src/crypto_quant/challenger_replacement_v3_runtime.py",
-}
+_CORE_NAMES = (
+    "public_http events opportunity_projection public_market_capture "
+    "public_simulation_contract public_simulation v3_runtime v3_deployment v3_start "
+    "fault_matrix operational_qualification economic_evaluation "
+    "economic_evaluation_cli v3_observer operations_projection_v3"
+).split()
+_CORE_PATHS = {"src/crypto_quant/challenger_replacement_" + name + ".py"
+               for name in _CORE_NAMES[:-1]} | {"src/crypto_quant/operations_projection_v3.py"}
 _PREDECESSOR = {
     "release_tag": "v0.75.0",
     "peeled_commit": "a51ed15d5a484e5bb9a54dc75a7fef4e8876e4d5",
