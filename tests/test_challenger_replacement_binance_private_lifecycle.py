@@ -285,6 +285,35 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
         self.assertEqual(events[-1]["payload"]["venue_terminal_status"],
                          "CANCELED")
 
+    def test_fill_direction_must_match_order_side(self):
+        cases = (
+            (self.prepare(), self.spot_order, self.spot_account(), {
+                "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+                "qty": "0.025", "price": "2000", "quoteQty": "50",
+                "commission": "0.05", "commissionAsset": "USDT",
+                "time": 1787832000001, "isBuyer": False,
+            }),
+            (self.prepare(product="PERPETUAL", action="OPEN_SHORT"),
+             self.futures_order,
+             self.futures_position(quantity="-0.025", entry="2000"), {
+                "symbol": "ETHUSDT", "id": 401, "orderId": 202,
+                "qty": "0.025", "price": "2000", "quoteQty": "50",
+                "commission": "0.02", "commissionAsset": "USDT",
+                "realizedPnl": "0", "time": 1787832000002,
+                "buyer": True,
+            }),
+        )
+        for attempt, order_builder, account, trade in cases:
+            with self.subTest(product=attempt["product"]), self.assertRaisesRegex(
+                BinancePrivateLifecycleError,
+                "BINANCE_ORDER_OBSERVATION_INVALID",
+            ):
+                apply_binance_order_observation(
+                    attempt=attempt,
+                    order=order_builder(attempt, "FILLED", "0.025"),
+                    trades=(self.body(trade),), account=account,
+                )
+
     def test_reject_cancel_without_fill_and_unknown_are_distinct(self):
         attempt = self.prepare()
         account = self.spot_account()

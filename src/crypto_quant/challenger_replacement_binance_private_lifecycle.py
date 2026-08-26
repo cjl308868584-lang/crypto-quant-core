@@ -326,7 +326,10 @@ def _trade_payloads(attempt, order_id, documents):
                 or isinstance(trade.get("time"), bool)
                 or not isinstance(trade.get(
                     "isBuyer" if attempt["product"] == "SPOT" else "buyer"
-                ), bool)):
+                ), bool)
+                or trade.get(
+                    "isBuyer" if attempt["product"] == "SPOT" else "buyer"
+                ) is not (attempt["side"] == "BUY")):
             _fail("BINANCE_ORDER_OBSERVATION_INVALID")
         canonical = canonical_json(trade)
         if trade_id in seen:
