@@ -1,6 +1,7 @@
 """Pure, fixture-only signed-position simulation for replacement research."""
 
 import copy
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Context, Decimal, DecimalException, InvalidOperation, ROUND_CEILING, ROUND_FLOOR, localcontext
 from typing import Mapping
@@ -29,6 +30,16 @@ _SNAPSHOT_KEYS = {
     "reverse_blocked_until_next_opportunity", "unresolved_intent_ids",
     "economic_gap_locked",
 }
+
+
+@dataclass(frozen=True)
+class _SimulationProfile:
+    protective_stop_status: str
+    funding_shape: str
+
+
+_FIXTURE_PROFILE = _SimulationProfile("CONFIRMED_FIXTURE", "SINGLE_BOUNDARY")
+_PUBLIC_PROFILE = _SimulationProfile("CONFIRMED_SIMULATED", "ORDERED_INTERVAL")
 class ChallengerReplacementSimulationError(ValueError):
     """The deterministic fixture transition failed closed."""
 
@@ -126,7 +137,7 @@ def build_challenger_replacement_genesis_snapshot(*, plan, contract):
     })
 
 
-def _validate_snapshot(snapshot):
+def _validate_snapshot(snapshot, profile=_FIXTURE_PROFILE):
     if (
         not isinstance(snapshot, Mapping)
         or set(snapshot) != _SNAPSHOT_KEYS
@@ -190,7 +201,7 @@ def _validate_snapshot(snapshot):
                 and stop["trigger_price"] == _c(trigger)
                 and trigger > 0
                 and ((trigger < entry) if product == "spot" else (trigger > entry))
-                and stop["status"] == "CONFIRMED_FIXTURE"
+                and stop["status"] == profile.protective_stop_status
                 and stop["stop_attempt_id"] == stable_id(
                     "replacement_attempt",
                     {"intent_id": stop["stop_intent_id"], "attempt_ordinal": 1},
@@ -218,7 +229,7 @@ def _validate_snapshot(snapshot):
                 valid_stop = (
                     isinstance(stop, Mapping)
                     and set(stop) == {"status", "trigger"}
-                    and stop["status"] == "CONFIRMED_FIXTURE"
+                    and stop["status"] == profile.protective_stop_status
                     and stop["trigger"] == _c(trigger)
                     and ((trigger < entry) if product == "spot" else (trigger > entry))
                 )
@@ -328,24 +339,37 @@ def _risk(snapshot, source):
     return daily_loss, drawdown
 
 
-def _prepare_boundary(snapshot, source):
+def _prepare_boundary(snapshot, source, profile=_FIXTURE_PROFILE):
     funding = Decimal("0")
-    if (
-        snapshot["position_state"] == "PERP_SHORT"
-        and source["funding"]["rate_or_null"] is not None
-    ):
-        funding = _signed_cashflow(
-            -_d(snapshot["signed_quantity"])
-            * _d(snapshot["contract_multiplier"])
-            * _d(source["quotes"]["perpetual"]["mark"])
-            * _d(source["funding"]["rate_or_null"])
-        )
+    cashflows = []
+    if snapshot["position_state"] == "PERP_SHORT":
+        if profile.funding_shape == "ORDERED_INTERVAL":
+            records = source["funding_records"]
+        elif source["funding"]["rate_or_null"] is None:
+            records = []
+        else:
+            records = [{
+                "funding_time": source["funding"]["boundary_at_or_null"],
+                "rate": source["funding"]["rate_or_null"],
+                "mark": source["quotes"]["perpetual"]["mark"],
+            }]
+        for record in records:
+            amount = _signed_cashflow(
+                -_d(snapshot["signed_quantity"])
+                * _d(snapshot["contract_multiplier"])
+                * _d(record["mark"])
+                * _d(record["rate"])
+            )
+            funding += amount
+            cashflows.append({
+                "amount": _c(amount), "funding_time": record["funding_time"]
+            })
         snapshot["cash"] = _c(_d(snapshot["cash"]) + funding)
         snapshot["cumulative_funding"] = _c(
             _d(snapshot["cumulative_funding"]) + funding
         )
     daily_loss, drawdown = _risk(snapshot, source)
-    return funding, daily_loss, drawdown
+    return funding, cashflows, daily_loss, drawdown
 
 
 def _decision(source, snapshot, previous_hash, daily_loss, drawdown, plan):
@@ -440,7 +464,7 @@ def compute_challenger_replacement_simulation_decision(
 
     source = _validate_source(source, plan, contract)
     snapshot = _validate_snapshot(previous_projection)
-    _, daily_loss, drawdown = _prepare_boundary(snapshot, source)
+    _, _, daily_loss, drawdown = _prepare_boundary(snapshot, source)
     return _decision(source, snapshot, previous_projection["snapshot_hash"],
                      daily_loss, drawdown, plan)
 
@@ -527,25 +551,27 @@ def _opening_quantity(source, product, metadata, fill, contract, snapshot):
     return Decimal("0"), "NO_TRADE"
 
 
-@_fixed_decimal
-def simulate_challenger_replacement_opportunity(
-    *, source, previous_projection, plan, contract, build_identity
+def _simulate_opportunity_impl(
+    *, source, previous_projection, plan, contract, build_identity,
+    profile, source_is_validated=False
 ):
-    """Apply one normal deterministic fixture transition entirely in memory."""
-
-    source = _validate_source(source, plan, contract)
+    source = source if source_is_validated else _validate_source(source, plan, contract)
     if source.get("build_identity") != dict(build_identity):
         _invalid()
-    previous = _validate_snapshot(previous_projection)
+    previous = _validate_snapshot(previous_projection, profile)
     snapshot = copy.deepcopy(previous)
     snapshot["parent_snapshot_hash_or_null"] = previous["snapshot_hash"]
     snapshot["opportunity_id_or_null"] = source["opportunity"]["opportunity_id"]
     snapshot["reverse_blocked_until_next_opportunity"] = False
-    funding, daily_loss, drawdown = _prepare_boundary(snapshot, source)
+    funding, funding_cashflows, daily_loss, drawdown = _prepare_boundary(
+        snapshot, source, profile
+    )
     decision = _decision(source, snapshot, previous["snapshot_hash"],
                          daily_loss, drawdown, plan)
     action = decision["action"]
     accounting = {"fill_price": None, "quantity": "0", "notional": "0", "fee": "0", "realized_pnl": "0", "funding_cashflow": _c(funding)}
+    if profile.funding_shape == "ORDERED_INTERVAL":
+        accounting["funding_cashflows"] = funding_cashflows
     if action in {"OPEN_SPOT_LONG", "OPEN_PERP_SHORT"}:
         state = "SPOT_LONG" if action == "OPEN_SPOT_LONG" else "PERP_SHORT"
         product, metadata = _instrument(source, state)
@@ -584,7 +610,7 @@ def simulate_challenger_replacement_opportunity(
             isolated_margin=_c(_money(
                 notional / _d(contract["configured_leverage"]), debit=True,
             ) if product == "perpetual" else Decimal("0")),
-            protective_stop_or_null={"status": "CONFIRMED_FIXTURE", "trigger": _c(fill * (Decimal("0.98") if product == "spot" else Decimal("1.02")))},
+            protective_stop_or_null={"status": profile.protective_stop_status, "trigger": _c(fill * (Decimal("0.98") if product == "spot" else Decimal("1.02")))},
         )
         accounting.update(fill_price=_c(fill), quantity=_c(quantity), notional=_c(notional), fee=_c(fee))
     elif action in {"CLOSE_SPOT_LONG", "CLOSE_PERP_SHORT", "RISK_FLATTEN"} and snapshot["position_state"] != "FLAT":
@@ -595,13 +621,27 @@ def simulate_challenger_replacement_opportunity(
 
 
 @_fixed_decimal
-def _simulate_challenger_replacement_v072_transition(
+def simulate_challenger_replacement_opportunity(
     *, source, previous_projection, plan, contract, build_identity
 ):
-    """Return the released transition plus private v0.72 protective-stop terms."""
+    """Apply one normal deterministic fixture transition entirely in memory."""
 
-    source = _validate_source(source, plan, contract)
-    previous = _validate_snapshot(previous_projection)
+    return _simulate_opportunity_impl(
+        source=source,
+        previous_projection=previous_projection,
+        plan=plan,
+        contract=contract,
+        build_identity=build_identity,
+        profile=_FIXTURE_PROFILE,
+    )
+
+
+def _simulate_with_stops_impl(
+    *, source, previous_projection, plan, contract, build_identity,
+    profile, source_is_validated=False
+):
+    source = source if source_is_validated else _validate_source(source, plan, contract)
+    previous = _validate_snapshot(previous_projection, profile)
     stop = previous.get("protective_stop_or_null")
     if previous["position_state"] != "FLAT" and isinstance(stop, Mapping):
         product = "spot" if previous["position_state"] == "SPOT_LONG" else "perpetual"
@@ -609,8 +649,17 @@ def _simulate_challenger_replacement_v072_transition(
             "stop_intent_id", "stop_attempt_id", "stop_client_order_id",
             "product", "side", "reduce_only", "quantity", "trigger_price", "status",
         }
-        if set(stop) == expected_keys and stop.get("status") == "CONFIRMED_FIXTURE" and stop.get("product") == product:
-            trigger = _d(stop["trigger_price"])
+        detailed = (
+            set(stop) == expected_keys
+            and stop.get("status") == profile.protective_stop_status
+            and stop.get("product") == product
+        )
+        simple = (
+            set(stop) == {"status", "trigger"}
+            and stop.get("status") == profile.protective_stop_status
+        )
+        if detailed or simple:
+            trigger = _d(stop["trigger_price"] if detailed else stop["trigger"])
             latest = source["bars"][-1]
             triggered = (
                 _d(latest["low"]) <= trigger
@@ -622,7 +671,9 @@ def _simulate_challenger_replacement_v072_transition(
                 snapshot["parent_snapshot_hash_or_null"] = previous["snapshot_hash"]
                 snapshot["opportunity_id_or_null"] = source["opportunity"]["opportunity_id"]
                 snapshot["reverse_blocked_until_next_opportunity"] = False
-                funding, daily_loss, drawdown = _prepare_boundary(snapshot, source)
+                funding, funding_cashflows, daily_loss, drawdown = _prepare_boundary(
+                    snapshot, source, profile
+                )
                 decision = _decision(source, snapshot, previous["snapshot_hash"], daily_loss, drawdown, plan)
                 decision.update(
                     action=("STOP_CLOSE_SPOT_LONG" if product == "spot" else "STOP_CLOSE_PERP_SHORT"),
@@ -641,6 +692,8 @@ def _simulate_challenger_replacement_v072_transition(
                     "fee": "0", "realized_pnl": "0",
                     "funding_cashflow": _c(funding),
                 }
+                if profile.funding_shape == "ORDERED_INTERVAL":
+                    accounting["funding_cashflows"] = funding_cashflows
                 accounting.update(_close_position(snapshot, source, contract, fill_or_null=fill))
                 _risk(snapshot, source)
                 return {
@@ -650,12 +703,14 @@ def _simulate_challenger_replacement_v072_transition(
                     "protective_stop_terms_or_null": None,
                     "triggered_stop_or_null": {**dict(stop), "bar_open": latest["open"], "bar_high": latest["high"], "bar_low": latest["low"], "gap_reference": _c(gap)},
                 }
-    result = simulate_challenger_replacement_opportunity(
+    result = _simulate_opportunity_impl(
         source=source,
         previous_projection=previous_projection,
         plan=plan,
         contract=contract,
         build_identity=build_identity,
+        profile=profile,
+        source_is_validated=True,
     )
     action = result["decision"]["action"]
     if action not in {"OPEN_SPOT_LONG", "OPEN_PERP_SHORT"}:
@@ -681,3 +736,19 @@ def _simulate_challenger_replacement_v072_transition(
         },
         "triggered_stop_or_null": None,
     }
+
+
+@_fixed_decimal
+def _simulate_challenger_replacement_v072_transition(
+    *, source, previous_projection, plan, contract, build_identity
+):
+    """Return the released transition plus private v0.72 protective-stop terms."""
+
+    return _simulate_with_stops_impl(
+        source=source,
+        previous_projection=previous_projection,
+        plan=plan,
+        contract=contract,
+        build_identity=build_identity,
+        profile=_FIXTURE_PROFILE,
+    )
