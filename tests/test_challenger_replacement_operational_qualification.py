@@ -15,6 +15,7 @@ from crypto_quant.challenger_replacement_operational_qualification import (
     evaluate_challenger_replacement_operational_qualification,
     load_challenger_replacement_operational_qualification_bytes,
 )
+from crypto_quant import challenger_replacement_operational_qualification as qualification_module
 from tests.test_challenger_replacement_fault_matrix import BUILD, CORE
 
 
@@ -69,7 +70,7 @@ def facts(*opportunities, observed_seconds=None, hard=(), position="FLAT",
              for item in opportunities),
             default=0,
         )
-    return OperationalQualificationFacts(
+    value = OperationalQualificationFacts(
         start_receipt=receipt,
         terminal_opportunities=tuple(opportunities),
         observed_at=iso(START + timedelta(seconds=observed_seconds)),
@@ -77,6 +78,10 @@ def facts(*opportunities, observed_seconds=None, hard=(), position="FLAT",
         reconciliation_status=reconciliation,
         hard_stop_reason_codes=tuple(hard),
     )
+    object.__setattr__(
+        value, "_authority", getattr(qualification_module, "_STRICT_EVENT_FACTS", object())
+    )
+    return value
 
 
 class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
@@ -90,6 +95,21 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
         return evaluate_challenger_replacement_operational_qualification(
             value, accelerated_plan=self.plan, fault_receipt=self.fault
         )
+
+    def test_caller_constructed_facts_cannot_qualify(self):
+        raw = OperationalQualificationFacts(
+            start_receipt=facts(terminal(0)).start_receipt,
+            terminal_opportunities=observed_series(259200),
+            observed_at=iso(START + timedelta(seconds=259200)),
+            position_state="FLAT",
+            reconciliation_status="MATCHED",
+            hard_stop_reason_codes=(),
+        )
+        with self.assertRaisesRegex(
+            ChallengerReplacementOperationalQualificationError,
+            "CHALLENGER_REPLACEMENT_OPERATIONAL_FACT_SOURCE_INVALID",
+        ):
+            self.evaluate(raw)
 
     def test_fault_receipt_must_match_start_receipt_candidate_build(self):
         value = facts(terminal(0))
@@ -166,6 +186,7 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
             position_state="FLAT", reconciliation_status="MATCHED",
             hard_stop_reason_codes=(),
         )
+        object.__setattr__(value, "_authority", qualification_module._STRICT_EVENT_FACTS)
         result = self.evaluate(value)
         self.assertEqual(result["status"], "QUALIFIED")
         self.assertEqual(result["eligible_continuous_seconds"], 259_200)
@@ -254,6 +275,7 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
             reconciliation_status=original.reconciliation_status,
             hard_stop_reason_codes=original.hard_stop_reason_codes,
         )
+        object.__setattr__(changed, "_authority", qualification_module._STRICT_EVENT_FACTS)
         first = self.evaluate(original)
         second = self.evaluate(changed)
         self.assertNotEqual(first["bindings"]["facts_hash"], second["bindings"]["facts_hash"])

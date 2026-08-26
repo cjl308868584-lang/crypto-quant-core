@@ -21,6 +21,7 @@ from crypto_quant.challenger_replacement_economic_evaluation import (
     load_challenger_replacement_economic_evaluation_bytes,
     observe_challenger_replacement_economic_progress,
 )
+from crypto_quant import challenger_replacement_economic_evaluation as evaluation_module
 from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_economic_plan import (
     build_challenger_replacement_economic_plan,
@@ -119,6 +120,13 @@ def opportunity(seconds, *, outcome="OBSERVED", result=None,
     )
 
 
+def verified(value):
+    object.__setattr__(
+        value, "_authority", getattr(evaluation_module, "_STRICT_EVENT_FACTS", object())
+    )
+    return value
+
+
 def population():
     return tuple(opportunity(seconds) for seconds in range(0, 7_776_000, 14_400))
 
@@ -128,11 +136,11 @@ class EconomicProgressTests(unittest.TestCase):
         self.plan = build_challenger_replacement_economic_plan()
 
     def test_pre_tail_projection_is_structurally_tail_blind(self):
-        facts = EconomicProgressFacts(
+        facts = verified(EconomicProgressFacts(
             start_receipt=start_receipt(),
             terminal_headers=tuple(header(value) for value in range(0, 86_401, 14_400)),
             observed_at=iso(START + timedelta(days=1)),
-        )
+        ))
         progress = observe_challenger_replacement_economic_progress(
             facts, economic_plan=self.plan
         )
@@ -169,13 +177,26 @@ class EconomicProgressTests(unittest.TestCase):
                 ChallengerReplacementEconomicEvaluationError
             ):
                 observe_challenger_replacement_economic_progress(
-                    EconomicProgressFacts(
+                    verified(EconomicProgressFacts(
                         start_receipt=start_receipt(),
                         terminal_headers=tuple(headers),
                         observed_at=iso(START + timedelta(hours=4)),
-                    ),
+                    )),
                     economic_plan=self.plan,
                 )
+
+    def test_caller_constructed_progress_facts_are_rejected(self):
+        raw = EconomicProgressFacts(
+            start_receipt=start_receipt(), terminal_headers=(header(0),),
+            observed_at=iso(START),
+        )
+        with self.assertRaisesRegex(
+            ChallengerReplacementEconomicEvaluationError,
+            "ECONOMIC_FACT_SOURCE_INVALID",
+        ):
+            observe_challenger_replacement_economic_progress(
+                raw, economic_plan=self.plan
+            )
 
 
 class EconomicBoundarySeriesTests(unittest.TestCase):
@@ -183,7 +204,7 @@ class EconomicBoundarySeriesTests(unittest.TestCase):
         self.plan = build_challenger_replacement_economic_plan()
 
     def build(self, opportunities=None, *, observed_at=TAIL, tail=True):
-        facts = EconomicEvaluationFacts(
+        facts = verified(EconomicEvaluationFacts(
             start_receipt=start_receipt(),
             opportunities=population() if opportunities is None else tuple(opportunities),
             observed_at=iso(observed_at),
@@ -191,7 +212,7 @@ class EconomicBoundarySeriesTests(unittest.TestCase):
                 {"source": {}, "previous_projection": {}, "marked_equity": "190"}
                 if tail else None
             ),
-        )
+        ))
         with patch(
             "crypto_quant.challenger_replacement_economic_evaluation._strict_result",
             side_effect=lambda envelope, **_kwargs: envelope,
@@ -207,12 +228,12 @@ class EconomicBoundarySeriesTests(unittest.TestCase):
                 raise AssertionError("economic payload read before tail")
             def __getitem__(self, _key):
                 raise AssertionError("economic payload read before tail")
-        facts = EconomicEvaluationFacts(
+        facts = verified(EconomicEvaluationFacts(
             start_receipt=start_receipt(),
             opportunities=(replace(opportunity(0), result_or_null=Explodes()),),
             observed_at=iso(TAIL - timedelta(milliseconds=1)),
             tail_mark_or_null=Explodes(),
-        )
+        ))
         with self.assertRaisesRegex(
             ChallengerReplacementEconomicEvaluationError,
             "ECONOMIC_TAIL_NOT_REACHED",
@@ -375,10 +396,26 @@ def final_series(value="0.001"):
 class EconomicBootstrapAndResultTests(unittest.TestCase):
     def setUp(self):
         self.plan = build_challenger_replacement_economic_plan()
-        self.facts = EconomicEvaluationFacts(
+        self.facts = verified(EconomicEvaluationFacts(
+            start_receipt=start_receipt(), opportunities=(),
+            observed_at=iso(TAIL), tail_mark_or_null={},
+        ))
+
+    def test_caller_constructed_evaluation_facts_cannot_return_a_result(self):
+        raw = EconomicEvaluationFacts(
             start_receipt=start_receipt(), opportunities=(),
             observed_at=iso(TAIL), tail_mark_or_null={},
         )
+        with patch(
+            "crypto_quant.challenger_replacement_economic_evaluation._build_economic_boundary_series",
+            return_value=final_series(),
+        ), self.assertRaisesRegex(
+            ChallengerReplacementEconomicEvaluationError,
+            "ECONOMIC_FACT_SOURCE_INVALID",
+        ):
+            evaluate_challenger_replacement_economic_result(
+                raw, economic_plan=self.plan, build_identity=V076_BUILD
+            )
 
     def test_sha256_draw_vectors_and_rejection_sampling(self):
         import hashlib
@@ -498,16 +535,18 @@ class EconomicBootstrapAndResultTests(unittest.TestCase):
         self.assertEqual(result["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE")
 
     def test_tail_evidence_shortfall_is_inconclusive_but_pre_tail_refuses(self):
-        missing = EconomicEvaluationFacts(
+        missing = verified(EconomicEvaluationFacts(
             start_receipt=start_receipt(), opportunities=(),
             observed_at=iso(TAIL), tail_mark_or_null=None,
-        )
+        ))
         result = evaluate_challenger_replacement_economic_result(
             missing, economic_plan=self.plan, build_identity=V076_BUILD
         )
         self.assertEqual(result["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE")
         self.assertIn("ECONOMIC_TERMINAL_COVERAGE_INCOMPLETE", result["facts"]["reason_codes"])
-        pre_tail = replace(missing, observed_at=iso(TAIL - timedelta(milliseconds=1)))
+        pre_tail = verified(replace(
+            missing, observed_at=iso(TAIL - timedelta(milliseconds=1))
+        ))
         with self.assertRaisesRegex(
             ChallengerReplacementEconomicEvaluationError,
             "ECONOMIC_TAIL_NOT_REACHED",

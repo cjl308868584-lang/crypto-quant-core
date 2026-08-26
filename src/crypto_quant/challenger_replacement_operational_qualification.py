@@ -30,6 +30,7 @@ _HARD_STOPS = {
     "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
     "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT",
 }
+_STRICT_EVENT_FACTS = object()
 
 
 class ChallengerReplacementOperationalQualificationError(ValueError):
@@ -50,6 +51,72 @@ class OperationalQualificationFacts:
     position_state: str
     reconciliation_status: str
     hard_stop_reason_codes: Tuple[str, ...]
+
+
+def build_operational_qualification_facts_from_state(
+    *, state, start_receipt, observed_at
+):
+    """Derive qualification facts from the same retained event capability."""
+    from .challenger_replacement_economic_evaluation import (
+        build_economic_evaluation_facts_from_state,
+    )
+    economic = build_economic_evaluation_facts_from_state(
+        state=state, start_receipt=start_receipt,
+        observed_at=observed_at, tail_mark_or_null=None,
+    )
+    projection = state._replay()
+    position = "FLAT"
+    reconciliation = "MATCHED"
+    hard_stops = set()
+    segment = 1
+    terminal = []
+    for fact in economic.opportunities:
+        slot = projection["opportunities"][fact.opportunity_id]
+        if fact.outcome == "OBSERVED":
+            result = fact.result_or_null["result"]
+            position = result["next_snapshot"]["position_state"]
+            reconciliation = result["reconciliation"]["status"]
+            if result["lifecycle"]["unresolved_unknown"]:
+                hard_stops.add("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN")
+            if reconciliation != "MATCHED":
+                hard_stops.add("VENUE_LOCAL_POSITION_MISMATCH")
+            stop = result["next_snapshot"]["protective_stop_or_null"]
+            stop_status = (
+                "SIMULATED_PROTECTIVE_STOP_ACTIVE"
+                if position == "FLAT" or (
+                    isinstance(stop, Mapping)
+                    and stop.get("status") == "CONFIRMED_SIMULATED"
+                ) else "SIMULATED_PROTECTIVE_STOP_MISSING"
+            )
+            observed = result["opportunity"]["captured_at"]
+        else:
+            observed = slot["detected_at"]
+            stop_status = (
+                "SIMULATED_PROTECTIVE_STOP_ACTIVE"
+                if position == "FLAT" else "SIMULATED_PROTECTIVE_STOP_MISSING"
+            )
+            if position != "FLAT":
+                reconciliation = "EXPOSED_MISSED"
+                hard_stops.add("VENUE_LOCAL_POSITION_MISMATCH")
+        terminal.append({
+            "opportunity_id": fact.opportunity_id,
+            "scheduled_for": fact.scheduled_for, "observed_at": observed,
+            "segment_id": "strict-event-segment-" + str(segment),
+            "outcome": fact.outcome, "evidence_qualification": _PUBLIC,
+            "clock_status": "HEALTHY_ALIGNED",
+            "simulated_stop_status": stop_status,
+            "terminal_coverage_complete": True,
+        })
+        if fact.outcome == "MISSED":
+            segment += 1
+    value = OperationalQualificationFacts(
+        start_receipt=copy.deepcopy(dict(start_receipt)),
+        terminal_opportunities=tuple(terminal), observed_at=observed_at,
+        position_state=position, reconciliation_status=reconciliation,
+        hard_stop_reason_codes=tuple(sorted(hard_stops)),
+    )
+    object.__setattr__(value, "_authority", _STRICT_EVENT_FACTS)
+    return value
 
 
 @lru_cache(maxsize=1)
@@ -78,6 +145,8 @@ def _time(value):
 def _validated_inputs(facts, plan, fault):
     if not isinstance(facts, OperationalQualificationFacts):
         _invalid()
+    if getattr(facts, "_authority", None) is not _STRICT_EVENT_FACTS:
+        _invalid("CHALLENGER_REPLACEMENT_OPERATIONAL_FACT_SOURCE_INVALID")
     expected_plan = build_challenger_replacement_accelerated_canary_plan()
     if plan != expected_plan:
         _invalid("CHALLENGER_REPLACEMENT_OPERATIONAL_POLICY_MISMATCH")

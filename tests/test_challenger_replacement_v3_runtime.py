@@ -13,6 +13,12 @@ from crypto_quant import challenger_replacement_v3_runtime as runtime_module
 from crypto_quant.challenger_replacement_economic_plan import (
     build_challenger_replacement_economic_plan,
 )
+from crypto_quant.challenger_replacement_economic_evaluation import (
+    build_economic_evaluation_facts_from_state,
+)
+from crypto_quant.challenger_replacement_operational_qualification import (
+    build_operational_qualification_facts_from_state,
+)
 from crypto_quant.challenger_replacement_events import (
     open_challenger_replacement_event_root,
 )
@@ -198,6 +204,35 @@ class ChallengerReplacementV3RuntimeTests(unittest.TestCase):
             )
             self.assertEqual(
                 first["result"]["authority"]["orders_submitted_to_venue"], 0
+            )
+            receipt = {
+                "status": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED",
+                "deployment": {"candidate_build": dict(V076_BUILD)},
+                "shared_opportunity_id": first["opportunity_id"],
+                "shared_event_hash": state._replay()["events"][-1].event_hash,
+                "operational_start": {"observed_at": "2026-08-26T04:05:00.000Z"},
+                "economic_start": {"scheduled_for": "2026-08-26T04:00:00.000Z"},
+                "authority": {
+                    "production_activation": False,
+                    "credentials_used": False,
+                    "account_requests": 0,
+                    "orders_submitted_to_venue": 0,
+                    "fund_movement": 0,
+                },
+            }
+            operational = build_operational_qualification_facts_from_state(
+                state=state, start_receipt=receipt,
+                observed_at="2026-08-26T04:05:00.000Z",
+            )
+            economic = build_economic_evaluation_facts_from_state(
+                state=state, start_receipt=receipt,
+                observed_at="2026-08-26T04:05:00.000Z",
+                tail_mark_or_null=None,
+            )
+            self.assertEqual(len(operational.terminal_opportunities), 1)
+            self.assertEqual(len(economic.opportunities), 1)
+            self.assertEqual(
+                economic.opportunities[0].result_or_null["result"], first["result"]
             )
 
     def test_fresh_state_resumes_after_durable_input_without_reacquiring(self):

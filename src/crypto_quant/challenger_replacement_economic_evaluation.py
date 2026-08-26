@@ -21,7 +21,12 @@ from .challenger_replacement_public_simulation import (
     _kernel_source,
     _snapshot_validator,
     _validated_source,
+    build_challenger_replacement_public_genesis_snapshot,
+    build_challenger_replacement_public_simulation_input,
     load_challenger_replacement_public_simulation_result_bytes,
+)
+from .challenger_replacement_public_market_capture import (
+    load_challenger_replacement_public_market_capture_bytes,
 )
 from .challenger_replacement_public_simulation_contract import (
     build_challenger_replacement_public_simulation_contract,
@@ -41,6 +46,7 @@ _PUBLIC = (
     "PUBLIC_MARKET_DETERMINISTIC_SIMULATION_NO_ACCOUNT_NO_BROKER_NO_REAL_ORDER"
 )
 _SCHEMA = "challenger-replacement-economic-evaluation-v1.schema.json"
+_STRICT_EVENT_FACTS = object()
 
 
 class ChallengerReplacementEconomicEvaluationError(ValueError):
@@ -76,6 +82,143 @@ class EconomicEvaluationFacts:
     opportunities: Tuple[EconomicOpportunityFact, ...]
     observed_at: str
     tail_mark_or_null: Optional[Mapping[str, Any]]
+
+
+def _event_facts(value):
+    if getattr(value, "_authority", None) is not _STRICT_EVENT_FACTS:
+        _invalid("ECONOMIC_FACT_SOURCE_INVALID")
+    return value
+
+
+def _bind_event_facts(value):
+    object.__setattr__(value, "_authority", _STRICT_EVENT_FACTS)
+    return value
+
+
+def _validate_start_against_projection(start_receipt, projection, build_identity):
+    try:
+        observed = next(
+            event for event in projection["events"]
+            if json.loads(event.final_bytes.decode("utf-8"))["event_type"]
+            == "OPPORTUNITY_OBSERVED"
+        )
+        event = json.loads(observed.final_bytes.decode("utf-8"))
+        slot = projection["opportunities"][event["slot_id"]]
+        if (
+            not isinstance(start_receipt, Mapping)
+            or start_receipt.get("status")
+            != "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED"
+            or start_receipt.get("deployment", {}).get("candidate_build")
+            != build_identity
+            or start_receipt.get("shared_opportunity_id") != event["slot_id"]
+            or start_receipt.get("shared_event_hash") != observed.event_hash
+            or start_receipt.get("economic_start", {}).get("scheduled_for")
+            != slot["scheduled_for"]
+            or start_receipt.get("operational_start", {}).get("observed_at")
+            != slot["result_evidence"]["opportunity"]["captured_at"]
+            or any(start_receipt.get("authority", {}).values())
+        ):
+            _invalid("ECONOMIC_FACT_SOURCE_INVALID")
+    except (KeyError, StopIteration, TypeError, UnicodeDecodeError, ValueError) as error:
+        raise ChallengerReplacementEconomicEvaluationError(
+            "ECONOMIC_FACT_SOURCE_INVALID"
+        ) from error
+
+
+def build_economic_progress_facts_from_state(
+    *, state, start_receipt, observed_at
+):
+    """Derive tail-blind headers without reading economic result payloads."""
+    from .challenger_replacement_opportunities import (
+        ChallengerReplacementOpportunityState,
+    )
+    if not isinstance(state, ChallengerReplacementOpportunityState):
+        _invalid("ECONOMIC_FACT_SOURCE_INVALID")
+    projection = state._replay()
+    _validate_start_against_projection(
+        start_receipt, projection, state.build_identity
+    )
+    headers = tuple({
+        "opportunity_id": _opportunity_id(_time(scheduled_for)),
+        "scheduled_for": scheduled_for,
+        "outcome": projection["opportunities"][
+            _opportunity_id(_time(scheduled_for))
+        ]["outcome"],
+        "evidence_health": "STRICT_REPLAY_VERIFIED",
+    } for scheduled_for in projection["terminal_scheduled_for"])
+    return _bind_event_facts(EconomicProgressFacts(
+        start_receipt=copy.deepcopy(dict(start_receipt)),
+        terminal_headers=headers,
+        observed_at=observed_at,
+    ))
+
+
+def build_economic_evaluation_facts_from_state(
+    *, state, start_receipt, observed_at, tail_mark_or_null
+):
+    """Derive production facts only from a retained strict replay capability."""
+    from .challenger_replacement_opportunities import (
+        ChallengerReplacementOpportunityState,
+    )
+    if (
+        not isinstance(state, ChallengerReplacementOpportunityState)
+    ):
+        _invalid("ECONOMIC_FACT_SOURCE_INVALID")
+    projection = state._replay()
+    _validate_start_against_projection(
+        start_receipt, projection, state.build_identity
+    )
+    plan = state.plan
+    economic = build_challenger_replacement_economic_plan()
+    predecessor = build_challenger_replacement_simulation_contract(plan=plan)
+    public = build_challenger_replacement_public_simulation_contract(
+        plan=plan, economic_plan=economic, predecessor_contract=predecessor
+    )
+    previous = build_challenger_replacement_public_genesis_snapshot(
+        plan=plan, public_contract=public
+    )
+    previous_bundle = None
+    result = []
+    for scheduled_for in projection["terminal_scheduled_for"]:
+        opportunity_id = _opportunity_id(_time(scheduled_for))
+        slot = projection["opportunities"][opportunity_id]
+        if slot["outcome"] == "MISSED":
+            result.append(EconomicOpportunityFact(
+                opportunity_id, scheduled_for, "MISSED", None,
+                previous["position_state"], slot["reason_code"],
+            ))
+            continue
+        capture = load_challenger_replacement_public_market_capture_bytes(
+            slot["source_bundle_bytes"], plan=plan,
+            build_identity=state.build_identity,
+            previous_source_bundle=previous_bundle,
+        )
+        source = build_challenger_replacement_public_simulation_input(
+            capture, plan=plan, economic_plan=economic,
+            predecessor_contract=predecessor, public_contract=public,
+            build_identity=state.build_identity,
+        )
+        evidence = slot["result_evidence"]
+        envelope = {
+            "source": source, "previous_projection": previous,
+            "result": evidence, "sequence": evidence["sequence"],
+            "parent_event_hash": evidence["parent_event_hash"],
+        }
+        _strict_result(
+            envelope, economic_plan=economic,
+            expected_previous_hash=previous["snapshot_hash"],
+            expected_build=state.build_identity,
+        )
+        result.append(EconomicOpportunityFact(
+            opportunity_id, scheduled_for, "OBSERVED", envelope, None, None
+        ))
+        previous = evidence["next_snapshot"]
+        previous_bundle = {"klines": capture.document["normalized"]["bars"]}
+    return _bind_event_facts(EconomicEvaluationFacts(
+        start_receipt=copy.deepcopy(dict(start_receipt)),
+        opportunities=tuple(result), observed_at=observed_at,
+        tail_mark_or_null=copy.deepcopy(tail_mark_or_null),
+    ))
 
 
 def _time(value):
@@ -126,6 +269,7 @@ def observe_challenger_replacement_economic_progress(
     plan = _validated_plan(economic_plan)
     if not isinstance(facts, EconomicProgressFacts):
         _invalid()
+    _event_facts(facts)
     start = _start(facts.start_receipt)
     observed = _time(facts.observed_at)
     if observed < start:
@@ -657,6 +801,7 @@ def evaluate_challenger_replacement_economic_result(
     build_identity: Mapping[str, Any]
 ):
     try:
+        _event_facts(facts)
         return copy.deepcopy(_result_document(
             facts, _validated_plan(economic_plan), build_identity
         ))
@@ -675,6 +820,7 @@ def load_challenger_replacement_economic_evaluation_bytes(
     if not isinstance(data, bytes) or not 0 < len(data) <= 4_194_304:
         _invalid("ECONOMIC_EVALUATION_BYTES_INVALID")
     try:
+        _event_facts(facts)
         value = _strict_json_bytes(data)
         expected = _result_document(facts, _validated_plan(economic_plan), build_identity)
         if data != canonical_json(value).encode("utf-8") or value != expected:
