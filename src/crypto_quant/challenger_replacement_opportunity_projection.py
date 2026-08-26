@@ -114,6 +114,7 @@ def validate_build_identity(value):
             ("v0.70.0", "0.70.0", "1.64.0"),
             ("v0.70.0-fixture", "0.70.0", "1.64.0"),
             ("v0.72.0-fixture", "0.72.0", "1.66.0"),
+            ("v0.76.0", "0.76.0", "1.70.0"),
         }
         or not isinstance(value["peeled_commit"], str)
         or len(value["peeled_commit"]) != 40
@@ -178,7 +179,7 @@ def initial_opportunity_projection(*, plan, build_identity):
         invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_IDENTITY_INVALID")
     build_identity = validate_build_identity(build_identity)
     latest_snapshot = None
-    if build_identity["package_version"] == "0.72.0":
+    if build_identity["package_version"] in {"0.72.0", "0.76.0"}:
         from .challenger_replacement_simulation import (
             build_challenger_replacement_genesis_snapshot,
         )
@@ -186,10 +187,30 @@ def initial_opportunity_projection(*, plan, build_identity):
             build_challenger_replacement_simulation_contract,
         )
 
-        latest_snapshot = build_challenger_replacement_genesis_snapshot(
-            plan=plan,
-            contract=build_challenger_replacement_simulation_contract(plan=plan),
-        )
+        predecessor = build_challenger_replacement_simulation_contract(plan=plan)
+        if build_identity["package_version"] == "0.76.0":
+            from .challenger_replacement_economic_plan import (
+                build_challenger_replacement_economic_plan,
+            )
+            from .challenger_replacement_public_simulation import (
+                build_challenger_replacement_public_genesis_snapshot,
+            )
+            from .challenger_replacement_public_simulation_contract import (
+                build_challenger_replacement_public_simulation_contract,
+            )
+
+            latest_snapshot = build_challenger_replacement_public_genesis_snapshot(
+                plan=plan,
+                public_contract=build_challenger_replacement_public_simulation_contract(
+                    plan=plan,
+                    economic_plan=build_challenger_replacement_economic_plan(),
+                    predecessor_contract=predecessor,
+                ),
+            )
+        else:
+            latest_snapshot = build_challenger_replacement_genesis_snapshot(
+                plan=plan, contract=predecessor
+            )
     return {
         "opportunities": {},
         "active_opportunity_id": None,
@@ -391,7 +412,84 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
         )
         try:
             evidence_header = json.loads(evidence_bytes)
-            if build_identity["package_version"] == "0.72.0":
+            if build_identity["package_version"] == "0.76.0":
+                if (
+                    evidence_header.get("$schema")
+                    != "./challenger-replacement-public-simulation-result-v1.schema.json"
+                    or evidence_header.get("schema_version") != "1.0.0"
+                ):
+                    invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
+                from .challenger_replacement_economic_plan import (
+                    build_challenger_replacement_economic_plan,
+                )
+                from .challenger_replacement_public_simulation import (
+                    build_challenger_replacement_public_simulation_input,
+                    load_challenger_replacement_public_simulation_result_bytes,
+                )
+                from .challenger_replacement_public_market_capture import (
+                    load_challenger_replacement_public_market_capture_bytes,
+                )
+                from .challenger_replacement_public_simulation_contract import (
+                    build_challenger_replacement_public_simulation_contract,
+                )
+                from .challenger_replacement_simulation_contract import (
+                    build_challenger_replacement_simulation_contract,
+                )
+
+                predecessor = build_challenger_replacement_simulation_contract(
+                    plan=plan
+                )
+                economic = build_challenger_replacement_economic_plan()
+                public_contract = (
+                    build_challenger_replacement_public_simulation_contract(
+                        plan=plan,
+                        economic_plan=economic,
+                        predecessor_contract=predecessor,
+                    )
+                )
+                previous_bundle = None
+                previous_bytes = projection["_previous_observed_source_bytes"]
+                if previous_bytes is not None:
+                    previous_capture = (
+                        load_challenger_replacement_public_market_capture_bytes(
+                            previous_bytes,
+                            plan=plan,
+                            build_identity=build_identity,
+                            previous_source_bundle=None,
+                        )
+                    )
+                    previous_bundle = {
+                        "klines": previous_capture.document["normalized"]["bars"]
+                    }
+                capture = load_challenger_replacement_public_market_capture_bytes(
+                    slot["source_bundle_bytes"],
+                    plan=plan,
+                    build_identity=build_identity,
+                    previous_source_bundle=previous_bundle,
+                )
+                source = build_challenger_replacement_public_simulation_input(
+                    capture,
+                    plan=plan,
+                    economic_plan=economic,
+                    predecessor_contract=predecessor,
+                    public_contract=public_contract,
+                    build_identity=build_identity,
+                )
+                evidence = load_challenger_replacement_public_simulation_result_bytes(
+                    evidence_bytes,
+                    source=source,
+                    previous_projection=projection["_latest_next_snapshot"],
+                    plan=plan,
+                    economic_plan=economic,
+                    public_contract=public_contract,
+                    build_identity=build_identity,
+                    sequence=event.sequence,
+                    parent_event_hash=event.previous_event_hash,
+                )
+                observed_at = evidence["opportunity"]["captured_at"]
+                if canonical_json(evidence["decision"]).encode("utf-8") != decision_bytes:
+                    invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
+            elif build_identity["package_version"] == "0.72.0":
                 if (
                     evidence_header.get("$schema")
                     != "./challenger-replacement-opportunity-result-evidence-v2.schema.json"
@@ -478,7 +576,11 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
         "observed_at": (
             slot.get("result_evidence", {}).get("observed_at")
             if build_identity["package_version"] == "0.70.0"
-            else slot.get("result_evidence", {}).get("opportunity", {}).get("observed_at")
+            else slot.get("result_evidence", {}).get("opportunity", {}).get(
+                "captured_at"
+                if build_identity["package_version"] == "0.76.0"
+                else "observed_at"
+            )
         ),
     }
     if (
@@ -495,7 +597,7 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
     projection["_previous_observed_source_bytes"] = slot["source_bundle_bytes"]
     projection["_previous_observed_decision_bytes"] = slot["decision_bytes"]
     projection["_previous_observed_decision_hash"] = slot["decision_sha256"]
-    if build_identity["package_version"] == "0.72.0":
+    if build_identity["package_version"] in {"0.72.0", "0.76.0"}:
         projection["_latest_next_snapshot"] = deepcopy(
             slot["result_evidence"]["next_snapshot"]
         )
