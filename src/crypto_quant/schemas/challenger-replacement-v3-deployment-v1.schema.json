@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "challenger-replacement-v3-deployment-v1.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["$schema", "schema_version", "deployment_id", "deployment_hash", "predecessor_release", "plans", "contracts", "candidate_build", "executable_core_identity", "executable_core_hash", "service", "paths", "runtime", "schedule", "authority", "plist_sha256", "status"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-v3-deployment-v1.schema.json"}, "schema_version": {"const": "1.0.0"},
+    "deployment_id": {"type": "string", "pattern": "^challenger_replacement_v3_deployment_[0-9a-f]{64}$"}, "deployment_hash": {"$ref": "#/$defs/hash"},
+    "predecessor_release": {"type": "object"}, "plans": {"type": "object"}, "contracts": {"type": "object"}, "candidate_build": {"type": "object"},
+    "executable_core_identity": {"type": "object", "minProperties": 5, "additionalProperties": {"$ref": "#/$defs/hash"}}, "executable_core_hash": {"$ref": "#/$defs/hash"},
+    "service": {"type": "object"}, "paths": {"type": "object"}, "runtime": {"type": "object"},
+    "schedule": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"type": "object"}},
+    "authority": {"type": "object"}, "plist_sha256": {"$ref": "#/$defs/hash"},
+    "status": {"const": "V3_DEPLOYMENT_CANDIDATE_NOT_INSTALLABLE_NOT_ACTIVATED"}
+  },
+  "$defs": {"hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}
