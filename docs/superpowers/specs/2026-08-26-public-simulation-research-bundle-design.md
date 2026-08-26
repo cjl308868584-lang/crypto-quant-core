@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-26  
 **Target release:** `v0.76.0`  
-**Status:** in-chat design approved; exact written spec awaiting review  
+**Status:** in-chat design and public-input correction approved; corrected exact
+written spec awaiting review
 **Release class:** code, schemas, deterministic fixtures and candidate
 configuration only; no installation, activation, credential, account, order or
 fund authority
@@ -137,11 +138,11 @@ v0.76 is an integration release. The disposition of existing components is:
 
 | Released component | Disposition in v0.76 |
 |---|---|
-| v0.67 public Binance time/kline adapter | Reuse unchanged unless a reproduced defect requires a targeted fix; no second HTTP client |
+| v0.67 public Binance time/kline adapter | Retain as the strict clock/Kline sub-capture; reuse its bounded HTTP transport in a versioned v0.76 composite public-market capture rather than create a second client |
 | v0.67 four-hour LaunchAgent schedule | Retain six calendar invocations at minute 02; no generic scheduler |
 | v0.68 snapshot/install/preflight/start primitives | Reuse descriptor and publication safety; add v3 directional bindings rather than rewrite v0.68 history |
 | v0.70 DecisionOpportunity event protocol | Remains canonical fact source; add production-simulation evidence qualification through versioned schemas |
-| v0.71 Decimal accounting and deterministic simulation contract | Remains the accounting authority for public simulation |
+| v0.71 Decimal accounting and deterministic simulation contract | Remains the exact economic-math predecessor; its fixture-only contract, build whitelist and `CONFIRMED_FIXTURE` labels remain fixture-only and are not relabelled as public evidence |
 | v0.72 lifecycle fixtures | Retain as golden fault/conformance inputs; fixture-labelled events never become production facts |
 | v0.73 readiness evaluator | Retain historical seven-day behavior for v0.73 fixtures; implement a new v0.75-bound 72-hour evaluator rather than mutate it |
 | v0.61 loopback console | Reuse server and safe rendering; add strict version dispatch only |
@@ -160,16 +161,18 @@ The following approaches remain rejected:
 The only production-candidate flow is:
 
 ```text
-verified local clock + fixed Binance public HTTPS GET
+verified local clock + fixed Binance public HTTPS GET set
                          |
                          v
-strict v0.67 LiveCapture (time + closed ETHUSDT 4h rows)
+strict v0.76 PublicMarketCaptureV2
+  (exact v0.67 time/Kline sub-capture + Spot/perpetual rules,
+   bid/ask, perpetual mark and exact-interval funding)
                          |
                          v
-v3 public-simulation input adapter
+v3 public-simulation input + public-model contract adapter
                          |
                          v
-v0.71 decision + Decimal accounting + deterministic simulated execution
+v0.71-preserving decision/Decimal kernel + public simulation profile
                          |
                          v
 versioned DecisionOpportunity canonical event bytes
@@ -220,12 +223,13 @@ The document binds:
 - exact v0.69, v0.71, v0.74 and v0.75 plan/contract identities;
 - the v0.76 release-candidate build identity;
 - opportunity ID, sequence, scheduled time and parent event hash;
-- exact validated public LiveCapture hash and normalized source rows;
+- exact validated PublicMarketCaptureV2 hash, its nested v0.67 capture hash and
+  normalized source rows, quotes, mark, funding and rule metadata;
 - previous canonical accounting snapshot hash;
 - deterministic decision, risk, order intent, simulated fill, fee, funding,
   position and resulting accounting snapshot;
 - lifecycle invariants and reconciliation status;
-- public request count inherited from LiveCapture;
+- public request count inherited from PublicMarketCaptureV2;
 - account, credential, Broker, venue-order and fund counts fixed to zero; and
 - canonical self-hash and stable result ID.
 
@@ -235,21 +239,131 @@ ending in `_FIXTURE` and future v0.77 venue event names are forbidden. A
 simulated fill is an economic model output, never a claim that Binance accepted
 or filled an order.
 
-### 5.2 Input and fill rules
+### 5.2 PublicMarketCaptureV2
 
-The adapter accepts only the strict v0.67 public capture, v0.69 plan, v0.71
-simulation contract and replayed previous accounting state. Public APIs accept
-no URL, symbol, price, fee, funding, slippage, position, decision, timestamp or
-result override.
+The v0.67 capture proves trusted time and the exact 21 closed Spot ETHUSDT 4h
+rows, but it does not contain the bid/ask, perpetual mark, funding or product
+rules required by v0.71 accounting. It therefore remains an immutable
+sub-capture rather than being misrepresented as a complete simulation input.
 
-The fill model, product mutual exclusion, quantity step, price tick,
-minimum-notional, fee and funding semantics are inherited from the frozen
-v0.71 contract. If required input is unavailable, invalid or not derivable from
-canonical public evidence, the opportunity becomes `MISSED` or the stream
-fails according to the v0.69/v0.75 classification; the runtime never invents a
-fill or substitutes zero cost.
+`PublicMarketCaptureV2` embeds the exact validated v0.67 canonical bytes and
+adds the following six fixed, unauthenticated request identities in this exact
+order:
 
-### 5.3 Runtime recovery
+```text
+https://data-api.binance.vision/api/v3/exchangeInfo?symbol=ETHUSDT
+https://data-api.binance.vision/api/v3/ticker/bookTicker?symbol=ETHUSDT
+https://fapi.binance.com/fapi/v1/exchangeInfo
+https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=ETHUSDT
+https://fapi.binance.com/fapi/v1/premiumIndex?symbol=ETHUSDT
+https://fapi.binance.com/fapi/v1/fundingRate?endTime={scheduled_ms}&limit=16&startTime={scheduled_ms_minus_14399999}&symbol=ETHUSDT
+```
+
+No URL, host, path, symbol, query order or endpoint is caller supplied. Each
+request has one initial attempt and at most two retries under the existing
+bounded transport rules. Including the three clock probes and the Kline
+request, one capture therefore records between 10 and 24 public requests. The
+request ledger preserves exact request identity, attempt order, status,
+selected headers, response size, response SHA-256 and exact response bytes.
+Release tests use fixtures only and issue zero network requests.
+
+The USDⓈ-M exchange-info response is bounded to 4 MiB because Binance exposes
+no symbol parameter on that endpoint. Every other added response is bounded to
+1 MiB. An over-size body fails before JSON interpretation; no truncation is
+accepted as evidence.
+
+The strict loader requires:
+
+- exactly one trading `ETHUSDT` Spot symbol and exactly one trading perpetual
+  `ETHUSDT` USDⓈ-M symbol;
+- unambiguous price-tick, market-quantity and minimum-notional rules for both
+  products under the exact selection rules below;
+- positive Spot and perpetual bid/ask with `bid <= ask`;
+- one positive perpetual mark whose exchange timestamp lies inside the trusted
+  capture window;
+- a chronologically ordered Funding response containing every regular record
+  in the half-open four-hour interval `(scheduled_for - 4h, scheduled_for]`,
+  with no duplicate `fundingTime` and with each record's associated positive
+  mark price; and
+- unchanged account, credential, Broker, venue-order and fund authority fixed
+  to zero/false.
+
+The query uses `startTime = scheduled_ms - 14399999`, `endTime = scheduled_ms`
+and `limit = 16`, so the preceding decision boundary is excluded and the
+current boundary is included. This captures multiple funding cashflows if
+Binance temporarily uses an interval shorter than four hours and prevents the
+same record from being charged twice. An empty result means the authoritative
+public history returned no funding cashflow in that exact interval; the model
+does not manufacture a zero-rate record. More than 16 records, a record outside
+the interval, duplicate time, nonascending order, a special or unknown rate
+type, missing associated mark, revised fields, an ambiguous filter or any
+missing required response fails the opportunity closed. Raw responses remain
+evidence; normalized fields are recomputed during every replay.
+
+Rule normalization is deterministic and includes only values used by the
+simulation. Price tick is `PRICE_FILTER.tickSize`. Market quantity uses a
+positive `MARKET_LOT_SIZE` tuple, or falls back to a positive `LOT_SIZE` tuple
+only when the market-specific filter is absent or explicitly disabled. Spot
+minimum notional is the maximum of every applicable `NOTIONAL.minNotional`
+with `applyMinToMarket=true` and `MIN_NOTIONAL.minNotional` with
+`applyToMarket=true`; USDⓈ-M minimum notional is `MIN_NOTIONAL.notional`.
+Missing, duplicate-with-conflicting-value, nonpositive or structurally unknown
+applicable rules fail closed. Unused display precision, time-in-force and
+non-market-order fields are not promoted into the accounting input.
+
+The public input deliberately has no `last` field. The v0.71 fixture loader
+validated `last`, but the accounting kernel never consumes it. v0.76 neither
+adds a seventh endpoint nor invents a midpoint merely to preserve an unused
+fixture shape.
+
+### 5.3 Public simulation contract and fill rules
+
+v0.76 creates a distinct public-simulation contract that binds the exact v0.71
+contract ID, hash and file SHA as its accounting predecessor. It copies no
+caller-selected economic parameters. Its fixed public labels include:
+
+```text
+mode = PUBLIC_MARKET_DETERMINISTIC_BINANCE_SIMULATION
+fill_model = DETERMINISTIC_IMMEDIATE_FULL_MARKET_MODEL
+funding_source = EXACT_PUBLIC_FUNDING_RECORDS_IN_OPPORTUNITY_INTERVAL
+protective_stop_status = CONFIRMED_SIMULATED
+```
+
+The released v0.71 contract remains byte-for-byte fixture-only. The existing
+v0.71/v0.72 public APIs must retain their exact fixture outputs. If the
+implementation extracts an evidence-neutral private Decimal kernel, the only
+profiles are fixed internal fixture and public-simulation constants; callers
+cannot provide a profile, label, fee, slippage or status override. A new public
+snapshot schema uses `CONFIRMED_SIMULATED`; `CONFIRMED_FIXTURE` is rejected by
+the public loader and remains accepted only by the historical fixture loader.
+
+Price tick, market quantity step, minimum/maximum quantity and minimum-notional
+come from strict exchange-info evidence. Product mutual exclusion and direction
+come from the frozen v0.69/v0.75 policies. The linear USDⓈ-M contract
+multiplier is the fixed Decimal `1` model assumption inherited from the v0.71
+ETH-quantity fixtures and explicitly rebound by the public contract; it is not
+claimed as an exchange-info field. Fee, adverse slippage and conservative-mark
+rules come from the exact v0.71/v0.74 economic model and are labelled model
+assumptions, not account or venue fee observations. The resulting narrow
+simulation-rules record binds both its public response hashes and frozen-model
+fields so neither can be silently substituted.
+
+The public Decimal profile applies zero or more Funding records before the
+current decision, in ascending `fundingTime` order. Each cashflow uses that
+record's exact rate and associated mark price with the frozen v0.71 signed
+quantity and multiplier formula. The current position mark still comes only
+from `premiumIndex.markPrice`. Historical fixture APIs retain their original
+single-boundary Funding shape and exact output bytes.
+
+The adapter accepts only the strict PublicMarketCaptureV2, v0.69 plan, exact
+v0.71 predecessor contract, v0.76 public contract and replayed previous public
+accounting state. Public APIs accept no URL, symbol, price, fee, funding,
+slippage, position, decision, timestamp or result override. If required input
+is unavailable, invalid or not derivable from canonical public evidence, the
+opportunity becomes `MISSED` or the stream fails according to the v0.69/v0.75
+classification; the runtime never invents a fill or substitutes zero cost.
+
+### 5.4 Runtime recovery
 
 Every invocation first replays the retained canonical event root. It then does
 exactly one of:
@@ -283,7 +397,8 @@ The v0.76 deployment candidate binds:
 - v0.75 predecessor release identity;
 - exact v0.69, v0.71, v0.74 and v0.75 artifact identities;
 - the reviewed inventory of the v0.67 public adapter, v0.70 event protocol,
-  v0.71 accounting core and new v0.76 composition modules;
+  v0.71 accounting core, v0.76 public capture/contract and new v0.76
+  composition modules;
 - fixed service label and owner-only paths already established by v0.68;
 - a v0.76 candidate package version and manifest version without embedding a
   future merge commit or tag object; and
@@ -536,6 +651,8 @@ expected new production modules are:
 
 ```text
 src/crypto_quant/challenger_replacement_public_simulation.py
+src/crypto_quant/challenger_replacement_public_market_capture.py
+src/crypto_quant/challenger_replacement_public_simulation_contract.py
 src/crypto_quant/challenger_replacement_v3_runtime.py
 src/crypto_quant/challenger_replacement_v3_deployment.py
 src/crypto_quant/challenger_replacement_v3_start.py
@@ -551,6 +668,9 @@ Expected new schemas are:
 
 ```text
 challenger-replacement-public-simulation-result-v1.schema.json
+challenger-replacement-public-market-capture-v2.schema.json
+challenger-replacement-public-simulation-contract-v1.schema.json
+challenger-replacement-public-simulation-snapshot-v1.schema.json
 challenger-replacement-v3-deployment-v1.schema.json
 challenger-replacement-v3-start-receipt-v1.schema.json
 challenger-replacement-operational-qualification-v1.schema.json
@@ -571,16 +691,19 @@ Implementation follows one atomic RED, minimal GREEN and refactor cycle per
 behavior. Required test groups include:
 
 1. schema and strict loader mutation tests;
-2. public-simulation golden and boundary tests;
-3. fresh-process event/recovery/concurrency tests;
-4. v3 deployment/start identity tests;
-5. 72-hour segment and interruption state-machine tests;
-6. complete fault-matrix known-answer tests;
-7. 90-day population/Decimal/bootstrap/gate known-answer tests;
-8. pre-tail economic non-disclosure tests;
-9. v1/v2/v3 console compatibility and read-only tests;
-10. static forbidden-capability and secret-absence tests; and
-11. committed-artifact/build-manifest/release regressions.
+2. fixed-request public capture, retry/count, exact Funding-interval and
+   no-network release tests;
+3. fixture/public contract isolation plus public-simulation golden and boundary
+   tests;
+4. fresh-process event/recovery/concurrency tests;
+5. v3 deployment/start identity tests;
+6. 72-hour segment and interruption state-machine tests;
+7. complete fault-matrix known-answer tests;
+8. 90-day population/Decimal/bootstrap/gate known-answer tests;
+9. pre-tail economic non-disclosure tests;
+10. v1/v2/v3 console compatibility and read-only tests;
+11. static forbidden-capability and secret-absence tests; and
+12. committed-artifact/build-manifest/release regressions.
 
 The tests must include adversarial mutation of every policy or identity leaf,
 not only happy paths. Multiprocessing or new-interpreter tests are required for
@@ -609,11 +732,11 @@ The new production Python net addition across v0.76-specific modules is capped
 at 2,600 physical lines. The target budget is:
 
 ```text
-public simulation + runtime composition       600
-v3 deployment/start adapters                  450
-72-hour qualification + fault receipt         550
-90-day evaluator + strict result loader       850
-observer + operations projection integration  150
+public capture + simulation + runtime          800
+v3 deployment/start adapters                   350
+72-hour qualification + fault receipt          500
+90-day evaluator + strict result loader        800
+observer + operations projection integration   150
 ```
 
 Cross-platform atomic publication, strict JSON, canonical Decimal, event replay
@@ -660,7 +783,10 @@ qualification.
 v0.76 is complete only when all of the following are proven:
 
 - v0.69, v0.74 and v0.75 exact artifacts replay unchanged;
-- public simulation consumes strict public input and emits no fixture or venue
+- PublicMarketCaptureV2 binds the exact v0.67 sub-capture and all required
+  fixed public rule/quote/mark/Funding responses without caller overrides;
+- public simulation consumes only the strict v0.76 public input/contract,
+  preserves historical v0.71/v0.72 fixture bytes and emits no fixture or venue
   claim;
 - one canonical event log remains the sole fact source;
 - restart, crash and concurrency semantics are proven in fresh processes;
