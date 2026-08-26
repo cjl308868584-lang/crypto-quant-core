@@ -339,7 +339,7 @@ def _derive_verified_v3_alerts(projection: Mapping[str, Any]) -> Dict[str, Any]:
         (bool(projection["opportunities"]["missed"]), "MISSED", "WARNING", "MISSED_OPPORTUNITY"),
         (state["reconciliation_status"] not in {"MATCHED", "NOT_AVAILABLE"}, "RECONCILIATION", "CRITICAL", "RECONCILIATION_FAILED"),
         (state["economic_gap_locked"], "ECONOMIC-GAP", "CRITICAL", "ECONOMIC_GAP_LOCKED"),
-        (state["current_product"] != "FLAT" and state["protective_stop_status"] != "CONFIRMED", "STOP", "CRITICAL", "PROTECTIVE_STOP_FAILED"),
+        (state["current_product"] != "FLAT" and state["protective_stop_status"] != "CONFIRMED_SIMULATED", "STOP", "CRITICAL", "PROTECTIVE_STOP_FAILED"),
     )
     for active, suffix, severity, reason in rules:
         if active:

@@ -186,6 +186,21 @@ class OperationsAlertsStrictBoundaryTests(unittest.TestCase):
         self.assertGreaterEqual(failed["counts"]["CRITICAL"], 1)
         self.assertFalse(failed["new_risk_allowed"])
 
+    def test_v3_simulated_protective_stop_does_not_raise_false_critical(self):
+        current = _v3_observation(missed=0)
+        current.event_projection["latest_next_snapshot_or_null"] = {
+            "position_state": "PERP_SHORT",
+            "reconciliation_status": "MATCHED",
+            "risk_state": "RISK_CLEAR",
+            "economic_gap_locked": False,
+            "protective_stop_or_null": {"status": "CONFIRMED_SIMULATED"},
+        }
+        projection = build_operations_projection_v3(
+            current, build_identity=V076_BUILD
+        )
+        alerts = derive_operations_alerts(canonical_json(projection).encode("utf-8"))
+        self.assertEqual(alerts["counts"]["CRITICAL"], 0)
+
     def test_v3_mutated_hash_is_rejected_before_alert_derivation(self):
         value = json.loads(_projection_v3_body())
         value["status"] = "FAILED_CLOSED"
