@@ -315,9 +315,7 @@ def run_challenger_replacement_v3_opportunity(
 
 
 def _load_fixed_runtime_sources():
-    raise ChallengerReplacementOpportunityError(
-        "CHALLENGER_REPLACEMENT_V3_RUNTIME_INSTALL_CONTRACT_UNAVAILABLE"
-    )
+    _invalid("CHALLENGER_REPLACEMENT_V3_RUNTIME_INSTALL_CONTRACT_UNAVAILABLE")
 
 
 def main(argv=None):
@@ -329,11 +327,10 @@ def main(argv=None):
         if not isinstance(sources, dict) or set(sources) != _FIXED_SOURCE_KEYS:
             _invalid("CHALLENGER_REPLACEMENT_V3_RUNTIME_INSTALL_CONTRACT_INVALID")
         result = run_challenger_replacement_v3_opportunity(**sources)
-    except (ChallengerReplacementOpportunityError, OSError, TypeError, ValueError) as error:
-        reason = getattr(
-            error, "reason_code", "CHALLENGER_REPLACEMENT_V3_RUNTIME_FAILED"
-        )
-        sys.stderr.write(reason + "\n")
+    except (ChallengerReplacementOpportunityError, OSError,
+            TypeError, ValueError) as error:
+        sys.stderr.write(getattr(error, "reason_code",
+                                 "CHALLENGER_REPLACEMENT_V3_RUNTIME_FAILED") + "\n")
         return 1
     sys.stdout.write(canonical_json(result) + "\n")
     return 0
