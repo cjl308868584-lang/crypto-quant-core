@@ -4,8 +4,12 @@ import socket
 import stat
 import tempfile
 import unittest
+from contextlib import nullcontext
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from crypto_quant import challenger_replacement_v3_observer as observer_module
+from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_v3_observer import (
     ChallengerReplacementV3Observation,
     observe_challenger_replacement_v3,
@@ -63,6 +67,71 @@ class ChallengerReplacementV3ObserverTests(unittest.TestCase):
             ):
                 failed = observe_challenger_replacement_v3()
         self.assertEqual(failed.evidence_health, "FAILED_CLOSED")
+
+    def test_installed_loader_composes_only_strict_fixed_sources(self):
+        deployment = {
+            "candidate_build": {"release_tag": "v0.76.0"},
+            "authority": {"production_activation": False},
+        }
+        receipt = {"receipt_id": "receipt"}
+        raw_projection = {"events": (), "opportunities": {}}
+        public_projection = {
+            "events": (), "opportunities": {},
+            "terminal_opportunity_count": 0,
+            "observed_opportunity_count": 0,
+            "missed_opportunity_count": 0,
+            "latest_next_snapshot_or_null": None,
+        }
+        state = SimpleNamespace(
+            _replay=lambda: raw_projection, replay=lambda: public_projection,
+        )
+        identity = object()
+        operational = {"status": "ACTIVE"}
+        progress = {"status": "TAIL_BLIND"}
+        fault_bytes = canonical_json({
+            "runtime_core_identity": {
+                "src/crypto_quant/challenger_replacement_events.py": "b" * 64,
+            },
+        }).encode("utf-8")
+        with patch.object(
+            observer_module, "_load_deployment", return_value=deployment,
+            create=True,
+        ), patch.object(
+            observer_module, "_open_state", return_value=nullcontext((identity, state)),
+            create=True,
+        ), patch.object(
+            observer_module, "_read_fixed", side_effect=(b"start", fault_bytes),
+            create=True,
+        ), patch.object(
+            observer_module, "load_challenger_replacement_v3_start_receipt_bytes",
+            return_value=receipt, create=True,
+        ) as start_loader, patch.object(
+            observer_module, "_load_fault_receipt",
+            return_value={"status": "FAULT_MATRIX_PASSED"}, create=True,
+        ) as fault_loader, patch.object(
+            observer_module, "_build_operational_facts",
+            return_value=object(), create=True,
+        ), patch.object(
+            observer_module, "_evaluate_operational",
+            return_value=operational, create=True,
+        ), patch.object(
+            observer_module, "build_economic_progress_facts_from_state",
+            return_value=object(), create=True,
+        ), patch.object(
+            observer_module, "observe_challenger_replacement_economic_progress",
+            return_value=progress, create=True,
+        ), patch.object(
+            observer_module, "_observed_at", return_value="2026-08-26T00:00:00.000Z",
+            create=True,
+        ):
+            value = observer_module._load_installed_observation(object())
+        self.assertEqual(value.deployment, deployment)
+        self.assertIs(value.start_receipt_or_null, receipt)
+        self.assertIs(value.event_projection, public_projection)
+        self.assertIs(value.operational_qualification, operational)
+        self.assertIs(value.economic_progress, progress)
+        start_loader.assert_called_once()
+        fault_loader.assert_called_once()
 
     def test_observation_failure_does_not_append_or_repair(self):
         with patch(

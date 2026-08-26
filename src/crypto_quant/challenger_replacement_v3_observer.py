@@ -2,8 +2,47 @@
 
 import os
 import stat
+import hashlib
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
+
+from .canonical import utc_datetime
+from .challenger_replacement_accelerated_canary_plan import (
+    build_challenger_replacement_accelerated_canary_plan,
+)
+from .challenger_replacement_economic_evaluation import (
+    build_economic_progress_facts_from_state,
+    observe_challenger_replacement_economic_progress,
+)
+from .challenger_replacement_economic_plan import (
+    build_challenger_replacement_economic_plan,
+)
+from .challenger_replacement_events import (
+    ChallengerReplacementEventRootIdentity,
+    open_challenger_replacement_event_root,
+)
+from .challenger_replacement_install_trust import (
+    _close_descriptor, _open_relative_directory, _read_published_exact,
+)
+from .challenger_replacement_opportunities import (
+    ChallengerReplacementOpportunityState,
+)
+from .challenger_replacement_plan import _strict_json_bytes
+from .challenger_replacement_plan_v3 import build_challenger_replacement_plan_v3
+from .challenger_replacement_public_simulation_contract import (
+    build_challenger_replacement_public_simulation_contract,
+)
+from .challenger_replacement_simulation_contract import (
+    build_challenger_replacement_simulation_contract,
+)
+from .challenger_replacement_v3_deployment import (
+    _PREDECESSOR, load_challenger_replacement_v3_deployment_bytes,
+)
+from .challenger_replacement_v3_start import (
+    load_challenger_replacement_v3_start_receipt_bytes,
+)
 
 
 _RUNTIME_ROOT = (
@@ -16,6 +55,15 @@ _AUTHORITY_KEYS = (
     "account_requests_allowed", "broker_requests_allowed",
     "real_orders_allowed", "fund_movement_allowed",
 )
+_DEPLOYMENT = (
+    "deployment/snapshot/artifacts/challenger-replacement/"
+    "challenger-replacement-v3-deployment-v0.76.0.json"
+)
+_FAULT = (
+    "deployment/snapshot/artifacts/challenger-replacement/"
+    "challenger-replacement-fault-matrix-v0.76.0.json"
+)
+_START = "evidence/start-receipts/challenger-replacement-v3-start-receipt-v1.json"
 
 
 @dataclass(frozen=True)
@@ -61,8 +109,135 @@ def _runtime_entry():
         raise
 
 
-def _load_installed_observation(_root):
-    raise OSError("installed v3 strict sources unavailable")
+def _read_fixed(root, relative):
+    parts = relative.split("/")
+    current = os.dup(root.fd)
+    try:
+        for part in parts[:-1]:
+            following = _open_relative_directory(current, part, create=False)
+            _close_descriptor(current)
+            current = following
+        found = _read_published_exact(current, parts[-1])
+        return None if found is None else found[0]
+    finally:
+        _close_descriptor(current)
+
+
+def _plans_contracts():
+    plan = build_challenger_replacement_plan_v3()
+    economic = build_challenger_replacement_economic_plan()
+    accelerated = build_challenger_replacement_accelerated_canary_plan()
+    predecessor = build_challenger_replacement_simulation_contract(plan=plan)
+    public = build_challenger_replacement_public_simulation_contract(
+        plan=plan, economic_plan=economic, predecessor_contract=predecessor,
+    )
+    return plan, economic, accelerated, predecessor, public
+
+
+def _load_deployment(root):
+    data = _read_fixed(root, _DEPLOYMENT)
+    if data is None:
+        raise OSError("fixed deployment absent")
+    header = _strict_json_bytes(data)
+    plan, economic, accelerated, predecessor, public = _plans_contracts()
+    deployment = load_challenger_replacement_v3_deployment_bytes(
+        data, predecessor_release=_PREDECESSOR, plan=plan,
+        economic_plan=economic, accelerated_plan=accelerated,
+        predecessor_contract=predecessor, public_contract=public,
+        build_identity=header["candidate_build"],
+        strategy_inventory=header["executable_core_identity"],
+    )
+    for path, digest in deployment["executable_core_identity"].items():
+        body = _read_fixed(root, "deployment/snapshot/" + path)
+        if body is None or hashlib.sha256(body).hexdigest() != digest:
+            raise OSError("installed executable core mismatch")
+    return deployment
+
+
+@contextmanager
+def _open_state(deployment):
+    path = deployment["paths"]["event_root"]
+    entry = os.lstat(path)
+    identity = ChallengerReplacementEventRootIdentity(
+        path, entry.st_dev, entry.st_ino, entry.st_uid, "0700"
+    )
+    with open_challenger_replacement_event_root(identity) as event_root:
+        yield identity, ChallengerReplacementOpportunityState(
+            event_root=event_root, plan=build_challenger_replacement_plan_v3(),
+            build_identity=deployment["candidate_build"],
+        )
+
+
+def _observed_at():
+    return utc_datetime(datetime.now(timezone.utc))
+
+
+def _load_fault_receipt(data, deployment, identity):
+    from .challenger_replacement_fault_matrix import (
+        load_challenger_replacement_fault_matrix_bytes,
+    )
+    return load_challenger_replacement_fault_matrix_bytes(
+        data, build_identity=deployment["candidate_build"],
+        runtime_core_identity=identity,
+    )
+
+
+def _build_operational_facts(**kwargs):
+    from .challenger_replacement_operational_qualification import (
+        build_operational_qualification_facts_from_state,
+    )
+    return build_operational_qualification_facts_from_state(**kwargs)
+
+
+def _evaluate_operational(facts, accelerated_plan, fault_receipt):
+    from .challenger_replacement_operational_qualification import (
+        evaluate_challenger_replacement_operational_qualification,
+    )
+    return evaluate_challenger_replacement_operational_qualification(
+        facts, accelerated_plan=accelerated_plan, fault_receipt=fault_receipt,
+    )
+
+
+def _load_installed_observation(root):
+    deployment = _load_deployment(root)
+    with _open_state(deployment) as (identity, state):
+        raw_projection = state._replay()
+        event_projection = state.replay()
+        start_data = _read_fixed(root, _START)
+        if start_data is None:
+            empty = _sentinel("HEALTHY")
+            return ChallengerReplacementV3Observation(
+                deployment, None, event_projection,
+                empty.operational_qualification, empty.economic_progress,
+                "HEALTHY",
+            )
+        receipt = load_challenger_replacement_v3_start_receipt_bytes(
+            start_data, deployment=deployment, event_projection=raw_projection,
+            event_root_identity=identity,
+        )
+        fault_data = _read_fixed(root, _FAULT)
+        fault_header = _strict_json_bytes(fault_data)
+        fault = _load_fault_receipt(
+            fault_data, deployment, fault_header["runtime_core_identity"],
+        )
+        observed_at = _observed_at()
+        operational = _evaluate_operational(
+            _build_operational_facts(
+                state=state, start_receipt=receipt, observed_at=observed_at,
+            ), build_challenger_replacement_accelerated_canary_plan(), fault,
+        )
+        progress = observe_challenger_replacement_economic_progress(
+            build_economic_progress_facts_from_state(
+                state=state, start_receipt=receipt, observed_at=observed_at,
+            ), economic_plan=build_challenger_replacement_economic_plan(),
+        )
+        health = "FAILED_CLOSED" if operational["status"] == "BLOCK_FAILED" else (
+            "DEGRADED" if operational["status"] == "INTERRUPTED_RECOVERABLE"
+            else "HEALTHY"
+        )
+        return ChallengerReplacementV3Observation(
+            deployment, receipt, event_projection, operational, progress, health
+        )
 
 
 def _sentinel(health):
