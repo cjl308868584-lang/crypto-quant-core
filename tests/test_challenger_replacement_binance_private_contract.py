@@ -509,6 +509,73 @@ class BinancePrivateEventContractTests(unittest.TestCase):
                 "venue_client_order_id": intent["venue_client_order_id"],
             })
 
+    def test_perpetual_stop_events_use_substate_without_advancing_order_stage(self):
+        self._observe_opportunity()
+        intent = self._intent_payload()
+        intent.update(product="PERPETUAL", action="OPEN_SHORT")
+        self._append_private("BINANCE_INTENT_AUTHORIZED", intent)
+        self._append_private("BINANCE_ABSENCE_CHECKED", {
+            "intent_id": intent["intent_id"],
+            "venue_client_order_id": intent["venue_client_order_id"],
+            "query_response_sha256": "7" * 64, "proven_absent": True,
+        })
+        self._append_private("BINANCE_SIGNED_REQUEST_PREPARED", {
+            "intent_id": intent["intent_id"],
+            "request_id": "binance_private_request_" + "8" * 64,
+            "endpoint_id": "FUTURES_ORDER_CREATE",
+            "request_sha256": "9" * 64, "timestamp_ms": 1787832000000,
+        })
+        self._append_private("BINANCE_REQUEST_SEND_STARTED", {
+            "intent_id": intent["intent_id"],
+            "request_id": "binance_private_request_" + "8" * 64,
+        })
+        self._append_private("BINANCE_ORDER_ACKNOWLEDGED", {
+            "intent_id": intent["intent_id"], "order_id": 202,
+            "venue_client_order_id": intent["venue_client_order_id"],
+        })
+        self._append_private("BINANCE_FILL_OBSERVED", {
+            "intent_id": intent["intent_id"], "trade_id": 401,
+            "order_id": 202, "quantity": "0.025", "price": "2000",
+            "quote_quantity": "50", "fee": "0.02", "fee_asset": "USDT",
+            "cumulative_filled_quantity": "0.025",
+        })
+        self._append_private("BINANCE_ORDER_FILLED", {
+            "intent_id": intent["intent_id"],
+            "cumulative_filled_quantity": "0.025",
+            "cumulative_fee": "0.02", "venue_terminal_status": "FILLED",
+        })
+        self._append_private("BINANCE_FILLS_FEES_REPLAYED", {
+            "intent_id": intent["intent_id"], "fill_ids": [401],
+            "cumulative_fee": "0.02",
+        })
+        client = "cq77" + "a" * 32
+        self._append_private("BINANCE_STOP_INTENT_AUTHORIZED", {
+            "protected_intent_id": intent["intent_id"], "symbol": "ETHUSDT",
+            "algo_type": "CONDITIONAL", "order_type": "STOP_MARKET",
+            "side": "BUY", "position_side": "BOTH",
+            "working_type": "MARK_PRICE", "quantity": "0.025",
+            "trigger_price": "2036.43", "reduce_only": True,
+            "close_position": False, "client_algo_id": client,
+            "required_first_endpoint": "FUTURES_ALGO_QUERY",
+            "send_permitted": False,
+        })
+        self._append_private("BINANCE_STOP_ACKNOWLEDGED", {
+            "protected_intent_id": intent["intent_id"],
+            "client_algo_id": client, "algo_id": 901,
+        })
+        self._append_private("BINANCE_STOP_RECONCILED", {
+            "status": "BINANCE_PROTECTIVE_STOP_VERIFIED", "exposed": True,
+            "new_risk_blocked": False, "client_algo_id": client,
+            "algo_id": 901, "quantity": "0.025",
+            "trigger_price": "2036.43",
+        })
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_FILLS_FEES_REPLAYED")
+        self.assertEqual(private["stop"]["stage"], "BINANCE_STOP_RECONCILED")
+        self.assertEqual(private["stop"]["client_algo_id"], client)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -356,8 +356,12 @@ def apply_challenger_replacement_private_event(projection, event):
         private = slot.get("private")
         if (slot.get("stage") != "OPPORTUNITY_OBSERVED"
                 or not isinstance(private, dict)
-                or private.get("terminal") is not False
-                or payload.get("intent_id") != private.get("intent_id")):
+                or private.get("terminal") is not False):
+            _invalid()
+        if event_type.startswith("BINANCE_STOP_"):
+            _apply_stop_transition(private, event_type, payload, event)
+            return
+        if payload.get("intent_id") != private.get("intent_id"):
             _invalid()
         _apply_private_transition(private, event_type, payload, event)
         return
@@ -472,6 +476,82 @@ _PRIVATE_TRANSITIONS = {
         "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
     },
 }
+
+
+def _stop_client(value):
+    return (isinstance(value, str) and value.startswith("cq77")
+            and _lower_hash(value[4:], length=32))
+
+
+def _apply_stop_transition(private, event_type, payload, event):
+    stop = private.get("stop")
+    if event_type == "BINANCE_STOP_INTENT_AUTHORIZED":
+        keys = {
+            "protected_intent_id", "symbol", "algo_type", "order_type",
+            "side", "position_side", "working_type", "quantity",
+            "trigger_price", "reduce_only", "close_position",
+            "client_algo_id", "required_first_endpoint", "send_permitted",
+        }
+        try:
+            quantity = canonical_decimal(payload["quantity"])
+            trigger = canonical_decimal(payload["trigger_price"])
+        except (KeyError, TypeError, ValueError) as error:
+            _invalid(error)
+        if (stop is not None or private["product"] != "PERPETUAL"
+                or private["stage"] != "BINANCE_FILLS_FEES_REPLAYED"
+                or set(payload) != keys
+                or payload["protected_intent_id"] != private["intent_id"]
+                or payload["symbol"] != "ETHUSDT"
+                or payload["algo_type"] != "CONDITIONAL"
+                or payload["order_type"] != "STOP_MARKET"
+                or payload["side"] != "BUY"
+                or payload["position_side"] != "BOTH"
+                or payload["working_type"] != "MARK_PRICE"
+                or quantity in {"0", "-0"} or quantity.startswith("-")
+                or trigger in {"0", "-0"} or trigger.startswith("-")
+                or payload["reduce_only"] is not True
+                or payload["close_position"] is not False
+                or not _stop_client(payload["client_algo_id"])
+                or payload["required_first_endpoint"] != "FUTURES_ALGO_QUERY"
+                or payload["send_permitted"] is not False):
+            _invalid()
+        private["stop"] = {
+            "stage": event_type, "client_algo_id": payload["client_algo_id"],
+            "quantity": quantity, "trigger_price": trigger,
+        }
+    elif event_type == "BINANCE_STOP_ACKNOWLEDGED":
+        if (not isinstance(stop, dict)
+                or stop["stage"] != "BINANCE_STOP_INTENT_AUTHORIZED"
+                or set(payload) != {
+                    "protected_intent_id", "client_algo_id", "algo_id",
+                }
+                or payload["protected_intent_id"] != private["intent_id"]
+                or payload["client_algo_id"] != stop["client_algo_id"]
+                or isinstance(payload["algo_id"], bool)
+                or not isinstance(payload["algo_id"], int)
+                or payload["algo_id"] <= 0):
+            _invalid()
+        stop.update(stage=event_type, algo_id=payload["algo_id"])
+    elif event_type == "BINANCE_STOP_RECONCILED":
+        if (not isinstance(stop, dict)
+                or stop["stage"] != "BINANCE_STOP_ACKNOWLEDGED"
+                or set(payload) != {
+                    "status", "exposed", "new_risk_blocked",
+                    "client_algo_id", "algo_id", "quantity", "trigger_price",
+                }
+                or payload["status"] != "BINANCE_PROTECTIVE_STOP_VERIFIED"
+                or payload["exposed"] is not True
+                or payload["new_risk_blocked"] is not False
+                or payload["client_algo_id"] != stop["client_algo_id"]
+                or payload["algo_id"] != stop["algo_id"]
+                or payload["quantity"] != stop["quantity"]
+                or payload["trigger_price"] != stop["trigger_price"]):
+            _invalid()
+        stop["stage"] = event_type
+    else:
+        _invalid()
+    private["last_private_event_hash"] = event.event_hash
+    private["last_private_event_sequence"] = event.sequence
 
 
 def _private_payload_valid(event_type, payload, private):
