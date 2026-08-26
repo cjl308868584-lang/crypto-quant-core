@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "challenger-replacement-public-simulation-contract-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "contract_id", "contract_hash", "plan", "economic_plan", "predecessor_contract", "public_profile", "model", "authority", "status", "warnings"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-public-simulation-contract-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "contract_id": {"type": "string", "pattern": "^challenger_replacement_public_simulation_contract_[0-9a-f]{64}$"},
+    "contract_hash": {"$ref": "#/$defs/hash"},
+    "plan": {"$ref": "#/$defs/id_hash"},
+    "economic_plan": {"$ref": "#/$defs/economic"},
+    "predecessor_contract": {"$ref": "#/$defs/predecessor"},
+    "public_profile": {"$ref": "#/$defs/profile"},
+    "model": {"$ref": "#/$defs/model"},
+    "authority": {"$ref": "#/$defs/authority"},
+    "status": {"const": "PUBLIC_SIMULATION_CONTRACT_FROZEN_NOT_ACTIVATED"},
+    "warnings": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "string"}}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id_hash": {"type": "object", "additionalProperties": false, "required": ["plan_id", "plan_hash"], "properties": {"plan_id": {"type": "string"}, "plan_hash": {"$ref": "#/$defs/hash"}}},
+    "economic": {"type": "object", "additionalProperties": false, "required": ["plan_id", "plan_hash", "accounting_policy_hash"], "properties": {"plan_id": {"type": "string"}, "plan_hash": {"$ref": "#/$defs/hash"}, "accounting_policy_hash": {"$ref": "#/$defs/hash"}}},
+    "predecessor": {"type": "object", "additionalProperties": false, "required": ["contract_id", "contract_hash", "file_sha256"], "properties": {"contract_id": {"type": "string"}, "contract_hash": {"$ref": "#/$defs/hash"}, "file_sha256": {"$ref": "#/$defs/hash"}}},
+    "profile": {"type": "object", "additionalProperties": false, "required": ["mode", "fill_model", "funding_source", "protective_stop_status"], "properties": {"mode": {"const": "PUBLIC_MARKET_DETERMINISTIC_BINANCE_SIMULATION"}, "fill_model": {"const": "DETERMINISTIC_IMMEDIATE_FULL_MARKET_MODEL"}, "funding_source": {"const": "EXACT_PUBLIC_FUNDING_RECORDS_IN_OPPORTUNITY_INTERVAL"}, "protective_stop_status": {"const": "CONFIRMED_SIMULATED"}}},
+    "model": {"type": "object", "additionalProperties": false, "required": ["starting_virtual_equity_usdt", "capital_limit_usdt", "gross_exposure_limit", "configured_leverage", "technical_leverage_cap", "contract_multiplier", "market_order_slippage_per_side", "spot_taker_fee", "perpetual_taker_fee", "protective_stop_distance", "quote_quantum_usdt"], "properties": {"starting_virtual_equity_usdt": {"const": "100"}, "capital_limit_usdt": {"const": "100"}, "gross_exposure_limit": {"const": "0.5"}, "configured_leverage": {"const": "1"}, "technical_leverage_cap": {"const": "2"}, "contract_multiplier": {"const": "1"}, "market_order_slippage_per_side": {"const": "0.001"}, "spot_taker_fee": {"const": "0.0015"}, "perpetual_taker_fee": {"const": "0.0015"}, "protective_stop_distance": {"const": "0.02"}, "quote_quantum_usdt": {"const": "0.00000001"}}},
+    "authority": {"type": "object", "additionalProperties": false, "required": ["network_requests", "account_requests", "broker_requests", "orders_submitted_to_venue", "credentials_used", "production_state_writes", "production_activation", "runtime_install_authorized", "replacement_start_authorized", "real_orders_allowed"], "properties": {"network_requests": {"const": 0}, "account_requests": {"const": 0}, "broker_requests": {"const": 0}, "orders_submitted_to_venue": {"const": 0}, "credentials_used": {"const": false}, "production_state_writes": {"const": 0}, "production_activation": {"const": false}, "runtime_install_authorized": {"const": false}, "replacement_start_authorized": {"const": false}, "real_orders_allowed": {"const": false}}}
+  }
+}

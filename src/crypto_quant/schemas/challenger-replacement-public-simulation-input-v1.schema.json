@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "challenger-replacement-public-simulation-input-v1.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["$schema", "schema_version", "input_id", "input_hash", "evidence_qualification", "plan", "economic_plan", "predecessor_contract", "public_contract", "build_identity", "opportunity", "capture", "public_profile", "normalized", "rule_response_hashes", "authority"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-public-simulation-input-v1.schema.json"}, "schema_version": {"const": "1.0.0"},
+    "input_id": {"type": "string", "pattern": "^challenger_replacement_public_simulation_input_[0-9a-f]{64}$"}, "input_hash": {"$ref": "#/$defs/hash"},
+    "evidence_qualification": {"const": "PUBLIC_MARKET_DETERMINISTIC_SIMULATION_NO_ACCOUNT_NO_BROKER_NO_REAL_ORDER"},
+    "plan": {"$ref": "#/$defs/id_hash"}, "economic_plan": {"$ref": "#/$defs/id_hash"}, "predecessor_contract": {"$ref": "#/$defs/contract"}, "public_contract": {"$ref": "#/$defs/contract"},
+    "build_identity": {"type": "object"}, "opportunity": {"type": "object"}, "capture": {"$ref": "#/$defs/capture"}, "public_profile": {"$ref": "#/$defs/profile"},
+    "normalized": {"type": "object", "additionalProperties": false, "required": ["bars", "quotes", "funding_records", "simulation_rules"], "properties": {"bars": {"type": "array", "minItems": 21, "maxItems": 21}, "quotes": {"type": "object"}, "funding_records": {"type": "array", "maxItems": 16}, "simulation_rules": {"type": "object"}}},
+    "rule_response_hashes": {"type": "object", "additionalProperties": false, "required": ["spot_exchange_info", "spot_book_ticker", "perpetual_exchange_info", "perpetual_book_ticker", "perpetual_mark", "funding_history"], "properties": {"spot_exchange_info": {"$ref": "#/$defs/hash"}, "spot_book_ticker": {"$ref": "#/$defs/hash"}, "perpetual_exchange_info": {"$ref": "#/$defs/hash"}, "perpetual_book_ticker": {"$ref": "#/$defs/hash"}, "perpetual_mark": {"$ref": "#/$defs/hash"}, "funding_history": {"$ref": "#/$defs/hash"}}},
+    "authority": {"$ref": "#/$defs/authority"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id_hash": {"type": "object", "additionalProperties": false, "required": ["plan_id", "plan_hash"], "properties": {"plan_id": {"type": "string"}, "plan_hash": {"$ref": "#/$defs/hash"}}},
+    "contract": {"type": "object", "additionalProperties": false, "required": ["contract_id", "contract_hash"], "properties": {"contract_id": {"type": "string"}, "contract_hash": {"$ref": "#/$defs/hash"}}},
+    "capture": {"type": "object", "additionalProperties": false, "required": ["canonical_base64", "sha256", "capture_id", "capture_hash", "nested_live_capture_hash"], "properties": {"canonical_base64": {"type": "string"}, "sha256": {"$ref": "#/$defs/hash"}, "capture_id": {"type": "string"}, "capture_hash": {"$ref": "#/$defs/hash"}, "nested_live_capture_hash": {"$ref": "#/$defs/hash"}}},
+    "profile": {"type": "object", "additionalProperties": false, "required": ["mode", "fill_model", "funding_source", "protective_stop_status"], "properties": {"mode": {"const": "PUBLIC_MARKET_DETERMINISTIC_BINANCE_SIMULATION"}, "fill_model": {"const": "DETERMINISTIC_IMMEDIATE_FULL_MARKET_MODEL"}, "funding_source": {"const": "EXACT_PUBLIC_FUNDING_RECORDS_IN_OPPORTUNITY_INTERVAL"}, "protective_stop_status": {"const": "CONFIRMED_SIMULATED"}}},
+    "authority": {"type": "object", "additionalProperties": false, "required": ["public_network_requests", "account_requests", "broker_requests", "orders_submitted_to_venue", "credentials_used", "production_state_writes"], "properties": {"public_network_requests": {"type": "integer", "minimum": 10, "maximum": 24}, "account_requests": {"const": 0}, "broker_requests": {"const": 0}, "orders_submitted_to_venue": {"const": 0}, "credentials_used": {"const": false}, "production_state_writes": {"const": 0}}}
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "challenger-replacement-public-simulation-snapshot-v1.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["snapshot_version", "snapshot_hash", "parent_snapshot_hash_or_null", "opportunity_id_or_null", "position_state", "position_certainty", "cash", "signed_quantity", "entry_price_or_null", "entry_time", "isolated_margin", "contract_multiplier", "instrument_metadata_hash_or_null", "realized_pnl", "unrealized_pnl", "cumulative_fees", "cumulative_funding", "marked_equity", "peak_equity", "day_start_date_or_null", "day_start_equity", "gross_exposure", "risk_state", "active_order_or_null", "protective_stop_or_null", "reverse_blocked_until_next_opportunity", "unresolved_intent_ids", "economic_gap_locked"],
+  "properties": {
+    "snapshot_version": {"const": "1.0.0"}, "snapshot_hash": {"$ref": "#/$defs/hash"}, "parent_snapshot_hash_or_null": {"anyOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+    "opportunity_id_or_null": {"type": ["string", "null"]}, "position_state": {"enum": ["FLAT", "SPOT_LONG", "PERP_SHORT"]}, "position_certainty": {"const": "VERIFIED"},
+    "cash": {"$ref": "#/$defs/decimal"}, "signed_quantity": {"$ref": "#/$defs/decimal"}, "entry_price_or_null": {"anyOf": [{"$ref": "#/$defs/decimal"}, {"type": "null"}]}, "entry_time": {"type": ["string", "null"]}, "isolated_margin": {"$ref": "#/$defs/decimal"}, "contract_multiplier": {"$ref": "#/$defs/decimal"}, "instrument_metadata_hash_or_null": {"anyOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+    "realized_pnl": {"$ref": "#/$defs/decimal"}, "unrealized_pnl": {"$ref": "#/$defs/decimal"}, "cumulative_fees": {"$ref": "#/$defs/decimal"}, "cumulative_funding": {"$ref": "#/$defs/decimal"}, "marked_equity": {"$ref": "#/$defs/decimal"}, "peak_equity": {"$ref": "#/$defs/decimal"}, "day_start_date_or_null": {"type": ["string", "null"]}, "day_start_equity": {"$ref": "#/$defs/decimal"}, "gross_exposure": {"$ref": "#/$defs/decimal"},
+    "risk_state": {"enum": ["RISK_CLEAR", "DAILY_LOSS_LOCKED", "DRAWDOWN_LOCKED", "FLATTEN_REQUIRED", "STAGE_FAILED"]}, "active_order_or_null": {"type": ["object", "null"]}, "protective_stop_or_null": {"anyOf": [{"$ref": "#/$defs/stop"}, {"type": "null"}]}, "reverse_blocked_until_next_opportunity": {"type": "boolean"}, "unresolved_intent_ids": {"type": "array", "items": {"type": "string"}}, "economic_gap_locked": {"type": "boolean"}
+  },
+  "allOf": [
+    {"if": {"properties": {"position_state": {"const": "FLAT"}}}, "then": {"properties": {"protective_stop_or_null": {"type": "null"}}}},
+    {"if": {"properties": {"position_state": {"enum": ["SPOT_LONG", "PERP_SHORT"]}}}, "then": {"properties": {"protective_stop_or_null": {"$ref": "#/$defs/stop"}}}}
+  ],
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "decimal": {"type": "string", "minLength": 1, "maxLength": 128},
+    "stop": {"type": "object", "additionalProperties": false, "required": ["status", "side", "stop_price", "source"], "properties": {"status": {"const": "CONFIRMED_SIMULATED"}, "side": {"enum": ["BUY", "SELL"]}, "stop_price": {"$ref": "#/$defs/decimal"}, "source": {"const": "PUBLIC_MODEL"}}}
+  }
+}
