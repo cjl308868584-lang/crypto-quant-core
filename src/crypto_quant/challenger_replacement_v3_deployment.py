@@ -107,6 +107,16 @@ def _inputs(
 ):
     hashes = set("0123456789abcdef")
     if (
+        not isinstance(strategy_inventory, Mapping)
+        or set(strategy_inventory) != _CORE_PATHS
+        or any(
+            not isinstance(value, str) or len(value) != 64 or set(value) - hashes
+            for value in strategy_inventory.values()
+        )
+    ):
+        _invalid()
+    inventory_hash = business_hash(dict(sorted(strategy_inventory.items())))
+    if (
         predecessor_release != _PREDECESSOR
         or economic_plan != build_challenger_replacement_economic_plan()
         or accelerated_plan != build_challenger_replacement_accelerated_canary_plan()
@@ -128,13 +138,7 @@ def _inputs(
         or len(build_identity["reviewed_code_checkpoint"]) != 40
         or set(build_identity["reviewed_code_checkpoint"]) - hashes
         or build_identity.get("executable_core_hash")
-        != business_hash(dict(sorted(strategy_inventory.items())))
-        or not isinstance(strategy_inventory, Mapping)
-        or set(strategy_inventory) != _CORE_PATHS
-        or any(
-            not isinstance(value, str) or len(value) != 64 or set(value) - hashes
-            for value in strategy_inventory.values()
-        )
+        != inventory_hash
     ):
         _invalid()
 

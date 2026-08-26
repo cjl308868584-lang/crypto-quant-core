@@ -234,6 +234,22 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
                     strategy_inventory=inventory,
                 )
 
+    def test_non_mapping_inventory_uses_fixed_domain_error(self):
+        for inventory in (None, []):
+            with self.subTest(inventory=inventory), self.assertRaisesRegex(
+                ChallengerReplacementV3DeploymentError,
+                "^CHALLENGER_REPLACEMENT_V3_DEPLOYMENT_INVALID$",
+            ):
+                build_challenger_replacement_v3_deployment(
+                    predecessor_release=PREDECESSOR_RELEASE,
+                    plan=self.plan, economic_plan=self.economic,
+                    accelerated_plan=self.accelerated,
+                    predecessor_contract=self.predecessor,
+                    public_contract=self.public,
+                    build_identity=CANDIDATE_BUILD,
+                    strategy_inventory=inventory,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
