@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-binance-private-event-v1.schema.json",
+  "title": "Challenger Replacement Binance Private Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "event_type",
+    "opportunity_id",
+    "payload"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-binance-private-event-v1.schema.json"
+    },
+    "schema_version": {"const": "1.0.0"},
+    "event_type": {"const": "BINANCE_INTENT_AUTHORIZED"},
+    "opportunity_id": {"$ref": "#/$defs/opportunityId"},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "opportunity_id",
+        "intent_id",
+        "block_id",
+        "product",
+        "action",
+        "quantity",
+        "venue_client_order_id",
+        "activation_id",
+        "preflight_sha256",
+        "unsigned_intent_sha256"
+      ],
+      "properties": {
+        "opportunity_id": {"$ref": "#/$defs/opportunityId"},
+        "intent_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "block_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "product": {"enum": ["SPOT", "PERPETUAL"]},
+        "action": {
+          "enum": ["OPEN_LONG", "CLOSE_LONG", "OPEN_SHORT", "CLOSE_SHORT"]
+        },
+        "quantity": {
+          "type": "string",
+          "pattern": "^(?:0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$"
+        },
+        "venue_client_order_id": {
+          "type": "string",
+          "pattern": "^cq77[0-9a-f]{32}$"
+        },
+        "activation_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "preflight_sha256": {"$ref": "#/$defs/sha256"},
+        "unsigned_intent_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"product": {"const": "SPOT"}}},
+          "then": {"properties": {"action": {"enum": ["OPEN_LONG", "CLOSE_LONG"]}}}
+        },
+        {
+          "if": {"properties": {"product": {"const": "PERPETUAL"}}},
+          "then": {"properties": {"action": {"enum": ["OPEN_SHORT", "CLOSE_SHORT"]}}}
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "opportunityId": {
+      "type": "string",
+      "pattern": "^ETHUSDT@[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:00|04|08|12|16|20):00:00\\.000Z$"
+    }
+  }
+}

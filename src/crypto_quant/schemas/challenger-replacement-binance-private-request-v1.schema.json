@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-binance-private-request-v1.schema.json",
+  "title": "Challenger Replacement Binance Private Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "request_id",
+    "endpoint_id",
+    "timestamp_ms",
+    "parameters"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-binance-private-request-v1.schema.json"
+    },
+    "schema_version": {"const": "1.0.0"},
+    "request_id": {
+      "type": "string",
+      "pattern": "^binance_private_request_[0-9a-f]{64}$"
+    },
+    "endpoint_id": {
+      "enum": [
+        "SPOT_SERVER_TIME",
+        "SPOT_EXCHANGE_INFO",
+        "FUTURES_SERVER_TIME",
+        "FUTURES_EXCHANGE_INFO",
+        "FUTURES_MARK_PRICE",
+        "API_RESTRICTIONS",
+        "API_TRADING_STATUS",
+        "SPOT_ACCOUNT",
+        "SPOT_OPEN_ORDERS",
+        "SPOT_ORDER_QUERY",
+        "SPOT_TRADES",
+        "FUTURES_POSITION_MODE",
+        "FUTURES_MULTI_ASSET_MODE",
+        "FUTURES_SYMBOL_CONFIG",
+        "FUTURES_ACCOUNT",
+        "FUTURES_POSITION",
+        "FUTURES_OPEN_ORDERS",
+        "FUTURES_ORDER_QUERY",
+        "FUTURES_TRADES",
+        "FUTURES_INCOME",
+        "FUTURES_ALGO_QUERY",
+        "FUTURES_OPEN_ALGO_ORDERS",
+        "SPOT_ORDER_CREATE",
+        "SPOT_ORDER_CANCEL",
+        "FUTURES_ORDER_CREATE",
+        "FUTURES_ORDER_CANCEL",
+        "FUTURES_ALGO_CREATE",
+        "FUTURES_ALGO_CANCEL",
+        "FUTURES_SET_LEVERAGE",
+        "FUTURES_SET_MARGIN_TYPE"
+      ]
+    },
+    "timestamp_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "parameters": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9]{0,63}$"},
+      "additionalProperties": {"type": "string", "maxLength": 512},
+      "maxProperties": 24
+    }
+  }
+}

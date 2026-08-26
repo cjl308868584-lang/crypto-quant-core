@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-binance-account-approval-v1.schema.json",
+  "title": "Challenger Replacement Binance Account Approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "account_identity_sha256",
+    "key_fingerprint",
+    "reviewed_egress_ip",
+    "reviewer_uid",
+    "reviewed_at",
+    "expires_at",
+    "spot_trading_approved",
+    "futures_trading_approved"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-binance-account-approval-v1.schema.json"
+    },
+    "schema_version": {"const": "1.0.0"},
+    "account_identity_sha256": {"$ref": "#/$defs/sha256"},
+    "key_fingerprint": {"$ref": "#/$defs/sha256"},
+    "reviewed_egress_ip": {
+      "type": "string",
+      "format": "ipv4",
+      "minLength": 7,
+      "maxLength": 15
+    },
+    "reviewer_uid": {"type": "integer", "minimum": 0},
+    "reviewed_at": {"$ref": "#/$defs/time"},
+    "expires_at": {"$ref": "#/$defs/time"},
+    "spot_trading_approved": {"const": true},
+    "futures_trading_approved": {"const": true}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    }
+  }
+}

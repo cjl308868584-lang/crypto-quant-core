@@ -128,7 +128,7 @@ class BinancePrivateActivation:
 Also produces: `PRIVATE_EVENT_TYPES: frozenset[str]`,
   `BINANCE_PRIVATE_ENDPOINTS: Mapping[str, tuple[str, str, str, bool]]`,
   `require_binance_private_endpoint(endpoint_id: str) -> tuple[str, str, str, bool]`,
-  `load_binance_account_approval_bytes(data: bytes, *, build_identity: Mapping[str, str]) -> BinanceAccountApproval`,
+  `load_binance_account_approval_bytes(data: bytes, *, now: str) -> BinanceAccountApproval`,
   `load_binance_private_activation_bytes(data: bytes, *, build_identity: Mapping[str, str], now: str) -> BinancePrivateActivation`,
   `apply_challenger_replacement_private_event(projection, event) -> None`, and
   the closed endpoint inventory consumed by Tasks 2-7. Each endpoint tuple is
@@ -484,6 +484,7 @@ git commit -m "feat: evaluate Binance account preflight"
 **Files:**
 - Create: `src/crypto_quant/challenger_replacement_binance_private_lifecycle.py`
 - Create: `tests/test_challenger_replacement_binance_private_lifecycle.py`
+- Modify: `src/crypto_quant/schemas/challenger-replacement-binance-private-event-v1.schema.json`
 - Create: fixed ACK/partial/fill/cancel/UNKNOWN fixtures under the v0.77 fixture root.
 
 **Interfaces:**
@@ -595,6 +596,7 @@ git commit -m "feat: reconcile Binance protective stops"
 - Create: `src/crypto_quant/challenger_replacement_binance_reconciliation.py`
 - Create: `tests/test_challenger_replacement_binance_reconciliation.py`
 - Modify: `src/crypto_quant/challenger_replacement_economic_evaluation.py`
+- Modify: `src/crypto_quant/schemas/challenger-replacement-binance-private-event-v1.schema.json`
 
 **Interfaces:**
 - Produces:
@@ -665,6 +667,7 @@ git commit -m "feat: reconcile Binance venue and local evidence"
 - Create: `src/crypto_quant/challenger_replacement_canary_controller.py`
 - Create: `src/crypto_quant/schemas/challenger-replacement-canary-projection-v1.schema.json`
 - Create: `tests/test_challenger_replacement_canary_controller.py`
+- Modify: `src/crypto_quant/schemas/challenger-replacement-binance-private-event-v1.schema.json`
 
 **Interfaces:**
 - Produces:
