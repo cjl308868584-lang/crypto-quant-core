@@ -1,5 +1,6 @@
 import json
 from importlib import resources
+from pathlib import Path
 import unittest
 
 from jsonschema import Draft202012Validator
@@ -11,6 +12,7 @@ from crypto_quant.challenger_replacement_binance_private_contract import (
 from crypto_quant.challenger_replacement_binance_private_lifecycle import (
     BinancePrivateLifecycleError,
     apply_binance_order_observation,
+    build_binance_order_intent_from_opportunity,
     derive_binance_client_order_id,
     prepare_binance_order_attempt,
 )
@@ -131,6 +133,45 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
             plan_hash=self.PLAN_HASH, block_id=self.BLOCK_ID,
             intent_id=self.INTENT_ID, attempt_ordinal=2, product="SPOT",
         ))
+
+    def test_private_intent_is_derived_from_verified_v076_opportunity(self):
+        evidence = json.loads((Path(__file__).parent / "fixtures" /
+                               "challenger_replacement_v076" /
+                               "public-simulation-golden.json").read_text(
+                                   encoding="utf-8"
+                               ))
+        slot = {
+            "stage": "OPPORTUNITY_OBSERVED",
+            "result_evidence": evidence,
+        }
+        intent = build_binance_order_intent_from_opportunity(
+            slot=slot, activation=self.activation, attempt_ordinal=1,
+        )
+        self.assertEqual(
+            {key: intent[key] for key in (
+                "opportunity_id", "block_id", "product", "action",
+                "quantity", "attempt_ordinal",
+            )},
+            {
+                "opportunity_id": "ETHUSDT@2026-08-26T04:00:00.000Z",
+                "block_id": self.BLOCK_ID, "product": "SPOT",
+                "action": "OPEN_LONG", "quantity": "0.015",
+                "attempt_ordinal": 1,
+            },
+        )
+        self.assertRegex(intent["intent_id"], r"^replacement_intent_[0-9a-f]{64}$")
+        self.assertRegex(intent["unsigned_intent_sha256"], r"^[0-9a-f]{64}$")
+
+        altered = json.loads(canonical_json(evidence))
+        altered["accounting"]["quantity"] = "0.016"
+        with self.assertRaisesRegex(
+            BinancePrivateLifecycleError, "BINANCE_ORDER_INTENT_INVALID"
+        ):
+            build_binance_order_intent_from_opportunity(
+                slot={"stage": "OPPORTUNITY_OBSERVED",
+                      "result_evidence": altered},
+                activation=self.activation, attempt_ordinal=1,
+            )
 
     def test_spot_and_futures_actions_map_to_exact_venue_intent(self):
         cases = (

@@ -10,6 +10,9 @@ from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_binance_private_contract import (
     BinancePrivateActivation,
 )
+from crypto_quant.challenger_replacement_binance_private_lifecycle import (
+    build_binance_order_intent_from_opportunity,
+)
 from crypto_quant.challenger_replacement_binance_private_runtime import (
     BinancePrivateRuntimeError,
     run_challenger_replacement_binance_private_intent,
@@ -23,11 +26,34 @@ from crypto_quant.challenger_replacement_binance_reconciliation import (
 from crypto_quant.challenger_replacement_events import (
     open_challenger_replacement_event_root,
 )
+from crypto_quant.challenger_replacement_economic_plan import (
+    build_challenger_replacement_economic_plan,
+)
+from crypto_quant.challenger_replacement_opportunities import (
+    ChallengerReplacementOpportunityState,
+)
+from crypto_quant.challenger_replacement_public_market_capture import (
+    load_challenger_replacement_public_market_capture_bytes,
+)
+from crypto_quant.challenger_replacement_public_simulation_contract import (
+    build_challenger_replacement_public_simulation_contract,
+)
+from crypto_quant.challenger_replacement_simulation_contract import (
+    build_challenger_replacement_simulation_contract,
+)
+from crypto_quant.challenger_replacement_v3_runtime import (
+    run_challenger_replacement_v3_opportunity,
+)
 from tests.test_challenger_replacement_events import EventWorkspace
 from tests.test_challenger_replacement_opportunities import (
     OpportunityStateWorkspace,
 )
-from tests.challenger_replacement_v3_fixtures import DEFAULT_OBSERVED_AT
+from tests.challenger_replacement_v3_fixtures import (
+    DEFAULT_OBSERVED_AT, fixture_v3_plan,
+)
+from tests.test_challenger_replacement_public_market_capture import (
+    COMMITTED_CAPTURE, V076_BUILD,
+)
 
 
 class BinancePrivateRuntimeIdentityTests(unittest.TestCase):
@@ -58,6 +84,79 @@ class BinancePrivateRuntimeIdentityTests(unittest.TestCase):
             caught.exception.reason_code,
             "BINANCE_PRIVATE_RUNTIME_IDENTITY_INVALID",
         )
+        transport.assert_not_called()
+
+
+class BinancePrivateRuntimeDecisionBindingTests(unittest.TestCase):
+    def test_caller_cannot_change_verified_v076_quantity_before_transport(self):
+        workspace = EventWorkspace()
+        self.addCleanup(workspace.close)
+        plan = fixture_v3_plan()
+        economic = build_challenger_replacement_economic_plan()
+        predecessor = build_challenger_replacement_simulation_contract(plan=plan)
+        public_contract = build_challenger_replacement_public_simulation_contract(
+            plan=plan, economic_plan=economic,
+            predecessor_contract=predecessor,
+        )
+        capture = load_challenger_replacement_public_market_capture_bytes(
+            COMMITTED_CAPTURE.read_bytes(), plan=plan,
+            build_identity=V076_BUILD, previous_source_bundle=None,
+        )
+        root = open_challenger_replacement_event_root(workspace.identity())
+        self.addCleanup(root.close)
+        state = ChallengerReplacementOpportunityState(
+            event_root=root, plan=plan, build_identity=V076_BUILD,
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_v3_runtime._acquire",
+            return_value=capture,
+        ), patch(
+            "crypto_quant.challenger_replacement_v3_runtime._wall_now",
+            return_value=datetime(2026, 8, 26, 4, 5, tzinfo=timezone.utc),
+        ):
+            run_challenger_replacement_v3_opportunity(
+                state=state, event_root=root, plan=plan,
+                economic_plan=economic, predecessor_contract=predecessor,
+                public_contract=public_contract, build_identity=V076_BUILD,
+            )
+        activation = BinancePrivateActivation(
+            activation_id="binance_private_activation_" + "4" * 64,
+            build_identity=V076_BUILD, configuration_sha256="5" * 64,
+            account_approval_sha256="6" * 64,
+            block_id="e0_block_" + "7" * 64, stage="E0",
+            capital_usdt="100", max_gross_exposure_usdt="50",
+            max_leverage="0.5", expires_at="2026-08-28T00:00:00.000Z",
+            production_activation=True,
+        )
+        slot = state.replay()["opportunities"][
+            "ETHUSDT@2026-08-26T04:00:00.000Z"
+        ]
+        intent = build_binance_order_intent_from_opportunity(
+            slot=slot, activation=activation, attempt_ordinal=1,
+        )
+        intent["quantity"] = "0.016"
+        preflight = {
+            "status": "BINANCE_ACCOUNT_PREFLIGHT_VERIFIED_FLAT",
+            "preflight_id": "binance_account_preflight_" + "8" * 64,
+            "configuration": {
+                "position_mode": "ONE_WAY", "asset_mode": "SINGLE_ASSET",
+                "symbol": "ETHUSDT", "margin_type": "ISOLATED",
+                "leverage": 1, "auto_add_margin": False,
+            },
+        }
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+            side_effect=AssertionError("transport must not run"),
+        ) as transport, self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_INTENT_DECISION_MISMATCH",
+        ):
+            run_challenger_replacement_binance_private_intent(
+                state=state, event_root=root, intent=intent,
+                preflight=preflight, activation=activation,
+                credential=object(), build_identity=V076_BUILD,
+            )
         transport.assert_not_called()
 
 

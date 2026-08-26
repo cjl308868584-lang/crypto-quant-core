@@ -10,6 +10,7 @@ from .challenger_replacement_binance_private_contract import (
 from .challenger_replacement_binance_preflight import (
     _POSITION_KEYS, _SPOT_KEYS,
 )
+from .evidence import artifact_self_hash
 _HEX = frozenset("0123456789abcdef")
 _PRODUCT_ACTION = {
     ("SPOT", "OPEN_LONG"): ("BUY", False, "SPOT_ORDER_QUERY"),
@@ -99,6 +100,53 @@ def derive_binance_client_order_id(*, plan_hash, block_id, intent_id,
         "intent_id": intent_id, "plan_hash": plan_hash, "product": product,
     }).encode()
     return "cq77" + hashlib.sha256(body).hexdigest()[:32]
+def build_binance_order_intent_from_opportunity(*, slot, activation,
+                                                attempt_ordinal):
+    """Derive, rather than caller-author, one private intent from v0.76 facts."""
+    actions = {
+        "OPEN_SPOT_LONG": ("SPOT", "OPEN_LONG"),
+        "CLOSE_SPOT_LONG": ("SPOT", "CLOSE_LONG"),
+        "OPEN_PERP_SHORT": ("PERPETUAL", "OPEN_SHORT"),
+        "CLOSE_PERP_SHORT": ("PERPETUAL", "CLOSE_SHORT"),
+        "RISK_FLATTEN": None,
+        "STOP_CLOSE_SPOT_LONG": ("SPOT", "CLOSE_LONG"),
+        "STOP_CLOSE_PERP_SHORT": ("PERPETUAL", "CLOSE_SHORT"),
+    }
+    try:
+        evidence = slot["result_evidence"]
+        decision, accounting = evidence["decision"], evidence["accounting"]
+        action = actions[decision["action"]]
+        if (slot["stage"] != "OPPORTUNITY_OBSERVED" or action is None
+                or not isinstance(activation, BinancePrivateActivation)
+                or evidence["$schema"]
+                != "./challenger-replacement-public-simulation-result-v1.schema.json"
+                or evidence["schema_version"] != "1.0.0"
+                or evidence["result_hash"]
+                != artifact_self_hash(evidence, "result_hash")
+                or decision["opportunity_id"]
+                != evidence["opportunity"]["opportunity_id"]
+                or isinstance(attempt_ordinal, bool)
+                or not isinstance(attempt_ordinal, int)
+                or not 1 <= attempt_ordinal <= (1 << 53) - 1):
+            raise ValueError
+        quantity = canonical_decimal(accounting["quantity"])
+        if quantity == "0" or quantity.startswith("-"):
+            raise ValueError
+    except (KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_ORDER_INTENT_INVALID", error)
+    core = {
+        "opportunity_id": decision["opportunity_id"],
+        "block_id": activation.block_id, "product": action[0],
+        "action": action[1], "quantity": quantity,
+        "attempt_ordinal": attempt_ordinal,
+    }
+    intent_id = "replacement_intent_" + hashlib.sha256(
+        canonical_json(core).encode()
+    ).hexdigest()
+    unsigned = {**core, "intent_id": intent_id}
+    return {**unsigned, "unsigned_intent_sha256": hashlib.sha256(
+        canonical_json(unsigned).encode()
+    ).hexdigest()}
 def prepare_binance_order_attempt(*, intent, projection, preflight,
                                   activation):
     """Prepare one query-first order attempt without signing or sending it."""

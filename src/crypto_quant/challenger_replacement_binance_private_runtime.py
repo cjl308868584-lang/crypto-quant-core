@@ -8,7 +8,8 @@ import json
 from typing import Mapping
 from .canonical import canonical_decimal, canonical_json, utc_datetime
 from .challenger_replacement_binance_private_lifecycle import (
-    _document, apply_binance_order_observation, prepare_binance_order_attempt,
+    _document, apply_binance_order_observation,
+    build_binance_order_intent_from_opportunity, prepare_binance_order_attempt,
 )
 from .challenger_replacement_binance_private_protocol import (
     build_binance_private_request,
@@ -52,6 +53,22 @@ def _require_identity(state, event_root, build_identity):
         event_root.validate()
     except Exception as error:
         _fail("BINANCE_PRIVATE_RUNTIME_IDENTITY_INVALID", error)
+def _require_decision_intent(state, intent, activation):
+    try:
+        slot = state.replay()["opportunities"][intent["opportunity_id"]]
+        evidence = slot.get("result_evidence")
+        if (isinstance(evidence, Mapping) and evidence.get("$schema")
+                == "./challenger-replacement-public-simulation-result-v1.schema.json"):
+            expected = build_binance_order_intent_from_opportunity(
+                slot=slot, activation=activation,
+                attempt_ordinal=intent["attempt_ordinal"],
+            )
+            if dict(intent) != expected:
+                _fail("BINANCE_PRIVATE_RUNTIME_INTENT_DECISION_MISMATCH")
+    except BinancePrivateRuntimeError:
+        raise
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_PRIVATE_RUNTIME_INTENT_DECISION_MISMATCH", error)
 def _wall_now():
     return datetime.now(timezone.utc)
 def _runtime_projection(state):
@@ -375,6 +392,7 @@ def run_challenger_replacement_binance_private_intent(
     """Run one query-first intent through the fixed private transport."""
 
     _require_identity(state, event_root, build_identity)
+    _require_decision_intent(state, intent, activation)
     now = _wall_now()
     try:
         recorded_at = utc_datetime(now)
