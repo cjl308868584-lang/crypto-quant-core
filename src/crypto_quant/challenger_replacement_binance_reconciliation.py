@@ -241,6 +241,19 @@ def _venue(event, orders, trades, account, position, incomes, algos,
     trade_values = _unique(
         trades, "id", "BINANCE_RECONCILIATION_CONFLICTING_FILL"
     )
+    prior_signed = Decimal("0") if previous is None else Decimal(
+        previous["signed_quantity"]
+    )
+    prior_realized = Decimal("0") if previous is None else Decimal(
+        previous["realized_pnl"]
+    )
+    prior_fee = Decimal("0") if previous is None else Decimal(
+        previous["cumulative_fee"]
+    )
+    prior_funding = Decimal("0") if previous is None else Decimal(
+        previous["funding"]
+    )
+    prior_fills = [] if previous is None else list(previous["fill_ids"])
     fee = realized = weighted = total = Decimal("0")
     for trade in trade_values:
         if (frozenset(trade) != _TRADE_KEYS or trade["symbol"] != "ETHUSDT"
@@ -293,6 +306,16 @@ def _venue(event, orders, trades, account, position, incomes, algos,
             != _number(asset["unrealizedProfit"], signed=True)):
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
     signed_quantity = _number(position_value["positionAmt"], signed=True)
+    if order_values:
+        order = order_values[0]
+        if order["side"] == "BUY":
+            if (order["reduceOnly"] is not True or prior_signed >= 0
+                    or total > -prior_signed
+                    or signed_quantity != prior_signed + total):
+                _fail("VENUE_LOCAL_POSITION_MISMATCH")
+        elif (order["reduceOnly"] is not False
+              or signed_quantity != prior_signed - total):
+            _fail("VENUE_LOCAL_POSITION_MISMATCH")
     entry = _number(position_value["entryPrice"])
     income_values = _unique(
         incomes, "tranId", "BINANCE_RECONCILIATION_CONFLICTING_FUNDING"
@@ -335,12 +358,12 @@ def _venue(event, orders, trades, account, position, incomes, algos,
         "product": event["product"],
         "signed_quantity": canonical_decimal(signed_quantity),
         "average_entry_price_or_null": average,
-        "realized_pnl": canonical_decimal(realized),
+        "realized_pnl": canonical_decimal(prior_realized + realized),
         "unrealized_pnl": canonical_decimal(
             _number(position_value["unRealizedProfit"], signed=True)
         ),
-        "cumulative_fee": canonical_decimal(fee),
-        "funding": canonical_decimal(funding),
+        "cumulative_fee": canonical_decimal(prior_fee + fee),
+        "funding": canonical_decimal(prior_funding + funding),
         "wallet_balance": canonical_decimal(
             _number(account_value["totalWalletBalance"])
         ),
@@ -352,7 +375,9 @@ def _venue(event, orders, trades, account, position, incomes, algos,
             for order in order_values
         ),
         "protective_stop_client_id_or_null": stop,
-        "fill_ids": [trade["id"] for trade in trade_values],
+        "fill_ids": sorted(set(prior_fills + [
+            trade["id"] for trade in trade_values
+        ])),
     }
 def _identity(document):
     core = dict(document)

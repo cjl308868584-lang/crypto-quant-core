@@ -514,7 +514,8 @@ def _ensure_stop(state, attempt, position, context):
     return _complete_stop_observation(
         state, attempt, stop, position, observed, context,
     )
-def _perpetual_facts(state, attempt, activation, position, incomes, stop):
+def _perpetual_facts(state, attempt, activation, position, incomes, stop,
+                     previous_reconciliation_bytes_or_null=None):
     fills = [payload for event_type, payload in _private_payloads(
         state, attempt["opportunity_id"]
     ) if event_type == "BINANCE_FILL_OBSERVED"]
@@ -532,29 +533,71 @@ def _perpetual_facts(state, attempt, activation, position, incomes, stop):
              for item in fills), Decimal(0),
         )
         fee = sum((Decimal(item["fee"]) for item in fills), Decimal(0))
-        realized = sum(
+        current_realized = sum(
             (Decimal(item["realized_pnl"]) for item in fills), Decimal(0)
         )
-        funding = sum(
+        current_funding = sum(
             (Decimal(item["income"]) for item in income_values), Decimal(0)
         )
-        wallet = Decimal(activation.capital_usdt) + realized - fee + funding
+        previous = (None if previous_reconciliation_bytes_or_null is None else
+                    load_binance_reconciliation_bytes(
+                        previous_reconciliation_bytes_or_null
+                    )["event_projection"])
+        prior_signed = Decimal("0" if previous is None else
+                               previous["signed_quantity"])
+        prior_average = (None if previous is None else
+                         previous["average_entry_price_or_null"])
+        prior_average = (None if prior_average is None
+                         else Decimal(prior_average))
+        prior_realized = Decimal("0" if previous is None else
+                                 previous["realized_pnl"])
+        prior_fee = Decimal("0" if previous is None else
+                            previous["cumulative_fee"])
+        prior_funding = Decimal("0" if previous is None else
+                                previous["funding"])
+        prior_wallet = Decimal(
+            activation.capital_usdt if previous is None else
+            previous["wallet_balance"]
+        )
+        prior_fills = [] if previous is None else list(previous["fill_ids"])
+        if attempt["action"] == "OPEN_SHORT":
+            signed = prior_signed - quantity
+            average = None if signed == 0 else (
+                -prior_signed * (prior_average or Decimal("0")) + weighted
+            ) / -signed
+        else:
+            if prior_average is None or quantity > -prior_signed:
+                _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
+            signed = prior_signed + quantity
+            average = None if signed == 0 else prior_average
+        if Decimal(position_value["positionAmt"]) != signed:
+            _fail("VENUE_LOCAL_POSITION_MISMATCH")
+        realized = prior_realized + current_realized
+        funding = prior_funding + current_funding
+        wallet = prior_wallet + current_realized - fee + current_funding
         available = wallet - Decimal(position_value["isolatedMargin"])
+        client = None
+        if signed < 0:
+            if not isinstance(stop, Mapping):
+                _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
+            client = stop["client_algo_id"]
         facts = {
             "product": "PERPETUAL",
-            "signed_quantity": canonical_decimal(-quantity),
+            "signed_quantity": canonical_decimal(signed),
             "average_entry_price_or_null": (
-                None if quantity == 0 else canonical_decimal(weighted / quantity)
+                None if average is None else canonical_decimal(average)
             ), "realized_pnl": canonical_decimal(realized),
             "unrealized_pnl": canonical_decimal(Decimal(
                 position_value["unRealizedProfit"]
-            )), "cumulative_fee": canonical_decimal(fee),
+            )), "cumulative_fee": canonical_decimal(prior_fee + fee),
             "funding": canonical_decimal(funding),
             "wallet_balance": canonical_decimal(wallet),
             "available_balance": canonical_decimal(available),
             "open_order_count": 0,
-            "protective_stop_client_id_or_null": stop["client_algo_id"],
-            "fill_ids": sorted(item["trade_id"] for item in fills),
+            "protective_stop_client_id_or_null": client,
+            "fill_ids": sorted(set(prior_fills + [
+                item["trade_id"] for item in fills
+            ])),
         }
         return {**facts, "ledger_projection": dict(facts)}
     except (KeyError, TypeError, ValueError) as error:

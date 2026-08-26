@@ -227,6 +227,59 @@ class BinanceReconciliationTests(unittest.TestCase):
             final,
         )
 
+    def test_perpetual_close_replays_cumulative_fee_funding_pnl_and_fills(self):
+        previous = self.reconcile()
+        fixture = json.loads(resources.files("crypto_quant").joinpath(
+            "fixtures", "challenger-replacement-v077",
+            "account-preflight-flat.json",
+        ).read_text(encoding="utf-8"))
+        account = fixture["FUTURES_ACCOUNT"]
+        account["totalWalletBalance"] = "102.481"
+        account["totalMarginBalance"] = "102.481"
+        account["availableBalance"] = "102.481"
+        account["maxWithdrawAmount"] = "102.481"
+        account["assets"][0].update(
+            walletBalance="102.481", marginBalance="102.481",
+            availableBalance="102.481", maxWithdrawAmount="102.481",
+        )
+        order = self.body({
+            "symbol": "ETHUSDT", "orderId": 203,
+            "clientOrderId": "cq77" + "3" * 32, "avgPrice": "1900",
+            "origQty": "0.025", "executedQty": "0.025",
+            "cumQuote": "47.5", "status": "FILLED", "type": "MARKET",
+            "side": "BUY", "positionSide": "BOTH", "reduceOnly": True,
+            "updateTime": 1787846400000,
+        })
+        trade = self.body({
+            "symbol": "ETHUSDT", "id": 402, "orderId": 203,
+            "qty": "0.025", "price": "1900", "quoteQty": "47.5",
+            "commission": "0.019", "commissionAsset": "USDT",
+            "realizedPnl": "2.5", "time": 1787846400001,
+            "buyer": True,
+        })
+        final = {
+            "product": "PERPETUAL", "signed_quantity": "0",
+            "average_entry_price_or_null": None, "realized_pnl": "2.49",
+            "unrealized_pnl": "0", "cumulative_fee": "0.039",
+            "funding": "-0.005", "wallet_balance": "102.481",
+            "available_balance": "102.481", "open_order_count": 0,
+            "protective_stop_client_id_or_null": None,
+            "fill_ids": [401, 402],
+        }
+        data = reconcile_binance_private_state(
+            event_projection={**final, "ledger_projection": dict(final)},
+            order_documents=(order,), trade_documents=(trade,),
+            account_document=self.body(account),
+            position_document=self.body(fixture["FUTURES_POSITION"]),
+            income_documents=(), algo_documents=(),
+            previous_reconciliation_bytes_or_null=previous,
+        )
+        self.assertEqual(
+            json.loads(canonical_json(
+                load_binance_reconciliation_bytes(data)["venue_projection"]
+            )), final,
+        )
+
     def test_exact_duplicate_fill_and_funding_are_idempotent(self):
         self.assertEqual(
             self.reconcile(

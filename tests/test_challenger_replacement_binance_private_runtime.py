@@ -15,6 +15,7 @@ from crypto_quant.challenger_replacement_binance_private_lifecycle import (
 )
 from crypto_quant.challenger_replacement_binance_private_runtime import (
     BinancePrivateRuntimeError,
+    _perpetual_facts,
     _previous_reconciliation_bytes,
     _spot_facts,
     run_challenger_replacement_binance_private_intent,
@@ -452,6 +453,78 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "required_first_endpoint": "FUTURES_ALGO_QUERY",
             "send_permitted": False,
         }
+
+    def _perpetual_reconciliation(self):
+        stop = self._futures_stop()
+        _, order, trades, position = self._futures_filled_documents()
+        trade_documents = tuple(
+            canonical_json(item).encode() for item in json.loads(trades)
+        )
+        income = canonical_json({
+            "tranId": 501, "symbol": "ETHUSDT",
+            "incomeType": "FUNDING_FEE", "income": "-0.005",
+            "asset": "USDT", "time": 1787832000003,
+        }).encode()
+        facts = {
+            "product": "PERPETUAL", "signed_quantity": "-0.025",
+            "average_entry_price_or_null": "2000", "realized_pnl": "0",
+            "unrealized_pnl": "1", "cumulative_fee": "0.02",
+            "funding": "-0.005", "wallet_balance": "99.975",
+            "available_balance": "74.975", "open_order_count": 0,
+            "protective_stop_client_id_or_null": stop["client_algo_id"],
+            "fill_ids": [401],
+        }
+        return reconcile_binance_private_state(
+            event_projection={**facts, "ledger_projection": dict(facts)},
+            order_documents=(order,), trade_documents=trade_documents,
+            account_document=self._futures_account(),
+            position_document=position, income_documents=(income,),
+            algo_documents=(self._active_algo(stop),),
+        )
+
+    def test_perpetual_close_facts_flatten_parent_and_drop_protection(self):
+        opportunity_id = "ETHUSDT@2026-08-27T12:00:00.000Z"
+        fill = {
+            "trade_id": 402, "order_id": 203, "quantity": "0.025",
+            "price": "1900", "quote_quantity": "47.5", "fee": "0.019",
+            "realized_pnl": "2.5",
+        }
+
+        class Event:
+            final_bytes = canonical_json({
+                "slot_id": opportunity_id,
+                "event_type": "BINANCE_FILL_OBSERVED",
+                "payload_bytes_base64": base64.b64encode(
+                    canonical_json(fill).encode()
+                ).decode(),
+            }).encode()
+
+        class State:
+            def _replay(self_nonlocal):
+                return {"events": [Event()]}
+
+        position = json.loads(self._futures_position("0", "0"))
+        position[0].update(
+            markPrice="0", unRealizedProfit="0", notional="0",
+            isolatedMargin="0", isolatedWallet="0", initialMargin="0",
+            maintMargin="0", positionInitialMargin="0",
+        )
+        facts = _perpetual_facts(
+            State(), {"opportunity_id": opportunity_id,
+                      "action": "CLOSE_SHORT"}, self.activation,
+            canonical_json(position).encode(), (), None,
+            previous_reconciliation_bytes_or_null=self._perpetual_reconciliation(),
+        )
+        expected = {
+            "product": "PERPETUAL", "signed_quantity": "0",
+            "average_entry_price_or_null": None, "realized_pnl": "2.5",
+            "unrealized_pnl": "0", "cumulative_fee": "0.039",
+            "funding": "-0.005", "wallet_balance": "102.456",
+            "available_balance": "102.456", "open_order_count": 0,
+            "protective_stop_client_id_or_null": None,
+            "fill_ids": [401, 402],
+        }
+        self.assertEqual(facts, {**expected, "ledger_projection": expected})
 
     @staticmethod
     def _active_algo(stop):
