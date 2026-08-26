@@ -150,6 +150,83 @@ class BinanceReconciliationTests(unittest.TestCase):
         self.assertEqual(loaded["status"],
                          "BINANCE_PRIVATE_RECONCILIATION_MATCHED")
 
+    def test_spot_close_replays_previous_cost_basis_and_cumulative_fees(self):
+        previous_facts = {
+            "product": "SPOT", "signed_quantity": "0.001",
+            "average_entry_price_or_null": "2000", "realized_pnl": "0",
+            "unrealized_pnl": "0", "cumulative_fee": "0.002",
+            "funding": "0", "wallet_balance": "99.998",
+            "available_balance": "97.998", "open_order_count": 0,
+            "protective_stop_client_id_or_null": None, "fill_ids": [301],
+        }
+        account = json.loads(resources.files("crypto_quant").joinpath(
+            "fixtures", "challenger-replacement-v077",
+            "account-preflight-flat.json",
+        ).read_text(encoding="utf-8"))["SPOT_ACCOUNT"]
+        balances = {item["asset"]: item for item in account["balances"]}
+        balances["ETH"]["free"] = "0.001"
+        balances["USDT"]["free"] = "97.998"
+        open_order = self.body({
+            "symbol": "ETHUSDT", "orderId": 101,
+            "clientOrderId": "cq77" + "6" * 32, "price": "0",
+            "origQty": "0.001", "executedQty": "0.001",
+            "cummulativeQuoteQty": "2", "status": "FILLED",
+            "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
+            "transactTime": 1787832000000,
+        })
+        open_trade = self.body({
+            "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+            "qty": "0.001", "price": "2000", "quoteQty": "2",
+            "commission": "0.002", "commissionAsset": "USDT",
+            "time": 1787832000001, "isBuyer": True,
+        })
+        previous = reconcile_binance_private_state(
+            event_projection={**previous_facts,
+                              "ledger_projection": dict(previous_facts)},
+            order_documents=(open_order,), trade_documents=(open_trade,),
+            account_document=self.body(account), position_document=b"[]",
+            income_documents=(), algo_documents=(),
+        )
+
+        balances["ETH"]["free"] = "0"
+        balances["USDT"]["free"] = "100.0959"
+        close_order = self.body({
+            "symbol": "ETHUSDT", "orderId": 102,
+            "clientOrderId": "cq77" + "7" * 32, "price": "0",
+            "origQty": "0.001", "executedQty": "0.001",
+            "cummulativeQuoteQty": "2.1", "status": "FILLED",
+            "timeInForce": "GTC", "type": "MARKET", "side": "SELL",
+            "transactTime": 1787846400000,
+        })
+        close_trade = self.body({
+            "symbol": "ETHUSDT", "id": 302, "orderId": 102,
+            "qty": "0.001", "price": "2100", "quoteQty": "2.1",
+            "commission": "0.0021", "commissionAsset": "USDT",
+            "time": 1787846400001, "isBuyer": False,
+        })
+        final = {
+            "product": "SPOT", "signed_quantity": "0",
+            "average_entry_price_or_null": None, "realized_pnl": "0.1",
+            "unrealized_pnl": "0", "cumulative_fee": "0.0041",
+            "funding": "0", "wallet_balance": "100.0959",
+            "available_balance": "100.0959", "open_order_count": 0,
+            "protective_stop_client_id_or_null": None,
+            "fill_ids": [301, 302],
+        }
+        data = reconcile_binance_private_state(
+            event_projection={**final, "ledger_projection": dict(final)},
+            order_documents=(close_order,), trade_documents=(close_trade,),
+            account_document=self.body(account), position_document=b"[]",
+            income_documents=(), algo_documents=(),
+            previous_reconciliation_bytes_or_null=previous,
+        )
+        self.assertEqual(
+            json.loads(canonical_json(
+                load_binance_reconciliation_bytes(data)["venue_projection"]
+            )),
+            final,
+        )
+
     def test_exact_duplicate_fill_and_funding_are_idempotent(self):
         self.assertEqual(
             self.reconcile(

@@ -118,7 +118,8 @@ def _array_document(data):
         return value
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)
-def _spot_venue(event, orders, trades, account, position, incomes, algos):
+def _spot_venue(event, orders, trades, account, position, incomes, algos,
+                previous):
     if position != b"[]" or incomes or algos:
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
     order_values = _unique(
@@ -170,24 +171,57 @@ def _spot_venue(event, orders, trades, account, position, incomes, algos):
     if not {"ETH", "USDT"}.issubset(balances):
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
     signed = sum(balances["ETH"])
-    average = None if signed == 0 else quote / quantity
+    prior_signed = Decimal("0") if previous is None else Decimal(
+        previous["signed_quantity"]
+    )
+    prior_average = (None if previous is None else
+                     previous["average_entry_price_or_null"])
+    prior_average = (None if prior_average is None else Decimal(prior_average))
+    prior_realized = Decimal("0") if previous is None else Decimal(
+        previous["realized_pnl"]
+    )
+    prior_fee = Decimal("0") if previous is None else Decimal(
+        previous["cumulative_fee"]
+    )
+    prior_fills = [] if previous is None else previous["fill_ids"]
+    if order["side"] == "BUY":
+        expected_signed = prior_signed + quantity
+        average = None if expected_signed == 0 else (
+            (prior_signed * (prior_average or Decimal("0")) + quote)
+            / expected_signed
+        )
+        realized = prior_realized
+    else:
+        if prior_average is None or quantity > prior_signed:
+            _fail("VENUE_LOCAL_POSITION_MISMATCH")
+        expected_signed = prior_signed - quantity
+        average = None if expected_signed == 0 else prior_average
+        realized = prior_realized + quote - quantity * prior_average
+    if signed != expected_signed:
+        _fail("VENUE_LOCAL_POSITION_MISMATCH")
     available = balances["USDT"][0]
     wallet = sum(balances["USDT"]) + signed * (average or Decimal("0"))
     return {
         "product": "SPOT", "signed_quantity": canonical_decimal(signed),
         "average_entry_price_or_null": (
             None if average is None else canonical_decimal(average)
-        ), "realized_pnl": "0", "unrealized_pnl": "0",
-        "cumulative_fee": canonical_decimal(fee), "funding": "0",
+        ), "realized_pnl": canonical_decimal(realized),
+        "unrealized_pnl": "0",
+        "cumulative_fee": canonical_decimal(prior_fee + fee), "funding": "0",
         "wallet_balance": canonical_decimal(wallet),
         "available_balance": canonical_decimal(available),
         "open_order_count": int(order["status"] in {"NEW", "PARTIALLY_FILLED"}),
         "protective_stop_client_id_or_null": None,
-        "fill_ids": [trade["id"] for trade in trade_values],
+        "fill_ids": sorted(set(list(prior_fills) + [
+            trade["id"] for trade in trade_values
+        ])),
     }
-def _venue(event, orders, trades, account, position, incomes, algos):
+def _venue(event, orders, trades, account, position, incomes, algos,
+           previous):
     if event["product"] == "SPOT":
-        return _spot_venue(event, orders, trades, account, position, incomes, algos)
+        return _spot_venue(
+            event, orders, trades, account, position, incomes, algos, previous,
+        )
     order_values = _unique(
         orders, "orderId", "BINANCE_RECONCILIATION_CONFLICTING_ORDER"
     )
@@ -330,7 +364,8 @@ def _identity(document):
 def reconcile_binance_private_state(*, event_projection, order_documents,
                                     trade_documents, account_document,
                                     position_document, income_documents,
-                                    algo_documents):
+                                    algo_documents,
+                                    previous_reconciliation_bytes_or_null=None):
     """Require event, venue and ledger projections to agree exactly."""
     if not isinstance(event_projection, Mapping) or frozenset(event_projection) != (
         _FACT_KEYS | {"ledger_projection"}
@@ -341,9 +376,16 @@ def reconcile_binance_private_state(*, event_projection, order_documents,
     ledger = LedgerProjection(_facts(event_projection["ledger_projection"]))
     if event.values != ledger.values:
         _fail("BINANCE_LEDGER_PROJECTION_MISMATCH")
+    previous = None
+    if previous_reconciliation_bytes_or_null is not None:
+        previous = dict(load_binance_reconciliation_bytes(
+            previous_reconciliation_bytes_or_null
+        )["event_projection"])
+        if previous["product"] != event.values["product"]:
+            _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
     venue = VenueProjection(_venue(
         event.values, order_documents, trade_documents, account_document,
-        position_document, income_documents, algo_documents,
+        position_document, income_documents, algo_documents, previous,
     ))
     if event.values != venue.values:
         _fail("VENUE_LOCAL_POSITION_MISMATCH")
