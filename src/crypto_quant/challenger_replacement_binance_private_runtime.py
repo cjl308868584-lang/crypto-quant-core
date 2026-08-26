@@ -111,6 +111,10 @@ def _append(state, event_type, opportunity_id, payload, recorded_at):
         payload=payload,
         expected_last_event_hash=projection["last_event_hash"],
     )
+def _append_intent(state, attempt, event_type, recorded_at, **payload):
+    return _append(state, event_type, attempt["opportunity_id"], {
+        "intent_id": attempt["intent_id"], **payload,
+    }, recorded_at)
 def _status(status, attempt, **extra):
     return {
         "status": status, "opportunity_id": attempt["opportunity_id"],
@@ -133,28 +137,23 @@ def _reconciliation(private):
         _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID", error)
 def _append_reconciliation_tail(state, attempt, loaded, required, client,
                                 recorded_at):
-    _append(state, "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
-            attempt["opportunity_id"], {
-        "intent_id": attempt["intent_id"], "required": required,
-        "client_algo_id_or_null": client,
-        "status": "VERIFIED" if required else "NOT_REQUIRED",
-    }, recorded_at)
-    _append(state, "BINANCE_RECONCILIATION_SUCCEEDED",
-            attempt["opportunity_id"], {
-        "intent_id": attempt["intent_id"],
-        "reconciliation_id": loaded["reconciliation_id"],
-    }, recorded_at)
+    _append_intent(state, attempt, "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
+                   recorded_at, required=required,
+                   client_algo_id_or_null=client,
+                   status="VERIFIED" if required else "NOT_REQUIRED")
+    _append_intent(state, attempt, "BINANCE_RECONCILIATION_SUCCEEDED",
+                   recorded_at,
+                   reconciliation_id=loaded["reconciliation_id"])
     return _status("TERMINAL_RECONCILED", attempt,
                    reconciliation_id=loaded["reconciliation_id"])
 def _publish_reconciliation(state, attempt, data, required, client, recorded_at):
     loaded = load_binance_reconciliation_bytes(data)
-    _append(state, "BINANCE_POSITION_BALANCE_RECONCILED",
-            attempt["opportunity_id"], {
-        "intent_id": attempt["intent_id"],
-        "reconciliation_id": loaded["reconciliation_id"],
-        "reconciliation_bytes_base64": base64.b64encode(data).decode("ascii"),
-        "reconciliation_sha256": hashlib.sha256(data).hexdigest(),
-    }, recorded_at)
+    _append_intent(
+        state, attempt, "BINANCE_POSITION_BALANCE_RECONCILED", recorded_at,
+        reconciliation_id=loaded["reconciliation_id"],
+        reconciliation_bytes_base64=base64.b64encode(data).decode("ascii"),
+        reconciliation_sha256=hashlib.sha256(data).hexdigest(),
+    )
     return _append_reconciliation_tail(
         state, attempt, loaded, required, client, recorded_at,
     )
@@ -302,15 +301,15 @@ def _append_fills_fees(state, attempt, recorded_at):
     private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
     if private["stage"] == "BINANCE_FILLS_FEES_REPLAYED":
         return
-    _append(state, "BINANCE_FILLS_FEES_REPLAYED", attempt["opportunity_id"], {
-        "intent_id": attempt["intent_id"], "fill_ids": private["fill_ids"],
-        "cumulative_fee": canonical_decimal(sum(
+    _append_intent(
+        state, attempt, "BINANCE_FILLS_FEES_REPLAYED", recorded_at,
+        fill_ids=private["fill_ids"], cumulative_fee=canonical_decimal(sum(
             (Decimal(payload["fee"])
              for event_type, payload in _private_payloads(
                  state, attempt["opportunity_id"]
              ) if event_type == "BINANCE_FILL_OBSERVED"), Decimal(0),
         )),
-    }, recorded_at)
+    )
 def _finish_spot(state, attempt, activation, order, trades, account, recorded_at):
     _append_fills_fees(state, attempt, recorded_at)
     data = reconcile_binance_private_state(
@@ -633,10 +632,8 @@ def _record_unknown(state, attempt, result, recorded_at):
             venue_code = -1000
     except (UnicodeDecodeError, ValueError):
         venue_code = -1000
-    _append(state, "BINANCE_ORDER_UNKNOWN", attempt["opportunity_id"], {
-        "intent_id": attempt["intent_id"], "venue_code": venue_code,
-        "blocks_new_risk": True,
-    }, recorded_at)
+    _append_intent(state, attempt, "BINANCE_ORDER_UNKNOWN", recorded_at,
+                   venue_code=venue_code, blocks_new_risk=True)
     return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
 def _query_order(attempt, context):
     return _query(
@@ -721,12 +718,9 @@ def run_challenger_replacement_binance_private_intent(
                     or hashlib.sha256(request.encoded_parameters).hexdigest()
                     != existing["request_sha256"]):
                 _fail("BINANCE_PRIVATE_RUNTIME_REQUEST_REPLAY_INVALID")
-            _append(
-                state, "BINANCE_REQUEST_SEND_STARTED",
-                attempt["opportunity_id"], {
-                    "intent_id": attempt["intent_id"],
-                    "request_id": request.request_id,
-                }, recorded_at,
+            _append_intent(
+                state, attempt, "BINANCE_REQUEST_SEND_STARTED", recorded_at,
+                request_id=request.request_id,
             )
             return _send_request(state, attempt, request, context)
         if existing["stage"] == "BINANCE_ORDER_UNKNOWN":
@@ -741,26 +735,25 @@ def run_challenger_replacement_binance_private_intent(
                 context=context,
             )
         _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_STAGE_UNSUPPORTED")
-    _append(state, "BINANCE_INTENT_AUTHORIZED", attempt["opportunity_id"], {
-        "opportunity_id": attempt["opportunity_id"],
-        "intent_id": attempt["intent_id"], "block_id": attempt["block_id"],
-        "product": attempt["product"], "action": attempt["action"],
-        "quantity": attempt["quantity"],
-        "venue_client_order_id": attempt["venue_client_order_id"],
-        "activation_id": attempt["activation_id"],
-        "preflight_sha256": preflight_hash,
-        "unsigned_intent_sha256": attempt["unsigned_intent_sha256"],
-    }, recorded_at)
+    _append_intent(state, attempt, "BINANCE_INTENT_AUTHORIZED", recorded_at,
+        opportunity_id=attempt["opportunity_id"],
+        block_id=attempt["block_id"],
+        product=attempt["product"], action=attempt["action"],
+        quantity=attempt["quantity"],
+        venue_client_order_id=attempt["venue_client_order_id"],
+        activation_id=attempt["activation_id"],
+        preflight_sha256=preflight_hash,
+        unsigned_intent_sha256=attempt["unsigned_intent_sha256"],
+    )
     query = _request(attempt["required_first_endpoint"], attempt, timestamp_ms)
     query_result = _execute(query, context)
     if not _proven_absent(query_result):
         _fail("BINANCE_PRIVATE_RUNTIME_ORDER_ABSENCE_NOT_PROVEN")
-    _append(state, "BINANCE_ABSENCE_CHECKED", attempt["opportunity_id"], {
-        "intent_id": attempt["intent_id"],
-        "venue_client_order_id": attempt["venue_client_order_id"],
-        "query_response_sha256": query_result.response_sha256,
-        "proven_absent": True,
-    }, recorded_at)
+    _append_intent(
+        state, attempt, "BINANCE_ABSENCE_CHECKED", recorded_at,
+        venue_client_order_id=attempt["venue_client_order_id"],
+        query_response_sha256=query_result.response_sha256, proven_absent=True,
+    )
     attempt = prepare_binance_order_attempt(
         intent=intent, projection=_runtime_projection(state),
         preflight=preflight, activation=activation,
@@ -771,15 +764,12 @@ def run_challenger_replacement_binance_private_intent(
         else "FUTURES_ORDER_CREATE"
     )
     request = _request(endpoint, attempt, timestamp_ms)
-    _append(state, "BINANCE_SIGNED_REQUEST_PREPARED", attempt["opportunity_id"], {
-        "intent_id": attempt["intent_id"], "request_id": request.request_id,
-        "endpoint_id": request.endpoint_id,
-        "request_sha256": hashlib.sha256(
-            request.encoded_parameters
-        ).hexdigest(),
-        "timestamp_ms": timestamp_ms,
-    }, recorded_at)
-    _append(state, "BINANCE_REQUEST_SEND_STARTED", attempt["opportunity_id"], {
-        "intent_id": attempt["intent_id"], "request_id": request.request_id,
-    }, recorded_at)
+    _append_intent(
+        state, attempt, "BINANCE_SIGNED_REQUEST_PREPARED", recorded_at,
+        request_id=request.request_id, endpoint_id=request.endpoint_id,
+        request_sha256=hashlib.sha256(request.encoded_parameters).hexdigest(),
+        timestamp_ms=timestamp_ms,
+    )
+    _append_intent(state, attempt, "BINANCE_REQUEST_SEND_STARTED", recorded_at,
+                   request_id=request.request_id)
     return _send_request(state, attempt, request, context)
