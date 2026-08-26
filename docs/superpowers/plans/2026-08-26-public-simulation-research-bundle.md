@@ -1602,11 +1602,12 @@ only a targeted rereview; do not repeat the unchanged whole-branch review.
 After review fixes are final, commit a code checkpoint containing every core
 path and record its real commit ID. Then enumerate executable-core paths, compute every
 SHA-256 and the canonical aggregate hash, and build the deployment twice in
-memory to byte-compare before adding one canonical JSON plus LF with
-`apply_patch`. Then extend the identity with the exact deployment artifact,
+memory to byte-compare before adding the exact canonical JSON bytes with no
+trailing LF, matching the strict runtime loader. Then extend the identity with the exact deployment artifact,
 compute `runtime_core_hash` and invoke the fixed Task 8 runner once. Serialize
 the returned object a second time only to byte-compare; do not execute a second
-fault campaign. Add the one receipt JSON plus LF with `apply_patch`, then prove:
+fault campaign. Add the one receipt as exact canonical JSON bytes with no
+trailing LF, matching its strict loader, then prove:
 
 ```python
 receipt = load_challenger_replacement_fault_matrix_bytes(

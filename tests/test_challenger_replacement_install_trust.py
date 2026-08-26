@@ -26,6 +26,17 @@ SCHEMA_NAMES = (
 )
 HASH = "a" * 64
 COMMIT = "b" * 40
+V067_COMMIT = "ca022edccdcbb2d28b1ea25002e5f19512795e3e"
+
+
+def released_v067_bytes(relative):
+    result = subprocess.run(
+        ["git", "show", f"{V067_COMMIT}:{relative}"],
+        cwd=ROOT, capture_output=True, check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError("v0.67 release bytes unavailable")
+    return result.stdout
 
 
 def temporary_workspace():
@@ -217,7 +228,7 @@ def render_fixture_contract(
 ):
     inventory = dict(inventory)
     for name, digest in trust.V067_STRATEGY_CORE["file_hashes"].items():
-        body = (ROOT / name).read_bytes()
+        body = released_v067_bytes(name)
         if hashlib.sha256(body).hexdigest() != digest:
             raise AssertionError("fixture strategy core drift")
         target = repository / name
@@ -935,7 +946,7 @@ raise SystemExit(9)
                 },
             }
             for name, digest in trust.V067_STRATEGY_CORE["file_hashes"].items():
-                body = (ROOT / name).read_bytes()
+                body = released_v067_bytes(name)
                 target = repository / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(body)

@@ -111,19 +111,20 @@ class DeploymentCandidateTests(unittest.TestCase):
         self.assertEqual(ARTIFACT.read_bytes(), challenger_replacement_deployment_bytes())
         self.assertEqual(PLIST.read_bytes(), render_challenger_replacement_plist(deployment))
 
-    def test_committed_candidate_loads_only_through_complete_build_manifest(self):
+    def test_historical_candidate_rejects_newer_manifest_identity(self):
         from crypto_quant.challenger_replacement_deployment import (
-            build_challenger_replacement_deployment,
+            ChallengerReplacementDeploymentError,
             load_challenger_replacement_deployment,
         )
 
-        self.assertEqual(
+        with self.assertRaisesRegex(
+            ChallengerReplacementDeploymentError,
+            "CHALLENGER_REPLACEMENT_DEPLOYMENT_MANIFEST_INVALID",
+        ):
             load_challenger_replacement_deployment(
                 ARTIFACT,
                 manifest_path=ROOT / "config/evaluator-build-manifest-v1.json",
-            ),
-            build_challenger_replacement_deployment(),
-        )
+            )
 
     def test_loader_accepts_exact_v074_current_manifest_identity(self):
         """Catches a stale current-release compatibility seam."""
