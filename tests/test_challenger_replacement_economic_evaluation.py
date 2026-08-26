@@ -77,7 +77,7 @@ def header(seconds, outcome="OBSERVED"):
     }
 
 
-def synthetic_result(seconds, *, equity=None, position="FLAT", fee="0",
+def synthetic_result(seconds, *, equity=None, peak=None, position="FLAT", fee="0",
                      funding="0", notional="0", gap=False):
     scheduled = START + timedelta(seconds=seconds)
     if equity is None:
@@ -92,6 +92,7 @@ def synthetic_result(seconds, *, equity=None, position="FLAT", fee="0",
         ),
         "next_snapshot": {
             "marked_equity": str(equity),
+            "peak_equity": str(max(100, equity) if peak is None else peak),
             "position_state": position,
             "economic_gap_locked": gap,
         },
@@ -275,6 +276,12 @@ class EconomicBoundarySeriesTests(unittest.TestCase):
         values[0] = opportunity(0, result=synthetic_result(0, equity=-1))
         failed = self.build(values)
         self.assertTrue(failed["nonpositive_equity"])
+
+    def test_continuous_drawdown_uses_strict_snapshot_peak_equity(self):
+        values = list(population())
+        values[0] = opportunity(0, result=synthetic_result(0, equity=90, peak=120))
+        series = self.build(values)
+        self.assertEqual(series["base"]["maximum_drawdown_fraction"], "0.25")
 
     def test_real_golden_envelope_replays_through_public_strict_loader(self):
         plan = fixture_v3_plan()
