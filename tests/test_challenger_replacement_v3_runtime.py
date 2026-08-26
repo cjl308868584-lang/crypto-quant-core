@@ -1,6 +1,11 @@
 import unittest
 import multiprocessing
+import io
+import json
+import subprocess
+import sys
 from datetime import datetime, timezone
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 from crypto_quant import challenger_replacement_v3_runtime as runtime_module
@@ -24,6 +29,7 @@ from crypto_quant.challenger_replacement_simulation_contract import (
     build_challenger_replacement_simulation_contract,
 )
 from crypto_quant.challenger_replacement_v3_runtime import (
+    main as runtime_main,
     run_challenger_replacement_v3_opportunity,
 )
 from tests.challenger_replacement_v3_fixtures import fixture_v3_plan
@@ -97,6 +103,37 @@ class ChallengerReplacementV3RuntimeTests(unittest.TestCase):
             build_identity=V076_BUILD,
             previous_source_bundle=None,
         )
+
+    def test_module_entrypoint_fails_closed_when_install_contract_is_absent(self):
+        completed = subprocess.run(
+            [sys.executable, "-m", "crypto_quant.challenger_replacement_v3_runtime"],
+            cwd=str(__import__("pathlib").Path(__file__).resolve().parents[1]),
+            env={"PYTHONPATH": "src:tests"}, capture_output=True, check=False,
+        )
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout, b"")
+        self.assertEqual(
+            completed.stderr,
+            b"CHALLENGER_REPLACEMENT_V3_RUNTIME_INSTALL_CONTRACT_UNAVAILABLE\n",
+        )
+
+    def test_zero_argument_entrypoint_runs_one_injected_fixed_contract(self):
+        sources = {
+            "state": object(), "event_root": object(), "plan": {},
+            "economic_plan": {}, "predecessor_contract": {},
+            "public_contract": {}, "build_identity": {},
+        }
+        expected = {"status": "ALREADY_TERMINAL", "opportunity_id": "x", "result": {}}
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch.object(runtime_module, "_load_fixed_runtime_sources", return_value=sources), patch.object(
+            runtime_module, "run_challenger_replacement_v3_opportunity", return_value=expected,
+        ) as run, redirect_stdout(stdout), redirect_stderr(stderr):
+            code = runtime_main([])
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(json.loads(stdout.getvalue()), expected)
+        run.assert_called_once_with(**sources)
 
     def test_natural_capture_commits_one_public_result_and_replays_terminal(self):
         with open_challenger_replacement_event_root(

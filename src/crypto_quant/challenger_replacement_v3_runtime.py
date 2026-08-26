@@ -3,6 +3,7 @@
 import base64
 import fcntl
 import hashlib
+import sys
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
@@ -36,6 +37,10 @@ from .challenger_replacement_simulation_contract import (
 
 
 _WORKER_ID = "challenger-replacement-v3-public-runtime"
+_FIXED_SOURCE_KEYS = {
+    "state", "event_root", "plan", "economic_plan",
+    "predecessor_contract", "public_contract", "build_identity",
+}
 
 
 def _invalid(reason="CHALLENGER_REPLACEMENT_OPPORTUNITY_INPUT_INVALID"):
@@ -307,3 +312,32 @@ def run_challenger_replacement_v3_opportunity(
                     pass
             else:
                 raise ChallengerReplacementOpportunityError(reason) from error
+
+
+def _load_fixed_runtime_sources():
+    raise ChallengerReplacementOpportunityError(
+        "CHALLENGER_REPLACEMENT_V3_RUNTIME_INSTALL_CONTRACT_UNAVAILABLE"
+    )
+
+
+def main(argv=None):
+    if tuple(sys.argv[1:] if argv is None else argv):
+        sys.stderr.write("CHALLENGER_REPLACEMENT_V3_RUNTIME_ARGUMENTS_FORBIDDEN\n")
+        return 2
+    try:
+        sources = _load_fixed_runtime_sources()
+        if not isinstance(sources, dict) or set(sources) != _FIXED_SOURCE_KEYS:
+            _invalid("CHALLENGER_REPLACEMENT_V3_RUNTIME_INSTALL_CONTRACT_INVALID")
+        result = run_challenger_replacement_v3_opportunity(**sources)
+    except (ChallengerReplacementOpportunityError, OSError, TypeError, ValueError) as error:
+        reason = getattr(
+            error, "reason_code", "CHALLENGER_REPLACEMENT_V3_RUNTIME_FAILED"
+        )
+        sys.stderr.write(reason + "\n")
+        return 1
+    sys.stdout.write(canonical_json(result) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
