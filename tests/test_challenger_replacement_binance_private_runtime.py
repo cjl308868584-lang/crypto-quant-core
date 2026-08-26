@@ -295,6 +295,26 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
         return canonical_json(document).encode("utf-8")
 
+    @staticmethod
+    def _futures_account(wallet="99.975", available="74.975"):
+        document = json.loads(resources.files("crypto_quant").joinpath(
+            "fixtures", "challenger-replacement-v077",
+            "account-preflight-flat.json",
+        ).read_text(encoding="utf-8"))["FUTURES_ACCOUNT"]
+        document.update(
+            totalInitialMargin="25", totalMaintMargin="1",
+            totalWalletBalance=wallet, totalUnrealizedProfit="1",
+            totalMarginBalance="100.975", totalPositionInitialMargin="25",
+            availableBalance=available, maxWithdrawAmount=available,
+        )
+        document["assets"][0].update(
+            walletBalance=wallet, unrealizedProfit="1",
+            marginBalance="100.975", maintMargin="1", initialMargin="25",
+            positionInitialMargin="25", availableBalance=available,
+            maxWithdrawAmount=available,
+        )
+        return canonical_json(document).encode("utf-8")
+
     def _futures_filled_documents(self):
         absent = canonical_json({
             "code": -2013, "msg": "Order does not exist.",
@@ -452,6 +472,85 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         self.assertEqual(private["stage"], "BINANCE_FILLS_FEES_REPLAYED")
         self.assertEqual(private["stop"]["stage"], "BINANCE_STOP_RECONCILED")
         self.assertEqual(private["stop"]["algo_id"], 901)
+
+        account = self._futures_account()
+        funding = canonical_json([{
+            "tranId": 501, "symbol": "ETHUSDT",
+            "incomeType": "FUNDING_FEE", "income": "-0.005",
+            "asset": "USDT", "time": 1787832000003,
+        }]).encode("utf-8")
+        active_algos = canonical_json([json.loads(algo)]).encode("utf-8")
+        terminal_responses = tuple(BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, body, hashlib.sha256(body).hexdigest(), (),
+        ) for body in (
+            filled, trades, account, position, funding, active_algos,
+        ))
+        fresh = self.workspace.state()
+        original_append = fresh.append
+
+        class ReconciliationCrash(BaseException):
+            pass
+
+        def append_then_crash(**kwargs):
+            event = original_append(**kwargs)
+            if kwargs["event_type"] == "BINANCE_POSITION_BALANCE_RECONCILED":
+                raise ReconciliationCrash()
+            return event
+
+        with patch.object(fresh, "append", side_effect=append_then_crash), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW + timedelta(seconds=1),
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_expected_stop", return_value=stop,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=terminal_responses,
+        ) as terminal_transport:
+            with self.assertRaises(ReconciliationCrash):
+                run_challenger_replacement_binance_private_intent(
+                    state=fresh, event_root=self.workspace.root,
+                    intent=self.intent, preflight=self.preflight,
+                    activation=self.activation, credential=object(),
+                    build_identity=self.workspace.build,
+                )
+        self.assertEqual(
+            [call.args[0].endpoint_id
+             for call in terminal_transport.call_args_list],
+            ["FUTURES_ORDER_QUERY", "FUTURES_TRADES", "FUTURES_ACCOUNT",
+             "FUTURES_POSITION", "FUTURES_INCOME",
+             "FUTURES_OPEN_ALGO_ORDERS"],
+        )
+        private = fresh.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"],
+                         "BINANCE_POSITION_BALANCE_RECONCILED")
+        recovered = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+        ) as recovery_transport:
+            terminal = run_challenger_replacement_binance_private_intent(
+                state=recovered, event_root=self.workspace.root,
+                intent=self.intent, preflight=self.preflight,
+                activation=self.activation, credential=object(),
+                build_identity=self.workspace.build,
+            )
+        recovery_transport.assert_not_called()
+        self.assertEqual(terminal["status"], "TERMINAL_RECONCILED")
+        private = recovered.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_RECONCILIATION_SUCCEEDED")
+        loaded = load_binance_reconciliation_bytes(base64.b64decode(
+            private["reconciliation_bytes_base64"], validate=True,
+        ))
+        self.assertEqual(loaded["event_projection"]["funding"], "-0.005")
+        self.assertEqual(
+            loaded["event_projection"]["protective_stop_client_id_or_null"],
+            stop["client_algo_id"],
+        )
 
     def test_fresh_retry_after_stop_send_started_queries_without_recreate(self):
         self.intent.update(
