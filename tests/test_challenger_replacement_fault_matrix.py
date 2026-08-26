@@ -13,6 +13,10 @@ from crypto_quant.challenger_replacement_fault_matrix import (
 import crypto_quant.challenger_replacement_fault_matrix as fault_module
 import crypto_quant.challenger_replacement_binance_lifecycle as lifecycle_module
 import crypto_quant.challenger_replacement_simulation as simulation_module
+import crypto_quant.challenger_replacement_public_http as http_module
+import crypto_quant.challenger_replacement_public_market_capture as capture_module
+import crypto_quant.challenger_replacement_v3_observer as observer_module
+import crypto_quant.operations_projection_v3 as projection_module
 
 
 BUILD = {
@@ -176,6 +180,32 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
             ) as invoked:
                 fault_module._probe_boundary(case_id, BUILD)
             self.assertGreaterEqual(invoked.call_count, 1)
+
+    def test_public_input_clock_and_projection_cases_hit_real_boundaries(self):
+        groups = (
+            (EXPECTED_CASE_IDS[7:10], http_module, "open_fixed_public_request"),
+            (EXPECTED_CASE_IDS[10:14], capture_module, "_selected_payload"),
+            (EXPECTED_CASE_IDS[16:20], capture_module, "_strict_document"),
+            (("PROJECTION_SOURCE_UNAVAILABLE",), observer_module,
+             "observe_challenger_replacement_v3"),
+            (("PROJECTION_SOURCE_INVALID",), projection_module,
+             "load_operations_projection_v3_bytes"),
+        )
+        for cases, module, name in groups:
+            original = getattr(module, name)
+            for case_id in cases:
+                with self.subTest(case_id=case_id), patch.object(
+                    module, name, wraps=original,
+                ) as invoked:
+                    fault_module._probe_boundary(case_id, BUILD)
+                self.assertGreaterEqual(invoked.call_count, 1)
+        after_receipt = next(
+            item for item in self.receipt["cases"]
+            if item["case_id"] == "NETWORK_LOSS_AFTER_RESPONSE_RECEIPT"
+        )
+        self.assertEqual(
+            after_receipt["observed_boundary"], "RESPONSE_RECEIPT_REPLAYED"
+        )
 
 
 if __name__ == "__main__":

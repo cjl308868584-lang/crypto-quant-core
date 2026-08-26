@@ -6,17 +6,24 @@ import json
 import os
 import tempfile
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import lru_cache
 from importlib import resources
 from typing import Any, Dict, Mapping
 from unittest.mock import patch
+from urllib.error import URLError
+from urllib.request import Request
 
 from jsonschema import Draft202012Validator
 
 from . import challenger_replacement_events as event_module
 from . import challenger_replacement_binance_lifecycle as lifecycle_module
 from . import challenger_replacement_simulation as simulation_module
+from . import challenger_replacement_public_http as http_module
+from . import challenger_replacement_public_market_capture as capture_module
+from . import challenger_replacement_v3_observer as observer_module
+from . import operations_projection_v3 as projection_module
 from .challenger_replacement_binance_simulation_input import (
     load_challenger_replacement_binance_simulation_input_bytes,
 )
@@ -28,7 +35,6 @@ from .challenger_replacement_events import (
     ChallengerReplacementEventError,
     ChallengerReplacementEventRootIdentity,
     build_challenger_replacement_event,
-    load_challenger_replacement_event_bytes,
     open_challenger_replacement_event_root,
     publish_challenger_replacement_event,
     replay_challenger_replacement_events,
@@ -36,7 +42,6 @@ from .challenger_replacement_events import (
 from .challenger_replacement_opportunity_projection import validate_build_identity
 from .challenger_replacement_plan import _strict_json_bytes
 from .challenger_replacement_plan_v3 import build_challenger_replacement_plan_v3
-from .challenger_replacement_public_http import transport_failure_attempt
 from .challenger_replacement_simulation import build_challenger_replacement_genesis_snapshot
 from .challenger_replacement_simulation_contract import build_challenger_replacement_simulation_contract
 from .evidence import artifact_self_hash
@@ -92,6 +97,8 @@ def _validator():
 def _boundary(case_id: str) -> str:
     if "FSYNC" in case_id or "WRITE_FAILURE" in case_id:
         return "DURABLE_EVENT_APPEND_FAILED_CLOSED"
+    if case_id == "NETWORK_LOSS_AFTER_RESPONSE_RECEIPT":
+        return "RESPONSE_RECEIPT_REPLAYED"
     if case_id.startswith("NETWORK_LOSS") or case_id.endswith("MARKET_INPUT"):
         return "MARKET_CAPTURE_FAILED_CLOSED"
     if "CLOCK" in case_id or case_id == "MONOTONIC_INCONSISTENCY":
@@ -280,6 +287,132 @@ def _economic_probe(case_id):
     return _boundary(case_id)
 
 
+class _ProbeResponse:
+    def __enter__(self): return self
+    def __exit__(self, *_args): return False
+    def read(self, _limit): return b"{}"
+    def getcode(self): return 200
+    def geturl(self): return "https://data-api.binance.vision/api/v3/time"
+    headers = {"Content-Type": "application/json"}
+
+
+class _ProbeOpener:
+    def __init__(self, *, failure=False): self.failure = failure
+    def open(self, *_args, **_kwargs):
+        if self.failure:
+            raise URLError("offline fault probe")
+        return _ProbeResponse()
+
+
+def _network_probe(case_id):
+    url = "https://data-api.binance.vision/api/v3/time"
+    moment = datetime(2026, 8, 26, tzinfo=timezone.utc)
+    if case_id == "NETWORK_LOSS_BEFORE_REQUEST":
+        request = Request(url, data=b"forbidden")
+        try:
+            http_module.open_fixed_public_request(request, max_body_bytes=1024)
+        except http_module.PublicHttpError:
+            return _boundary(case_id)
+    elif case_id == "NETWORK_LOSS_AFTER_REQUEST_BEFORE_RESPONSE":
+        with patch.object(http_module, "build_opener", return_value=_ProbeOpener(failure=True)):
+            try:
+                http_module.open_fixed_public_request(Request(url), max_body_bytes=1024)
+            except http_module.PublicHttpError:
+                return _boundary(case_id)
+    else:
+        with patch.object(http_module, "build_opener", return_value=_ProbeOpener()), \
+             patch.object(http_module, "_wall_now", side_effect=(moment, moment)), \
+             patch.object(http_module, "_monotonic", side_effect=(1, 2)):
+            response = http_module.open_fixed_public_request(
+                Request(url), max_body_bytes=1024
+            )
+        attempt = http_module.attempt_document(response, 1)
+        if attempt["outcome"] == "HTTP_RESPONSE" and attempt["body_size_bytes"] == 2:
+            return _boundary(case_id)
+    _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+
+
+def _attempt_entry(*, started, received):
+    body = b"{}"
+    kind, url, limit = capture_module._REQUESTS[0]
+    return ({
+        "request": {
+            "request_id": stable_id("challenger_replacement_public_market_request", {
+                "request_kind": kind, "method": "GET", "url": url,
+                "max_body_bytes": limit,
+            }),
+            "request_kind": kind, "method": "GET", "url": url,
+            "max_body_bytes": limit,
+        },
+        "attempts": [{
+            "sequence": 1, "outcome": "HTTP_RESPONSE",
+            "error_reason_or_null": None, "request_started_at": started,
+            "response_received_at": received, "status": 200, "final_url": url,
+            "selected_headers": {"content_type_or_null": "application/json",
+                "http_date_or_null": None, "etag_or_null": None,
+                "last_modified_or_null": None, "retry_after_or_null": None},
+            "body_size_bytes": len(body),
+            "body_sha256": hashlib.sha256(body).hexdigest(),
+            "response_body_base64": "e30=",
+        }],
+        "selected_success_attempt_index": 0,
+    }, capture_module._REQUESTS[0])
+
+
+def _clock_probe(case_id):
+    scheduled = datetime(2026, 8, 26, tzinfo=timezone.utc)
+    captured = scheduled + timedelta(minutes=10)
+    started, received = scheduled, scheduled + timedelta(seconds=1)
+    if case_id == "CLOCK_OFFSET": started = scheduled - timedelta(milliseconds=1)
+    elif case_id == "CLOCK_SPREAD": received = captured + timedelta(milliseconds=1)
+    elif case_id == "WALL_CLOCK_BACKWARD": received = started - timedelta(milliseconds=1)
+    entry, expected = _attempt_entry(
+        started=started.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        received=received.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    )
+    try:
+        capture_module._selected_payload(entry, expected, scheduled, captured)
+        if case_id == "MONOTONIC_INCONSISTENCY":
+            with patch.object(http_module, "build_opener", return_value=_ProbeOpener()), \
+                 patch.object(http_module, "_wall_now", side_effect=(scheduled, scheduled)), \
+                 patch.object(http_module, "_monotonic", side_effect=(2, 1)):
+                http_module.open_fixed_public_request(
+                    Request("https://data-api.binance.vision/api/v3/time"),
+                    max_body_bytes=1024,
+                )
+    except (capture_module.ChallengerReplacementPublicMarketCaptureError,
+            http_module.PublicHttpError):
+        return _boundary(case_id)
+    _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+
+
+def _market_probe(case_id):
+    samples = {
+        "MALFORMED_MARKET_INPUT": b"{",
+        "PARTIAL_MARKET_INPUT": b"{}",
+        "REVISED_MARKET_INPUT": b'{"revision":"untrusted"}',
+        "UNAVAILABLE_MARKET_INPUT": b"",
+    }
+    try:
+        capture_module._strict_document(samples[case_id])
+    except capture_module.ChallengerReplacementPublicMarketCaptureError:
+        return _boundary(case_id)
+    _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+
+
+def _projection_probe(case_id):
+    if case_id == "PROJECTION_SOURCE_UNAVAILABLE":
+        value = observer_module.observe_challenger_replacement_v3()
+        if value.evidence_health == "NOT_INSTALLED":
+            return _boundary(case_id)
+    else:
+        try:
+            projection_module.load_operations_projection_v3_bytes(b"{}")
+        except projection_module.OperationsProjectionV3Error:
+            return _boundary(case_id)
+    _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+
+
 def _probe_boundary(case_id, build_identity):
     if (
         case_id.startswith("PROCESS_TERMINATION")
@@ -290,12 +423,7 @@ def _probe_boundary(case_id, build_identity):
     ):
         return _event_probe(case_id, build_identity)
     if case_id.startswith("NETWORK_LOSS"):
-        from datetime import datetime, timezone
-        moment = datetime(2026, 8, 26, tzinfo=timezone.utc)
-        attempt = transport_failure_attempt(1, started=moment, received=moment)
-        if attempt["outcome"] != "TRANSPORT_ERROR":
-            _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
-        return _boundary(case_id)
+        return _network_probe(case_id)
     if case_id in {
         "PARTIAL_SIMULATED_FILL", "LATE_SIMULATED_FILL",
         "SIMULATED_CANCEL_RACE", "UNRESOLVED_UNKNOWN_CLASSIFICATION",
@@ -304,27 +432,11 @@ def _probe_boundary(case_id, build_identity):
     }:
         return _lifecycle_probe(case_id)
     if "CLOCK" in case_id or case_id == "MONOTONIC_INCONSISTENCY":
-        from datetime import datetime, timedelta, timezone
-        moment = datetime(2026, 8, 26, tzinfo=timezone.utc)
-        try:
-            transport_failure_attempt(
-                1, started=moment, received=moment - timedelta(milliseconds=1)
-            )
-        except ValueError:
-            return _boundary(case_id)
-        _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+        return _clock_probe(case_id)
     if case_id.startswith("PROJECTION_SOURCE"):
-        try:
-            load_challenger_replacement_event_bytes(b"{}")
-        except ChallengerReplacementEventError:
-            return _boundary(case_id)
-        _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+        return _projection_probe(case_id)
     if case_id.endswith("MARKET_INPUT"):
-        try:
-            _strict_json_bytes(b'{"duplicate":1,"duplicate":2}')
-        except ValueError:
-            return _boundary(case_id)
-        _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+        return _market_probe(case_id)
     if case_id in {"FEE_REPLAY", "FUNDING_REPLAY", "DAILY_LOSS_LOCK", "DRAWDOWN_LOCK"}:
         return _economic_probe(case_id)
     return _boundary(case_id)
