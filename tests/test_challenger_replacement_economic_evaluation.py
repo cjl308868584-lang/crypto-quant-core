@@ -217,6 +217,13 @@ class EconomicBoundarySeriesTests(unittest.TestCase):
         ):
             _build_economic_boundary_series(facts, economic_plan=self.plan)
 
+    def test_post_tail_fact_is_rejected_instead_of_changing_result_identity(self):
+        with self.assertRaisesRegex(
+            ChallengerReplacementEconomicEvaluationError,
+            "ECONOMIC_EVALUATION_FACTS_INVALID",
+        ):
+            self.build(population() + (opportunity(7_776_000),))
+
     def test_builds_91_boundaries_90_returns_six_blocks_and_drawdown(self):
         series = self.build()
         self.assertEqual(len(series["base"]["boundary_equities"]), 91)

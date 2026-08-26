@@ -310,7 +310,7 @@ def _build_economic_boundary_series(
             _invalid()
         scheduled = _time(fact.scheduled_for)
         if scheduled >= tail:
-            continue
+            _invalid()
         if (
             scheduled != expected
             or fact.opportunity_id != _opportunity_id(scheduled)
