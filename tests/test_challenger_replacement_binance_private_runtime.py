@@ -15,6 +15,8 @@ from crypto_quant.challenger_replacement_binance_private_lifecycle import (
 )
 from crypto_quant.challenger_replacement_binance_private_runtime import (
     BinancePrivateRuntimeError,
+    _previous_reconciliation_bytes,
+    _spot_facts,
     run_challenger_replacement_binance_private_intent,
 )
 from crypto_quant.challenger_replacement_binance_private_transport import (
@@ -22,6 +24,7 @@ from crypto_quant.challenger_replacement_binance_private_transport import (
 )
 from crypto_quant.challenger_replacement_binance_reconciliation import (
     load_binance_reconciliation_bytes,
+    reconcile_binance_private_state,
 )
 from crypto_quant.challenger_replacement_events import (
     open_challenger_replacement_event_root,
@@ -335,6 +338,107 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "realizedPnl": "0", "time": 1787832000002, "buyer": False,
         }]).encode("utf-8")
         return absent, filled, trades, self._futures_position()
+
+    def _spot_reconciliation(self, trade_id=301):
+        facts = {
+            "product": "SPOT", "signed_quantity": "0.001",
+            "average_entry_price_or_null": "2000", "realized_pnl": "0",
+            "unrealized_pnl": "0", "cumulative_fee": "0.002",
+            "funding": "0", "wallet_balance": "99.998",
+            "available_balance": "97.998", "open_order_count": 0,
+            "protective_stop_client_id_or_null": None,
+            "fill_ids": [trade_id],
+        }
+        order_id = 100 + trade_id
+        order = canonical_json({
+            "symbol": "ETHUSDT", "orderId": order_id,
+            "clientOrderId": "cq77" + format(trade_id, "032x"),
+            "price": "0", "origQty": "0.001", "executedQty": "0.001",
+            "cummulativeQuoteQty": "2", "status": "FILLED",
+            "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
+            "transactTime": 1787832000000,
+        }).encode()
+        trade = canonical_json({
+            "symbol": "ETHUSDT", "id": trade_id, "orderId": order_id,
+            "qty": "0.001", "price": "2000", "quoteQty": "2",
+            "commission": "0.002", "commissionAsset": "USDT",
+            "time": 1787832000001, "isBuyer": True,
+        }).encode()
+        return reconcile_binance_private_state(
+            event_projection={**facts, "ledger_projection": dict(facts)},
+            order_documents=(order,), trade_documents=(trade,),
+            account_document=self._spot_account("0.001", "97.998"),
+            position_document=b"[]", income_documents=(), algo_documents=(),
+        )
+
+    def test_previous_reconciliation_selects_latest_strict_same_product_parent(self):
+        first, latest = self._spot_reconciliation(301), self._spot_reconciliation(302)
+
+        def private(data, product="SPOT"):
+            loaded = load_binance_reconciliation_bytes(data)
+            return {
+                "stage": "BINANCE_RECONCILIATION_SUCCEEDED",
+                "product": product, "action": "OPEN_LONG",
+                "reconciliation_id": loaded["reconciliation_id"],
+                "reconciliation_sha256": hashlib.sha256(data).hexdigest(),
+                "reconciliation_bytes_base64": base64.b64encode(data).decode(),
+            }
+
+        class HistoricalState:
+            def replay(self_nonlocal):
+                return {"opportunities": {
+                    "ETHUSDT@2026-08-27T00:00:00.000Z": {"private": private(first)},
+                    "ETHUSDT@2026-08-27T04:00:00.000Z": {
+                        "private": private(first, "PERPETUAL"),
+                    },
+                    "ETHUSDT@2026-08-27T08:00:00.000Z": {"private": private(latest)},
+                    "ETHUSDT@2026-08-27T12:00:00.000Z": {},
+                }}
+
+        self.assertEqual(_previous_reconciliation_bytes(
+            HistoricalState(), product="SPOT",
+            before_opportunity_id="ETHUSDT@2026-08-27T12:00:00.000Z",
+        ), latest)
+        self.assertIsNone(_previous_reconciliation_bytes(
+            HistoricalState(), product="SPOT",
+            before_opportunity_id="ETHUSDT@2026-08-27T00:00:00.000Z",
+        ))
+
+    def test_spot_close_facts_preserve_parent_cost_fees_and_realized_pnl(self):
+        opportunity_id = "ETHUSDT@2026-08-27T12:00:00.000Z"
+        fill = {
+            "trade_id": 302, "order_id": 402, "quantity": "0.001",
+            "price": "2100", "quote_quantity": "2.1", "fee": "0.0021",
+        }
+
+        class Event:
+            final_bytes = canonical_json({
+                "slot_id": opportunity_id,
+                "event_type": "BINANCE_FILL_OBSERVED",
+                "payload_bytes_base64": base64.b64encode(
+                    canonical_json(fill).encode()
+                ).decode(),
+            }).encode()
+
+        class State:
+            def _replay(self_nonlocal):
+                return {"events": [Event()]}
+
+        facts = _spot_facts(
+            State(), {"opportunity_id": opportunity_id, "action": "CLOSE_LONG"},
+            self.activation,
+            previous_reconciliation_bytes_or_null=self._spot_reconciliation(),
+        )
+        expected = {
+            "product": "SPOT", "signed_quantity": "0",
+            "average_entry_price_or_null": None, "realized_pnl": "0.1",
+            "unrealized_pnl": "0", "cumulative_fee": "0.0041",
+            "funding": "0", "wallet_balance": "100.0959",
+            "available_balance": "100.0959", "open_order_count": 0,
+            "protective_stop_client_id_or_null": None,
+            "fill_ids": [301, 302],
+        }
+        self.assertEqual(facts, {**expected, "ledger_projection": expected})
 
     def _futures_stop(self):
         return {
