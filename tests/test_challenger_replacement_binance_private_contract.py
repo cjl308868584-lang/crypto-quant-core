@@ -559,6 +559,21 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "required_first_endpoint": "FUTURES_ALGO_QUERY",
             "send_permitted": False,
         })
+        stop_request_id = "binance_private_request_" + "c" * 64
+        self._append_private("BINANCE_STOP_ABSENCE_CHECKED", {
+            "protected_intent_id": intent["intent_id"],
+            "client_algo_id": client, "query_response_sha256": "d" * 64,
+            "proven_absent": True,
+        })
+        self._append_private("BINANCE_STOP_SIGNED_REQUEST_PREPARED", {
+            "protected_intent_id": intent["intent_id"],
+            "client_algo_id": client, "request_id": stop_request_id,
+            "request_sha256": "e" * 64, "timestamp_ms": 1787832000000,
+        })
+        self._append_private("BINANCE_STOP_REQUEST_SEND_STARTED", {
+            "protected_intent_id": intent["intent_id"],
+            "client_algo_id": client, "request_id": stop_request_id,
+        })
         self._append_private("BINANCE_STOP_ACKNOWLEDGED", {
             "protected_intent_id": intent["intent_id"],
             "client_algo_id": client, "algo_id": 901,
@@ -617,6 +632,21 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "close_position": False, "client_algo_id": new_client,
             "required_first_endpoint": "FUTURES_ALGO_QUERY",
             "send_permitted": False,
+        })
+        request_id = "binance_private_request_" + "f" * 64
+        self._append_private("BINANCE_STOP_ABSENCE_CHECKED", {
+            "protected_intent_id": intent["intent_id"],
+            "client_algo_id": new_client, "query_response_sha256": "0" * 64,
+            "proven_absent": True,
+        })
+        self._append_private("BINANCE_STOP_SIGNED_REQUEST_PREPARED", {
+            "protected_intent_id": intent["intent_id"],
+            "client_algo_id": new_client, "request_id": request_id,
+            "request_sha256": "1" * 64, "timestamp_ms": 1787832000000,
+        })
+        self._append_private("BINANCE_STOP_REQUEST_SEND_STARTED", {
+            "protected_intent_id": intent["intent_id"],
+            "client_algo_id": new_client, "request_id": request_id,
         })
         self._append_private("BINANCE_STOP_ACKNOWLEDGED", {
             "protected_intent_id": intent["intent_id"],

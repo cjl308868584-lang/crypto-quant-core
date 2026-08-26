@@ -122,6 +122,9 @@ PRIVATE_EVENT_TYPES = frozenset({
     "BINANCE_RECONCILIATION_SUCCEEDED",
     "BINANCE_RECONCILIATION_FAILED",
     "BINANCE_STOP_INTENT_AUTHORIZED",
+    "BINANCE_STOP_ABSENCE_CHECKED",
+    "BINANCE_STOP_SIGNED_REQUEST_PREPARED",
+    "BINANCE_STOP_REQUEST_SEND_STARTED",
     "BINANCE_STOP_ACKNOWLEDGED",
     "BINANCE_STOP_RECONCILED",
     "BINANCE_STOP_REPLACEMENT_STARTED",
@@ -544,8 +547,55 @@ def _apply_stop_transition(private, event_type, payload, event):
             replacement["candidate"] = candidate
         else:
             private["stop"] = candidate
-    elif event_type == "BINANCE_STOP_ACKNOWLEDGED":
+    elif event_type == "BINANCE_STOP_ABSENCE_CHECKED":
         target = _stop_target(stop, "BINANCE_STOP_INTENT_AUTHORIZED")
+        if (target is None
+                or set(payload) != {
+                    "protected_intent_id", "client_algo_id",
+                    "query_response_sha256", "proven_absent",
+                }
+                or payload["protected_intent_id"] != private["intent_id"]
+                or payload["client_algo_id"] != target["client_algo_id"]
+                or not _lower_hash(payload["query_response_sha256"])
+                or payload["proven_absent"] is not True):
+            _invalid()
+        target.update(
+            stage=event_type,
+            query_response_sha256=payload["query_response_sha256"],
+        )
+    elif event_type == "BINANCE_STOP_SIGNED_REQUEST_PREPARED":
+        target = _stop_target(stop, "BINANCE_STOP_ABSENCE_CHECKED")
+        timestamp = payload.get("timestamp_ms")
+        if (target is None
+                or set(payload) != {
+                    "protected_intent_id", "client_algo_id", "request_id",
+                    "request_sha256", "timestamp_ms",
+                }
+                or payload["protected_intent_id"] != private["intent_id"]
+                or payload["client_algo_id"] != target["client_algo_id"]
+                or not _bounded_identity(payload["request_id"])
+                or not _lower_hash(payload["request_sha256"])
+                or isinstance(timestamp, bool) or not isinstance(timestamp, int)
+                or not 0 <= timestamp <= (1 << 53) - 1):
+            _invalid()
+        target.update(
+            stage=event_type, request_id=payload["request_id"],
+            request_sha256=payload["request_sha256"],
+            request_timestamp_ms=timestamp,
+        )
+    elif event_type == "BINANCE_STOP_REQUEST_SEND_STARTED":
+        target = _stop_target(stop, "BINANCE_STOP_SIGNED_REQUEST_PREPARED")
+        if (target is None
+                or set(payload) != {
+                    "protected_intent_id", "client_algo_id", "request_id",
+                }
+                or payload["protected_intent_id"] != private["intent_id"]
+                or payload["client_algo_id"] != target["client_algo_id"]
+                or payload["request_id"] != target["request_id"]):
+            _invalid()
+        target["stage"] = event_type
+    elif event_type == "BINANCE_STOP_ACKNOWLEDGED":
+        target = _stop_target(stop, "BINANCE_STOP_REQUEST_SEND_STARTED")
         if (target is None
                 or set(payload) != {
                     "protected_intent_id", "client_algo_id", "algo_id",
