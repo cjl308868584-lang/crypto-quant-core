@@ -79,8 +79,8 @@
       "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "venue_client_order_id": {"$ref": "#/$defs/clientOrderId"}, "query_response_sha256": {"$ref": "#/$defs/sha256"}, "proven_absent": {"const": true}}
     },
     "requestPrepared": {
-      "type": "object", "additionalProperties": false, "required": ["intent_id", "request_id", "endpoint_id", "request_sha256"],
-      "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "request_id": {"$ref": "#/$defs/intentId"}, "endpoint_id": {"enum": ["SPOT_ORDER_CREATE", "FUTURES_ORDER_CREATE"]}, "request_sha256": {"$ref": "#/$defs/sha256"}}
+      "type": "object", "additionalProperties": false, "required": ["intent_id", "request_id", "endpoint_id", "request_sha256", "timestamp_ms"],
+      "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "request_id": {"$ref": "#/$defs/intentId"}, "endpoint_id": {"enum": ["SPOT_ORDER_CREATE", "FUTURES_ORDER_CREATE"]}, "request_sha256": {"$ref": "#/$defs/sha256"}, "timestamp_ms": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}}
     },
     "sendStarted": {
       "type": "object", "additionalProperties": false, "required": ["intent_id", "request_id"],

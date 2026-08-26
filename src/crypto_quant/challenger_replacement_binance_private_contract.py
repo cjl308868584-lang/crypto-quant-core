@@ -480,7 +480,7 @@ def _private_payload_valid(event_type, payload, private):
             "venue_client_order_id", "query_response_sha256", "proven_absent",
         },
         "BINANCE_SIGNED_REQUEST_PREPARED": common | {
-            "request_id", "endpoint_id", "request_sha256",
+            "request_id", "endpoint_id", "request_sha256", "timestamp_ms",
         },
         "BINANCE_REQUEST_SEND_STARTED": common | {"request_id"},
         "BINANCE_ORDER_ACKNOWLEDGED": common | {
@@ -529,7 +529,10 @@ def _private_payload_valid(event_type, payload, private):
         return (payload["endpoint_id"] in {
             "SPOT_ORDER_CREATE", "FUTURES_ORDER_CREATE",
         } and _bounded_identity(payload["request_id"])
-                and _lower_hash(payload["request_sha256"]))
+                and _lower_hash(payload["request_sha256"])
+                and isinstance(payload["timestamp_ms"], int)
+                and not isinstance(payload["timestamp_ms"], bool)
+                and 0 <= payload["timestamp_ms"] <= (1 << 53) - 1)
     if event_type == "BINANCE_REQUEST_SEND_STARTED":
         return _bounded_identity(payload["request_id"])
     if event_type == "BINANCE_ORDER_ACKNOWLEDGED":
@@ -603,6 +606,11 @@ def _apply_private_transition(private, event_type, payload, event):
         if payload["trade_id"] in private["fill_ids"]:
             _invalid()
         private["fill_ids"].append(payload["trade_id"])
+    elif event_type == "BINANCE_SIGNED_REQUEST_PREPARED":
+        private["request_id"] = payload["request_id"]
+        private["request_endpoint_id"] = payload["endpoint_id"]
+        private["request_sha256"] = payload["request_sha256"]
+        private["request_timestamp_ms"] = payload["timestamp_ms"]
     private["stage"] = event_type
     private["last_private_event_hash"] = event.event_hash
     private["last_private_event_sequence"] = event.sequence

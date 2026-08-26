@@ -333,6 +333,7 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "request_id": "binance_private_request_" + "8" * 64,
             "endpoint_id": "SPOT_ORDER_CREATE",
             "request_sha256": "9" * 64,
+            "timestamp_ms": 1787832000000,
         })
         self._append_private("BINANCE_REQUEST_SEND_STARTED", {
             "intent_id": intent["intent_id"],
