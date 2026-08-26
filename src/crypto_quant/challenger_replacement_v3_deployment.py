@@ -30,12 +30,40 @@ from .evidence import artifact_self_hash
 _SCHEMA = "challenger-replacement-v3-deployment-v1.schema.json"
 _RUNTIME = "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1"
 _SNAPSHOT = _RUNTIME + "/deployment/snapshot"
-_CORE_NAMES = """public_http events opportunity_projection public_market_capture
-public_simulation_contract public_simulation v3_runtime v3_deployment v3_start
-fault_matrix operational_qualification economic_evaluation economic_evaluation_cli
-v3_observer operations_projection_v3""".split()
-_CORE_PATHS = {"src/crypto_quant/challenger_replacement_" + name + ".py"
-               for name in _CORE_NAMES[:-1]} | {"src/crypto_quant/operations_projection_v3.py"}
+_CORE_MODULES = """__init__ build canonical contracts decimal_math economics errors
+estimators evidence instruments ledger market_data market_data_cli offline_paper
+operations_projection_v3 paired_risk paper_scheduler reevaluation runtime_health
+statistical_decision statistics trade_replay challenger_replacement_accelerated_canary_plan
+challenger_replacement_binance_lifecycle challenger_replacement_binance_simulation_input
+challenger_replacement_decision challenger_replacement_deployment
+challenger_replacement_economic_evaluation challenger_replacement_economic_evaluation_cli
+challenger_replacement_economic_plan challenger_replacement_events
+challenger_replacement_evidence challenger_replacement_fault_matrix
+challenger_replacement_install_trust challenger_replacement_live_input
+challenger_replacement_operational_qualification challenger_replacement_opportunities
+challenger_replacement_opportunity_evidence challenger_replacement_opportunity_projection
+challenger_replacement_plan challenger_replacement_plan_v2 challenger_replacement_plan_v3
+challenger_replacement_public_http challenger_replacement_public_market_capture
+challenger_replacement_public_simulation challenger_replacement_public_simulation_contract
+challenger_replacement_runtime challenger_replacement_simulation
+challenger_replacement_simulation_contract challenger_replacement_v3_deployment
+challenger_replacement_v3_observer challenger_replacement_v3_runtime
+challenger_replacement_v3_start""".split()
+_CORE_RESOURCES = """schemas/challenger-replacement-public-market-capture-v2.schema.json
+schemas/challenger-replacement-public-simulation-contract-v1.schema.json
+schemas/challenger-replacement-public-simulation-input-v1.schema.json
+schemas/challenger-replacement-public-simulation-snapshot-v1.schema.json
+schemas/challenger-replacement-public-simulation-result-v1.schema.json
+schemas/challenger-replacement-v3-deployment-v1.schema.json
+schemas/challenger-replacement-v3-start-receipt-v1.schema.json
+schemas/challenger-replacement-fault-matrix-receipt-v1.schema.json
+schemas/challenger-replacement-operational-qualification-v1.schema.json
+schemas/challenger-replacement-economic-evaluation-v1.schema.json
+schemas/operations-projection-v3.schema.json
+fixtures/challenger-replacement-v076/binance-lifecycle-long-input.json""".split()
+_CORE_PATHS = {"src/crypto_quant/" + name + ".py" for name in _CORE_MODULES} | {
+    "src/crypto_quant/" + name for name in _CORE_RESOURCES
+}
 _PREDECESSOR = {
     "release_tag": "v0.75.0",
     "peeled_commit": "a51ed15d5a484e5bb9a54dc75a7fef4e8876e4d5",

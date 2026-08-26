@@ -50,6 +50,10 @@ from .evidence import artifact_self_hash
 
 
 _SCHEMA = "challenger-replacement-fault-matrix-receipt-v1.schema.json"
+_DEPLOYMENT_ARTIFACT = (
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-v3-deployment-v0.76.0.json"
+)
 
 EXPECTED_CASE_IDS = (
     "PROCESS_TERMINATION_BEFORE_INPUT_APPEND",
@@ -550,8 +554,11 @@ def _document(build_identity: Mapping[str, Any], runtime_core_identity, *, exerc
             or not runtime_core_identity
             or any(
                 not isinstance(path, str)
-                or not path.startswith("src/crypto_quant/")
-                or not path.endswith(".py")
+                or not (
+                    path == _DEPLOYMENT_ARTIFACT
+                    or (path.startswith("src/crypto_quant/")
+                        and path.endswith((".py", ".json")))
+                )
                 or not isinstance(digest, str)
                 or len(digest) != 64
                 or set(digest) - set("0123456789abcdef")
@@ -560,6 +567,8 @@ def _document(build_identity: Mapping[str, Any], runtime_core_identity, *, exerc
         ):
             _invalid()
         core = dict(sorted(runtime_core_identity.items()))
+        executable = {key: value for key, value in core.items()
+                      if key != _DEPLOYMENT_ARTIFACT}
         cases = [
             _case_record(case_id, build_identity, exercise=exercise)
             for case_id in EXPECTED_CASE_IDS
@@ -572,6 +581,7 @@ def _document(build_identity: Mapping[str, Any], runtime_core_identity, *, exerc
             "build_identity": copy.deepcopy(dict(build_identity)),
             "runtime_core_identity": core,
             "runtime_core_hash": business_hash(core),
+            "executable_core_hash": business_hash(executable),
             "cases": cases,
             "authority": {
                 "network_requests": 0, "account_requests": 0,

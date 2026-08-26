@@ -4,7 +4,7 @@ import unittest
 from copy import deepcopy
 from unittest.mock import patch
 
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import business_hash, canonical_json
 from crypto_quant.challenger_replacement_fault_matrix import (
     ChallengerReplacementFaultMatrixError,
     EXPECTED_CASE_IDS,
@@ -60,6 +60,7 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
         self.assertEqual(self.receipt["build_identity"], BUILD)
         self.assertEqual(self.receipt["runtime_core_identity"], CORE)
         self.assertRegex(self.receipt["runtime_core_hash"], r"^[0-9a-f]{64}$")
+        self.assertEqual(self.receipt["executable_core_hash"], business_hash(CORE))
         self.assertEqual(
             self.receipt["authority"],
             {"network_requests": 0, "account_requests": 0,
@@ -72,6 +73,18 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
             ),
             self.receipt,
         )
+
+    def test_runtime_core_adds_exact_deployment_artifact_to_executable_core(self):
+        expanded = dict(CORE)
+        expanded[
+            "artifacts/challenger-replacement/"
+            "challenger-replacement-v3-deployment-v0.76.0.json"
+        ] = "d" * 64
+        receipt = run_challenger_replacement_fault_matrix(
+            build_identity=BUILD, runtime_core_identity=expanded,
+        )
+        self.assertEqual(receipt["executable_core_hash"], business_hash(CORE))
+        self.assertNotEqual(receipt["runtime_core_hash"], receipt["executable_core_hash"])
 
     def test_loader_rebuilds_exact_receipt_and_rejects_any_case_or_build_drift(self):
         body = canonical_json(self.receipt).encode("utf-8")

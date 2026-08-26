@@ -1,3 +1,5 @@
+import ast
+import hashlib
 import plistlib
 import unittest
 from copy import deepcopy
@@ -20,6 +22,7 @@ from crypto_quant.challenger_replacement_v3_deployment import (
     build_challenger_replacement_v3_deployment,
     load_challenger_replacement_v3_deployment_bytes,
     render_challenger_replacement_v3_plist,
+    _CORE_PATHS,
 )
 from tests.challenger_replacement_v3_fixtures import fixture_v3_plan
 from tests.test_challenger_replacement_public_market_capture import V076_BUILD
@@ -33,24 +36,8 @@ PREDECESSOR_RELEASE = {
     "manifest_hash": "b15479590536c302e173a41a758c9113cd7452b0000d8b6c5cb5c2ad8b9404d9",
 }
 INVENTORY = {
-    path: format(index, "x") * 64
-    for index, path in enumerate((
-        "src/crypto_quant/challenger_replacement_public_http.py",
-        "src/crypto_quant/challenger_replacement_events.py",
-        "src/crypto_quant/challenger_replacement_opportunity_projection.py",
-        "src/crypto_quant/challenger_replacement_public_market_capture.py",
-        "src/crypto_quant/challenger_replacement_public_simulation_contract.py",
-        "src/crypto_quant/challenger_replacement_public_simulation.py",
-        "src/crypto_quant/challenger_replacement_v3_runtime.py",
-        "src/crypto_quant/challenger_replacement_v3_deployment.py",
-        "src/crypto_quant/challenger_replacement_v3_start.py",
-        "src/crypto_quant/challenger_replacement_fault_matrix.py",
-        "src/crypto_quant/challenger_replacement_operational_qualification.py",
-        "src/crypto_quant/challenger_replacement_economic_evaluation.py",
-        "src/crypto_quant/challenger_replacement_economic_evaluation_cli.py",
-        "src/crypto_quant/challenger_replacement_v3_observer.py",
-        "src/crypto_quant/operations_projection_v3.py",
-    ), 1)
+    path: hashlib.sha256(path.encode("utf-8")).hexdigest()
+    for path in sorted(_CORE_PATHS)
 }
 
 
@@ -103,6 +90,46 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
             "real_orders_allowed": False,
             "fund_movement_allowed": False,
         })
+
+    def test_inventory_covers_recursive_local_imports_and_v076_resources(self):
+        root = __import__("pathlib").Path(__file__).resolve().parents[1]
+        pending = [path for path in _CORE_PATHS if path.endswith(".py")]
+        closure = set()
+        while pending:
+            path = pending.pop()
+            if path in closure:
+                continue
+            closure.add(path)
+            tree = ast.parse((root / path).read_text(encoding="utf-8"))
+            module = path[len("src/crypto_quant/"):-3].replace("/", ".")
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.level:
+                    base = module.split(".")[:-node.level]
+                    name = ".".join(base + ([node.module] if node.module else []))
+                    candidates = [name] + [
+                        ".".join(filter(None, (name, alias.name)))
+                        for alias in node.names
+                    ]
+                    for candidate in candidates:
+                        imported = "src/crypto_quant/" + candidate.replace(".", "/") + ".py"
+                        if (root / imported).is_file() and imported not in closure:
+                            pending.append(imported)
+        self.assertEqual(closure - _CORE_PATHS, set())
+        for path in (
+            "src/crypto_quant/schemas/challenger-replacement-public-market-capture-v2.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-public-simulation-contract-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-public-simulation-input-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-public-simulation-snapshot-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-public-simulation-result-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-v3-deployment-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-v3-start-receipt-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-fault-matrix-receipt-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-operational-qualification-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-economic-evaluation-v1.schema.json",
+            "src/crypto_quant/schemas/operations-projection-v3.schema.json",
+            "src/crypto_quant/fixtures/challenger-replacement-v076/binance-lifecycle-long-input.json",
+        ):
+            self.assertIn(path, _CORE_PATHS)
 
     def test_plist_retains_six_natural_invocations_and_no_secret_surface(self):
         plist_bytes = render_challenger_replacement_v3_plist(self.build())

@@ -163,7 +163,7 @@ def _validated_inputs(facts, plan, fault):
         ) from error
     if fault.get("status") != "FAULT_MATRIX_PASSED":
         _invalid("CHALLENGER_REPLACEMENT_FAULT_MATRIX_NOT_PASSED")
-    if facts.start_receipt and fault["runtime_core_hash"] != facts.start_receipt[
+    if facts.start_receipt and fault["executable_core_hash"] != facts.start_receipt[
         "deployment"
     ]["executable_core_hash"]:
         _invalid("CHALLENGER_REPLACEMENT_FAULT_MATRIX_NOT_PASSED")
