@@ -162,6 +162,7 @@ def build_economic_evaluation_facts_from_state(
     )
     if (
         not isinstance(state, ChallengerReplacementOpportunityState)
+        or tail_mark_or_null is not None
     ):
         _invalid("ECONOMIC_FACT_SOURCE_INVALID")
     projection = state._replay()
@@ -179,14 +180,22 @@ def build_economic_evaluation_facts_from_state(
     )
     previous_bundle = None
     result = []
+    tail = _time(start_receipt["economic_start"]["scheduled_for"]) + timedelta(
+        seconds=_TAIL_SECONDS
+    )
+    tail_mark = None
     for scheduled_for in projection["terminal_scheduled_for"]:
+        scheduled = _time(scheduled_for)
+        if scheduled > tail:
+            continue
         opportunity_id = _opportunity_id(_time(scheduled_for))
         slot = projection["opportunities"][opportunity_id]
         if slot["outcome"] == "MISSED":
-            result.append(EconomicOpportunityFact(
-                opportunity_id, scheduled_for, "MISSED", None,
-                previous["position_state"], slot["reason_code"],
-            ))
+            if scheduled < tail:
+                result.append(EconomicOpportunityFact(
+                    opportunity_id, scheduled_for, "MISSED", None,
+                    previous["position_state"], slot["reason_code"],
+                ))
             continue
         capture = load_challenger_replacement_public_market_capture_bytes(
             slot["source_bundle_bytes"], plan=plan,
@@ -198,6 +207,14 @@ def build_economic_evaluation_facts_from_state(
             predecessor_contract=predecessor, public_contract=public,
             build_identity=state.build_identity,
         )
+        if scheduled == tail:
+            marked = copy.deepcopy(previous)
+            _mark(marked, _kernel_source(source, plan, public))
+            tail_mark = {
+                "source": source, "previous_projection": previous,
+                "marked_equity": marked["marked_equity"],
+            }
+            continue
         evidence = slot["result_evidence"]
         envelope = {
             "source": source, "previous_projection": previous,
@@ -217,7 +234,7 @@ def build_economic_evaluation_facts_from_state(
     return _bind_event_facts(EconomicEvaluationFacts(
         start_receipt=copy.deepcopy(dict(start_receipt)),
         opportunities=tuple(result), observed_at=observed_at,
-        tail_mark_or_null=copy.deepcopy(tail_mark_or_null),
+        tail_mark_or_null=tail_mark,
     ))
 
 

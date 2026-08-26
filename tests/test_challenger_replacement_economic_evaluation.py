@@ -1,5 +1,6 @@
 import json
 import unittest
+from types import SimpleNamespace
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -12,6 +13,7 @@ from crypto_quant.challenger_replacement_economic_evaluation import (
     EconomicEvaluationFacts,
     EconomicOpportunityFact,
     EconomicProgressFacts,
+    build_economic_evaluation_facts_from_state,
     _build_economic_boundary_series,
     _strict_result,
     _strict_tail_mark,
@@ -40,6 +42,9 @@ from crypto_quant.challenger_replacement_simulation_contract import (
     build_challenger_replacement_simulation_contract,
 )
 from tests.challenger_replacement_v3_fixtures import fixture_v3_plan
+from crypto_quant.challenger_replacement_opportunities import (
+    ChallengerReplacementOpportunityState,
+)
 from tests.test_challenger_replacement_public_market_capture import (
     COMMITTED_CAPTURE,
     V076_BUILD,
@@ -202,6 +207,80 @@ class EconomicProgressTests(unittest.TestCase):
 class EconomicBoundarySeriesTests(unittest.TestCase):
     def setUp(self):
         self.plan = build_challenger_replacement_economic_plan()
+
+    def test_state_factory_uses_tail_opportunity_only_for_pre_action_mark(self):
+        plan = fixture_v3_plan()
+        first_id = "ETHUSDT@" + iso(START)
+        tail_id = "ETHUSDT@" + iso(TAIL)
+        first_result = {
+            "sequence": 2, "parent_event_hash": "4" * 64,
+            "opportunity": {"captured_at": iso(START)},
+            "next_snapshot": {
+                "snapshot_hash": "5" * 64, "position_state": "FLAT",
+                "marked_equity": "101",
+            },
+        }
+        tail_result = {
+            "sequence": 5, "parent_event_hash": "6" * 64,
+            "opportunity": {"captured_at": iso(TAIL)},
+            "next_snapshot": {"snapshot_hash": "7" * 64},
+        }
+        projection = {
+            "events": (SimpleNamespace(
+                final_bytes=json.dumps({
+                    "event_type": "OPPORTUNITY_OBSERVED", "slot_id": first_id,
+                }).encode("utf-8"),
+                event_hash="3" * 64,
+            ),),
+            "terminal_scheduled_for": (iso(START), iso(TAIL)),
+            "opportunities": {
+                first_id: {"outcome": "OBSERVED", "scheduled_for": iso(START),
+                           "source_bundle_bytes": b"first", "result_evidence": first_result},
+                tail_id: {"outcome": "OBSERVED", "scheduled_for": iso(TAIL),
+                          "source_bundle_bytes": b"tail", "result_evidence": tail_result},
+            },
+        }
+        state = object.__new__(ChallengerReplacementOpportunityState)
+        state.plan, state.build_identity = plan, dict(V076_BUILD)
+        state._replay = lambda: projection
+        receipt = start_receipt()
+        receipt.update(
+            shared_opportunity_id=first_id, shared_event_hash="3" * 64,
+            operational_start={"observed_at": iso(START)},
+            authority={"production_activation": False},
+        )
+        captures = (
+            SimpleNamespace(document={"normalized": {"bars": ["first"]}}),
+            SimpleNamespace(document={"normalized": {"bars": ["tail"]}}),
+        )
+        genesis = {"snapshot_hash": "0" * 64, "position_state": "FLAT",
+                   "marked_equity": "100"}
+        with patch(
+            "crypto_quant.challenger_replacement_economic_evaluation.load_challenger_replacement_public_market_capture_bytes",
+            side_effect=captures,
+        ), patch(
+            "crypto_quant.challenger_replacement_economic_evaluation.build_challenger_replacement_public_simulation_input",
+            side_effect=({"kind": "first"}, {"kind": "tail"}),
+        ), patch(
+            "crypto_quant.challenger_replacement_economic_evaluation.build_challenger_replacement_public_genesis_snapshot",
+            return_value=genesis,
+        ), patch(
+            "crypto_quant.challenger_replacement_economic_evaluation._strict_result",
+            side_effect=lambda envelope, **_kwargs: envelope["result"],
+        ), patch(
+            "crypto_quant.challenger_replacement_economic_evaluation._kernel_source",
+            return_value={},
+        ), patch(
+            "crypto_quant.challenger_replacement_economic_evaluation._mark",
+            side_effect=lambda snapshot, _source: snapshot.update(marked_equity="123"),
+        ):
+            facts = build_economic_evaluation_facts_from_state(
+                state=state, start_receipt=receipt, observed_at=iso(TAIL),
+                tail_mark_or_null=None,
+            )
+        self.assertEqual(len(facts.opportunities), 1)
+        self.assertEqual(facts.tail_mark_or_null["marked_equity"], "123")
+        self.assertEqual(facts.tail_mark_or_null["source"], {"kind": "tail"})
 
     def build(self, opportunities=None, *, observed_at=TAIL, tail=True):
         facts = verified(EconomicEvaluationFacts(
