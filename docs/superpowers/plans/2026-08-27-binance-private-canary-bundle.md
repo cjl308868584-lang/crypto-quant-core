@@ -448,10 +448,17 @@ git commit -m "feat: execute fixed Binance private requests"
 ```python
 def evaluate_binance_account_preflight(*,
     responses: Mapping[str, bytes], account_approval: BinanceAccountApproval,
+    credential_identity: BinanceCredentialIdentity,
     build_identity: Mapping[str, str], now: str) -> bytes
 def load_binance_account_preflight_bytes(data: bytes, *,
     build_identity: Mapping[str, str]) -> Mapping[str, object]
 ```
+
+The secret-free credential identity is mandatory so the evaluator can compare
+the actually opened key fingerprint to the accountable owner approval. Binance
+only exposes the `ipRestrict` boolean; the exact reviewed egress IP remains an
+explicit governance attestation and is not misrepresented as a machine-proven
+allowlist entry.
 
 - [ ] **Step 1: Write strict preflight RED tests**
 
