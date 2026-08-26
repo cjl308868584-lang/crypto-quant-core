@@ -3,6 +3,7 @@
 import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import ipaddress
 import json
 from types import MappingProxyType
@@ -511,7 +512,10 @@ def _private_payload_valid(event_type, payload, private):
         "BINANCE_FILLS_FEES_REPLAYED": common | {
             "fill_ids", "cumulative_fee",
         },
-        "BINANCE_POSITION_BALANCE_RECONCILED": common | {"reconciliation_id"},
+        "BINANCE_POSITION_BALANCE_RECONCILED": common | {
+            "reconciliation_id", "reconciliation_bytes_base64",
+            "reconciliation_sha256",
+        },
         "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED": common | {
             "required", "client_algo_id_or_null", "status",
         },
@@ -576,14 +580,30 @@ def _private_payload_valid(event_type, payload, private):
                     == payload["cumulative_fee"])
         except (TypeError, ValueError):
             return False
-    if event_type in {
-        "BINANCE_POSITION_BALANCE_RECONCILED",
-        "BINANCE_RECONCILIATION_SUCCEEDED",
-    }:
+    if event_type == "BINANCE_POSITION_BALANCE_RECONCILED":
+        try:
+            data = base64.b64decode(
+                payload["reconciliation_bytes_base64"], validate=True,
+            )
+            from .challenger_replacement_binance_reconciliation import (
+                load_binance_reconciliation_bytes,
+            )
+            loaded = load_binance_reconciliation_bytes(data)
+            return (
+                hashlib.sha256(data).hexdigest()
+                == payload["reconciliation_sha256"]
+                and loaded["reconciliation_id"]
+                == payload["reconciliation_id"]
+            )
+        except (TypeError, ValueError):
+            return False
+    if event_type == "BINANCE_RECONCILIATION_SUCCEEDED":
         return (isinstance(payload["reconciliation_id"], str)
                 and payload["reconciliation_id"].startswith(
                     "binance_reconciliation_"
-                ) and _lower_hash(payload["reconciliation_id"][23:]))
+                ) and _lower_hash(payload["reconciliation_id"][23:])
+                and payload["reconciliation_id"]
+                == private.get("reconciliation_id"))
     if event_type == "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED":
         return (isinstance(payload["required"], bool)
                 and payload["status"] in {"NOT_REQUIRED", "VERIFIED"}
@@ -613,6 +633,12 @@ def _apply_private_transition(private, event_type, payload, event):
         private["request_endpoint_id"] = payload["endpoint_id"]
         private["request_sha256"] = payload["request_sha256"]
         private["request_timestamp_ms"] = payload["timestamp_ms"]
+    elif event_type == "BINANCE_POSITION_BALANCE_RECONCILED":
+        private["reconciliation_id"] = payload["reconciliation_id"]
+        private["reconciliation_bytes_base64"] = payload[
+            "reconciliation_bytes_base64"
+        ]
+        private["reconciliation_sha256"] = payload["reconciliation_sha256"]
     private["stage"] = event_type
     private["last_private_event_hash"] = event.event_hash
     private["last_private_event_sequence"] = event.sequence

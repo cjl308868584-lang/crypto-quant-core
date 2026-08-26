@@ -1,4 +1,5 @@
 import base64
+import hashlib
 from importlib import resources
 import json
 import unittest
@@ -315,6 +316,32 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             expected_last_event_hash=projection["last_event_hash"],
         )
 
+    @staticmethod
+    def _reconciliation_bytes():
+        facts = {
+            "product": "SPOT", "signed_quantity": "0.001",
+            "average_entry_price_or_null": "2000", "realized_pnl": "0",
+            "unrealized_pnl": "0", "cumulative_fee": "0.002",
+            "funding": "0", "wallet_balance": "99.998",
+            "available_balance": "97.998", "open_order_count": 0,
+            "protective_stop_client_id_or_null": None, "fill_ids": [301],
+        }
+        document = {
+            "$schema": "./challenger-replacement-binance-reconciliation-v1.schema.json",
+            "schema_version": "1.0.0",
+            "status": "BINANCE_PRIVATE_RECONCILIATION_MATCHED",
+            "event_projection": facts, "venue_projection": facts,
+            "ledger_projection": facts,
+            "authority": {"network_requests": 0, "orders": 0,
+                          "state_writes": 0},
+        }
+        document["reconciliation_id"] = (
+            "binance_reconciliation_" + hashlib.sha256(
+                canonical_json(document).encode("utf-8")
+            ).hexdigest()
+        )
+        return (canonical_json(document) + "\n").encode("utf-8")
+
     def _authorize(self):
         self._observe_opportunity()
         self._append_private("BINANCE_INTENT_AUTHORIZED", self._intent_payload())
@@ -417,9 +444,17 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "intent_id": intent["intent_id"], "fill_ids": [301],
             "cumulative_fee": "0.002",
         })
+        reconciliation = self._reconciliation_bytes()
+        reconciliation_id = json.loads(reconciliation)["reconciliation_id"]
         self._append_private("BINANCE_POSITION_BALANCE_RECONCILED", {
             "intent_id": intent["intent_id"],
-            "reconciliation_id": "binance_reconciliation_" + "a" * 64,
+            "reconciliation_id": reconciliation_id,
+            "reconciliation_bytes_base64": base64.b64encode(
+                reconciliation
+            ).decode("ascii"),
+            "reconciliation_sha256": hashlib.sha256(
+                reconciliation
+            ).hexdigest(),
         })
         self._append_private("BINANCE_PROTECTION_RECONCILED_IF_EXPOSED", {
             "intent_id": intent["intent_id"], "required": False,
@@ -427,7 +462,7 @@ class BinancePrivateEventContractTests(unittest.TestCase):
         })
         self._append_private("BINANCE_RECONCILIATION_SUCCEEDED", {
             "intent_id": intent["intent_id"],
-            "reconciliation_id": "binance_reconciliation_" + "a" * 64,
+            "reconciliation_id": reconciliation_id,
         })
         private = self.state.replay()["opportunities"][
             self.workspace.opportunity_id
@@ -436,6 +471,11 @@ class BinancePrivateEventContractTests(unittest.TestCase):
         self.assertTrue(private["terminal"])
         self.assertFalse(private["unresolved_unknown"])
         self.assertEqual(private["fill_ids"], [301])
+        self.assertEqual(private["reconciliation_id"], reconciliation_id)
+        self.assertEqual(
+            base64.b64decode(private["reconciliation_bytes_base64"]),
+            reconciliation,
+        )
 
     def test_out_of_order_private_event_is_rejected_without_append(self):
         self._authorize()

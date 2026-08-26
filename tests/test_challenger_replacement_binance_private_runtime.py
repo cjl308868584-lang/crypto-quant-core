@@ -17,6 +17,9 @@ from crypto_quant.challenger_replacement_binance_private_runtime import (
 from crypto_quant.challenger_replacement_binance_private_transport import (
     BinancePrivateTransportResult,
 )
+from crypto_quant.challenger_replacement_binance_reconciliation import (
+    load_binance_reconciliation_bytes,
+)
 from crypto_quant.challenger_replacement_events import (
     open_challenger_replacement_event_root,
 )
@@ -319,13 +322,34 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             [call.args[0].endpoint_id for call in transport.call_args_list],
             ["SPOT_ORDER_QUERY", "SPOT_TRADES", "SPOT_ACCOUNT"],
         )
-        self.assertEqual(result["status"],
-                         "ORDER_TERMINAL_REQUIRES_RECONCILIATION")
+        self.assertEqual(result["status"], "TERMINAL_RECONCILED")
         private = fresh.replay()["opportunities"][
             self.workspace.opportunity_id
         ]["private"]
-        self.assertEqual(private["stage"], "BINANCE_ORDER_FILLED")
+        self.assertEqual(private["stage"], "BINANCE_RECONCILIATION_SUCCEEDED")
         self.assertEqual(private["fill_ids"], [301])
+        reconciliation = base64.b64decode(
+            private["reconciliation_bytes_base64"], validate=True,
+        )
+        loaded = load_binance_reconciliation_bytes(reconciliation)
+        self.assertEqual(loaded["reconciliation_id"],
+                         private["reconciliation_id"])
+
+        terminal = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+        ) as transport:
+            replayed = run_challenger_replacement_binance_private_intent(
+                state=terminal, event_root=self.workspace.root,
+                intent=self.intent, preflight=self.preflight,
+                activation=self.activation, credential=object(),
+                build_identity=self.workspace.build,
+            )
+        transport.assert_not_called()
+        self.assertEqual(replayed["status"], "TERMINAL_RECONCILED")
+        self.assertEqual(replayed["reconciliation_id"],
+                         private["reconciliation_id"])
 
     def test_fresh_retry_after_send_started_queries_id_without_resend(self):
         absent = canonical_json({

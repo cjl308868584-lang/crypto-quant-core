@@ -23,7 +23,8 @@
     {"if": {"properties": {"event_type": {"const": "BINANCE_SIGNED_REQUEST_PREPARED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/requestPrepared"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_REQUEST_SEND_STARTED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/sendStarted"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_FILLS_FEES_REPLAYED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/fillsReplayed"}}}},
-    {"if": {"properties": {"event_type": {"enum": ["BINANCE_POSITION_BALANCE_RECONCILED", "BINANCE_RECONCILIATION_SUCCEEDED"]}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/reconciliationBound"}}}},
+    {"if": {"properties": {"event_type": {"const": "BINANCE_POSITION_BALANCE_RECONCILED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/reconciliationEvidence"}}}},
+    {"if": {"properties": {"event_type": {"const": "BINANCE_RECONCILIATION_SUCCEEDED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/reconciliationBound"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/protectionReconciled"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_RECONCILIATION_FAILED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/reconciliationFailed"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_STOP_INTENT_AUTHORIZED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stopIntent"}}}},
@@ -93,6 +94,10 @@
     "reconciliationBound": {
       "type": "object", "additionalProperties": false, "required": ["intent_id", "reconciliation_id"],
       "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "reconciliation_id": {"type": "string", "pattern": "^binance_reconciliation_[0-9a-f]{64}$"}}
+    },
+    "reconciliationEvidence": {
+      "type": "object", "additionalProperties": false, "required": ["intent_id", "reconciliation_id", "reconciliation_bytes_base64", "reconciliation_sha256"],
+      "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "reconciliation_id": {"type": "string", "pattern": "^binance_reconciliation_[0-9a-f]{64}$"}, "reconciliation_bytes_base64": {"type": "string", "minLength": 1, "maxLength": 5592408}, "reconciliation_sha256": {"$ref": "#/$defs/sha256"}}
     },
     "protectionReconciled": {
       "type": "object", "additionalProperties": false, "required": ["intent_id", "required", "client_algo_id_or_null", "status"],

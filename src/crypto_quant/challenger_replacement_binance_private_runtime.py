@@ -1,10 +1,12 @@
 """Append-only orchestration for the fixed Binance private boundary."""
+import base64
 from datetime import datetime, timezone
 from dataclasses import dataclass
+from decimal import Decimal
 import hashlib
 import json
 from typing import Mapping
-from .canonical import canonical_json, utc_datetime
+from .canonical import canonical_decimal, canonical_json, utc_datetime
 from .challenger_replacement_binance_private_lifecycle import (
     _document, apply_binance_order_observation, prepare_binance_order_attempt,
 )
@@ -13,6 +15,9 @@ from .challenger_replacement_binance_private_protocol import (
 )
 from .challenger_replacement_binance_private_transport import (
     execute_binance_private_request,
+)
+from .challenger_replacement_binance_reconciliation import (
+    load_binance_reconciliation_bytes, reconcile_binance_private_state,
 )
 from .challenger_replacement_events import ChallengerReplacementEventRoot
 from .challenger_replacement_opportunities import (
@@ -177,25 +182,95 @@ def _tuple_documents(data):
         return tuple(canonical_json(value).encode() for value in values)
     except (AttributeError, TypeError, UnicodeDecodeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID", error)
+def _private_payloads(state, opportunity_id):
+    values = []
+    for event in state._replay()["events"]:
+        document = json.loads(event.final_bytes)
+        if (document["slot_id"] == opportunity_id
+                and document["event_type"].startswith("BINANCE_")):
+            values.append((document["event_type"], json.loads(base64.b64decode(
+                document["payload_bytes_base64"], validate=True,
+            ))))
+    return values
+def _spot_facts(state, attempt, activation):
+    fills = [payload for event_type, payload in _private_payloads(
+        state, attempt["opportunity_id"]
+    ) if event_type == "BINANCE_FILL_OBSERVED"]
+    quantity = sum((Decimal(item["quantity"]) for item in fills), Decimal(0))
+    quote = sum((Decimal(item["quote_quantity"]) for item in fills), Decimal(0))
+    fee = sum((Decimal(item["fee"]) for item in fills), Decimal(0))
+    capital = Decimal(activation.capital_usdt)
+    signed = quantity if attempt["action"] == "OPEN_LONG" else -quantity
+    facts = {
+        "product": "SPOT", "signed_quantity": canonical_decimal(signed),
+        "average_entry_price_or_null": (
+            None if quantity == 0 else canonical_decimal(quote / quantity)
+        ), "realized_pnl": "0", "unrealized_pnl": "0",
+        "cumulative_fee": canonical_decimal(fee), "funding": "0",
+        "wallet_balance": canonical_decimal(capital - fee),
+        "available_balance": canonical_decimal(capital - quote - fee),
+        "open_order_count": 0,
+        "protective_stop_client_id_or_null": None,
+        "fill_ids": sorted(item["trade_id"] for item in fills),
+    }
+    return {**facts, "ledger_projection": dict(facts)}
+def _finish_spot(state, attempt, activation, order, trades, account, recorded_at):
+    private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
+    _append(state, "BINANCE_FILLS_FEES_REPLAYED", attempt["opportunity_id"], {
+        "intent_id": attempt["intent_id"], "fill_ids": private["fill_ids"],
+        "cumulative_fee": canonical_decimal(sum(
+            (Decimal(payload["fee"]) for event_type, payload in _private_payloads(
+                state, attempt["opportunity_id"]
+            ) if event_type == "BINANCE_FILL_OBSERVED"), Decimal(0),
+        )),
+    }, recorded_at)
+    data = reconcile_binance_private_state(
+        event_projection=_spot_facts(state, attempt, activation),
+        order_documents=(order,), trade_documents=trades,
+        account_document=account, position_document=b"[]",
+        income_documents=(), algo_documents=(),
+    )
+    reconciliation_id = load_binance_reconciliation_bytes(data)[
+        "reconciliation_id"
+    ]
+    _append(state, "BINANCE_POSITION_BALANCE_RECONCILED",
+            attempt["opportunity_id"], {
+        "intent_id": attempt["intent_id"],
+        "reconciliation_id": reconciliation_id,
+        "reconciliation_bytes_base64": base64.b64encode(data).decode("ascii"),
+        "reconciliation_sha256": hashlib.sha256(data).hexdigest(),
+    }, recorded_at)
+    _append(state, "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
+            attempt["opportunity_id"], {
+        "intent_id": attempt["intent_id"], "required": False,
+        "client_algo_id_or_null": None, "status": "NOT_REQUIRED",
+    }, recorded_at)
+    _append(state, "BINANCE_RECONCILIATION_SUCCEEDED",
+            attempt["opportunity_id"], {
+        "intent_id": attempt["intent_id"],
+        "reconciliation_id": reconciliation_id,
+    }, recorded_at)
+    return _status("TERMINAL_RECONCILED", attempt,
+                   reconciliation_id=reconciliation_id)
 def _observe_order(*, state, attempt, order_result, context):
     order = _document(order_result.body)
     order_id = order.get("orderId")
     if isinstance(order_id, bool) or not isinstance(order_id, int) or order_id <= 0:
         _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID")
     spot = attempt["product"] == "SPOT"
-    trades = _query(
+    trades_result = _query(
         "SPOT_TRADES" if spot else "FUTURES_TRADES",
         {"symbol": "ETHUSDT", "orderId": str(order_id)},
         context,
     )
-    account = _query(
+    account_result = _query(
         "SPOT_ACCOUNT" if spot else "FUTURES_POSITION",
         {} if spot else {"symbol": "ETHUSDT"},
         context,
     )
     events = apply_binance_order_observation(
         attempt=attempt, order=order_result.body,
-        trades=_tuple_documents(trades.body), account=account.body,
+        trades=_tuple_documents(trades_result.body), account=account_result.body,
     )
     private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
     for event in events:
@@ -210,6 +285,15 @@ def _observe_order(*, state, attempt, order_result, context):
             event["payload"], context.recorded_at,
         )
     terminal = events[-1]["event_type"] if events else None
+    if terminal in {
+        "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED",
+        "BINANCE_ORDER_EXPIRED", "BINANCE_ORDER_REJECTED",
+    } and spot:
+        return _finish_spot(
+            state, attempt, context.activation, order_result.body,
+            _tuple_documents(trades_result.body), account_result.body,
+            context.recorded_at,
+        )
     return _status(
         (
             "ORDER_IN_PROGRESS"
@@ -276,6 +360,20 @@ def run_challenger_replacement_binance_private_intent(
         credential, activation, build_identity, recorded_at, timestamp_ms
     )
     if existing is not None:
+        if existing["stage"] == "BINANCE_RECONCILIATION_SUCCEEDED":
+            data = base64.b64decode(
+                existing["reconciliation_bytes_base64"], validate=True,
+            )
+            loaded = load_binance_reconciliation_bytes(data)
+            if (hashlib.sha256(data).hexdigest()
+                    != existing["reconciliation_sha256"]
+                    or loaded["reconciliation_id"]
+                    != existing["reconciliation_id"]):
+                _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
+            return _status(
+                "TERMINAL_RECONCILED", attempt,
+                reconciliation_id=existing["reconciliation_id"],
+            )
         if existing["stage"] == "BINANCE_REQUEST_SEND_STARTED":
             return _recover_after_send(
                 state=state, attempt=attempt, context=context,
