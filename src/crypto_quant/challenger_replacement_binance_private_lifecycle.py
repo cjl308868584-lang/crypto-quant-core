@@ -1,16 +1,15 @@
 """Pure Binance-specific order preparation and observation normalization."""
-
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 from typing import Mapping
-
 from .canonical import canonical_decimal, canonical_json
 from .challenger_replacement_binance_private_contract import (
     BinancePrivateActivation,
 )
-
-
+from .challenger_replacement_binance_preflight import (
+    _POSITION_KEYS, _SPOT_KEYS,
+)
 _HEX = frozenset("0123456789abcdef")
 _PRODUCT_ACTION = {
     ("SPOT", "OPEN_LONG"): ("BUY", False, "SPOT_ORDER_QUERY"),
@@ -42,25 +41,20 @@ _FUTURES_TRADE_KEYS = frozenset({
     "symbol", "id", "orderId", "qty", "price", "quoteQty", "commission",
     "commissionAsset", "realizedPnl", "time", "buyer",
 })
-
 class BinancePrivateLifecycleError(ValueError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
         self.reason_code = reason_code
-
 def _fail(reason, error=None):
     failure = BinancePrivateLifecycleError(reason)
     if error is None:
         raise failure
     raise failure from error
-
 def _hash(value, length=64):
     return (isinstance(value, str) and len(value) == length
             and not set(value) - _HEX)
-
 def _identity(value):
     return isinstance(value, str) and 1 <= len(value) <= 256
-
 def _number(value, *, positive=False, signed=False):
     if not isinstance(value, str):
         _fail("BINANCE_ORDER_OBSERVATION_INVALID")
@@ -72,7 +66,6 @@ def _number(value, *, positive=False, signed=False):
             or (positive and number <= 0)):
         _fail("BINANCE_ORDER_OBSERVATION_INVALID")
     return number
-
 def _strict_pairs(pairs):
     result = {}
     for key, value in pairs:
@@ -80,20 +73,18 @@ def _strict_pairs(pairs):
             _fail("BINANCE_ORDER_OBSERVATION_INVALID")
         result[key] = value
     return result
-
-def _document(data):
+def _document(data, expected=dict):
     try:
         if not isinstance(data, bytes) or not 1 <= len(data) <= 1_048_576:
             raise ValueError
         value = json.loads(data.decode("utf-8"), object_pairs_hook=_strict_pairs)
-        if not isinstance(value, dict) or canonical_json(value).encode() != data:
+        if not isinstance(value, expected) or canonical_json(value).encode() != data:
             raise ValueError
         return value
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
         if isinstance(error, BinancePrivateLifecycleError):
             raise
         _fail("BINANCE_ORDER_OBSERVATION_INVALID", error)
-
 def derive_binance_client_order_id(*, plan_hash, block_id, intent_id,
                                    attempt_ordinal, product):
     """Derive the fixed 36-character venue alias for a full internal intent."""
@@ -108,7 +99,6 @@ def derive_binance_client_order_id(*, plan_hash, block_id, intent_id,
         "intent_id": intent_id, "plan_hash": plan_hash, "product": product,
     }).encode()
     return "cq77" + hashlib.sha256(body).hexdigest()[:32]
-
 def prepare_binance_order_attempt(*, intent, projection, preflight,
                                   activation):
     """Prepare one query-first order attempt without signing or sending it."""
@@ -190,7 +180,6 @@ def prepare_binance_order_attempt(*, intent, projection, preflight,
         "required_first_endpoint": query_endpoint,
         "send_permitted": client_id in absent,
     }
-
 def _valid_attempt(value):
     if (not isinstance(value, Mapping)
             or frozenset(value) != _ATTEMPT_KEYS
@@ -221,7 +210,6 @@ def _valid_attempt(value):
             and isinstance(client_id, str) and len(client_id) == 36
             and client_id.startswith("cq77")
             and not set(client_id[4:]) - _HEX)
-
 def _validate_order(attempt, order):
     product = attempt["product"]
     expected = _SPOT_ORDER_KEYS if product == "SPOT" else _FUTURES_ORDER_KEYS
@@ -251,12 +239,30 @@ def _validate_order(attempt, order):
     if original != Decimal(attempt["quantity"]):
         _fail("BINANCE_ORDER_IDENTITY_MISMATCH")
     return original, executed
-
 def _validate_account(product, account):
-    key = "balances" if product == "SPOT" else "positions"
-    if frozenset(account) != {key} or not isinstance(account[key], list):
+    if product == "SPOT":
+        balances = account.get("balances") if isinstance(account, dict) else None
+        if (not isinstance(balances, list) or frozenset(account) != _SPOT_KEYS
+                or any(not isinstance(item, dict)
+                       or frozenset(item) != {"asset", "free", "locked"}
+                       for item in balances)):
+            _fail("BINANCE_ORDER_OBSERVATION_INVALID")
+        assets = [item["asset"] for item in balances]
+        if (any(not isinstance(asset, str) for asset in assets)
+                or len(assets) != len(set(assets))
+                or not {"ETH", "USDT"}.issubset(assets)):
+            _fail("BINANCE_ORDER_OBSERVATION_INVALID")
+        for item in balances:
+            _number(item["free"]); _number(item["locked"])
+        return
+    position = account[0] if isinstance(account, list) and len(account) == 1 else None
+    if (not isinstance(position, dict) or frozenset(position) != _POSITION_KEYS
+            or position["symbol"] != "ETHUSDT"
+            or position["positionSide"] != "BOTH"
+            or position["marginAsset"] != "USDT"):
         _fail("BINANCE_ORDER_OBSERVATION_INVALID")
-
+    _number(position["positionAmt"], signed=True)
+    _number(position["entryPrice"])
 def _trade_payloads(attempt, order_id, documents):
     expected = _SPOT_TRADE_KEYS if attempt["product"] == "SPOT" else _FUTURES_TRADE_KEYS
     seen = {}
@@ -310,13 +316,12 @@ def _trade_payloads(attempt, order_id, documents):
         payload["intent_id"] = attempt["intent_id"]
         result.append({"event_type": "BINANCE_FILL_OBSERVED", "payload": payload})
     return result, cumulative, cumulative_fee
-
 def apply_binance_order_observation(*, attempt, order, trades, account):
     """Normalize one query plus exact trade/account replay into private events."""
     if not _valid_attempt(attempt) or not isinstance(trades, tuple):
         _fail("BINANCE_ORDER_OBSERVATION_INVALID")
     order_value = _document(order)
-    account_value = _document(account)
+    account_value = _document(account, (dict, list))
     _validate_account(attempt["product"], account_value)
     if frozenset(order_value) == {"code", "msg"}:
         if (isinstance(order_value["code"], bool)
@@ -373,8 +378,6 @@ def apply_binance_order_observation(*, attempt, order, trades, account):
             },
         })
     return tuple(events)
-
-
 _STOP_KEYS = frozenset({
     "protected_intent_id", "symbol", "algo_type", "order_type", "side",
     "position_side", "working_type", "quantity", "trigger_price",
@@ -386,7 +389,6 @@ _ALGO_KEYS = frozenset({
     "positionSide", "quantity", "triggerPrice", "workingType", "reduceOnly",
     "closePosition", "algoStatus",
 })
-
 def prepare_binance_protective_stop(*, short_quantity, trigger_price,
                                     intent_identity):
     """Prepare one query-first USDⓈ-M short protective stop."""
@@ -425,7 +427,6 @@ def prepare_binance_protective_stop(*, short_quantity, trigger_price,
         "required_first_endpoint": "FUTURES_ALGO_QUERY",
         "send_permitted": False,
     }
-
 def _valid_stop_expected(expected):
     if not isinstance(expected, Mapping) or frozenset(expected) != _STOP_KEYS:
         return False
@@ -450,7 +451,6 @@ def _valid_stop_expected(expected):
             and _identity(expected.get("protected_intent_id"))
             and isinstance(client, str) and len(client) == 36
             and client.startswith("cq77") and not set(client[4:]) - _HEX)
-
 def reconcile_binance_protective_stop(*, position, algo_order, expected):
     """Prove the exact stop covers current short exposure or fail closed."""
     if not _valid_stop_expected(expected):

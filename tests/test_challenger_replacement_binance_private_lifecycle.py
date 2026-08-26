@@ -76,6 +76,25 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
     def body(value):
         return canonical_json(value).encode("utf-8")
 
+    def spot_account(self, *, eth="0", usdt="100"):
+        value = json.loads(resources.files("crypto_quant").joinpath(
+            "fixtures", "challenger-replacement-v077",
+            "account-preflight-flat.json",
+        ).read_text(encoding="utf-8"))["SPOT_ACCOUNT"]
+        balances = {item["asset"]: item for item in value["balances"]}
+        balances["ETH"]["free"] = eth
+        balances["USDT"]["free"] = usdt
+        return self.body(value)
+
+    def futures_position(self, *, quantity="0", entry="0"):
+        value = json.loads(resources.files("crypto_quant").joinpath(
+            "fixtures", "challenger-replacement-v077",
+            "account-preflight-flat.json",
+        ).read_text(encoding="utf-8"))["FUTURES_POSITION"]
+        value[0]["positionAmt"] = quantity
+        value[0]["entryPrice"] = entry
+        return self.body(value)
+
     def spot_order(self, attempt, status="NEW", executed="0"):
         return self.body({
             "symbol": "ETHUSDT", "orderId": 101,
@@ -194,10 +213,7 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
             attempt=attempt,
             order=self.spot_order(attempt, "PARTIALLY_FILLED", "0.015"),
             trades=trades + trades[:1],
-            account=self.body({"balances": [
-                {"asset": "ETH", "free": "0.015", "locked": "0"},
-                {"asset": "USDT", "free": "69.975", "locked": "0"},
-            ]}),
+            account=self.spot_account(eth="0.015", usdt="69.975"),
         )
         self.assertEqual([event["event_type"] for event in events], [
             "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
@@ -222,10 +238,7 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
             attempt=attempt,
             order=self.futures_order(attempt, "CANCELED", "0.025"),
             trades=(trade,),
-            account=self.body({"positions": [{
-                "symbol": "ETHUSDT", "positionSide": "BOTH",
-                "positionAmt": "-0.025", "entryPrice": "2000",
-            }]}),
+            account=self.futures_position(quantity="-0.025", entry="2000"),
         )
         self.assertEqual(events[-1]["event_type"], "BINANCE_ORDER_FILLED")
         self.assertEqual(events[-1]["payload"]["venue_terminal_status"],
@@ -233,10 +246,7 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
 
     def test_reject_cancel_without_fill_and_unknown_are_distinct(self):
         attempt = self.prepare()
-        account = self.body({"balances": [
-            {"asset": "ETH", "free": "0", "locked": "0"},
-            {"asset": "USDT", "free": "100", "locked": "0"},
-        ]})
+        account = self.spot_account()
         rejected = apply_binance_order_observation(
             attempt=attempt,
             order=self.body({"code": -2010, "msg": "rejected"}),
@@ -262,7 +272,7 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
                 "qty": "0.020", "price": "2000", "quoteQty": "40",
                 "commission": "0.04", "commissionAsset": "USDT",
                 "time": 1787832000001, "isBuyer": True}
-        account = self.body({"balances": []})
+        account = self.spot_account()
         cases = (
             ((self.body(base), self.body({**base, "price": "2001"})),
              "BINANCE_CONFLICTING_DUPLICATE_FILL"),
@@ -298,8 +308,25 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
                 ):
                     apply_binance_order_observation(
                         attempt=attempt, order=bad, trades=(),
-                        account=self.body({"balances": []}),
+                        account=self.spot_account(),
                     )
+
+    def test_simplified_account_wrappers_are_not_accepted_as_venue_responses(self):
+        cases = (
+            (self.prepare(), self.body({"balances": []})),
+            (self.prepare(product="PERPETUAL", action="OPEN_SHORT"),
+             self.body({"positions": []})),
+        )
+        for attempt, account in cases:
+            order = (self.spot_order(attempt) if attempt["product"] == "SPOT"
+                     else self.futures_order(attempt))
+            with self.subTest(product=attempt["product"]), self.assertRaisesRegex(
+                BinancePrivateLifecycleError,
+                "BINANCE_ORDER_OBSERVATION_INVALID",
+            ):
+                apply_binance_order_observation(
+                    attempt=attempt, order=order, trades=(), account=account,
+                )
 
     def test_tampered_attempt_and_impossible_venue_status_fail_closed(self):
         original = self.prepare()
@@ -317,7 +344,7 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
                 ):
                     apply_binance_order_observation(
                         attempt=attempt, order=self.spot_order(original),
-                        trades=(), account=self.body({"balances": []}),
+                        trades=(), account=self.spot_account(),
                     )
         with self.assertRaisesRegex(
             BinancePrivateLifecycleError, "BINANCE_ORDER_FILL_REPLAY_MISMATCH"
@@ -325,7 +352,7 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
             apply_binance_order_observation(
                 attempt=original,
                 order=self.spot_order(original, "FILLED", "0"), trades=(),
-                account=self.body({"balances": []}),
+                account=self.spot_account(),
             )
 
     def test_futures_negative_realized_pnl_is_preserved(self):
@@ -340,7 +367,8 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
         events = apply_binance_order_observation(
             attempt=attempt,
             order=self.futures_order(attempt, "FILLED", "0.025"),
-            trades=(trade,), account=self.body({"positions": []}),
+            trades=(trade,),
+            account=self.futures_position(quantity="-0.025", entry="2000"),
         )
         self.assertEqual(events[1]["payload"]["realized_pnl"], "-0.01")
 
@@ -367,7 +395,7 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
                 **fixture["ACK"],
                 "clientOrderId": attempt["venue_client_order_id"],
                 "origQty": attempt["quantity"],
-            }), trades=(), account=self.body({"balances": []}),
+            }), trades=(), account=self.spot_account(),
         )
         validator = Draft202012Validator(schema)
         for event in observed:
