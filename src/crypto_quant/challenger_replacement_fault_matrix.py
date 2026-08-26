@@ -4,6 +4,8 @@ import copy
 import hashlib
 import json
 import os
+import subprocess
+import sys
 import tempfile
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -124,6 +126,47 @@ def _boundary(case_id: str) -> str:
     return "IDEMPOTENT_EVENT_REPLAY"
 
 
+def _event_candidate(root, build_identity, index, previous, suffix=""):
+    kinds = ("INPUT_PREPARED", "RESULT_PREPARED", "OPPORTUNITY_OBSERVED")
+    return build_challenger_replacement_event(
+        sequence=index + 1, event_type=kinds[index], slot_id="probe",
+        worker_id="v076-fault-matrix", recorded_at="2026-08-26T00:00:00.000Z",
+        previous_event_hash=previous,
+        payload_bytes=canonical_json({"phase": index, "suffix": suffix}).encode(),
+        plan_hash="1" * 64, build_identity_hash=business_hash(build_identity),
+        event_root=root,
+    )
+
+
+def _event_child_cli(arguments):
+    identity = ChallengerReplacementEventRootIdentity(
+        arguments[0], *(int(value) for value in arguments[1:4]), "0700"
+    )
+    build_identity = _strict_json_bytes(bytes.fromhex(arguments[4]))
+    previous = "0" * 64
+    with open_challenger_replacement_event_root(identity) as root:
+        for index in range(int(arguments[5])):
+            event = _event_candidate(root, build_identity, index, previous)
+            publish_challenger_replacement_event(root, event)
+            previous = event.event_hash
+    os._exit(73)
+
+
+def _run_event_child(identity, build_identity, initial):
+    code = (
+        "import sys; from crypto_quant.challenger_replacement_fault_matrix "
+        "import _event_child_cli; _event_child_cli(sys.argv[1:])"
+    )
+    process = subprocess.Popen([
+        sys.executable, "-c", code, identity.absolute_path,
+        str(identity.device), str(identity.inode), str(identity.uid),
+        canonical_json(build_identity).encode().hex(), str(initial),
+    ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+       stderr=subprocess.DEVNULL, close_fds=True)
+    if process.wait() != 73 or process.pid == os.getpid():
+        _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
+
+
 def _event_probe(case_id, build_identity):
     with tempfile.TemporaryDirectory(prefix="cq-v076-fault-") as directory:
         os.chmod(directory, 0o700)
@@ -131,16 +174,6 @@ def _event_probe(case_id, build_identity):
         identity = ChallengerReplacementEventRootIdentity(
             os.path.realpath(directory), entry.st_dev, entry.st_ino,
             entry.st_uid, "0700")
-        def candidate(root, index, previous, suffix=""):
-            kinds = ("INPUT_PREPARED", "RESULT_PREPARED", "OPPORTUNITY_OBSERVED")
-            return build_challenger_replacement_event(
-                sequence=index + 1, event_type=kinds[index], slot_id="probe",
-                worker_id="v076-fault-matrix", recorded_at="2026-08-26T00:00:00.000Z",
-                previous_event_hash=previous,
-                payload_bytes=canonical_json({"phase": index, "suffix": suffix}).encode(),
-                plan_hash="1" * 64, build_identity_hash=business_hash(build_identity),
-                event_root=root,
-            )
         failure = {
             "DISK_WRITE_FAILURE": patch.object(event_module, "_write_all", side_effect=OSError()),
             "FILE_FSYNC_FAILURE": patch.object(event_module, "_fsync_retry", side_effect=OSError()),
@@ -150,7 +183,7 @@ def _event_probe(case_id, build_identity):
         }.get(case_id)
         if failure is not None:
             with open_challenger_replacement_event_root(identity) as root:
-                event = candidate(root, 0, "0" * 64)
+                event = _event_candidate(root, build_identity, 0, "0" * 64)
                 try:
                     with failure:
                         publish_challenger_replacement_event(root, event)
@@ -166,24 +199,36 @@ def _event_probe(case_id, build_identity):
             "PROCESS_TERMINATION_AFTER_TERMINAL_APPEND": 3,
         }.get(case_id, 3)
         previous = "0" * 64
-        with open_challenger_replacement_event_root(identity) as root:
-            for index in range(initial):
-                event = candidate(root, index, previous)
-                publish_challenger_replacement_event(root, event)
-                previous = event.event_hash
+        process_case = case_id.startswith("PROCESS_TERMINATION") or case_id == (
+            "FRESH_PROCESS_REPLAY_IDEMPOTENT_RETRY"
+        )
+        if process_case:
+            _run_event_child(identity, build_identity, initial)
+        else:
+            with open_challenger_replacement_event_root(identity) as root:
+                for index in range(initial):
+                    event = _event_candidate(
+                        root, build_identity, index, previous
+                    )
+                    publish_challenger_replacement_event(root, event)
+                    previous = event.event_hash
         with open_challenger_replacement_event_root(identity) as root:
             replayed = replay_challenger_replacement_events(root)
             if len(replayed.events) != initial:
                 _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
             if case_id == "STALE_OPTIMISTIC_TOKEN":
-                stale = candidate(root, 0, "0" * 64, "conflict")
+                stale = _event_candidate(
+                    root, build_identity, 0, "0" * 64, "conflict"
+                )
                 try:
                     publish_challenger_replacement_event(root, stale)
                 except ChallengerReplacementEventError:
                     return _boundary(case_id)
                 _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
             for index in range(initial, 3):
-                event = candidate(root, index, replayed.last_event_hash)
+                event = _event_candidate(
+                    root, build_identity, index, replayed.last_event_hash
+                )
                 publish_challenger_replacement_event(root, event)
                 replayed = replay_challenger_replacement_events(root)
             final = replay_challenger_replacement_events(root)
@@ -308,11 +353,11 @@ def _network_probe(case_id):
     url = "https://data-api.binance.vision/api/v3/time"
     moment = datetime(2026, 8, 26, tzinfo=timezone.utc)
     if case_id == "NETWORK_LOSS_BEFORE_REQUEST":
-        request = Request(url, data=b"forbidden")
-        try:
-            http_module.open_fixed_public_request(request, max_body_bytes=1024)
-        except http_module.PublicHttpError:
-            return _boundary(case_id)
+        with patch.object(http_module, "build_opener", return_value=_ProbeOpener(failure=True)):
+            try:
+                http_module.open_fixed_public_request(Request(url), max_body_bytes=1024)
+            except http_module.PublicHttpError:
+                return _boundary(case_id)
     elif case_id == "NETWORK_LOSS_AFTER_REQUEST_BEFORE_RESPONSE":
         with patch.object(http_module, "build_opener", return_value=_ProbeOpener(failure=True)):
             try:
@@ -327,8 +372,38 @@ def _network_probe(case_id):
                 Request(url), max_body_bytes=1024
             )
         attempt = http_module.attempt_document(response, 1)
-        if attempt["outcome"] == "HTTP_RESPONSE" and attempt["body_size_bytes"] == 2:
-            return _boundary(case_id)
+        receipt_hash = hashlib.sha256(canonical_json(attempt).encode()).hexdigest()
+        with tempfile.TemporaryDirectory(prefix="cq-v076-network-receipt-") as directory:
+            os.chmod(directory, 0o700)
+            entry = os.stat(directory, follow_symlinks=False)
+            identity = ChallengerReplacementEventRootIdentity(
+                os.path.realpath(directory), entry.st_dev, entry.st_ino,
+                entry.st_uid, "0700")
+            with open_challenger_replacement_event_root(identity) as root:
+                event = _event_candidate(
+                    root, {"receipt": receipt_hash}, 0, "0" * 64,
+                    receipt_hash,
+                )
+                publish_challenger_replacement_event(root, event)
+            with patch.object(
+                http_module, "build_opener", return_value=_ProbeOpener(failure=True)
+            ):
+                try:
+                    http_module.open_fixed_public_request(
+                        Request(url), max_body_bytes=1024
+                    )
+                except http_module.PublicHttpError:
+                    pass
+                else:
+                    _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+            with open_challenger_replacement_event_root(identity) as root:
+                replayed = replay_challenger_replacement_events(root)
+                if (
+                    len(replayed.events) == 1
+                    and replayed.events[0].event_hash == event.event_hash
+                    and attempt["outcome"] == "HTTP_RESPONSE"
+                ):
+                    return _boundary(case_id)
     _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
 
 

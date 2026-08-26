@@ -1,4 +1,5 @@
 import inspect
+import subprocess
 import unittest
 from copy import deepcopy
 from unittest.mock import patch
@@ -153,6 +154,18 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
                 )
             self.assertEqual(counts[0], expected)
 
+    def test_process_termination_and_fresh_replay_use_a_new_interpreter(self):
+        original = subprocess.Popen
+        for case_id in (
+            "PROCESS_TERMINATION_AFTER_INPUT_APPEND",
+            "FRESH_PROCESS_REPLAY_IDEMPOTENT_RETRY",
+        ):
+            with self.subTest(case_id=case_id), patch.object(
+                subprocess, "Popen", wraps=original,
+            ) as invoked:
+                fault_module._probe_boundary(case_id, BUILD)
+            self.assertEqual(invoked.call_count, 1)
+
     def test_lifecycle_fault_cases_execute_the_existing_deterministic_kernel(self):
         cases = (
             "PARTIAL_SIMULATED_FILL", "LATE_SIMULATED_FILL",
@@ -216,6 +229,27 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
         self.assertEqual(
             after_receipt["observed_boundary"], "RESPONSE_RECEIPT_REPLAYED"
         )
+
+    def test_network_faults_cross_transport_and_durable_receipt_boundaries(self):
+        calls = []
+        original_open = fault_module._ProbeOpener.open
+        def tracked_open(instance, *args, **kwargs):
+            calls.append(args)
+            return original_open(instance, *args, **kwargs)
+        with patch.object(fault_module._ProbeOpener, "open", new=tracked_open):
+            fault_module._probe_boundary("NETWORK_LOSS_BEFORE_REQUEST", BUILD)
+        self.assertEqual(len(calls), 1)
+
+        with patch.object(
+            fault_module, "publish_challenger_replacement_event",
+            wraps=fault_module.publish_challenger_replacement_event,
+        ) as published, patch.object(
+            fault_module, "replay_challenger_replacement_events",
+            wraps=fault_module.replay_challenger_replacement_events,
+        ) as replayed:
+            fault_module._probe_boundary("NETWORK_LOSS_AFTER_RESPONSE_RECEIPT", BUILD)
+        self.assertGreaterEqual(published.call_count, 1)
+        self.assertGreaterEqual(replayed.call_count, 1)
 
 
 if __name__ == "__main__":
