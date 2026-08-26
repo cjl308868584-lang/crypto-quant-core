@@ -586,9 +586,14 @@ PYTHONPATH=src:tests python3 -m unittest tests.test_challenger_replacement_binan
 
 - [ ] **Step 3: Implement stop event branch**
 
-Append `BINANCE_STOP_INTENT_AUTHORIZED`, `BINANCE_STOP_ACKNOWLEDGED`,
+Append `BINANCE_STOP_INTENT_AUTHORIZED`, `BINANCE_STOP_ABSENCE_CHECKED`,
+`BINANCE_STOP_SIGNED_REQUEST_PREPARED`,
+`BINANCE_STOP_REQUEST_SEND_STARTED`, `BINANCE_STOP_ACKNOWLEDGED`,
 `BINANCE_STOP_RECONCILED`, `BINANCE_STOP_REPLACEMENT_STARTED` and terminal
-replacement events. Never mark exposure healthy between fill and confirmed stop.
+replacement events. Crash tests cover every boundary: before send-start an
+exact prepared request may resume; at or after send-start only clientAlgoId
+query is allowed and create is never resent. Never mark exposure healthy
+between fill and confirmed stop.
 
 - [ ] **Step 4: Run lifecycle/stop tests**
 

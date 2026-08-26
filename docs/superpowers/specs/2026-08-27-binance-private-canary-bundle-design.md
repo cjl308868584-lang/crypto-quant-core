@@ -301,6 +301,31 @@ partial entry fill must create or replace protection for the exact exposed
 quantity before more risk is allowed. Loss, cancellation, rejection or
 unverifiable status of the stop while exposed is an absolute hard stop.
 
+The append-only stop substate has the exact durable order below. These three
+query/send boundary events are required so a process crash can never turn an
+unknown mutation into a second create request:
+
+```text
+BINANCE_STOP_INTENT_AUTHORIZED
+BINANCE_STOP_ABSENCE_CHECKED
+BINANCE_STOP_SIGNED_REQUEST_PREPARED
+BINANCE_STOP_REQUEST_SEND_STARTED
+BINANCE_STOP_ACKNOWLEDGED
+BINANCE_STOP_RECONCILED
+```
+
+`STOP_ABSENCE_CHECKED` binds the exact client-algo query response hash and is
+valid only for a proven `-2013` absence. `STOP_SIGNED_REQUEST_PREPARED` binds
+the deterministic Algo-create request ID, encoded-parameter hash and timestamp.
+`STOP_REQUEST_SEND_STARTED` is appended and durably replayed before transport.
+Before this event, a fresh process may rebuild the exact prepared request; at
+or after this event it may only query `FUTURES_ALGO_QUERY` by the same
+`clientAlgoId` and must never send create again. An absent or unresolved query
+after send-start is a hard stop, not mutation-retry authority. Stop replacement
+uses the same candidate substate while the verified old stop remains active;
+only a reconciled candidate may precede replacement success and old-stop
+cancellation.
+
 ### 4.8 Ceremony and stage controllers
 
 The ceremony controller implements the exact v0.75 sequence and label
