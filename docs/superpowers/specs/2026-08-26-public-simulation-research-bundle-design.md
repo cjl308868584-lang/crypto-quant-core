@@ -1,7 +1,7 @@
 # v0.76 Public Simulation and Research Bundle Design
 
-**Date:** 2026-08-26  
-**Target release:** `v0.76.0`  
+**Date:** 2026-08-26
+**Target release:** `v0.76.0`
 **Status:** in-chat design and public-input correction approved; corrected exact
 written spec awaiting review
 **Release class:** code, schemas, deterministic fixtures and candidate
