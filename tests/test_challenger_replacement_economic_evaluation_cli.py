@@ -1,7 +1,10 @@
 import inspect
+import json
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+
+from unittest.mock import patch
 
 from crypto_quant.challenger_replacement_economic_evaluation_cli import main
 
@@ -16,6 +19,25 @@ class EconomicEvaluationCliTests(unittest.TestCase):
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             self.assertEqual(main(["--help"]), 0)
             self.assertEqual(main(["--path", "/tmp/result"]), 2)
+
+    def test_fixed_sources_run_the_real_evaluator_and_emit_canonical_json(self):
+        sources = {
+            "facts": object(), "economic_plan": {}, "build_identity": {},
+        }
+        expected = {"status": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"}
+        stdout, stderr = StringIO(), StringIO()
+        with patch(
+            "crypto_quant.challenger_replacement_economic_evaluation_cli._load_fixed_evaluation_sources",
+            return_value=sources,
+        ), patch(
+            "crypto_quant.challenger_replacement_economic_evaluation_cli.evaluate_challenger_replacement_economic_result",
+            return_value=expected,
+        ) as evaluate, redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main([])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), expected)
+        self.assertEqual(stderr.getvalue(), "")
+        evaluate.assert_called_once_with(**sources)
 
 
 if __name__ == "__main__":
