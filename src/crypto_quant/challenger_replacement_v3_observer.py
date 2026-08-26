@@ -5,7 +5,7 @@ import stat
 import hashlib
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional
 
 from .canonical import utc_datetime
@@ -13,6 +13,8 @@ from .challenger_replacement_accelerated_canary_plan import (
     build_challenger_replacement_accelerated_canary_plan,
 )
 from .challenger_replacement_economic_evaluation import (
+    ChallengerReplacementEconomicEvaluationError,
+    build_economic_evaluation_facts_from_state,
     build_economic_progress_facts_from_state,
     observe_challenger_replacement_economic_progress,
 )
@@ -238,6 +240,43 @@ def _load_installed_observation(root):
         return ChallengerReplacementV3Observation(
             deployment, receipt, event_projection, operational, progress, health
         )
+
+
+def _load_fixed_economic_sources():
+    root = _runtime_entry()
+    if root is None:
+        raise OSError("fixed runtime root absent")
+    try:
+        deployment = _load_deployment(root)
+        with _open_state(deployment) as (identity, state):
+            projection = state._replay()
+            data = _read_fixed(root, _START)
+            if data is None:
+                raise OSError("fixed start receipt absent")
+            receipt = load_challenger_replacement_v3_start_receipt_bytes(
+                data, deployment=deployment, event_projection=projection,
+                event_root_identity=identity,
+            )
+            observed_at = _observed_at()
+            start = datetime.fromisoformat(
+                receipt["economic_start"]["scheduled_for"].replace("Z", "+00:00")
+            )
+            if datetime.fromisoformat(observed_at.replace("Z", "+00:00")) < (
+                start + timedelta(days=90)
+            ):
+                raise ChallengerReplacementEconomicEvaluationError(
+                    "ECONOMIC_TAIL_NOT_REACHED"
+                )
+            return {
+                "facts": build_economic_evaluation_facts_from_state(
+                    state=state, start_receipt=receipt,
+                    observed_at=observed_at, tail_mark_or_null=None,
+                ),
+                "economic_plan": build_challenger_replacement_economic_plan(),
+                "build_identity": deployment["candidate_build"],
+            }
+    finally:
+        os.close(root.fd)
 
 
 def _sentinel(health):

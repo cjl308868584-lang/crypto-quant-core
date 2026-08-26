@@ -13,7 +13,10 @@ _SOURCE_KEYS = {"facts", "economic_plan", "build_identity"}
 
 
 def _load_fixed_evaluation_sources():
-    raise OSError("v3 installation contract unavailable")
+    from .challenger_replacement_v3_observer import (
+        _load_fixed_economic_sources,
+    )
+    return _load_fixed_economic_sources()
 
 
 def main(argv=None):
