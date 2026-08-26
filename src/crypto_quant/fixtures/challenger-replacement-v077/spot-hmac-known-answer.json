@@ -1,0 +1,8 @@
+{
+  "$schema": "./binance-official-hmac-known-answer-v1",
+  "source": "https://developers.binance.com/en/docs/products/spot/rest-api",
+  "observed_on": "2026-08-27",
+  "illustrative_public_hmac_key_ascii": "NhqPtmdSJYdKjVHjA7PZj4Mge3R5YNiP1e3UZjInClVN65XAbvqqM6A7H5fATj0j",
+  "payload_ascii": "symbol=LTCBTC&side=BUY&type=LIMIT&timeInForce=GTC&quantity=1&price=0.1&recvWindow=5000&timestamp=1499827319559",
+  "expected_hmac_sha256_lowerhex": "c8db56825ae71d6d79447849e617115f4a920fa2acdcab2b053c4b2838bd6b71"
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "./binance-futures-request-known-answers-v1",
+  "source": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade",
+  "observed_on": "2026-08-27",
+  "cases": [
+    {
+      "case_id": "FUTURES_OPEN_SHORT_MARKET_ONE_WAY",
+      "endpoint_id": "FUTURES_ORDER_CREATE",
+      "parameters": {
+        "newClientOrderId": "cq77cccccccccccccccccccccccccccccccc",
+        "positionSide": "BOTH",
+        "quantity": "0.002",
+        "reduceOnly": "false",
+        "side": "SELL",
+        "symbol": "ETHUSDT",
+        "type": "MARKET"
+      }
+    },
+    {
+      "case_id": "FUTURES_PROTECTIVE_STOP_EXACT_QUANTITY",
+      "endpoint_id": "FUTURES_ALGO_CREATE",
+      "parameters": {
+        "algoType": "CONDITIONAL",
+        "clientAlgoId": "cq77dddddddddddddddddddddddddddddddd",
+        "closePosition": "false",
+        "positionSide": "BOTH",
+        "quantity": "0.002",
+        "reduceOnly": "true",
+        "side": "BUY",
+        "symbol": "ETHUSDT",
+        "triggerPrice": "3200",
+        "type": "STOP_MARKET",
+        "workingType": "MARK_PRICE"
+      }
+    }
+  ]
+}

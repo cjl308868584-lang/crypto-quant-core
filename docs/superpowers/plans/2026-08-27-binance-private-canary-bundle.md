@@ -238,6 +238,7 @@ git commit -m "feat: freeze v0.77 private event contract"
 @dataclass(frozen=True)
 class BinancePrivateRequest:
     request_id: str
+    endpoint_id: str
     host: str
     method: str
     path: str
@@ -247,8 +248,11 @@ class BinancePrivateRequest:
 
 def build_binance_private_request(endpoint_id: str, parameters: Mapping[str, str],
                                   *, timestamp_ms: int) -> BinancePrivateRequest
+def compute_binance_hmac_sha256(payload: bytes, hmac_key: bytes) -> str
 def sign_binance_private_request(request: BinancePrivateRequest,
                                  hmac_secret: bytes) -> str
+def validate_binance_request_time(*, timestamp_ms: int,
+                                  server_time_ms: int) -> int
 def classify_binance_private_response(request: BinancePrivateRequest, *,
                                       status: int, body: bytes,
                                       headers: Mapping[str, str]) -> Mapping[str, object]
