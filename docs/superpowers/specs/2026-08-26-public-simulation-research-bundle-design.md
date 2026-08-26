@@ -739,10 +739,10 @@ The revised evidence-based budget is:
 
 ```text
 completed capture/simulation/runtime/deployment/start   2,324 actual
-72-hour qualification + fault receipt                    500 maximum
+72-hour qualification + fault receipt                    575 actual
 90-day evaluator + strict result loader                   800 maximum
 observer + operations projection integration              350 maximum
-deletion/refactor and measurement contingency              226 maximum
+deletion/refactor and measurement contingency              151 maximum
 hard cap                                                  4,200
 ```
 

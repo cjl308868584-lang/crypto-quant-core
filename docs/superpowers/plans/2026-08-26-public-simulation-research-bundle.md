@@ -1725,8 +1725,9 @@ or retag another commit.
 - [ ] Operational qualification cannot synthesize 72 hours; economic evaluator
   cannot inspect or disclose pre-tail outcomes.
 - [ ] v1/v2 operations projections remain exact; v3 is loopback-only/read-only.
-- [ ] New production Python is below 4,200 physical lines; Task 8 adds at most
-  500, Tasks 9-10 together add at most 800, and Task 11 adds at most 350.
+- [ ] New production Python is below 4,200 physical lines; Task 8 adds 575
+  measured lines, Tasks 9-10 together add at most 800, and Task 11 adds at most
+  350. The 75-line Task 8 overage is deducted from the section-13 contingency.
 - [ ] No install, start, credential, account, Broker, real order, fund movement,
   production state write, 72-hour timer or 90-day timer occurred.
 - [ ] Critical/Important review findings are zero and final local/remote release
