@@ -37,10 +37,7 @@ from .challenger_replacement_simulation_contract import (
 
 
 _WORKER_ID = "challenger-replacement-v3-public-runtime"
-_FIXED_SOURCE_KEYS = {
-    "state", "event_root", "plan", "economic_plan",
-    "predecessor_contract", "public_contract", "build_identity",
-}
+_FIXED_SOURCE_KEYS = set("state event_root plan economic_plan predecessor_contract public_contract build_identity".split())
 
 
 def _invalid(reason="CHALLENGER_REPLACEMENT_OPPORTUNITY_INPUT_INVALID"):

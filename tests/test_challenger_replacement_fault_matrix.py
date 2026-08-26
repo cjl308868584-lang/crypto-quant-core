@@ -10,6 +10,7 @@ from crypto_quant.challenger_replacement_fault_matrix import (
     load_challenger_replacement_fault_matrix_bytes,
     run_challenger_replacement_fault_matrix,
 )
+import crypto_quant.challenger_replacement_fault_matrix as fault_module
 
 
 BUILD = {
@@ -115,6 +116,26 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
                 body, build_identity=BUILD
             )
         self.assertEqual(loaded, self.receipt)
+
+    def test_process_termination_cases_reopen_each_distinct_durable_boundary(self):
+        cases = EXPECTED_CASE_IDS[:6]
+        expected_counts = (0, 1, 1, 2, 2, 3)
+        original = fault_module.replay_challenger_replacement_events
+        for case_id, expected in zip(cases, expected_counts):
+            counts = []
+            def recorded(root):
+                value = original(root)
+                counts.append(len(value.events))
+                return value
+            with self.subTest(case_id=case_id), patch.object(
+                fault_module, "replay_challenger_replacement_events",
+                side_effect=recorded,
+            ):
+                self.assertEqual(
+                    fault_module._probe_boundary(case_id, BUILD),
+                    "IDEMPOTENT_EVENT_REPLAY",
+                )
+            self.assertEqual(counts[0], expected)
 
 
 if __name__ == "__main__":

@@ -7,18 +7,15 @@ import os
 import tempfile
 from functools import lru_cache
 from importlib import resources
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any, Dict, Mapping
 from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
 
 from . import challenger_replacement_events as event_module
-from .canonical import business_hash, canonical_decimal, canonical_json, stable_id
+from .canonical import business_hash, canonical_json, stable_id
 from .challenger_replacement_accelerated_canary_plan import (
     build_challenger_replacement_accelerated_canary_plan,
-)
-from .challenger_replacement_economic_plan import (
-    build_challenger_replacement_economic_plan,
 )
 from .challenger_replacement_events import (
     ChallengerReplacementEventError,
@@ -31,17 +28,7 @@ from .challenger_replacement_events import (
 )
 from .challenger_replacement_opportunity_projection import validate_build_identity
 from .challenger_replacement_plan import _strict_json_bytes
-from .challenger_replacement_plan_v3 import build_challenger_replacement_plan_v3
 from .challenger_replacement_public_http import transport_failure_attempt
-from .challenger_replacement_public_simulation import (
-    build_challenger_replacement_public_genesis_snapshot,
-)
-from .challenger_replacement_public_simulation_contract import (
-    build_challenger_replacement_public_simulation_contract,
-)
-from .challenger_replacement_simulation_contract import (
-    build_challenger_replacement_simulation_contract,
-)
 from .evidence import artifact_self_hash
 
 
@@ -125,39 +112,67 @@ def _event_probe(case_id, build_identity):
         os.chmod(directory, 0o700)
         entry = os.stat(directory, follow_symlinks=False)
         identity = ChallengerReplacementEventRootIdentity(
-            absolute_path=os.path.realpath(directory), device=entry.st_dev,
-            inode=entry.st_ino, uid=entry.st_uid, mode_octal="0700",
-        )
-        with open_challenger_replacement_event_root(identity) as root:
-            event = build_challenger_replacement_event(
-                sequence=1, event_type="FAULT_MATRIX_PROBE", slot_id="probe",
-                worker_id="v076-fault-matrix",
-                recorded_at="2026-08-26T00:00:00.000Z",
-                previous_event_hash="0" * 64,
-                payload_bytes=b'{"probe":true}', plan_hash="1" * 64,
-                build_identity_hash=business_hash(build_identity), event_root=root,
+            os.path.realpath(directory), entry.st_dev, entry.st_ino,
+            entry.st_uid, "0700")
+        def candidate(root, index, previous, suffix=""):
+            kinds = ("INPUT_PREPARED", "RESULT_PREPARED", "OPPORTUNITY_OBSERVED")
+            return build_challenger_replacement_event(
+                sequence=index + 1, event_type=kinds[index], slot_id="probe",
+                worker_id="v076-fault-matrix", recorded_at="2026-08-26T00:00:00.000Z",
+                previous_event_hash=previous,
+                payload_bytes=canonical_json({"phase": index, "suffix": suffix}).encode(),
+                plan_hash="1" * 64, build_identity_hash=business_hash(build_identity),
+                event_root=root,
             )
-            failure = None
-            if case_id == "DISK_WRITE_FAILURE":
-                failure = patch.object(event_module, "_write_all", side_effect=OSError())
-            elif case_id == "FILE_FSYNC_FAILURE":
-                failure = patch.object(event_module, "_fsync_retry", side_effect=OSError())
-            elif case_id == "DIRECTORY_FSYNC_FAILURE":
-                failure = patch.object(
-                    event_module, "_fsync_retry", side_effect=[None, OSError()]
-                )
-            if failure is not None:
+        failure = {
+            "DISK_WRITE_FAILURE": patch.object(event_module, "_write_all", side_effect=OSError()),
+            "FILE_FSYNC_FAILURE": patch.object(event_module, "_fsync_retry", side_effect=OSError()),
+            "DIRECTORY_FSYNC_FAILURE": patch.object(
+                event_module, "_fsync_retry", side_effect=[None, OSError()]
+            ),
+        }.get(case_id)
+        if failure is not None:
+            with open_challenger_replacement_event_root(identity) as root:
+                event = candidate(root, 0, "0" * 64)
                 try:
                     with failure:
                         publish_challenger_replacement_event(root, event)
                 except ChallengerReplacementEventError:
                     return _boundary(case_id)
-                _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
-            publish_challenger_replacement_event(root, event)
+            _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+        initial = {
+            "PROCESS_TERMINATION_BEFORE_INPUT_APPEND": 0,
+            "PROCESS_TERMINATION_AFTER_INPUT_APPEND": 1,
+            "PROCESS_TERMINATION_BEFORE_RESULT_APPEND": 1,
+            "PROCESS_TERMINATION_AFTER_RESULT_APPEND": 2,
+            "PROCESS_TERMINATION_BEFORE_TERMINAL_APPEND": 2,
+            "PROCESS_TERMINATION_AFTER_TERMINAL_APPEND": 3,
+        }.get(case_id, 3)
+        previous = "0" * 64
+        with open_challenger_replacement_event_root(identity) as root:
+            for index in range(initial):
+                event = candidate(root, index, previous)
+                publish_challenger_replacement_event(root, event)
+                previous = event.event_hash
+        with open_challenger_replacement_event_root(identity) as root:
             replayed = replay_challenger_replacement_events(root)
-            if len(replayed.events) != 1:
+            if len(replayed.events) != initial:
                 _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
-            publish_challenger_replacement_event(root, event)
+            if case_id == "STALE_OPTIMISTIC_TOKEN":
+                stale = candidate(root, 0, "0" * 64, "conflict")
+                try:
+                    publish_challenger_replacement_event(root, stale)
+                except ChallengerReplacementEventError:
+                    return _boundary(case_id)
+                _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
+            for index in range(initial, 3):
+                event = candidate(root, index, replayed.last_event_hash)
+                publish_challenger_replacement_event(root, event)
+                replayed = replay_challenger_replacement_events(root)
+            final = replay_challenger_replacement_events(root)
+            if len(final.events) != 3:
+                _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
+            publish_challenger_replacement_event(root, final.events[-1])
             return _boundary(case_id)
 
 
@@ -204,16 +219,6 @@ def _probe_boundary(case_id, build_identity):
         if plan["canary_ladder"]["E0"]["daily_loss_limit"] != "2":
             _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
         return _boundary(case_id)
-    plan = build_challenger_replacement_plan_v3()
-    predecessor = build_challenger_replacement_simulation_contract(plan=plan)
-    public = build_challenger_replacement_public_simulation_contract(
-        plan=plan, economic_plan=build_challenger_replacement_economic_plan(),
-        predecessor_contract=predecessor,
-    )
-    snapshot = build_challenger_replacement_public_genesis_snapshot(
-        plan=plan, public_contract=public
-    )
-    canonical_decimal(snapshot["cash"])
     return _boundary(case_id)
 
 
