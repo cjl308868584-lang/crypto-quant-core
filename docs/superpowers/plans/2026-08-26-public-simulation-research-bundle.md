@@ -52,7 +52,9 @@ existing loopback HTML/CSS/JavaScript console and GitHub Actions.
   IDs, plan/build bindings and derived fields.
 - Every feature/fix is exact RED, minimal GREEN, focused verification and one
   atomic commit. Do not run the unchanged full suite twice.
-- Net new production Python across v0.76 modules is below 2,600 physical lines;
+- Net new production Python across v0.76 modules is below the revised 4,200
+  physical-line hard cap, with 2,324 lines measured after Task 7 and remaining
+  task allowances fixed by the approved design section 13;
   no generic exchange, Broker, scheduler, storage, evaluator or second UI
   framework is added.
 - No install, bootstrap, kickstart, Runner start, production receipt, 72-hour
@@ -1560,7 +1562,9 @@ FORBIDDEN_CAPABILITIES = {
 Allow `urllib` only in the shared public HTTP/capture boundary, filesystem only
 in observer/fixed CLI/deployment-document utilities, and no subprocess in pure
 simulation/qualification/evaluation/projection modules. Enforce net-new v0.76
-production Python below 2,600 physical lines and the no-generic-framework gate.
+production Python below the revised 4,200 physical-line hard cap, each
+remaining task within its section-13 allowance, and the no-generic-framework
+gate.
 
 - [ ] **Step 2: Run release RED**
 
@@ -1721,7 +1725,8 @@ or retag another commit.
 - [ ] Operational qualification cannot synthesize 72 hours; economic evaluator
   cannot inspect or disclose pre-tail outcomes.
 - [ ] v1/v2 operations projections remain exact; v3 is loopback-only/read-only.
-- [ ] New production Python is below 2,600 physical lines.
+- [ ] New production Python is below 4,200 physical lines; Task 8 adds at most
+  500, Tasks 9-10 together add at most 800, and Task 11 adds at most 350.
 - [ ] No install, start, credential, account, Broker, real order, fund movement,
   production state write, 72-hour timer or 90-day timer occurred.
 - [ ] Critical/Important review findings are zero and final local/remote release
