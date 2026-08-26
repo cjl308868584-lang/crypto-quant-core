@@ -105,15 +105,15 @@ class ChallengerReplacementV3ObserverTests(unittest.TestCase):
         ), patch.object(
             observer_module, "load_challenger_replacement_v3_start_receipt_bytes",
             return_value=receipt, create=True,
-        ) as start_loader, patch.object(
-            observer_module, "_load_fault_receipt",
-            return_value={"status": "FAULT_MATRIX_PASSED"}, create=True,
-        ) as fault_loader, patch.object(
-            observer_module, "_build_operational_facts",
-            return_value=object(), create=True,
-        ), patch.object(
-            observer_module, "_evaluate_operational",
-            return_value=operational, create=True,
+        ) as start_loader, patch(
+            "crypto_quant.challenger_replacement_fault_matrix.load_challenger_replacement_fault_matrix_bytes",
+            return_value={"status": "FAULT_MATRIX_PASSED"},
+        ) as fault_loader, patch(
+            "crypto_quant.challenger_replacement_operational_qualification.build_operational_qualification_facts_from_state",
+            return_value=object(),
+        ), patch(
+            "crypto_quant.challenger_replacement_operational_qualification.evaluate_challenger_replacement_operational_qualification",
+            return_value=operational,
         ), patch.object(
             observer_module, "build_economic_progress_facts_from_state",
             return_value=object(), create=True,
@@ -165,7 +165,7 @@ class ChallengerReplacementV3ObserverTests(unittest.TestCase):
             received = []
 
             def load(capability):
-                received.append((capability.fd, os.fstat(capability.fd).st_ino))
+                received.append((capability, os.fstat(capability).st_ino))
                 return ChallengerReplacementV3Observation(
                     deployment={"authority": {}}, start_receipt_or_null=None,
                     event_projection={},

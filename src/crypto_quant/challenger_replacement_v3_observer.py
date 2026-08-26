@@ -78,11 +78,6 @@ class ChallengerReplacementV3Observation:
     evidence_health: str
 
 
-@dataclass(frozen=True)
-class _RuntimeRoot:
-    fd: int
-
-
 def _runtime_entry():
     required = tuple(getattr(os, name, 0) for name in
                      ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK"))
@@ -105,7 +100,7 @@ def _runtime_entry():
             or entry.st_nlink < 1
         ):
             raise OSError("untrusted fixed runtime root")
-        return _RuntimeRoot(descriptor)
+        return descriptor
     except BaseException:
         os.close(descriptor)
         raise
@@ -113,7 +108,7 @@ def _runtime_entry():
 
 def _read_fixed(root, relative):
     parts = relative.split("/")
-    current = os.dup(root.fd)
+    current = os.dup(root)
     try:
         for part in parts[:-1]:
             following = _open_relative_directory(current, part, create=False)
@@ -125,7 +120,11 @@ def _read_fixed(root, relative):
         _close_descriptor(current)
 
 
-def _plans_contracts():
+def _load_deployment(root):
+    data = _read_fixed(root, _DEPLOYMENT)
+    if data is None:
+        raise OSError("fixed deployment absent")
+    header = _strict_json_bytes(data)
     plan = build_challenger_replacement_plan_v3()
     economic = build_challenger_replacement_economic_plan()
     accelerated = build_challenger_replacement_accelerated_canary_plan()
@@ -133,15 +132,6 @@ def _plans_contracts():
     public = build_challenger_replacement_public_simulation_contract(
         plan=plan, economic_plan=economic, predecessor_contract=predecessor,
     )
-    return plan, economic, accelerated, predecessor, public
-
-
-def _load_deployment(root):
-    data = _read_fixed(root, _DEPLOYMENT)
-    if data is None:
-        raise OSError("fixed deployment absent")
-    header = _strict_json_bytes(data)
-    plan, economic, accelerated, predecessor, public = _plans_contracts()
     deployment = load_challenger_replacement_v3_deployment_bytes(
         data, predecessor_release=_PREDECESSOR, plan=plan,
         economic_plan=economic, accelerated_plan=accelerated,
@@ -174,59 +164,50 @@ def _observed_at():
     return utc_datetime(datetime.now(timezone.utc))
 
 
-def _load_fault_receipt(data, deployment, identity):
-    from .challenger_replacement_fault_matrix import (
-        load_challenger_replacement_fault_matrix_bytes,
-    )
-    return load_challenger_replacement_fault_matrix_bytes(
-        data, build_identity=deployment["candidate_build"],
-        runtime_core_identity=identity,
-    )
-
-
-def _build_operational_facts(**kwargs):
-    from .challenger_replacement_operational_qualification import (
-        build_operational_qualification_facts_from_state,
-    )
-    return build_operational_qualification_facts_from_state(**kwargs)
-
-
-def _evaluate_operational(facts, accelerated_plan, fault_receipt):
-    from .challenger_replacement_operational_qualification import (
-        evaluate_challenger_replacement_operational_qualification,
-    )
-    return evaluate_challenger_replacement_operational_qualification(
-        facts, accelerated_plan=accelerated_plan, fault_receipt=fault_receipt,
-    )
+@contextmanager
+def _open_sources(root):
+    deployment = _load_deployment(root)
+    with _open_state(deployment) as (identity, state):
+        projection = state._replay()
+        data = _read_fixed(root, _START)
+        receipt = None if data is None else (
+            load_challenger_replacement_v3_start_receipt_bytes(
+                data, deployment=deployment, event_projection=projection,
+                event_root_identity=identity,
+            )
+        )
+        yield deployment, state, projection, receipt
 
 
 def _load_installed_observation(root):
-    deployment = _load_deployment(root)
-    with _open_state(deployment) as (identity, state):
-        raw_projection = state._replay()
+    from .challenger_replacement_fault_matrix import (
+        load_challenger_replacement_fault_matrix_bytes,
+    )
+    from .challenger_replacement_operational_qualification import (
+        build_operational_qualification_facts_from_state,
+        evaluate_challenger_replacement_operational_qualification,
+    )
+    with _open_sources(root) as (deployment, state, _projection, receipt):
         event_projection = state.replay()
-        start_data = _read_fixed(root, _START)
-        if start_data is None:
+        if receipt is None:
             empty = _sentinel("HEALTHY")
             return ChallengerReplacementV3Observation(
                 deployment, None, event_projection,
                 empty.operational_qualification, empty.economic_progress,
                 "HEALTHY",
             )
-        receipt = load_challenger_replacement_v3_start_receipt_bytes(
-            start_data, deployment=deployment, event_projection=raw_projection,
-            event_root_identity=identity,
-        )
         fault_data = _read_fixed(root, _FAULT)
         fault_header = _strict_json_bytes(fault_data)
-        fault = _load_fault_receipt(
-            fault_data, deployment, fault_header["runtime_core_identity"],
+        fault = load_challenger_replacement_fault_matrix_bytes(
+            fault_data, build_identity=deployment["candidate_build"],
+            runtime_core_identity=fault_header["runtime_core_identity"],
         )
         observed_at = _observed_at()
-        operational = _evaluate_operational(
-            _build_operational_facts(
+        operational = evaluate_challenger_replacement_operational_qualification(
+            build_operational_qualification_facts_from_state(
                 state=state, start_receipt=receipt, observed_at=observed_at,
-            ), build_challenger_replacement_accelerated_canary_plan(), fault,
+            ), accelerated_plan=build_challenger_replacement_accelerated_canary_plan(),
+            fault_receipt=fault,
         )
         progress = observe_challenger_replacement_economic_progress(
             build_economic_progress_facts_from_state(
@@ -247,16 +228,9 @@ def _load_fixed_economic_sources():
     if root is None:
         raise OSError("fixed runtime root absent")
     try:
-        deployment = _load_deployment(root)
-        with _open_state(deployment) as (identity, state):
-            projection = state._replay()
-            data = _read_fixed(root, _START)
-            if data is None:
+        with _open_sources(root) as (deployment, state, _projection, receipt):
+            if receipt is None:
                 raise OSError("fixed start receipt absent")
-            receipt = load_challenger_replacement_v3_start_receipt_bytes(
-                data, deployment=deployment, event_projection=projection,
-                event_root_identity=identity,
-            )
             observed_at = _observed_at()
             start = datetime.fromisoformat(
                 receipt["economic_start"]["scheduled_for"].replace("Z", "+00:00")
@@ -276,7 +250,7 @@ def _load_fixed_economic_sources():
                 "build_identity": deployment["candidate_build"],
             }
     finally:
-        os.close(root.fd)
+        os.close(root)
 
 
 def _sentinel(health):
@@ -309,22 +283,6 @@ def _sentinel(health):
     )
 
 
-def _valid(value):
-    try:
-        return (
-            isinstance(value, ChallengerReplacementV3Observation)
-            and value.evidence_health in {"HEALTHY", "DEGRADED", "FAILED_CLOSED"}
-            and value.operational_qualification["status"] in {
-                "NOT_STARTED", "ACTIVE", "INTERRUPTED_RECOVERABLE",
-                "BLOCK_FAILED", "QUALIFIED",
-            }
-            and value.economic_progress["status"] == "TAIL_BLIND"
-            and not any(value.deployment.get("authority", {}).values())
-        )
-    except (AttributeError, KeyError, TypeError):
-        return False
-
-
 def observe_challenger_replacement_v3():
     """Observe fixed roots without accepting paths or mutating evidence."""
     root = None
@@ -333,12 +291,19 @@ def observe_challenger_replacement_v3():
         if root is None:
             return _sentinel("NOT_INSTALLED")
         value = _load_installed_observation(root)
-        result = value if _valid(value) else _sentinel("FAILED_CLOSED")
+        valid = isinstance(value, ChallengerReplacementV3Observation) and (
+            value.evidence_health in {"HEALTHY", "DEGRADED", "FAILED_CLOSED"}
+            and value.operational_qualification["status"] in {
+                "NOT_STARTED", "ACTIVE", "INTERRUPTED_RECOVERABLE",
+                "BLOCK_FAILED", "QUALIFIED"}
+            and value.economic_progress["status"] == "TAIL_BLIND"
+            and not any(value.deployment.get("authority", {}).values()))
+        result = value if valid else _sentinel("FAILED_CLOSED")
     except Exception:
         result = _sentinel("FAILED_CLOSED")
     if root is not None:
         try:
-            os.close(root.fd)
+            os.close(root)
         except OSError:
             result = _sentinel("FAILED_CLOSED")
     return result
