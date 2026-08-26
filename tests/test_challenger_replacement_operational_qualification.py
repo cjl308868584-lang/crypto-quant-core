@@ -59,6 +59,7 @@ def facts(*opportunities, observed_seconds=None, hard=(), position="FLAT",
             "receipt_hash": "2" * 64,
             "status": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED",
             "operational_start": {"observed_at": iso(START)},
+            "economic_start": {"scheduled_for": iso(START)},
         }
     if observed_seconds is None:
         observed_seconds = max(
@@ -120,6 +121,32 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
                 accelerated_plan=self.plan,
                 fault_receipt=self.fault,
             )
+
+    def test_real_two_minute_observed_delay_keeps_scheduled_cadence_and_72h_clock(self):
+        delay = 120
+        receipt = {
+            "receipt_id": "challenger_replacement_v3_start_receipt_" + "1" * 64,
+            "receipt_hash": "2" * 64,
+            "status": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED",
+            "operational_start": {"observed_at": iso(START + timedelta(seconds=delay))},
+            "economic_start": {"scheduled_for": iso(START)},
+        }
+        opportunities = tuple(
+            dict(
+                terminal(seconds),
+                observed_at=iso(START + timedelta(seconds=seconds + delay)),
+            )
+            for seconds in range(0, 259_200 + 1, 14_400)
+        )
+        value = OperationalQualificationFacts(
+            start_receipt=receipt, terminal_opportunities=opportunities,
+            observed_at=iso(START + timedelta(seconds=259_200 + delay)),
+            position_state="FLAT", reconciliation_status="MATCHED",
+            hard_stop_reason_codes=(),
+        )
+        result = self.evaluate(value)
+        self.assertEqual(result["status"], "QUALIFIED")
+        self.assertEqual(result["eligible_continuous_seconds"], 259_200)
 
     def test_disconnected_segments_never_sum_and_flat_miss_is_recoverable(self):
         result = self.evaluate(facts(

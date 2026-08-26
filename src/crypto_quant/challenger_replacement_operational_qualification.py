@@ -101,6 +101,9 @@ def _evaluate(facts, plan, fault):
         return "NOT_STARTED", 0, ("START_RECEIPT_ABSENT",), None
     try:
         start = _time(facts.start_receipt["operational_start"]["observed_at"])
+        scheduled_start = _time(
+            facts.start_receipt["economic_start"]["scheduled_for"]
+        )
         if facts.start_receipt["status"] != (
             "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED"
         ):
@@ -108,7 +111,7 @@ def _evaluate(facts, plan, fault):
         observed = _time(facts.observed_at)
     except (KeyError, TypeError):
         _invalid()
-    if observed < start:
+    if observed < start or scheduled_start > start:
         _invalid()
     if (
         not isinstance(facts.position_state, str)
@@ -127,7 +130,7 @@ def _evaluate(facts, plan, fault):
     interrupted = False
     previous_time = None
     cadence = plan["simulation_qualification"]["cadence_seconds"]
-    next_due = start
+    next_due = scheduled_start
     for item in facts.terminal_opportunities:
         required = {
             "opportunity_id", "scheduled_for", "observed_at", "segment_id",
