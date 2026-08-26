@@ -5,7 +5,7 @@ import json
 from typing import Mapping
 from .canonical import canonical_decimal, canonical_json
 from .challenger_replacement_binance_private_contract import (
-    BinancePrivateActivation,
+    BinancePrivateActivation, _validator,
 )
 from .challenger_replacement_binance_preflight import (
     _POSITION_KEYS, _SPOT_KEYS,
@@ -426,12 +426,6 @@ def apply_binance_order_observation(*, attempt, order, trades, account):
             },
         })
     return tuple(events)
-_STOP_KEYS = frozenset({
-    "protected_intent_id", "symbol", "algo_type", "order_type", "side",
-    "position_side", "working_type", "quantity", "trigger_price",
-    "reduce_only", "close_position", "client_algo_id",
-    "required_first_endpoint", "send_permitted",
-})
 _ALGO_KEYS = frozenset({
     "algoId", "clientAlgoId", "algoType", "orderType", "symbol", "side",
     "positionSide", "quantity", "triggerPrice", "workingType", "reduceOnly",
@@ -476,29 +470,16 @@ def prepare_binance_protective_stop(*, short_quantity, trigger_price,
         "send_permitted": False,
     }
 def _valid_stop_expected(expected):
-    if not isinstance(expected, Mapping) or frozenset(expected) != _STOP_KEYS:
-        return False
-    try:
-        quantity = canonical_decimal(expected["quantity"])
-        trigger = canonical_decimal(expected["trigger_price"])
-    except (KeyError, TypeError, ValueError):
-        return False
-    client = expected.get("client_algo_id")
-    return (expected.get("symbol") == "ETHUSDT"
-            and expected.get("algo_type") == "CONDITIONAL"
-            and expected.get("order_type") == "STOP_MARKET"
-            and expected.get("side") == "BUY"
-            and expected.get("position_side") == "BOTH"
-            and expected.get("working_type") == "MARK_PRICE"
-            and expected.get("reduce_only") is True
-            and expected.get("close_position") is False
-            and expected.get("required_first_endpoint") == "FUTURES_ALGO_QUERY"
-            and isinstance(expected.get("send_permitted"), bool)
-            and quantity == expected.get("quantity") and quantity != "0"
-            and trigger == expected.get("trigger_price") and trigger != "0"
-            and _identity(expected.get("protected_intent_id"))
-            and isinstance(client, str) and len(client) == 36
-            and client.startswith("cq77") and not set(client[4:]) - _HEX)
+    envelope = {
+        "$schema": "./challenger-replacement-binance-private-event-v1.schema.json",
+        "schema_version": "1.0.0",
+        "event_type": "BINANCE_STOP_INTENT_AUTHORIZED",
+        "opportunity_id": "ETHUSDT@2026-08-24T00:00:00.000Z",
+        "payload": expected,
+    }
+    return not tuple(_validator(
+        "challenger-replacement-binance-private-event-v1.schema.json"
+    ).iter_errors(envelope))
 def reconcile_binance_protective_stop(*, position, algo_order, expected):
     """Prove the exact stop covers current short exposure or fail closed."""
     if not _valid_stop_expected(expected):
