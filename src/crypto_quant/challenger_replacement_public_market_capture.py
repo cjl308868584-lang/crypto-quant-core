@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+from time import sleep as _sleep
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from importlib import resources
 from typing import Any, Mapping, Optional
+from urllib.request import Request
 
 from jsonschema import Draft202012Validator
 
@@ -17,11 +19,22 @@ from .canonical import canonical_decimal, canonical_json, stable_id, utc_datetim
 from .challenger_replacement_live_input import (
     ChallengerReplacementLiveInputError,
     _strict_response_json,
+    acquire_challenger_replacement_live_capture as _acquire_live_capture,
     load_challenger_replacement_live_capture_bytes,
 )
 from .challenger_replacement_opportunity_projection import opportunity_id_for
+from .challenger_replacement_opportunities import (
+    ChallengerReplacementOpportunityState,
+)
 from .challenger_replacement_plan_v2 import build_challenger_replacement_plan_v2
 from .challenger_replacement_plan_v3 import challenger_replacement_plan_v3_reasons
+from .challenger_replacement_public_http import (
+    PublicHttpError,
+    attempt_document,
+    open_fixed_public_request as _open_fixed_public_request,
+    transport_failure_attempt,
+)
+from .challenger_replacement_runtime import ChallengerReplacementRuntimeState
 from .errors import CanonicalizationError
 from .evidence import artifact_self_hash
 
@@ -64,6 +77,7 @@ _ATTEMPT_KEYS = {
     "response_received_at", "status", "final_url", "selected_headers",
     "body_size_bytes", "body_sha256", "response_body_base64",
 }
+_TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504}
 _HEADER_KEYS = {
     "content_type_or_null",
     "http_date_or_null", "etag_or_null", "last_modified_or_null",
@@ -114,6 +128,10 @@ def _validator():
 
 def _invalid(reason):
     raise ChallengerReplacementPublicMarketCaptureError(reason)
+
+
+def _wall_now():
+    return datetime.now(timezone.utc)
 
 
 def _hash(value, length=64):
@@ -524,6 +542,38 @@ def _funding(payload, scheduled):
     return result
 
 
+def _expected_requests(scheduled):
+    scheduled_millis = _to_epoch_millis(scheduled)
+    return list(_REQUESTS) + [("funding_history", (
+        "https://fapi.binance.com/fapi/v1/fundingRate?"
+        f"endTime={scheduled_millis}&limit=16&"
+        f"startTime={scheduled_millis - 14399999}&symbol=ETHUSDT"
+    ), 1024 * 1024)]
+
+
+def _normalized_capture(live, payloads, *, scheduled, captured):
+    spot_symbol = _one_symbol(payloads[0], perpetual=False)
+    perpetual_symbol = _one_symbol(payloads[2], perpetual=True)
+    return {
+        "bars": deepcopy(live["rows"]),
+        "quotes": {
+            "spot": _quote(payloads[1]),
+            "perpetual": {
+                **_quote(payloads[3]),
+                "mark": _quote(
+                    payloads[4], mark=True,
+                    scheduled=scheduled, captured=captured,
+                ),
+            },
+        },
+        "funding_records": _funding(payloads[5], scheduled),
+        "simulation_rules": {
+            "spot": _rules(spot_symbol, perpetual=False),
+            "perpetual": _rules(perpetual_symbol, perpetual=True),
+        },
+    }
+
+
 def load_challenger_replacement_public_market_capture_bytes(
     data: bytes, *, plan: Mapping[str, Any], build_identity: Mapping[str, Any],
     previous_source_bundle: Optional[Mapping[str, Any]],
@@ -592,38 +642,16 @@ def load_challenger_replacement_public_market_capture_bytes(
         or opportunity["captured_at"] != live["slot"]["captured_at"]
     ):
         _invalid("PUBLIC_MARKET_CAPTURE_NESTED_INVALID")
-    scheduled_millis = _to_epoch_millis(scheduled)
-    expected = list(_REQUESTS) + [("funding_history", (
-        "https://fapi.binance.com/fapi/v1/fundingRate?"
-        f"endTime={scheduled_millis}&limit=16&"
-        f"startTime={scheduled_millis - 14399999}&symbol=ETHUSDT"
-    ), 1024 * 1024)]
+    expected = _expected_requests(scheduled)
     if not isinstance(document["requests"], list) or len(document["requests"]) != 6:
         _invalid("PUBLIC_MARKET_CAPTURE_REQUEST_INVALID")
     payloads = [
         _selected_payload(entry, expected[index], scheduled, captured)
         for index, entry in enumerate(document["requests"])
     ]
-    spot_symbol = _one_symbol(payloads[0], perpetual=False)
-    perpetual_symbol = _one_symbol(payloads[2], perpetual=True)
-    normalized = {
-        "bars": deepcopy(live["rows"]),
-        "quotes": {
-            "spot": _quote(payloads[1]),
-            "perpetual": {
-                **_quote(payloads[3]),
-                "mark": _quote(
-                    payloads[4], mark=True,
-                    scheduled=scheduled, captured=captured,
-                ),
-            },
-        },
-        "funding_records": _funding(payloads[5], scheduled),
-        "simulation_rules": {
-            "spot": _rules(spot_symbol, perpetual=False),
-            "perpetual": _rules(perpetual_symbol, perpetual=True),
-        },
-    }
+    normalized = _normalized_capture(
+        live, payloads, scheduled=scheduled, captured=captured
+    )
     if document["normalized"] != normalized:
         _invalid("PUBLIC_MARKET_CAPTURE_NORMALIZED_INVALID")
     authority = document["authority"]
@@ -648,4 +676,237 @@ def load_challenger_replacement_public_market_capture_bytes(
         _invalid("PUBLIC_MARKET_CAPTURE_ID_INVALID")
     return ChallengerReplacementPublicMarketCapture(
         _token=_CAPABILITY_TOKEN, document=document, canonical_bytes=data
+    )
+
+
+def _previous_v067_source_bundle(projection, *, plan, build_identity):
+    previous_bytes = projection.get("_previous_observed_source_bytes")
+    if previous_bytes is None:
+        return None
+    previous = load_challenger_replacement_public_market_capture_bytes(
+        previous_bytes,
+        plan=plan,
+        build_identity=build_identity,
+        previous_source_bundle=None,
+    )
+    return {"klines": previous.document["normalized"]["bars"]}
+
+
+class _V067AcquisitionState(ChallengerReplacementRuntimeState):
+    """Read-only shape adapter; the v3 event log remains the only authority."""
+
+    def __init__(self, projection, previous_source_bundle):
+        if not isinstance(projection, Mapping):
+            _invalid("PUBLIC_MARKET_CAPTURE_STATE_INVALID")
+        terminal_count = projection.get("terminal_opportunity_count", 0)
+        next_required = projection.get("next_required_opportunity")
+        if (
+            not isinstance(terminal_count, int)
+            or isinstance(terminal_count, bool)
+            or terminal_count < 0
+            or next_required is not None
+            and not isinstance(next_required, Mapping)
+        ):
+            _invalid("PUBLIC_MARKET_CAPTURE_STATE_INVALID")
+        scheduled_for = (
+            None
+            if next_required is None
+            else next_required.get("scheduled_for")
+        )
+        self.plan = build_challenger_replacement_plan_v2()
+        self.build_identity = deepcopy(_V067_BUILD)
+        self._projection = {
+            "failed_slot_count": 0,
+            "active_slot_id": projection.get("active_opportunity_id"),
+            "next_required_slot": {
+                "sequence": terminal_count + 1,
+                "scheduled_for": scheduled_for,
+            },
+            "_previous_source_bundle": deepcopy(previous_source_bundle),
+        }
+
+    def _replay(self):
+        return deepcopy(self._projection)
+
+
+def acquire_challenger_replacement_public_market_capture(*, state):
+    """Acquire the fixed public evidence required by one natural opportunity."""
+
+    if (
+        not isinstance(state, ChallengerReplacementOpportunityState)
+        or not isinstance(getattr(state, "plan", None), Mapping)
+        or not isinstance(getattr(state, "build_identity", None), Mapping)
+    ):
+        _invalid("PUBLIC_MARKET_CAPTURE_STATE_INVALID")
+    projection = state._replay()
+    if not isinstance(projection, Mapping):
+        _invalid("PUBLIC_MARKET_CAPTURE_STATE_INVALID")
+    try:
+        previous_source_bundle = _previous_v067_source_bundle(
+            projection,
+            plan=state.plan,
+            build_identity=state.build_identity,
+        )
+        nested = _acquire_live_capture(
+            state=_V067AcquisitionState(projection, previous_source_bundle)
+        )
+        nested_bytes = bytes(nested.canonical_bytes)
+        live = deepcopy(dict(nested.document))
+        replayed_live = load_challenger_replacement_live_capture_bytes(
+            nested_bytes,
+            plan=build_challenger_replacement_plan_v2(),
+            build_identity=_V067_BUILD,
+            previous_source_bundle=previous_source_bundle,
+        )
+        if live != replayed_live:
+            _invalid("PUBLIC_MARKET_CAPTURE_NESTED_INVALID")
+        scheduled = _utc(live["slot"]["scheduled_for"])
+        captured = _utc(live["slot"]["captured_at"])
+    except ChallengerReplacementPublicMarketCaptureError:
+        raise
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        raise ChallengerReplacementPublicMarketCaptureError(
+            "PUBLIC_MARKET_CAPTURE_NESTED_INVALID"
+        ) from error
+    expected = _expected_requests(scheduled)
+    ledgers = []
+    payloads = []
+    for kind, url, limit in expected:
+        identity = {
+            "request_kind": kind, "method": "GET", "url": url,
+            "max_body_bytes": limit,
+        }
+        attempts = []
+        selected = None
+        selected_payload = None
+        for index in range(3):
+            transport_started = _wall_now()
+            try:
+                response = _open_fixed_public_request(
+                    Request(
+                        url, method="GET",
+                        headers={"Accept": "application/json"},
+                    ),
+                    max_body_bytes=limit,
+                )
+                attempt = attempt_document(response, index + 1)
+                headers = {
+                    key.lower(): value for key, value in response.headers.items()
+                }
+                attempt["selected_headers"]["content_type_or_null"] = (
+                    headers.get("content-type")
+                )
+                if response.final_url != url:
+                    _invalid("PUBLIC_MARKET_CAPTURE_RESPONSE_INVALID")
+                started = _utc(response.request_started_at)
+                received = _utc(response.response_received_at)
+                if not scheduled <= started <= received <= captured:
+                    _invalid("PUBLIC_MARKET_CAPTURE_TIME_INVALID")
+            except PublicHttpError as error:
+                if error.reason_code != "PUBLIC_HTTP_TRANSPORT_FAILURE":
+                    raise ChallengerReplacementPublicMarketCaptureError(
+                        "PUBLIC_MARKET_CAPTURE_RESPONSE_INVALID"
+                    ) from error
+                try:
+                    attempt = transport_failure_attempt(
+                        index + 1,
+                        started=transport_started,
+                        received=_wall_now(),
+                    )
+                except PublicHttpError as clock_error:
+                    raise ChallengerReplacementPublicMarketCaptureError(
+                        "PUBLIC_MARKET_CAPTURE_TIME_INVALID"
+                    ) from clock_error
+                attempt["selected_headers"]["content_type_or_null"] = None
+                attempts.append(attempt)
+                if index < 2:
+                    _sleep(index + 1)
+                    continue
+                break
+            attempts.append(attempt)
+            if response.status == 200:
+                try:
+                    selected_payload = _strict_response_json(response.body)
+                except ChallengerReplacementLiveInputError as error:
+                    raise ChallengerReplacementPublicMarketCaptureError(
+                        "PUBLIC_MARKET_CAPTURE_RESPONSE_INVALID"
+                    ) from error
+                selected = index
+                break
+            if response.status not in _TRANSIENT_STATUS:
+                _invalid("PUBLIC_MARKET_CAPTURE_RESPONSE_INVALID")
+            if index < 2:
+                _sleep(index + 1)
+        if selected is None:
+            _invalid("PUBLIC_MARKET_CAPTURE_RETRIES_EXHAUSTED")
+        ledgers.append({
+            "request": {
+                "request_id": stable_id(
+                    "challenger_replacement_public_market_request", identity
+                ),
+                **identity,
+            },
+            "attempts": attempts,
+            "selected_success_attempt_index": selected,
+        })
+        payloads.append(selected_payload)
+    normalized = _normalized_capture(
+        live, payloads, scheduled=scheduled, captured=captured
+    )
+    opportunity = {
+        "opportunity_id": opportunity_id_for(live["slot"]["scheduled_for"]),
+        "sequence": live["slot"]["sequence"],
+        "scheduled_for": live["slot"]["scheduled_for"],
+        "captured_at": live["slot"]["captured_at"],
+    }
+    document = {
+        "$schema": "./challenger-replacement-public-market-capture-v2.schema.json",
+        "schema_version": "2.0.0",
+        "capture_id": "",
+        "capture_hash": "0" * 64,
+        "evidence_qualification": (
+            "PUBLIC_MARKET_CAPTURE_V2_NO_ACCOUNT_NO_BROKER_NO_REAL_ORDER"
+        ),
+        "plan": {
+            "plan_id": state.plan["plan_id"],
+            "plan_hash": state.plan["plan_hash"],
+        },
+        "build_identity": deepcopy(dict(state.build_identity)),
+        "opportunity": opportunity,
+        "nested_live_capture": {
+            "canonical_base64": base64.b64encode(nested_bytes).decode("ascii"),
+            "sha256": hashlib.sha256(nested_bytes).hexdigest(),
+            "capture_id": live["capture_id"],
+            "capture_hash": live["capture_hash"],
+        },
+        "requests": ledgers,
+        "normalized": normalized,
+        "authority": {
+            "network_request_count": (
+                live["authority"]["network_request_count"]
+                + sum(len(item["attempts"]) for item in ledgers)
+            ),
+            "credentials_allowed": False,
+            "account_requests_allowed": False,
+            "broker_requests_allowed": False,
+            "orders_allowed": False,
+            "fund_movement_allowed": False,
+        },
+    }
+    identity = {
+        "plan": document["plan"],
+        "build_identity": document["build_identity"],
+        "opportunity": opportunity,
+        "nested_live_capture_sha256": document["nested_live_capture"]["sha256"],
+    }
+    document["capture_id"] = stable_id(
+        "challenger_replacement_public_market_capture", identity
+    )
+    document["capture_hash"] = artifact_self_hash(document, "capture_hash")
+    canonical_bytes = canonical_json(document).encode("utf-8")
+    return load_challenger_replacement_public_market_capture_bytes(
+        canonical_bytes,
+        plan=state.plan,
+        build_identity=state.build_identity,
+        previous_source_bundle=previous_source_bundle,
     )

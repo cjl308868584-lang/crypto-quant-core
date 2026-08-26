@@ -3,22 +3,32 @@ import hashlib
 import json
 import unittest
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from importlib import resources
 from pathlib import Path
 from unittest.mock import patch
+from urllib.request import OpenerDirector
 
 from jsonschema import Draft202012Validator
 
 from crypto_quant.canonical import canonical_json, stable_id
+from crypto_quant import (
+    challenger_replacement_public_market_capture as public_capture_module,
+)
 from crypto_quant.challenger_replacement_live_input import (
+    ChallengerReplacementLiveInputError,
     _build_live_capture_document,
     load_challenger_replacement_live_capture_bytes,
 )
 from crypto_quant.challenger_replacement_opportunity_projection import (
     opportunity_id_for,
 )
+from crypto_quant.challenger_replacement_opportunities import (
+    ChallengerReplacementOpportunityState,
+)
 from crypto_quant.challenger_replacement_public_http import (
+    PublicHttpError,
     PublicHttpResponse,
     attempt_document,
     transport_failure_attempt,
@@ -756,6 +766,421 @@ class PublicMarketCaptureLoaderTests(unittest.TestCase):
         )
 
         self._assert_invalid(document, "PUBLIC_MARKET_CAPTURE_NESTED_INVALID")
+
+
+class _PublicCaptureState(ChallengerReplacementOpportunityState):
+    def __init__(self):
+        self.plan = fixture_v3_plan()
+        self.build_identity = deepcopy(V076_BUILD)
+        self.projection = {
+            "failed_opportunity_count": 0,
+            "active_opportunity_id": None,
+            "_previous_observed_source_bytes": None,
+        }
+
+    def _replay(self):
+        return deepcopy(self.projection)
+
+
+class PublicMarketAcquisitionTests(unittest.TestCase):
+    def setUp(self):
+        self.state = _PublicCaptureState()
+        self.requests = []
+        self.sleeps = []
+        self.live_states = []
+
+    def _responses(self):
+        responses = []
+        for index, (_kind, url, _limit, payload) in enumerate(_payloads()):
+            responses.append(PublicHttpResponse(
+                status=200,
+                final_url=url,
+                headers={"Content-Type": "application/json"},
+                body=canonical_json(payload).encode("utf-8"),
+                monotonic_rtt_ms=100,
+                request_started_at=f"2026-08-26T04:04:{10 + index:02d}.000Z",
+                response_received_at=f"2026-08-26T04:04:{10 + index:02d}.100Z",
+            ))
+        return responses
+
+    def _acquire_from_pending(self, pending):
+        live_bytes, live_document = _live_capture_bytes()
+        nested = type("NestedCapture", (), {
+            "canonical_bytes": live_bytes,
+            "document": live_document,
+        })()
+        pending = list(pending)
+
+        def acquire_live(*, state):
+            self.live_states.append(state)
+            return nested
+
+        def open_request(request, *, max_body_bytes):
+            self.requests.append((request, max_body_bytes))
+            candidate = pending.pop(0)
+            if isinstance(candidate, BaseException):
+                raise candidate
+            return candidate
+
+        with patch.object(
+            public_capture_module,
+            "_acquire_live_capture",
+            side_effect=acquire_live,
+        ), patch.object(
+            public_capture_module,
+            "_open_fixed_public_request",
+            side_effect=open_request,
+        ), patch.object(
+            public_capture_module,
+            "_wall_now",
+            return_value=datetime(
+                2026, 8, 26, 4, 4, 9, tzinfo=timezone.utc
+            ),
+        ), patch.object(
+            public_capture_module,
+            "_sleep",
+            side_effect=self.sleeps.append,
+        ):
+            return (
+                public_capture_module.acquire_challenger_replacement_public_market_capture(
+                    state=self.state
+                )
+            )
+
+    def test_v3_state_uses_a_read_only_v067_acquisition_facade(self):
+        self._acquire_from_pending(self._responses())
+
+        self.assertEqual(len(self.live_states), 1)
+        facade = self.live_states[0]
+        self.assertIsNot(facade, self.state)
+        self.assertEqual(facade.plan, fixture_plan())
+        self.assertEqual(facade.build_identity, V067_BUILD)
+        self.assertEqual(facade._replay()["next_required_slot"], {
+            "sequence": 1,
+            "scheduled_for": None,
+        })
+        self.assertIsNone(facade._replay()["_previous_source_bundle"])
+
+    def test_exact_v067_then_six_request_order_replays_golden_capture(self):
+        live_bytes, live_document = _live_capture_bytes()
+        nested = type("NestedCapture", (), {
+            "canonical_bytes": live_bytes,
+            "document": live_document,
+        })()
+        pending = self._responses()
+
+        def open_request(request, *, max_body_bytes):
+            self.requests.append((request, max_body_bytes))
+            return pending.pop(0)
+
+        with patch.object(
+            public_capture_module,
+            "_acquire_live_capture",
+            return_value=nested,
+            create=True,
+        ), patch.object(
+            public_capture_module,
+            "_open_fixed_public_request",
+            side_effect=open_request,
+            create=True,
+        ), patch.object(
+            public_capture_module,
+            "_sleep",
+            side_effect=self.sleeps.append,
+            create=True,
+        ), patch.object(
+            OpenerDirector,
+            "open",
+            side_effect=AssertionError("network forbidden"),
+        ):
+            capture = (
+                public_capture_module.acquire_challenger_replacement_public_market_capture(
+                    state=self.state
+                )
+            )
+
+        self.assertEqual(capture.document, _outer_document())
+        self.assertEqual(capture.canonical_bytes, COMMITTED_CAPTURE.read_bytes())
+        self.assertEqual(
+            [request.full_url for request, _limit in self.requests],
+            [url for _kind, url, _limit, _payload in _payloads()],
+        )
+        self.assertEqual(
+            [limit for _request, limit in self.requests],
+            [limit for _kind, _url, limit, _payload in _payloads()],
+        )
+        self.assertTrue(
+            all(request.get_method() == "GET" for request, _ in self.requests)
+        )
+        self.assertTrue(all(request.data is None for request, _ in self.requests))
+        self.assertEqual(self.sleeps, [])
+        self.assertEqual(capture.document["authority"]["network_request_count"], 10)
+
+    def test_transport_failure_is_recorded_then_retried_once(self):
+        live_bytes, live_document = _live_capture_bytes()
+        nested = type("NestedCapture", (), {
+            "canonical_bytes": live_bytes,
+            "document": live_document,
+        })()
+        responses = self._responses()
+        pending = [
+            PublicHttpError("PUBLIC_HTTP_TRANSPORT_FAILURE"),
+            responses[0],
+            *responses[1:],
+        ]
+        wall = iter((
+            datetime(2026, 8, 26, 4, 4, 9, tzinfo=timezone.utc),
+            datetime(2026, 8, 26, 4, 4, 9, 100000, tzinfo=timezone.utc),
+            *(
+                datetime(2026, 8, 26, 4, 4, 9, 100000, tzinfo=timezone.utc)
+                for _ in range(6)
+            ),
+        ))
+
+        def open_request(request, *, max_body_bytes):
+            self.requests.append((request, max_body_bytes))
+            candidate = pending.pop(0)
+            if isinstance(candidate, BaseException):
+                raise candidate
+            return candidate
+
+        with patch.object(
+            public_capture_module,
+            "_acquire_live_capture",
+            return_value=nested,
+        ), patch.object(
+            public_capture_module,
+            "_open_fixed_public_request",
+            side_effect=open_request,
+        ), patch.object(
+            public_capture_module,
+            "_wall_now",
+            side_effect=wall,
+            create=True,
+        ), patch.object(
+            public_capture_module,
+            "_sleep",
+            side_effect=self.sleeps.append,
+        ):
+            capture = (
+                public_capture_module.acquire_challenger_replacement_public_market_capture(
+                    state=self.state
+                )
+            )
+
+        first_attempts = capture.document["requests"][0]["attempts"]
+        self.assertEqual([item["outcome"] for item in first_attempts], [
+            "TRANSPORT_ERROR", "HTTP_RESPONSE",
+        ])
+        self.assertEqual(self.sleeps, [1])
+        self.assertEqual(capture.document["authority"]["network_request_count"], 11)
+
+    def test_two_transient_responses_then_success_preserve_all_attempts(self):
+        responses = self._responses()
+        first = responses[0]
+        capture = self._acquire_from_pending([
+            replace(
+                first, status=503,
+                headers={"Content-Type": "text/plain"}, body=b'{"code":-1}',
+            ),
+            replace(
+                first, status=429,
+                headers={"Content-Type": "text/plain"}, body=b'{"code":-2}',
+                request_started_at="2026-08-26T04:04:11.000Z",
+                response_received_at="2026-08-26T04:04:11.100Z",
+            ),
+            replace(
+                first,
+                request_started_at="2026-08-26T04:04:12.000Z",
+                response_received_at="2026-08-26T04:04:12.100Z",
+            ),
+            *responses[1:],
+        ])
+
+        self.assertEqual(
+            [attempt["status"] for attempt in capture.document["requests"][0]["attempts"]],
+            [503, 429, 200],
+        )
+        self.assertEqual(self.sleeps, [1, 2])
+        self.assertEqual(capture.document["authority"]["network_request_count"], 12)
+
+    def test_permanent_status_retry_exhaustion_wrong_url_and_bad_json_fail_fixed(self):
+        responses = self._responses()
+        first = responses[0]
+        cases = (
+            (
+                [replace(first, status=400), *responses[1:]],
+                "PUBLIC_MARKET_CAPTURE_RESPONSE_INVALID",
+                1,
+                [],
+            ),
+            (
+                [
+                    replace(first, status=503),
+                    replace(first, status=503),
+                    replace(first, status=503),
+                    *responses[1:],
+                ],
+                "PUBLIC_MARKET_CAPTURE_RETRIES_EXHAUSTED",
+                3,
+                [1, 2],
+            ),
+            (
+                [
+                    PublicHttpError("PUBLIC_HTTP_TRANSPORT_FAILURE"),
+                    PublicHttpError("PUBLIC_HTTP_TRANSPORT_FAILURE"),
+                    PublicHttpError("PUBLIC_HTTP_TRANSPORT_FAILURE"),
+                ],
+                "PUBLIC_MARKET_CAPTURE_RETRIES_EXHAUSTED",
+                3,
+                [1, 2],
+            ),
+            (
+                [replace(first, final_url=first.final_url + "&wrong=1"), *responses[1:]],
+                "PUBLIC_MARKET_CAPTURE_RESPONSE_INVALID",
+                1,
+                [],
+            ),
+            (
+                [replace(first, body=b"not-json"), *responses[1:]],
+                "PUBLIC_MARKET_CAPTURE_RESPONSE_INVALID",
+                1,
+                [],
+            ),
+        )
+        for pending, reason, request_count, sleeps in cases:
+            with self.subTest(reason=reason, request_count=request_count):
+                self.requests = []
+                self.sleeps = []
+                with self.assertRaisesRegex(
+                    ChallengerReplacementPublicMarketCaptureError,
+                    f"^{reason}$",
+                ):
+                    self._acquire_from_pending(pending)
+                self.assertEqual(len(self.requests), request_count)
+                self.assertEqual(self.sleeps, sleeps)
+
+    def test_response_after_trusted_capture_window_stops_immediately(self):
+        responses = self._responses()
+        expired = replace(
+            responses[0],
+            request_started_at="2026-08-26T04:05:00.001Z",
+            response_received_at="2026-08-26T04:05:00.101Z",
+        )
+
+        with self.assertRaisesRegex(
+            ChallengerReplacementPublicMarketCaptureError,
+            "^PUBLIC_MARKET_CAPTURE_TIME_INVALID$",
+        ):
+            self._acquire_from_pending([expired, *responses[1:]])
+
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(self.sleeps, [])
+
+    def test_v067_clock_or_window_failure_maps_before_six_new_requests(self):
+        with patch.object(
+            public_capture_module,
+            "_acquire_live_capture",
+            side_effect=ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_WINDOW_INVALID"
+            ),
+        ), patch.object(
+            public_capture_module,
+            "_open_fixed_public_request",
+            side_effect=AssertionError("new endpoint must not be called"),
+        ):
+            with self.assertRaisesRegex(
+                ChallengerReplacementPublicMarketCaptureError,
+                "^PUBLIC_MARKET_CAPTURE_NESTED_INVALID$",
+            ):
+                public_capture_module.acquire_challenger_replacement_public_market_capture(
+                    state=self.state
+                )
+
+        self.assertEqual(self.requests, [])
+
+    def test_previous_public_capture_becomes_v067_overlap_bundle(self):
+        self.state.projection["_previous_observed_source_bytes"] = (
+            COMMITTED_CAPTURE.read_bytes()
+        )
+        seen = []
+
+        def inspect_facade(*, state):
+            seen.append(state._replay()["_previous_source_bundle"])
+            raise ChallengerReplacementLiveInputError(
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_WINDOW_INVALID"
+            )
+
+        with patch.object(
+            public_capture_module,
+            "_acquire_live_capture",
+            side_effect=inspect_facade,
+        ), patch.object(
+            public_capture_module,
+            "_open_fixed_public_request",
+            side_effect=AssertionError("new endpoint must not be called"),
+        ):
+            with self.assertRaisesRegex(
+                ChallengerReplacementPublicMarketCaptureError,
+                "^PUBLIC_MARKET_CAPTURE_NESTED_INVALID$",
+            ):
+                public_capture_module.acquire_challenger_replacement_public_market_capture(
+                    state=self.state
+                )
+
+        self.assertEqual(seen, [{
+            "klines": _outer_document()["normalized"]["bars"],
+        }])
+
+    def test_forged_duck_typed_state_fails_before_any_request(self):
+        forged = type("ForgedState", (), {
+            "plan": fixture_v3_plan(),
+            "build_identity": deepcopy(V076_BUILD),
+            "_replay": lambda self: deepcopy(self.projection),
+            "projection": deepcopy(self.state.projection),
+        })()
+
+        with patch.object(
+            public_capture_module,
+            "_acquire_live_capture",
+            side_effect=AssertionError("nested request forbidden"),
+        ), patch.object(
+            public_capture_module,
+            "_open_fixed_public_request",
+            side_effect=AssertionError("new endpoint forbidden"),
+        ):
+            with self.assertRaisesRegex(
+                ChallengerReplacementPublicMarketCaptureError,
+                "^PUBLIC_MARKET_CAPTURE_STATE_INVALID$",
+            ):
+                public_capture_module.acquire_challenger_replacement_public_market_capture(
+                    state=forged
+                )
+
+    def test_nested_bytes_and_document_mismatch_fails_before_new_requests(self):
+        live_bytes, live_document = _live_capture_bytes()
+        live_document["capture_hash"] = "0" * 64
+        nested = type("NestedCapture", (), {
+            "canonical_bytes": live_bytes,
+            "document": live_document,
+        })()
+
+        with patch.object(
+            public_capture_module,
+            "_acquire_live_capture",
+            return_value=nested,
+        ), patch.object(
+            public_capture_module,
+            "_open_fixed_public_request",
+            side_effect=AssertionError("new endpoint forbidden"),
+        ):
+            with self.assertRaisesRegex(
+                ChallengerReplacementPublicMarketCaptureError,
+                "^PUBLIC_MARKET_CAPTURE_NESTED_INVALID$",
+            ):
+                public_capture_module.acquire_challenger_replacement_public_market_capture(
+                    state=self.state
+                )
 
 
 if __name__ == "__main__":
