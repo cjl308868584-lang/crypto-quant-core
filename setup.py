@@ -5,7 +5,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="crypto-quant-core",
-    version="0.75.0",
+    version="0.76.0",
     package_dir={"": "src"},
     packages=find_packages("src"),
     package_data={
@@ -14,6 +14,7 @@ setup(
             "dashboard/*.html",
             "dashboard/*.js",
             "dashboard/*.css",
+            "fixtures/challenger-replacement-v076/*.json",
         ]
     },
     entry_points={

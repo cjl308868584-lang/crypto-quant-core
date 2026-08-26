@@ -500,6 +500,43 @@ _V075_RELEASE_PATHS = (
     "docs/implementation-status-v0.75.0.md",
 )
 
+_V076_RELEASE_PATHS = (
+    "config/operations-projection-v3.schema.json",
+    "src/crypto_quant/fixtures/challenger-replacement-v076/"
+    "binance-lifecycle-long-input.json",
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-v3-deployment-v0.76.0.json",
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-fault-matrix-v0.76.0.json",
+    "tests/fixtures/challenger_replacement_v076/"
+    "economic-evaluation-known-answers.json",
+    "tests/fixtures/challenger_replacement_v076/public-market-capture.json",
+    "tests/fixtures/challenger_replacement_v076/public-simulation-golden.json",
+    "tests/test_challenger_replacement_economic_evaluation.py",
+    "tests/test_challenger_replacement_economic_evaluation_cli.py",
+    "tests/test_challenger_replacement_fault_matrix.py",
+    "tests/test_challenger_replacement_live_input.py",
+    "tests/test_challenger_replacement_operational_qualification.py",
+    "tests/test_challenger_replacement_public_http.py",
+    "tests/test_challenger_replacement_public_market_capture.py",
+    "tests/test_challenger_replacement_public_simulation.py",
+    "tests/test_challenger_replacement_public_simulation_contract.py",
+    "tests/test_challenger_replacement_v3_deployment.py",
+    "tests/test_challenger_replacement_v3_observer.py",
+    "tests/test_challenger_replacement_v3_runtime.py",
+    "tests/test_challenger_replacement_v3_start.py",
+    "tests/test_operations_alerts.py",
+    "tests/test_operations_dashboard.py",
+    "tests/test_operations_projection_v3.py",
+    "tests/test_challenger_replacement_v076_release.py",
+    "docs/superpowers/specs/"
+    "2026-08-26-public-simulation-research-bundle-design.md",
+    "docs/superpowers/plans/"
+    "2026-08-26-public-simulation-research-bundle.md",
+    "docs/adr/0076-public-simulation-research-bundle.md",
+    "docs/implementation-status-v0.76.0.md",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -543,6 +580,7 @@ class EvaluatorBuild:
                     + list(_V073_RELEASE_PATHS)
                     + list(_V074_RELEASE_PATHS)
                     + list(_V075_RELEASE_PATHS)
+                    + list(_V076_RELEASE_PATHS)
                 )
             )
         )

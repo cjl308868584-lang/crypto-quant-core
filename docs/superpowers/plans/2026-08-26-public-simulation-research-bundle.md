@@ -870,10 +870,13 @@ Expected: modules/Schemas absent.
 Reuse canonical/hash helpers and released plist rendering patterns, but do not
 import install/start mutation functions. The fixed candidate paths remain under
 the v0.68 owner-only root and use the v3 event directory. The candidate build
-identity binds package version, predecessor manifest identity and an exact
-path-to-SHA inventory for the v3 runtime candidate; the final v0.76 manifest
-later binds that same inventory and the deployment artifact. No document
-contains a future merge commit, tag object or self-referential hash.
+identity has exact keys `reviewed_code_checkpoint/package_version/`
+`predecessor_manifest_identity/executable_core_hash`: the checkpoint is a real
+commit containing every core byte, the predecessor object is the complete
+v0.75 manifest/release identity, and the aggregate covers the exact path-to-SHA
+inventory. The final v0.76 manifest later binds that inventory and deployment.
+No candidate document claims a future release tag, merge commit, v0.76 manifest
+hash/file SHA or any self-referential identity.
 
 Start receipt construction scans the strict projection in canonical sequence,
 derives the first eligible natural `OPPORTUNITY_OBSERVED`, and derives all
@@ -1593,7 +1596,8 @@ only a targeted rereview; do not repeat the unchanged whole-branch review.
 
 - [ ] **Step 4: Freeze deployment, runtime-core identity and fault receipt**
 
-After review fixes are final, enumerate executable-core paths, compute every
+After review fixes are final, commit a code checkpoint containing every core
+path and record its real commit ID. Then enumerate executable-core paths, compute every
 SHA-256 and the canonical aggregate hash, and build the deployment twice in
 memory to byte-compare before adding one canonical JSON plus LF with
 `apply_patch`. Then extend the identity with the exact deployment artifact,

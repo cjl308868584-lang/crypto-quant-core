@@ -20,18 +20,27 @@ import crypto_quant.challenger_replacement_v3_observer as observer_module
 import crypto_quant.operations_projection_v3 as projection_module
 
 
-BUILD = {
-    "release_tag": "v0.76.0",
-    "peeled_commit": "7" * 40,
-    "package_version": "0.76.0",
-    "manifest_version": "1.70.0",
-    "manifest_hash": "8" * 64,
-    "manifest_file_sha256": "9" * 64,
-    "build_input_tree_hash": "a" * 64,
-}
 CORE = {
     "src/crypto_quant/challenger_replacement_events.py": "b" * 64,
     "src/crypto_quant/challenger_replacement_fault_matrix.py": "c" * 64,
+}
+BUILD = {
+    "reviewed_code_checkpoint": "7" * 40,
+    "package_version": "0.76.0",
+    "predecessor_manifest_identity": {
+        "repository": "cjl308868584-lang/crypto-quant-core",
+        "visibility": "PUBLIC",
+        "release_tag": "v0.75.0",
+        "tag_object": "4bd4b2e21c760d6fad2a27903c67ee509ac116c9",
+        "peeled_commit": "a51ed15d5a484e5bb9a54dc75a7fef4e8876e4d5",
+        "package_version": "0.75.0",
+        "manifest_version": "1.69.0",
+        "manifest_hash": "b15479590536c302e173a41a758c9113cd7452b0000d8b6c5cb5c2ad8b9404d9",
+        "manifest_file_sha256": "df1695827975cbeb9c094b8182839e132219a52a19dc4166677a742d48442220",
+        "build_input_tree_hash": "07812c0a352dabab3742aa1c3417eaa8a8363e46a5059e49323f2b1c0d8a4a78",
+        "main_ci_run": 32869868571,
+    },
+    "executable_core_hash": business_hash(CORE),
 }
 
 
@@ -119,7 +128,7 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
                         canonical_json(mutation).encode("utf-8"),
                         build_identity=BUILD, runtime_core_identity=CORE,
                     )
-        other_build = dict(BUILD, peeled_commit="6" * 40)
+        other_build = dict(BUILD, reviewed_code_checkpoint="5" * 40)
         with self.assertRaises(ChallengerReplacementFaultMatrixError):
             load_challenger_replacement_fault_matrix_bytes(
                 body, build_identity=other_build, runtime_core_identity=CORE,

@@ -43,7 +43,7 @@ from tests.test_challenger_replacement_public_market_capture import (
 )
 from tests.challenger_replacement_v3_fixtures import fixture_v3_plan
 from tests.test_challenger_replacement_v3_deployment import (
-    INVENTORY, PREDECESSOR_RELEASE,
+    CANDIDATE_BUILD, INVENTORY, PREDECESSOR_RELEASE,
 )
 
 
@@ -67,7 +67,7 @@ class ChallengerReplacementV3StartTests(unittest.TestCase):
             predecessor_release=PREDECESSOR_RELEASE, plan=self.plan,
             economic_plan=self.economic, accelerated_plan=self.accelerated,
             predecessor_contract=self.predecessor,
-            public_contract=self.public, build_identity=V076_BUILD,
+            public_contract=self.public, build_identity=CANDIDATE_BUILD,
             strategy_inventory=INVENTORY,
         )
 

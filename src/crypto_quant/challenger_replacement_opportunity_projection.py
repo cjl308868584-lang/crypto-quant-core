@@ -95,6 +95,34 @@ def _hash_valid(value):
 
 
 def validate_build_identity(value):
+    candidate_keys = {
+        "reviewed_code_checkpoint", "package_version",
+        "predecessor_manifest_identity", "executable_core_hash",
+    }
+    predecessor = {
+        "repository": "cjl308868584-lang/crypto-quant-core",
+        "visibility": "PUBLIC",
+        "release_tag": "v0.75.0",
+        "tag_object": "4bd4b2e21c760d6fad2a27903c67ee509ac116c9",
+        "peeled_commit": "a51ed15d5a484e5bb9a54dc75a7fef4e8876e4d5",
+        "package_version": "0.75.0",
+        "manifest_version": "1.69.0",
+        "manifest_hash": "b15479590536c302e173a41a758c9113cd7452b0000d8b6c5cb5c2ad8b9404d9",
+        "manifest_file_sha256": "df1695827975cbeb9c094b8182839e132219a52a19dc4166677a742d48442220",
+        "build_input_tree_hash": "07812c0a352dabab3742aa1c3417eaa8a8363e46a5059e49323f2b1c0d8a4a78",
+        "main_ci_run": 32869868571,
+    }
+    if isinstance(value, Mapping) and set(value) == candidate_keys:
+        if (
+            value["package_version"] != "0.76.0"
+            or value["predecessor_manifest_identity"] != predecessor
+            or not isinstance(value["reviewed_code_checkpoint"], str)
+            or len(value["reviewed_code_checkpoint"]) != 40
+            or set(value["reviewed_code_checkpoint"]) - _HASH_CHARS
+            or not _hash_valid(value["executable_core_hash"])
+        ):
+            invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_IDENTITY_INVALID")
+        return dict(value)
     keys = {
         "release_tag",
         "peeled_commit",

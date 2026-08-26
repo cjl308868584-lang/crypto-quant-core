@@ -400,13 +400,18 @@ The v0.76 deployment candidate binds:
   v0.71 accounting core, v0.76 public capture/contract and new v0.76
   composition modules;
 - fixed service label and owner-only paths already established by v0.68;
-- a v0.76 candidate package version and manifest version without embedding a
-  future merge commit or tag object; and
+- a real 40-hex reviewed code checkpoint whose committed bytes include every
+  executable-core path, the v0.76 candidate package version, the exact
+  executable-core aggregate hash, and the complete v0.75 predecessor manifest
+  identity nested under `predecessor_manifest_identity`; and
 - all activation and money authority set to false.
 
-The v0.76 tag/main/CI identity is bound later by a future, separately approved
-install ceremony. This avoids a manifest self-reference and does not authorize
-that ceremony.
+The candidate identity has exact keys
+`reviewed_code_checkpoint/package_version/predecessor_manifest_identity/`
+`executable_core_hash`. It contains no `release_tag`, future merge commit,
+v0.76 manifest hash or v0.76 manifest-file hash. The v0.76 tag/main/CI/manifest
+identity is bound only after merge by the release record; keeping it out of the
+deployment avoids a manifest self-reference and does not authorize installation.
 
 ### 6.3 Start receipts
 

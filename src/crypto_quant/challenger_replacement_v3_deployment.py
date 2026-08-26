@@ -68,11 +68,17 @@ _CORE_PATHS = {"src/crypto_quant/" + name + ".py" for name in _CORE_MODULES} | {
     for name in _CORE_RESOURCES
 }
 _PREDECESSOR = {
+    "repository": "cjl308868584-lang/crypto-quant-core",
+    "visibility": "PUBLIC",
     "release_tag": "v0.75.0",
+    "tag_object": "4bd4b2e21c760d6fad2a27903c67ee509ac116c9",
     "peeled_commit": "a51ed15d5a484e5bb9a54dc75a7fef4e8876e4d5",
     "package_version": "0.75.0",
     "manifest_version": "1.69.0",
     "manifest_hash": "b15479590536c302e173a41a758c9113cd7452b0000d8b6c5cb5c2ad8b9404d9",
+    "manifest_file_sha256": "df1695827975cbeb9c094b8182839e132219a52a19dc4166677a742d48442220",
+    "build_input_tree_hash": "07812c0a352dabab3742aa1c3417eaa8a8363e46a5059e49323f2b1c0d8a4a78",
+    "main_ci_run": 32869868571,
 }
 
 
@@ -112,8 +118,15 @@ def _inputs(
             predecessor_contract=predecessor_contract,
         )
         or not isinstance(build_identity, Mapping)
-        or (build_identity.get("release_tag"), build_identity.get("package_version"),
-            build_identity.get("manifest_version")) != ("v0.76.0", "0.76.0", "1.70.0")
+        or set(build_identity) != {
+            "reviewed_code_checkpoint", "package_version",
+            "predecessor_manifest_identity",
+        }
+        or build_identity.get("package_version") != "0.76.0"
+        or build_identity.get("predecessor_manifest_identity") != _PREDECESSOR
+        or not isinstance(build_identity.get("reviewed_code_checkpoint"), str)
+        or len(build_identity["reviewed_code_checkpoint"]) != 40
+        or set(build_identity["reviewed_code_checkpoint"]) - hashes
         or not isinstance(strategy_inventory, Mapping)
         or set(strategy_inventory) != _CORE_PATHS
         or any(
@@ -180,7 +193,12 @@ def _document(
             "predecessor": {"contract_id": predecessor_contract["contract_id"], "contract_hash": predecessor_contract["contract_hash"]},
             "public": {"contract_id": public_contract["contract_id"], "contract_hash": public_contract["contract_hash"]},
         },
-        "candidate_build": copy.deepcopy(dict(build_identity)),
+        "candidate_build": {
+            **copy.deepcopy(dict(build_identity)),
+            "executable_core_hash": business_hash(
+                dict(sorted(strategy_inventory.items()))
+            ),
+        },
         "executable_core_identity": dict(sorted(strategy_inventory.items())),
         "executable_core_hash": business_hash(dict(sorted(strategy_inventory.items()))),
         "service": {"label": "local.crypto-quant.challenger-replacement-v1", "identity": "gui/501/local.crypto-quant.challenger-replacement-v1"},

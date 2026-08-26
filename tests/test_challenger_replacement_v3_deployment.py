@@ -30,15 +30,23 @@ from crypto_quant.challenger_replacement_v3_deployment import (
     _CORE_PATHS,
 )
 from tests.challenger_replacement_v3_fixtures import fixture_v3_plan
-from tests.test_challenger_replacement_public_market_capture import V076_BUILD
-
-
 PREDECESSOR_RELEASE = {
+    "repository": "cjl308868584-lang/crypto-quant-core",
+    "visibility": "PUBLIC",
     "release_tag": "v0.75.0",
+    "tag_object": "4bd4b2e21c760d6fad2a27903c67ee509ac116c9",
     "peeled_commit": "a51ed15d5a484e5bb9a54dc75a7fef4e8876e4d5",
     "package_version": "0.75.0",
     "manifest_version": "1.69.0",
     "manifest_hash": "b15479590536c302e173a41a758c9113cd7452b0000d8b6c5cb5c2ad8b9404d9",
+    "manifest_file_sha256": "df1695827975cbeb9c094b8182839e132219a52a19dc4166677a742d48442220",
+    "build_input_tree_hash": "07812c0a352dabab3742aa1c3417eaa8a8363e46a5059e49323f2b1c0d8a4a78",
+    "main_ci_run": 32869868571,
+}
+CANDIDATE_BUILD = {
+    "reviewed_code_checkpoint": "7" * 40,
+    "package_version": "0.76.0",
+    "predecessor_manifest_identity": PREDECESSOR_RELEASE,
 }
 INVENTORY = {
     path: hashlib.sha256(path.encode("utf-8")).hexdigest()
@@ -65,7 +73,7 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
             plan=self.plan, economic_plan=self.economic,
             accelerated_plan=self.accelerated,
             predecessor_contract=self.predecessor,
-            public_contract=self.public, build_identity=V076_BUILD,
+            public_contract=self.public, build_identity=CANDIDATE_BUILD,
             strategy_inventory=INVENTORY,
         )
 
@@ -79,13 +87,19 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
                 plan=self.plan, economic_plan=self.economic,
                 accelerated_plan=self.accelerated,
                 predecessor_contract=self.predecessor,
-                public_contract=self.public, build_identity=V076_BUILD,
+                public_contract=self.public, build_identity=CANDIDATE_BUILD,
                 strategy_inventory=INVENTORY,
             ),
             deployment,
         )
         self.assertEqual(deployment, self.build())
         self.assertEqual(deployment["executable_core_identity"], INVENTORY)
+        self.assertEqual(deployment["candidate_build"], {
+            **CANDIDATE_BUILD,
+            "executable_core_hash": deployment["executable_core_hash"],
+        })
+        self.assertNotIn("release_tag", deployment["candidate_build"])
+        self.assertNotIn("manifest_hash", deployment["candidate_build"])
         self.assertEqual(deployment["authority"], {
             "production_activation": False,
             "runtime_install_authorized": False,
@@ -183,12 +197,12 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
             self.assertNotIn(forbidden, lowered)
 
     def test_wrong_build_or_inventory_fails_before_candidate_construction(self):
-        wrong_build = deepcopy(V076_BUILD)
+        wrong_build = deepcopy(CANDIDATE_BUILD)
         wrong_build["package_version"] = "0.75.0"
         wrong_inventory = dict(INVENTORY)
         wrong_inventory.pop(next(iter(wrong_inventory)))
         for build, inventory in (
-            (wrong_build, INVENTORY), (V076_BUILD, wrong_inventory)
+            (wrong_build, INVENTORY), (CANDIDATE_BUILD, wrong_inventory)
         ):
             with self.subTest(build=build["package_version"], count=len(inventory)), self.assertRaises(
                 ChallengerReplacementV3DeploymentError
