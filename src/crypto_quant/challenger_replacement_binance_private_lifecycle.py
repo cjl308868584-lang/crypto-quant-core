@@ -43,12 +43,10 @@ _FUTURES_TRADE_KEYS = frozenset({
     "commissionAsset", "realizedPnl", "time", "buyer",
 })
 
-
 class BinancePrivateLifecycleError(ValueError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
         self.reason_code = reason_code
-
 
 def _fail(reason, error=None):
     failure = BinancePrivateLifecycleError(reason)
@@ -56,15 +54,12 @@ def _fail(reason, error=None):
         raise failure
     raise failure from error
 
-
 def _hash(value, length=64):
     return (isinstance(value, str) and len(value) == length
             and not set(value) - _HEX)
 
-
 def _identity(value):
     return isinstance(value, str) and 1 <= len(value) <= 256
-
 
 def _number(value, *, positive=False, signed=False):
     if not isinstance(value, str):
@@ -78,7 +73,6 @@ def _number(value, *, positive=False, signed=False):
         _fail("BINANCE_ORDER_OBSERVATION_INVALID")
     return number
 
-
 def _strict_pairs(pairs):
     result = {}
     for key, value in pairs:
@@ -86,7 +80,6 @@ def _strict_pairs(pairs):
             _fail("BINANCE_ORDER_OBSERVATION_INVALID")
         result[key] = value
     return result
-
 
 def _document(data):
     try:
@@ -100,7 +93,6 @@ def _document(data):
         if isinstance(error, BinancePrivateLifecycleError):
             raise
         _fail("BINANCE_ORDER_OBSERVATION_INVALID", error)
-
 
 def derive_binance_client_order_id(*, plan_hash, block_id, intent_id,
                                    attempt_ordinal, product):
@@ -116,7 +108,6 @@ def derive_binance_client_order_id(*, plan_hash, block_id, intent_id,
         "intent_id": intent_id, "plan_hash": plan_hash, "product": product,
     }).encode()
     return "cq77" + hashlib.sha256(body).hexdigest()[:32]
-
 
 def prepare_binance_order_attempt(*, intent, projection, preflight,
                                   activation):
@@ -200,7 +191,6 @@ def prepare_binance_order_attempt(*, intent, projection, preflight,
         "send_permitted": client_id in absent,
     }
 
-
 def _valid_attempt(value):
     if (not isinstance(value, Mapping)
             or frozenset(value) != _ATTEMPT_KEYS
@@ -232,7 +222,6 @@ def _valid_attempt(value):
             and client_id.startswith("cq77")
             and not set(client_id[4:]) - _HEX)
 
-
 def _validate_order(attempt, order):
     product = attempt["product"]
     expected = _SPOT_ORDER_KEYS if product == "SPOT" else _FUTURES_ORDER_KEYS
@@ -263,12 +252,10 @@ def _validate_order(attempt, order):
         _fail("BINANCE_ORDER_IDENTITY_MISMATCH")
     return original, executed
 
-
 def _validate_account(product, account):
     key = "balances" if product == "SPOT" else "positions"
     if frozenset(account) != {key} or not isinstance(account[key], list):
         _fail("BINANCE_ORDER_OBSERVATION_INVALID")
-
 
 def _trade_payloads(attempt, order_id, documents):
     expected = _SPOT_TRADE_KEYS if attempt["product"] == "SPOT" else _FUTURES_TRADE_KEYS
@@ -323,7 +310,6 @@ def _trade_payloads(attempt, order_id, documents):
         payload["intent_id"] = attempt["intent_id"]
         result.append({"event_type": "BINANCE_FILL_OBSERVED", "payload": payload})
     return result, cumulative, cumulative_fee
-
 
 def apply_binance_order_observation(*, attempt, order, trades, account):
     """Normalize one query plus exact trade/account replay into private events."""
@@ -401,7 +387,6 @@ _ALGO_KEYS = frozenset({
     "closePosition", "algoStatus",
 })
 
-
 def prepare_binance_protective_stop(*, short_quantity, trigger_price,
                                     intent_identity):
     """Prepare one query-first USDⓈ-M short protective stop."""
@@ -441,7 +426,6 @@ def prepare_binance_protective_stop(*, short_quantity, trigger_price,
         "send_permitted": False,
     }
 
-
 def _valid_stop_expected(expected):
     if not isinstance(expected, Mapping) or frozenset(expected) != _STOP_KEYS:
         return False
@@ -466,7 +450,6 @@ def _valid_stop_expected(expected):
             and _identity(expected.get("protected_intent_id"))
             and isinstance(client, str) and len(client) == 36
             and client.startswith("cq77") and not set(client[4:]) - _HEX)
-
 
 def reconcile_binance_protective_stop(*, position, algo_order, expected):
     """Prove the exact stop covers current short exposure or fail closed."""

@@ -7,14 +7,14 @@ from types import MappingProxyType
 from typing import Mapping
 
 from .canonical import canonical_decimal, canonical_json
-from .challenger_replacement_binance_private_lifecycle import _document, _number
+from .challenger_replacement_binance_private_lifecycle import _FUTURES_ORDER_KEYS, _document, _number, _strict_pairs
+from .challenger_replacement_binance_preflight import _FUTURES_ACCOUNT_KEYS, _FUTURES_ASSET_KEYS, _POSITION_KEYS
 _FACT_KEYS = frozenset({
     "product", "signed_quantity", "average_entry_price_or_null",
     "realized_pnl", "unrealized_pnl", "cumulative_fee", "funding",
     "wallet_balance", "available_balance", "open_order_count",
     "protective_stop_client_id_or_null", "fill_ids",
 })
-_ORDER_KEYS = frozenset({"symbol", "orderId", "clientOrderId", "status"})
 _TRADE_KEYS = frozenset({
     "symbol", "id", "orderId", "qty", "price", "quoteQty", "commission",
     "commissionAsset", "realizedPnl", "time", "buyer",
@@ -32,30 +32,19 @@ class BinanceReconciliationError(ValueError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
         self.reason_code = reason_code
-
+@dataclass(frozen=True)
+class EventProjection: values: Mapping[str, object]
 
 @dataclass(frozen=True)
-class EventProjection:
-    values: Mapping[str, object]
-
+class VenueProjection: values: Mapping[str, object]
 
 @dataclass(frozen=True)
-class VenueProjection:
-    values: Mapping[str, object]
-
-
-@dataclass(frozen=True)
-class LedgerProjection:
-    values: Mapping[str, object]
-
-
+class LedgerProjection: values: Mapping[str, object]
 def _fail(reason, error=None):
     failure = BinanceReconciliationError(reason)
     if error is None:
         raise failure
     raise failure from error
-
-
 def _decimal(value, *, signed=True, nullable=False):
     if nullable and value is None:
         return None
@@ -64,8 +53,6 @@ def _decimal(value, *, signed=True, nullable=False):
     except ValueError as error:
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)
     return canonical_decimal(number)
-
-
 def _facts(value):
     if not isinstance(value, Mapping) or frozenset(value) != _FACT_KEYS:
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
@@ -104,8 +91,6 @@ def _facts(value):
             != (result["average_entry_price_or_null"] is None)):
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
     return result
-
-
 def _unique(documents, key, conflict):
     if not isinstance(documents, tuple):
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
@@ -123,15 +108,28 @@ def _unique(documents, key, conflict):
             _fail(conflict)
         result[identity] = frozen
     return [json.loads(result[key]) for key in sorted(result)]
-
-
+def _array_document(data):
+    try:
+        if not isinstance(data, bytes) or not 1 <= len(data) <= 1_048_576:
+            raise ValueError
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=_strict_pairs)
+        if not isinstance(value, list) or canonical_json(value).encode() != data:
+            raise ValueError
+        return value
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)
 def _venue(event, orders, trades, account, position, incomes, algos):
     order_values = _unique(
         orders, "orderId", "BINANCE_RECONCILIATION_CONFLICTING_ORDER"
     )
     for order in order_values:
-        if (frozenset(order) != _ORDER_KEYS or order["symbol"] != "ETHUSDT"
+        if (frozenset(order) != _FUTURES_ORDER_KEYS
+                or order["symbol"] != "ETHUSDT"
                 or not isinstance(order["clientOrderId"], str)
+                or order["type"] != "MARKET"
+                or order["positionSide"] != "BOTH"
+                or not isinstance(order["reduceOnly"], bool)
+                or order["side"] not in {"BUY", "SELL"}
                 or order["status"] not in {
                     "NEW", "PARTIALLY_FILLED", "FILLED", "CANCELED",
                     "EXPIRED", "REJECTED",
@@ -155,15 +153,41 @@ def _venue(event, orders, trades, account, position, incomes, algos):
         fee += _number(trade["commission"])
         realized += _number(trade["realizedPnl"], signed=True)
     try:
-        account_value, position_value = _document(account), _document(position)
+        account_value, position_value = _document(account), _array_document(position)
     except ValueError as error:
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)
-    if (frozenset(account_value) != {"totalWalletBalance", "availableBalance"}
-            or frozenset(position_value) != {
-                "symbol", "positionSide", "positionAmt", "entryPrice",
-                "unRealizedProfit",
-            } or position_value["symbol"] != "ETHUSDT"
-            or position_value["positionSide"] != "BOTH"):
+    if (frozenset(account_value) != _FUTURES_ACCOUNT_KEYS
+            or not isinstance(account_value["assets"], list)
+            or len(account_value["assets"]) != 1
+            or frozenset(account_value["assets"][0]) != _FUTURES_ASSET_KEYS
+            or account_value["assets"][0]["asset"] != "USDT"
+            or not isinstance(account_value["positions"], list)
+            or not isinstance(position_value, list) or len(position_value) != 1
+            or frozenset(position_value[0]) != _POSITION_KEYS):
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+    position_value = position_value[0]
+    if (position_value["symbol"] != "ETHUSDT"
+            or position_value["positionSide"] != "BOTH"
+            or position_value["marginAsset"] != "USDT"
+            or any(isinstance(position_value[key], bool)
+                   or not isinstance(position_value[key], int)
+                   for key in ("adl", "updateTime"))):
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+    account_numbers = _FUTURES_ACCOUNT_KEYS - {"assets", "positions"}
+    asset = account_value["assets"][0]
+    asset_numbers = _FUTURES_ASSET_KEYS - {"asset", "updateTime"}
+    if (any(_number(account_value[key], signed=True) < 0
+            for key in account_numbers - {"totalUnrealizedProfit", "totalCrossUnPnl"})
+            or any(_number(asset[key], signed=True) < 0
+                   for key in asset_numbers - {"unrealizedProfit", "crossUnPnl"})
+            or isinstance(asset["updateTime"], bool)
+            or not isinstance(asset["updateTime"], int)
+            or _number(account_value["totalWalletBalance"])
+            != _number(asset["walletBalance"])
+            or _number(account_value["availableBalance"])
+            != _number(asset["availableBalance"])
+            or _number(account_value["totalUnrealizedProfit"], signed=True)
+            != _number(asset["unrealizedProfit"], signed=True)):
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
     signed_quantity = _number(position_value["positionAmt"], signed=True)
     entry = _number(position_value["entryPrice"])
@@ -227,15 +251,12 @@ def _venue(event, orders, trades, account, position, incomes, algos):
         "protective_stop_client_id_or_null": stop,
         "fill_ids": [trade["id"] for trade in trade_values],
     }
-
-
 def _identity(document):
     core = dict(document)
     core.pop("reconciliation_id", None)
     return "binance_reconciliation_" + hashlib.sha256(
         canonical_json(core).encode()
     ).hexdigest()
-
 
 def reconcile_binance_private_state(*, event_projection, order_documents,
                                     trade_documents, account_document,
@@ -269,14 +290,12 @@ def reconcile_binance_private_state(*, event_projection, order_documents,
     document["reconciliation_id"] = _identity(document)
     return (canonical_json(document) + "\n").encode()
 
-
 def _freeze(value):
     if isinstance(value, dict):
         return MappingProxyType({key: _freeze(item) for key, item in value.items()})
     if isinstance(value, list):
         return tuple(_freeze(item) for item in value)
     return value
-
 
 def load_binance_reconciliation_bytes(data):
     """Strictly replay one matched reconciliation artifact."""

@@ -1,4 +1,5 @@
 import json
+from importlib import resources
 import subprocess
 import sys
 import unittest
@@ -24,14 +25,18 @@ class BinanceReconciliationTests(unittest.TestCase):
             "average_entry_price_or_null": "2000", "realized_pnl": "-0.01",
             "unrealized_pnl": "1", "cumulative_fee": "0.02",
             "funding": "-0.005", "wallet_balance": "100",
-            "available_balance": "99", "open_order_count": 0,
+            "available_balance": "75", "open_order_count": 0,
             "protective_stop_client_id_or_null": self.CLIENT,
             "fill_ids": [401],
         }
         self.event = {**facts, "ledger_projection": dict(facts)}
         self.orders = (self.body({
             "symbol": "ETHUSDT", "orderId": 202,
-            "clientOrderId": "cq77" + "2" * 32, "status": "FILLED",
+            "clientOrderId": "cq77" + "2" * 32, "avgPrice": "2000",
+            "origQty": "0.025", "executedQty": "0.025", "cumQuote": "50",
+            "status": "FILLED", "type": "MARKET", "side": "SELL",
+            "positionSide": "BOTH", "reduceOnly": False,
+            "updateTime": 1787832000000,
         }),)
         self.trades = (self.body({
             "symbol": "ETHUSDT", "id": 401, "orderId": 202,
@@ -40,14 +45,33 @@ class BinanceReconciliationTests(unittest.TestCase):
             "realizedPnl": "-0.01", "time": 1787832000002,
             "buyer": False,
         }),)
-        self.account = self.body({
-            "totalWalletBalance": "100", "availableBalance": "99",
-        })
-        self.position = self.body({
-            "symbol": "ETHUSDT", "positionSide": "BOTH",
-            "positionAmt": "-0.025", "entryPrice": "2000",
-            "unRealizedProfit": "1",
-        })
+        fixture = json.loads(resources.files("crypto_quant").joinpath(
+            "fixtures", "challenger-replacement-v077",
+            "account-preflight-flat.json",
+        ).read_text(encoding="utf-8"))
+        account = fixture["FUTURES_ACCOUNT"]
+        account["totalInitialMargin"] = "25"
+        account["totalMaintMargin"] = "1"
+        account["totalUnrealizedProfit"] = "1"
+        account["totalMarginBalance"] = "101"
+        account["totalPositionInitialMargin"] = "25"
+        account["availableBalance"] = "75"
+        account["maxWithdrawAmount"] = "75"
+        account["assets"][0]["unrealizedProfit"] = "1"
+        account["assets"][0]["marginBalance"] = "101"
+        account["assets"][0]["maintMargin"] = "1"
+        account["assets"][0]["initialMargin"] = "25"
+        account["assets"][0]["positionInitialMargin"] = "25"
+        account["assets"][0]["availableBalance"] = "75"
+        account["assets"][0]["maxWithdrawAmount"] = "75"
+        self.account = self.body(account)
+        position = fixture["FUTURES_POSITION"]
+        position[0].update(positionAmt="-0.025", entryPrice="2000",
+                           markPrice="1960", unRealizedProfit="1", notional="-49",
+                           isolatedMargin="25", isolatedWallet="25",
+                           initialMargin="25", maintMargin="1",
+                           positionInitialMargin="25")
+        self.position = self.body(position)
         self.income = (self.body({
             "tranId": 501, "symbol": "ETHUSDT", "incomeType": "FUNDING_FEE",
             "income": "-0.005", "asset": "USDT", "time": 1787832000003,
@@ -115,7 +139,7 @@ class BinanceReconciliationTests(unittest.TestCase):
             "signed_quantity": "-0.024", "average_entry_price_or_null": "2001",
             "realized_pnl": "0", "unrealized_pnl": "2",
             "cumulative_fee": "0.03", "funding": "-0.006",
-            "wallet_balance": "101", "available_balance": "98",
+            "wallet_balance": "101", "available_balance": "74",
             "open_order_count": 1,
             "protective_stop_client_id_or_null": "cq77" + "9" * 32,
             "fill_ids": [402],
@@ -150,10 +174,13 @@ class BinanceReconciliationTests(unittest.TestCase):
 
     def test_open_order_and_position_or_balance_mismatch_are_detected(self):
         open_order = self.body({**json.loads(self.orders[0]), "status": "NEW"})
-        wrong_position = self.body({**json.loads(self.position),
-                                    "positionAmt": "-0.02"})
-        wrong_account = self.body({**json.loads(self.account),
-                                   "availableBalance": "98"})
+        wrong_position = json.loads(self.position)
+        wrong_position[0]["positionAmt"] = "-0.02"
+        wrong_position = self.body(wrong_position)
+        wrong_account = json.loads(self.account)
+        wrong_account["availableBalance"] = "74"
+        wrong_account["assets"][0]["availableBalance"] = "74"
+        wrong_account = self.body(wrong_account)
         replacement_algo = self.body({**json.loads(self.algos[0]),
                                       "quantity": "0.02"})
         for changes in (
