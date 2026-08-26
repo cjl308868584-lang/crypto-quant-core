@@ -697,7 +697,11 @@ def _private_payload_valid(event_type, payload, private):
         "BINANCE_RECONCILIATION_SUCCEEDED": common | {"reconciliation_id"},
         "BINANCE_RECONCILIATION_FAILED": common | {"reason_code"},
     }
-    if event_type not in keys or set(payload) != keys[event_type]:
+    expected_keys = keys.get(event_type)
+    if (event_type == "BINANCE_FILL_OBSERVED"
+            and private.get("product") == "PERPETUAL"):
+        expected_keys = expected_keys | {"realized_pnl"}
+    if expected_keys is None or set(payload) != expected_keys:
         return False
     if event_type == "BINANCE_ABSENCE_CHECKED":
         return (payload["venue_client_order_id"]
@@ -722,13 +726,18 @@ def _private_payload_valid(event_type, payload, private):
                 == private["venue_client_order_id"])
     if event_type == "BINANCE_FILL_OBSERVED":
         try:
-            return (isinstance(payload["trade_id"], int)
+            valid = (isinstance(payload["trade_id"], int)
                     and payload["trade_id"] >= 0
                     and all(canonical_decimal(payload[key]) == payload[key]
                             for key in ("quantity", "price", "quote_quantity",
                                         "fee", "cumulative_filled_quantity"))
                     and isinstance(payload["fee_asset"], str)
                     and bool(payload["fee_asset"]))
+            return (valid and (
+                private["product"] != "PERPETUAL"
+                or canonical_decimal(payload["realized_pnl"])
+                == payload["realized_pnl"]
+            ))
         except (TypeError, ValueError):
             return False
     if event_type.startswith("BINANCE_ORDER_") and event_type not in {

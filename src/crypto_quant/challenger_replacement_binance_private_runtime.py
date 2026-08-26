@@ -340,12 +340,14 @@ def _observe_order(*, state, attempt, order_result, context):
     if terminal in {
         "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED",
         "BINANCE_ORDER_EXPIRED", "BINANCE_ORDER_REJECTED",
-    } and spot:
-        return _finish_spot(
-            state, attempt, context.activation, order_result.body,
-            _tuple_documents(trades_result.body), account_result.body,
-            context.recorded_at,
-        )
+    }:
+        if spot:
+            return _finish_spot(
+                state, attempt, context.activation, order_result.body,
+                _tuple_documents(trades_result.body), account_result.body,
+                context.recorded_at,
+            )
+        _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
     return _status(
         (
             "ORDER_IN_PROGRESS"

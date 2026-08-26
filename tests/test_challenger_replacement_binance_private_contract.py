@@ -537,7 +537,7 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "intent_id": intent["intent_id"], "trade_id": 401,
             "order_id": 202, "quantity": "0.025", "price": "2000",
             "quote_quantity": "50", "fee": "0.02", "fee_asset": "USDT",
-            "cumulative_filled_quantity": "0.025",
+            "cumulative_filled_quantity": "0.025", "realized_pnl": "0",
         })
         self._append_private("BINANCE_ORDER_FILLED", {
             "intent_id": intent["intent_id"],

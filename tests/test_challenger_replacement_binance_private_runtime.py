@@ -281,6 +281,82 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         balances["USDT"]["free"] = usdt
         return canonical_json(document).encode("utf-8")
 
+    @staticmethod
+    def _futures_position(quantity="-0.025", entry="2000"):
+        document = json.loads(resources.files("crypto_quant").joinpath(
+            "fixtures", "challenger-replacement-v077",
+            "account-preflight-flat.json",
+        ).read_text(encoding="utf-8"))["FUTURES_POSITION"]
+        document[0].update(
+            positionAmt=quantity, entryPrice=entry, markPrice="1960",
+            unRealizedProfit="1", notional="-49", isolatedMargin="25",
+            isolatedWallet="25", initialMargin="25", maintMargin="1",
+            positionInitialMargin="25",
+        )
+        return canonical_json(document).encode("utf-8")
+
+    def test_futures_fill_without_verified_stop_fails_closed(self):
+        self.intent.update(
+            product="PERPETUAL", action="OPEN_SHORT", quantity="0.025",
+        )
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode("utf-8")
+        client_id = "cq779ea3df4bf5c5433f51227c2de39bffa2"
+        filled = canonical_json({
+            "symbol": "ETHUSDT", "orderId": 202,
+            "clientOrderId": client_id, "avgPrice": "2000",
+            "origQty": "0.025", "executedQty": "0.025",
+            "cumQuote": "50", "status": "FILLED", "type": "MARKET",
+            "side": "SELL", "positionSide": "BOTH", "reduceOnly": False,
+            "updateTime": 1787832000000,
+        }).encode("utf-8")
+        trades = canonical_json([{
+            "symbol": "ETHUSDT", "id": 401, "orderId": 202,
+            "qty": "0.025", "price": "2000", "quoteQty": "50",
+            "commission": "0.02", "commissionAsset": "USDT",
+            "realizedPnl": "0", "time": 1787832000002, "buyer": False,
+        }]).encode("utf-8")
+        position = self._futures_position()
+        responses = tuple(
+            BinancePrivateTransportResult(
+                kind, status, body, hashlib.sha256(body).hexdigest(), (),
+            )
+            for kind, status, body in (
+                ("RESPONSE_INVALID", 400, absent),
+                ("ACKNOWLEDGED", 200, filled),
+                ("QUERY_SUCCEEDED", 200, filled),
+                ("QUERY_SUCCEEDED", 200, trades),
+                ("QUERY_SUCCEEDED", 200, position),
+            )
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=responses,
+        ) as transport, self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+        ):
+            run_challenger_replacement_binance_private_intent(
+                state=self.state, event_root=self.workspace.root,
+                intent=self.intent, preflight=self.preflight,
+                activation=self.activation, credential=object(),
+                build_identity=self.workspace.build,
+            )
+        self.assertEqual(
+            [call.args[0].endpoint_id for call in transport.call_args_list],
+            ["FUTURES_ORDER_QUERY", "FUTURES_ORDER_CREATE",
+             "FUTURES_ORDER_QUERY", "FUTURES_TRADES", "FUTURES_POSITION"],
+        )
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_ORDER_FILLED")
+        self.assertNotIn("stop", private)
+
     def test_query_proven_absent_then_single_unknown_send_blocks_new_risk(self):
         absent = canonical_json({
             "code": -2013,
