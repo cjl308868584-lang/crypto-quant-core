@@ -14,6 +14,7 @@ from crypto_quant.challenger_replacement_economic_evaluation import (
     EconomicOpportunityFact,
     EconomicProgressFacts,
     build_economic_evaluation_facts_from_state,
+    build_economic_progress_facts_from_state,
     _build_economic_boundary_series,
     _strict_result,
     _strict_tail_mark,
@@ -126,10 +127,10 @@ def opportunity(seconds, *, outcome="OBSERVED", result=None,
 
 
 def verified(value):
-    object.__setattr__(
-        value, "_authority", getattr(evaluation_module, "_STRICT_EVENT_FACTS", object())
-    )
     return value
+
+
+REAL_EVENT_FACTS = evaluation_module._event_facts
 
 
 def population():
@@ -139,6 +140,9 @@ def population():
 class EconomicProgressTests(unittest.TestCase):
     def setUp(self):
         self.plan = build_challenger_replacement_economic_plan()
+        gate = patch.object(evaluation_module, "_event_facts", side_effect=lambda value: value)
+        gate.start()
+        self.addCleanup(gate.stop)
 
     def test_pre_tail_projection_is_structurally_tail_blind(self):
         facts = verified(EconomicProgressFacts(
@@ -195,7 +199,24 @@ class EconomicProgressTests(unittest.TestCase):
             start_receipt=start_receipt(), terminal_headers=(header(0),),
             observed_at=iso(START),
         )
-        with self.assertRaisesRegex(
+        with patch.object(evaluation_module, "_event_facts", wraps=REAL_EVENT_FACTS), \
+             self.assertRaisesRegex(
+            ChallengerReplacementEconomicEvaluationError,
+            "ECONOMIC_FACT_SOURCE_INVALID",
+        ):
+            observe_challenger_replacement_economic_progress(
+                raw, economic_plan=self.plan
+            )
+
+    def test_importable_authority_token_cannot_make_caller_facts_trusted(self):
+        raw = EconomicProgressFacts(
+            start_receipt=start_receipt(), terminal_headers=(header(0),),
+            observed_at=iso(START),
+        )
+        object.__setattr__(raw, "_authority", object())
+        self.assertFalse(hasattr(evaluation_module, "_STRICT_EVENT_FACTS"))
+        with patch.object(evaluation_module, "_event_facts", wraps=REAL_EVENT_FACTS), \
+             self.assertRaisesRegex(
             ChallengerReplacementEconomicEvaluationError,
             "ECONOMIC_FACT_SOURCE_INVALID",
         ):
@@ -242,12 +263,17 @@ class EconomicBoundarySeriesTests(unittest.TestCase):
         }
         state = object.__new__(ChallengerReplacementOpportunityState)
         state.plan, state.build_identity = plan, dict(V076_BUILD)
+        state.event_root = SimpleNamespace(
+            path="/fixture/events", device=1, inode=2, uid=3,
+        )
         state._replay = lambda: projection
         receipt = start_receipt()
         receipt.update(
             shared_opportunity_id=first_id, shared_event_hash="3" * 64,
             operational_start={"observed_at": iso(START)},
             authority={"production_activation": False},
+            event_root_identity={"absolute_path": "/fixture/events", "device": 1,
+                                 "inode": 2, "uid": 3, "mode_octal": "0700"},
         )
         captures = (
             SimpleNamespace(document={"normalized": {"bars": ["first"]}}),
@@ -281,6 +307,73 @@ class EconomicBoundarySeriesTests(unittest.TestCase):
         self.assertEqual(len(facts.opportunities), 1)
         self.assertEqual(facts.tail_mark_or_null["marked_equity"], "123")
         self.assertEqual(facts.tail_mark_or_null["source"], {"kind": "tail"})
+        wrong = json.loads(json.dumps(receipt))
+        wrong["event_root_identity"]["inode"] = 9
+        with self.assertRaisesRegex(
+            ChallengerReplacementEconomicEvaluationError,
+            "ECONOMIC_FACT_SOURCE_INVALID",
+        ):
+            evaluation_module._validate_start_against_projection(
+                wrong, projection, state
+            )
+
+    def test_state_factory_uses_only_start_inclusive_tail_exclusive_window(self):
+        plan = fixture_v3_plan()
+        times = (START - timedelta(hours=4), START, TAIL, TAIL + timedelta(hours=4))
+        identifiers = tuple("ETHUSDT@" + iso(value) for value in times)
+        projection = {
+            "events": (SimpleNamespace(final_bytes=json.dumps({
+                "event_type": "OPPORTUNITY_OBSERVED", "slot_id": identifiers[1],
+            }).encode(), event_hash="3" * 64),),
+            "terminal_scheduled_for": tuple(map(iso, times)),
+            "opportunities": {
+                identifier: {
+                    "outcome": "MISSED" if index == 0 else "OBSERVED",
+                    "scheduled_for": iso(times[index]),
+                    "reason_code": "PRE_START_MISS" if index == 0 else None,
+                    "source_bundle_bytes": str(index).encode(),
+                    "result_evidence": {
+                        "sequence": index + 2, "parent_event_hash": "4" * 64,
+                        "opportunity": {"captured_at": iso(times[index])},
+                        "next_snapshot": {"snapshot_hash": str(index + 5) * 64,
+                                          "position_state": "FLAT"},
+                    },
+                } for index, identifier in enumerate(identifiers)
+            },
+        }
+        state = object.__new__(ChallengerReplacementOpportunityState)
+        state.plan, state.build_identity = plan, dict(V076_BUILD)
+        state._replay = lambda: projection
+        receipt = start_receipt()
+        receipt.update(shared_opportunity_id=identifiers[1],
+                       shared_event_hash="3" * 64,
+                       operational_start={"observed_at": iso(START)},
+                       authority={"production_activation": False})
+        with patch.object(evaluation_module, "_validate_start_against_projection"), \
+             patch.object(evaluation_module, "load_challenger_replacement_public_market_capture_bytes",
+                          side_effect=[SimpleNamespace(document={"normalized": {"bars": [1]}}),
+                                       SimpleNamespace(document={"normalized": {"bars": [2]}})]), \
+             patch.object(evaluation_module, "build_challenger_replacement_public_simulation_input",
+                          side_effect=({"kind": "start"}, {"kind": "tail"})), \
+             patch.object(evaluation_module, "build_challenger_replacement_public_genesis_snapshot",
+                          return_value={"snapshot_hash": "0" * 64, "position_state": "FLAT"}), \
+             patch.object(evaluation_module, "_strict_result",
+                          side_effect=lambda envelope, **_kwargs: envelope["result"]), \
+             patch.object(evaluation_module, "_kernel_source", return_value={}), \
+             patch.object(evaluation_module, "_mark",
+                          side_effect=lambda snapshot, _source:
+                          snapshot.update(marked_equity="123")):
+            result = build_economic_evaluation_facts_from_state(
+                state=state, start_receipt=receipt, observed_at=iso(TAIL),
+                tail_mark_or_null=None,
+            )
+            progress = build_economic_progress_facts_from_state(
+                state=state, start_receipt=receipt, observed_at=iso(TAIL)
+            )
+        self.assertEqual(tuple(item.scheduled_for for item in result.opportunities),
+                         (iso(START),))
+        self.assertEqual(tuple(item["scheduled_for"] for item in progress.terminal_headers),
+                         (iso(START),))
 
     def build(self, opportunities=None, *, observed_at=TAIL, tail=True):
         facts = verified(EconomicEvaluationFacts(
@@ -475,6 +568,9 @@ def final_series(value="0.001"):
 class EconomicBootstrapAndResultTests(unittest.TestCase):
     def setUp(self):
         self.plan = build_challenger_replacement_economic_plan()
+        gate = patch.object(evaluation_module, "_event_facts", side_effect=lambda value: value)
+        gate.start()
+        self.addCleanup(gate.stop)
         self.facts = verified(EconomicEvaluationFacts(
             start_receipt=start_receipt(), opportunities=(),
             observed_at=iso(TAIL), tail_mark_or_null={},
@@ -485,7 +581,7 @@ class EconomicBootstrapAndResultTests(unittest.TestCase):
             start_receipt=start_receipt(), opportunities=(),
             observed_at=iso(TAIL), tail_mark_or_null={},
         )
-        with patch(
+        with patch.object(evaluation_module, "_event_facts", wraps=REAL_EVENT_FACTS), patch(
             "crypto_quant.challenger_replacement_economic_evaluation._build_economic_boundary_series",
             return_value=final_series(),
         ), self.assertRaisesRegex(

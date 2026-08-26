@@ -30,18 +30,14 @@ _HARD_STOPS = {
     "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
     "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT",
 }
-_STRICT_EVENT_FACTS = object()
-
 
 class ChallengerReplacementOperationalQualificationError(ValueError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
         self.reason_code = reason_code
 
-
 def _invalid(reason="CHALLENGER_REPLACEMENT_OPERATIONAL_QUALIFICATION_INVALID"):
     raise ChallengerReplacementOperationalQualificationError(reason)
-
 
 @dataclass(frozen=True)
 class OperationalQualificationFacts:
@@ -51,7 +47,6 @@ class OperationalQualificationFacts:
     position_state: str
     reconciliation_status: str
     hard_stop_reason_codes: Tuple[str, ...]
-
 
 def build_operational_qualification_facts_from_state(
     *, state, start_receipt, observed_at
@@ -115,9 +110,18 @@ def build_operational_qualification_facts_from_state(
         position_state=position, reconciliation_status=reconciliation,
         hard_stop_reason_codes=tuple(sorted(hard_stops)),
     )
-    object.__setattr__(value, "_authority", _STRICT_EVENT_FACTS)
+    object.__setattr__(value, "_state", state)
     return value
 
+def _event_facts(value):
+    state = getattr(value, "_state", None)
+    try:
+        expected = build_operational_qualification_facts_from_state(
+            state=state, start_receipt=value.start_receipt, observed_at=value.observed_at)
+    except (AttributeError, TypeError, ValueError):
+        _invalid("CHALLENGER_REPLACEMENT_OPERATIONAL_FACT_SOURCE_INVALID")
+    if expected != value: _invalid("CHALLENGER_REPLACEMENT_OPERATIONAL_FACT_SOURCE_INVALID")
+    return expected
 
 @lru_cache(maxsize=1)
 def _validator():
@@ -126,7 +130,6 @@ def _validator():
     ).read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
-
 
 def _time(value):
     if not isinstance(value, str) or not value.endswith("Z"):
@@ -141,12 +144,10 @@ def _time(value):
         _invalid()
     return parsed
 
-
 def _validated_inputs(facts, plan, fault):
     if not isinstance(facts, OperationalQualificationFacts):
         _invalid()
-    if getattr(facts, "_authority", None) is not _STRICT_EVENT_FACTS:
-        _invalid("CHALLENGER_REPLACEMENT_OPERATIONAL_FACT_SOURCE_INVALID")
+    _event_facts(facts)
     expected_plan = build_challenger_replacement_accelerated_canary_plan()
     if plan != expected_plan:
         _invalid("CHALLENGER_REPLACEMENT_OPERATIONAL_POLICY_MISMATCH")
@@ -168,7 +169,6 @@ def _validated_inputs(facts, plan, fault):
     ]["executable_core_hash"]:
         _invalid("CHALLENGER_REPLACEMENT_FAULT_MATRIX_NOT_PASSED")
     return expected_plan
-
 
 def _evaluate(facts, plan, fault):
     _validated_inputs(facts, plan, fault)
@@ -273,7 +273,6 @@ def _evaluate(facts, plan, fault):
         elapsed, tuple(sorted(set(reasons))), final_segment,
     )
 
-
 def _document(facts, plan, fault):
     status, elapsed, reasons, segment = _evaluate(facts, plan, fault)
     fact_value = {
@@ -315,13 +314,11 @@ def _document(facts, plan, fault):
         _invalid()
     return value
 
-
 def evaluate_challenger_replacement_operational_qualification(
     facts: OperationalQualificationFacts, *, accelerated_plan: Mapping[str, Any],
     fault_receipt: Mapping[str, Any]
 ) -> Dict[str, Any]:
     return copy.deepcopy(_document(facts, accelerated_plan, fault_receipt))
-
 
 def load_challenger_replacement_operational_qualification_bytes(
     data: bytes, *, facts: OperationalQualificationFacts,

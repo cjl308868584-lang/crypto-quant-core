@@ -126,6 +126,13 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
             "src/crypto_quant/schemas/challenger-replacement-fault-matrix-receipt-v1.schema.json",
             "src/crypto_quant/schemas/challenger-replacement-operational-qualification-v1.schema.json",
             "src/crypto_quant/schemas/challenger-replacement-economic-evaluation-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-plan-v3.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-economic-evaluation-plan-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-accelerated-canary-plan-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-simulation-contract-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-live-capture-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-binance-simulation-input-v1.schema.json",
+            "src/crypto_quant/schemas/challenger-replacement-opportunity-result-evidence-v2.schema.json",
             "src/crypto_quant/schemas/operations-projection-v3.schema.json",
             "src/crypto_quant/fixtures/challenger-replacement-v076/binance-lifecycle-long-input.json",
         ):

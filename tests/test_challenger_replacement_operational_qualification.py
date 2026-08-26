@@ -78,10 +78,10 @@ def facts(*opportunities, observed_seconds=None, hard=(), position="FLAT",
         reconciliation_status=reconciliation,
         hard_stop_reason_codes=tuple(hard),
     )
-    object.__setattr__(
-        value, "_authority", getattr(qualification_module, "_STRICT_EVENT_FACTS", object())
-    )
     return value
+
+
+REAL_EVENT_FACTS = qualification_module._event_facts
 
 
 class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
@@ -90,6 +90,11 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
         self.fault = run_challenger_replacement_fault_matrix(
             build_identity=BUILD, runtime_core_identity=CORE,
         )
+        gate = unittest.mock.patch.object(
+            qualification_module, "_event_facts", side_effect=lambda value: value
+        )
+        gate.start()
+        self.addCleanup(gate.stop)
 
     def evaluate(self, value):
         return evaluate_challenger_replacement_operational_qualification(
@@ -105,7 +110,27 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
             reconciliation_status="MATCHED",
             hard_stop_reason_codes=(),
         )
-        with self.assertRaisesRegex(
+        with unittest.mock.patch.object(
+            qualification_module, "_event_facts", wraps=REAL_EVENT_FACTS
+        ), self.assertRaisesRegex(
+            ChallengerReplacementOperationalQualificationError,
+            "CHALLENGER_REPLACEMENT_OPERATIONAL_FACT_SOURCE_INVALID",
+        ):
+            self.evaluate(raw)
+
+    def test_importable_authority_token_cannot_qualify_caller_facts(self):
+        raw = OperationalQualificationFacts(
+            start_receipt=facts(terminal(0)).start_receipt,
+            terminal_opportunities=observed_series(259200),
+            observed_at=iso(START + timedelta(seconds=259200)),
+            position_state="FLAT", reconciliation_status="MATCHED",
+            hard_stop_reason_codes=(),
+        )
+        object.__setattr__(raw, "_authority", object())
+        self.assertFalse(hasattr(qualification_module, "_STRICT_EVENT_FACTS"))
+        with unittest.mock.patch.object(
+            qualification_module, "_event_facts", wraps=REAL_EVENT_FACTS
+        ), self.assertRaisesRegex(
             ChallengerReplacementOperationalQualificationError,
             "CHALLENGER_REPLACEMENT_OPERATIONAL_FACT_SOURCE_INVALID",
         ):
@@ -186,7 +211,6 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
             position_state="FLAT", reconciliation_status="MATCHED",
             hard_stop_reason_codes=(),
         )
-        object.__setattr__(value, "_authority", qualification_module._STRICT_EVENT_FACTS)
         result = self.evaluate(value)
         self.assertEqual(result["status"], "QUALIFIED")
         self.assertEqual(result["eligible_continuous_seconds"], 259_200)
@@ -275,7 +299,6 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
             reconciliation_status=original.reconciliation_status,
             hard_stop_reason_codes=original.hard_stop_reason_codes,
         )
-        object.__setattr__(changed, "_authority", qualification_module._STRICT_EVENT_FACTS)
         first = self.evaluate(original)
         second = self.evaluate(changed)
         self.assertNotEqual(first["bindings"]["facts_hash"], second["bindings"]["facts_hash"])

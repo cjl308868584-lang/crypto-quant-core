@@ -219,6 +219,10 @@ class ChallengerReplacementV3RuntimeTests(unittest.TestCase):
                     "orders_submitted_to_venue": 0,
                     "fund_movement": 0,
                 },
+                "event_root_identity": {
+                    "absolute_path": str(root.path), "device": root.device,
+                    "inode": root.inode, "uid": root.uid, "mode_octal": "0700",
+                },
             }
             operational = build_operational_qualification_facts_from_state(
                 state=state, start_receipt=receipt,

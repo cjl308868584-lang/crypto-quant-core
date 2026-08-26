@@ -251,6 +251,11 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
             return original_open(instance, *args, **kwargs)
         with patch.object(fault_module._ProbeOpener, "open", new=tracked_open):
             fault_module._probe_boundary("NETWORK_LOSS_BEFORE_REQUEST", BUILD)
+        self.assertEqual(len(calls), 0)
+        with patch.object(fault_module._ProbeOpener, "open", new=tracked_open):
+            fault_module._probe_boundary(
+                "NETWORK_LOSS_AFTER_REQUEST_BEFORE_RESPONSE", BUILD
+            )
         self.assertEqual(len(calls), 1)
 
         with patch.object(

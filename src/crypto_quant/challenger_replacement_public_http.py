@@ -93,7 +93,10 @@ def open_fixed_public_request(request: Request, *, max_body_bytes: int):
         )
     ):
         raise PublicHttpError("PUBLIC_HTTP_REQUEST_INVALID")
-    opener = build_opener(ProxyHandler({}), _RejectRedirects())
+    try:
+        opener = build_opener(ProxyHandler({}), _RejectRedirects())
+    except (OSError, TimeoutError, URLError) as error:
+        raise PublicHttpError("PUBLIC_HTTP_TRANSPORT_FAILURE") from error
     started = _wall_now()
     monotonic_started = _monotonic()
     try:

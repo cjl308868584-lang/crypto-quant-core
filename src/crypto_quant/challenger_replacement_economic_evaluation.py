@@ -46,25 +46,20 @@ _PUBLIC = (
     "PUBLIC_MARKET_DETERMINISTIC_SIMULATION_NO_ACCOUNT_NO_BROKER_NO_REAL_ORDER"
 )
 _SCHEMA = "challenger-replacement-economic-evaluation-v1.schema.json"
-_STRICT_EVENT_FACTS = object()
-
 
 class ChallengerReplacementEconomicEvaluationError(ValueError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
         self.reason_code = reason_code
 
-
 def _invalid(reason="ECONOMIC_EVALUATION_FACTS_INVALID"):
     raise ChallengerReplacementEconomicEvaluationError(reason)
-
 
 @dataclass(frozen=True)
 class EconomicProgressFacts:
     start_receipt: Mapping[str, Any]
     terminal_headers: Tuple[Mapping[str, Any], ...]
     observed_at: str
-
 
 @dataclass(frozen=True)
 class EconomicOpportunityFact:
@@ -75,7 +70,6 @@ class EconomicOpportunityFact:
     missed_position_state_or_null: Optional[str]
     missed_reason_or_null: Optional[str]
 
-
 @dataclass(frozen=True)
 class EconomicEvaluationFacts:
     start_receipt: Mapping[str, Any]
@@ -83,19 +77,28 @@ class EconomicEvaluationFacts:
     observed_at: str
     tail_mark_or_null: Optional[Mapping[str, Any]]
 
-
 def _event_facts(value):
-    if getattr(value, "_authority", None) is not _STRICT_EVENT_FACTS:
+    state = getattr(value, "_state", None)
+    try:
+        if isinstance(value, EconomicProgressFacts):
+            expected = build_economic_progress_facts_from_state(
+                state=state, start_receipt=value.start_receipt, observed_at=value.observed_at)
+        elif isinstance(value, EconomicEvaluationFacts):
+            expected = build_economic_evaluation_facts_from_state(
+                state=state, start_receipt=value.start_receipt,
+                observed_at=value.observed_at, tail_mark_or_null=None)
+        else:
+            _invalid("ECONOMIC_FACT_SOURCE_INVALID")
+    except (AttributeError, TypeError):
         _invalid("ECONOMIC_FACT_SOURCE_INVALID")
+    if expected != value: _invalid("ECONOMIC_FACT_SOURCE_INVALID")
+    return expected
+
+def _bind_event_facts(value, state):
+    object.__setattr__(value, "_state", state)
     return value
 
-
-def _bind_event_facts(value):
-    object.__setattr__(value, "_authority", _STRICT_EVENT_FACTS)
-    return value
-
-
-def _validate_start_against_projection(start_receipt, projection, build_identity):
+def _validate_start_against_projection(start_receipt, projection, state):
     try:
         observed = next(
             event for event in projection["events"]
@@ -109,7 +112,7 @@ def _validate_start_against_projection(start_receipt, projection, build_identity
             or start_receipt.get("status")
             != "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED"
             or start_receipt.get("deployment", {}).get("candidate_build")
-            != build_identity
+            != state.build_identity
             or start_receipt.get("shared_opportunity_id") != event["slot_id"]
             or start_receipt.get("shared_event_hash") != observed.event_hash
             or start_receipt.get("economic_start", {}).get("scheduled_for")
@@ -117,13 +120,16 @@ def _validate_start_against_projection(start_receipt, projection, build_identity
             or start_receipt.get("operational_start", {}).get("observed_at")
             != slot["result_evidence"]["opportunity"]["captured_at"]
             or any(start_receipt.get("authority", {}).values())
+            or start_receipt.get("event_root_identity") != {
+                "absolute_path": str(state.event_root.path), "device": state.event_root.device,
+                "inode": state.event_root.inode, "uid": state.event_root.uid,
+                "mode_octal": "0700"}
         ):
             _invalid("ECONOMIC_FACT_SOURCE_INVALID")
     except (KeyError, StopIteration, TypeError, UnicodeDecodeError, ValueError) as error:
         raise ChallengerReplacementEconomicEvaluationError(
             "ECONOMIC_FACT_SOURCE_INVALID"
         ) from error
-
 
 def build_economic_progress_facts_from_state(
     *, state, start_receipt, observed_at
@@ -135,9 +141,8 @@ def build_economic_progress_facts_from_state(
     if not isinstance(state, ChallengerReplacementOpportunityState):
         _invalid("ECONOMIC_FACT_SOURCE_INVALID")
     projection = state._replay()
-    _validate_start_against_projection(
-        start_receipt, projection, state.build_identity
-    )
+    _validate_start_against_projection(start_receipt, projection, state)
+    start = _time(start_receipt["economic_start"]["scheduled_for"]); tail = start + timedelta(seconds=_TAIL_SECONDS)
     headers = tuple({
         "opportunity_id": _opportunity_id(_time(scheduled_for)),
         "scheduled_for": scheduled_for,
@@ -145,13 +150,13 @@ def build_economic_progress_facts_from_state(
             _opportunity_id(_time(scheduled_for))
         ]["outcome"],
         "evidence_health": "STRICT_REPLAY_VERIFIED",
-    } for scheduled_for in projection["terminal_scheduled_for"])
+    } for scheduled_for in projection["terminal_scheduled_for"]
+      if start <= _time(scheduled_for) < tail)
     return _bind_event_facts(EconomicProgressFacts(
         start_receipt=copy.deepcopy(dict(start_receipt)),
         terminal_headers=headers,
         observed_at=observed_at,
-    ))
-
+    ), state)
 
 def build_economic_evaluation_facts_from_state(
     *, state, start_receipt, observed_at, tail_mark_or_null
@@ -166,9 +171,7 @@ def build_economic_evaluation_facts_from_state(
     ):
         _invalid("ECONOMIC_FACT_SOURCE_INVALID")
     projection = state._replay()
-    _validate_start_against_projection(
-        start_receipt, projection, state.build_identity
-    )
+    _validate_start_against_projection(start_receipt, projection, state)
     plan = state.plan
     economic = build_challenger_replacement_economic_plan()
     predecessor = build_challenger_replacement_simulation_contract(plan=plan)
@@ -180,13 +183,12 @@ def build_economic_evaluation_facts_from_state(
     )
     previous_bundle = None
     result = []
-    tail = _time(start_receipt["economic_start"]["scheduled_for"]) + timedelta(
-        seconds=_TAIL_SECONDS
-    )
+    tail = _time(start_receipt["economic_start"]["scheduled_for"]) + timedelta(seconds=_TAIL_SECONDS)
+    start = tail - timedelta(seconds=_TAIL_SECONDS)
     tail_mark = None
     for scheduled_for in projection["terminal_scheduled_for"]:
         scheduled = _time(scheduled_for)
-        if scheduled > tail:
+        if scheduled < start or scheduled > tail:
             continue
         opportunity_id = _opportunity_id(_time(scheduled_for))
         slot = projection["opportunities"][opportunity_id]
@@ -235,8 +237,7 @@ def build_economic_evaluation_facts_from_state(
         start_receipt=copy.deepcopy(dict(start_receipt)),
         opportunities=tuple(result), observed_at=observed_at,
         tail_mark_or_null=tail_mark,
-    ))
-
+    ), state)
 
 def _time(value):
     if not isinstance(value, str) or not value.endswith("Z"):
@@ -251,13 +252,11 @@ def _time(value):
         _invalid()
     return parsed
 
-
 def _validated_plan(plan):
     expected = build_challenger_replacement_economic_plan()
     if plan != expected:
         _invalid("ECONOMIC_EVALUATION_PLAN_MISMATCH")
     return expected
-
 
 def _start(receipt):
     try:
@@ -274,11 +273,9 @@ def _start(receipt):
     except (KeyError, TypeError):
         _invalid()
 
-
 def _opportunity_id(scheduled):
     text = scheduled.isoformat(timespec="milliseconds").replace("+00:00", "Z")
     return "ETHUSDT@" + text
-
 
 def observe_challenger_replacement_economic_progress(
     facts: EconomicProgressFacts, *, economic_plan: Mapping[str, Any]
@@ -330,7 +327,6 @@ def observe_challenger_replacement_economic_progress(
         "authority": {"economic_outcome_reads": 0, "production_state_writes": 0},
     }
 
-
 def _strict_result(envelope, *, economic_plan, expected_previous_hash=None,
                    expected_build=None):
     if not isinstance(envelope, Mapping) or set(envelope) != {
@@ -365,7 +361,6 @@ def _strict_result(envelope, *, economic_plan, expected_previous_hash=None,
         raise ChallengerReplacementEconomicEvaluationError(
             "ECONOMIC_RESULT_REPLAY_INVALID"
         ) from error
-
 
 def _strict_tail_mark(
     envelope, *, economic_plan, expected_previous_hash=None,
@@ -409,10 +404,8 @@ def _strict_tail_mark(
             "ECONOMIC_TAIL_MARK_INVALID"
         ) from error
 
-
 def _c(value):
     return canonical_decimal(value)
-
 
 @lru_cache(maxsize=1)
 def _validator():
@@ -421,7 +414,6 @@ def _validator():
     ).read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
-
 
 def _series(equities):
     returns = [
@@ -442,7 +434,6 @@ def _series(equities):
         "maximum_drawdown_fraction": _c(drawdown),
     }
 
-
 def _continuous_drawdown(values):
     peak = values[0]
     result = Decimal("0")
@@ -451,7 +442,6 @@ def _continuous_drawdown(values):
         if peak > 0:
             result = max(result, (peak - value) / peak)
     return result
-
 
 @_fixed_decimal_context
 def _build_economic_boundary_series(
@@ -624,12 +614,10 @@ def _build_economic_boundary_series(
         "nonpositive_equity": any(value <= 0 for value in continuous_base),
     }
 
-
 def _nearest_rank(values, numerator, denominator):
     ordered = sorted(values)
     rank = (len(ordered) * numerator + denominator - 1) // denominator
     return ordered[max(1, rank) - 1]
-
 
 @_fixed_decimal_context
 def _bootstrap_statistics(values, *, economic_plan):
@@ -673,7 +661,6 @@ def _bootstrap_statistics(values, *, economic_plan):
         "achieved_power_at_mere": _c(power),
     }
 
-
 def _economic_gates(one, statistics, stress_total):
     total = Decimal(one["boundary_equities"][-1]) - Decimal(
         one["boundary_equities"][0]
@@ -690,7 +677,6 @@ def _economic_gates(one, statistics, stress_total):
         "stress_total_net_pnl_usdt_gte_zero": stress_total >= 0,
     }
 
-
 def _finish_result(value):
     identity = {key: item for key, item in value.items() if key not in {
         "$schema", "schema_version", "result_id", "result_hash"
@@ -702,7 +688,6 @@ def _finish_result(value):
     if tuple(_validator().iter_errors(value)):
         _invalid("ECONOMIC_EVALUATION_RESULT_INVALID")
     return value
-
 
 def _empty_result(facts, plan, build_identity, reason):
     return _finish_result({
@@ -720,7 +705,6 @@ def _empty_result(facts, plan, build_identity, reason):
         "authority": {"production_activation": False, "account_requests": 0,
                       "broker_requests": 0, "orders": 0, "fund_movement": 0},
     })
-
 
 def _result_document(facts, plan, build_identity):
     validate_build_identity(build_identity)
@@ -812,7 +796,6 @@ def _result_document(facts, plan, build_identity):
     }
     return _finish_result(value)
 
-
 def evaluate_challenger_replacement_economic_result(
     facts: EconomicEvaluationFacts, *, economic_plan: Mapping[str, Any],
     build_identity: Mapping[str, Any]
@@ -828,7 +811,6 @@ def evaluate_challenger_replacement_economic_result(
         raise ChallengerReplacementEconomicEvaluationError(
             "ECONOMIC_EVALUATION_RESULT_INVALID"
         ) from error
-
 
 def load_challenger_replacement_economic_evaluation_bytes(
     data: bytes, *, facts: EconomicEvaluationFacts,

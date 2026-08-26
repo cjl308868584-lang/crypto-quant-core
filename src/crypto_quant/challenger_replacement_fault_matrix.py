@@ -357,7 +357,7 @@ def _network_probe(case_id):
     url = "https://data-api.binance.vision/api/v3/time"
     moment = datetime(2026, 8, 26, tzinfo=timezone.utc)
     if case_id == "NETWORK_LOSS_BEFORE_REQUEST":
-        with patch.object(http_module, "build_opener", return_value=_ProbeOpener(failure=True)):
+        with patch.object(http_module, "build_opener", side_effect=URLError("before dispatch")):
             try:
                 http_module.open_fixed_public_request(Request(url), max_body_bytes=1024)
             except http_module.PublicHttpError:
