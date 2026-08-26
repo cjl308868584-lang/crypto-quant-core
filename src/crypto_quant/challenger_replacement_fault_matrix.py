@@ -467,9 +467,24 @@ def _case_record(case_id: str, build_identity, *, exercise) -> Dict[str, Any]:
     }
 
 
-def _document(build_identity: Mapping[str, Any], *, exercise) -> Dict[str, Any]:
+def _document(build_identity: Mapping[str, Any], runtime_core_identity, *, exercise):
     try:
         validate_build_identity(build_identity)
+        if (
+            not isinstance(runtime_core_identity, Mapping)
+            or not runtime_core_identity
+            or any(
+                not isinstance(path, str)
+                or not path.startswith("src/crypto_quant/")
+                or not path.endswith(".py")
+                or not isinstance(digest, str)
+                or len(digest) != 64
+                or set(digest) - set("0123456789abcdef")
+                for path, digest in runtime_core_identity.items()
+            )
+        ):
+            _invalid()
+        core = dict(sorted(runtime_core_identity.items()))
         cases = [
             _case_record(case_id, build_identity, exercise=exercise)
             for case_id in EXPECTED_CASE_IDS
@@ -480,6 +495,8 @@ def _document(build_identity: Mapping[str, Any], *, exercise) -> Dict[str, Any]:
             "receipt_id": "",
             "receipt_hash": "0" * 64,
             "build_identity": copy.deepcopy(dict(build_identity)),
+            "runtime_core_identity": core,
+            "runtime_core_hash": business_hash(core),
             "cases": cases,
             "authority": {
                 "network_requests": 0, "account_requests": 0,
@@ -511,19 +528,22 @@ def _document(build_identity: Mapping[str, Any], *, exercise) -> Dict[str, Any]:
 
 
 def run_challenger_replacement_fault_matrix(
-    *, build_identity: Mapping[str, Any]
+    *, build_identity: Mapping[str, Any], runtime_core_identity: Mapping[str, str]
 ) -> Dict[str, Any]:
-    return copy.deepcopy(_document(build_identity, exercise=True))
+    return copy.deepcopy(_document(
+        build_identity, runtime_core_identity, exercise=True
+    ))
 
 
 def load_challenger_replacement_fault_matrix_bytes(
-    data: bytes, *, build_identity: Mapping[str, Any]
+    data: bytes, *, build_identity: Mapping[str, Any],
+    runtime_core_identity: Mapping[str, str]
 ) -> Dict[str, Any]:
     if not isinstance(data, bytes) or not 0 < len(data) <= 1_048_576:
         _invalid("CHALLENGER_REPLACEMENT_FAULT_MATRIX_BYTES_INVALID")
     try:
         value = _strict_json_bytes(data)
-        expected = _document(build_identity, exercise=False)
+        expected = _document(build_identity, runtime_core_identity, exercise=False)
         if data != canonical_json(value).encode("utf-8") or value != expected:
             _invalid()
         return copy.deepcopy(value)

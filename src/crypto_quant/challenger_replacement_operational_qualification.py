@@ -86,12 +86,17 @@ def _validated_inputs(facts, plan, fault):
             canonical_json(fault).encode("utf-8"),
             build_identity=(facts.start_receipt.get("deployment", {}).get(
                 "candidate_build") if facts.start_receipt else fault["build_identity"]),
+            runtime_core_identity=fault["runtime_core_identity"],
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ChallengerReplacementOperationalQualificationError(
             "CHALLENGER_REPLACEMENT_FAULT_MATRIX_NOT_PASSED"
         ) from error
     if fault.get("status") != "FAULT_MATRIX_PASSED":
+        _invalid("CHALLENGER_REPLACEMENT_FAULT_MATRIX_NOT_PASSED")
+    if facts.start_receipt and fault["runtime_core_hash"] != facts.start_receipt[
+        "deployment"
+    ]["executable_core_hash"]:
         _invalid("CHALLENGER_REPLACEMENT_FAULT_MATRIX_NOT_PASSED")
     return expected_plan
 

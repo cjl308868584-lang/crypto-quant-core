@@ -2,7 +2,7 @@ import unittest
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import business_hash, canonical_json
 from crypto_quant.challenger_replacement_accelerated_canary_plan import (
     build_challenger_replacement_accelerated_canary_plan,
 )
@@ -15,7 +15,7 @@ from crypto_quant.challenger_replacement_operational_qualification import (
     evaluate_challenger_replacement_operational_qualification,
     load_challenger_replacement_operational_qualification_bytes,
 )
-from tests.test_challenger_replacement_fault_matrix import BUILD
+from tests.test_challenger_replacement_fault_matrix import BUILD, CORE
 
 
 UTC = timezone.utc
@@ -58,7 +58,8 @@ def facts(*opportunities, observed_seconds=None, hard=(), position="FLAT",
             "receipt_id": "challenger_replacement_v3_start_receipt_" + "1" * 64,
             "receipt_hash": "2" * 64,
             "status": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED",
-            "deployment": {"candidate_build": deepcopy(BUILD)},
+            "deployment": {"candidate_build": deepcopy(BUILD),
+                           "executable_core_hash": business_hash(CORE)},
             "operational_start": {"observed_at": iso(START)},
             "economic_start": {"scheduled_for": iso(START)},
         }
@@ -82,7 +83,7 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
     def setUp(self):
         self.plan = build_challenger_replacement_accelerated_canary_plan()
         self.fault = run_challenger_replacement_fault_matrix(
-            build_identity=BUILD
+            build_identity=BUILD, runtime_core_identity=CORE,
         )
 
     def evaluate(self, value):
@@ -93,6 +94,15 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
     def test_fault_receipt_must_match_start_receipt_candidate_build(self):
         value = facts(terminal(0))
         value.start_receipt["deployment"]["candidate_build"]["peeled_commit"] = "6" * 40
+        with self.assertRaisesRegex(
+            ChallengerReplacementOperationalQualificationError,
+            "CHALLENGER_REPLACEMENT_FAULT_MATRIX_NOT_PASSED",
+        ):
+            self.evaluate(value)
+
+    def test_fault_receipt_must_match_start_receipt_executable_core(self):
+        value = facts(terminal(0))
+        value.start_receipt["deployment"]["executable_core_hash"] = "d" * 64
         with self.assertRaisesRegex(
             ChallengerReplacementOperationalQualificationError,
             "CHALLENGER_REPLACEMENT_FAULT_MATRIX_NOT_PASSED",
@@ -138,7 +148,8 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
             "receipt_id": "challenger_replacement_v3_start_receipt_" + "1" * 64,
             "receipt_hash": "2" * 64,
             "status": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED",
-            "deployment": {"candidate_build": deepcopy(BUILD)},
+            "deployment": {"candidate_build": deepcopy(BUILD),
+                           "executable_core_hash": business_hash(CORE)},
             "operational_start": {"observed_at": iso(START + timedelta(seconds=delay))},
             "economic_start": {"scheduled_for": iso(START)},
         }

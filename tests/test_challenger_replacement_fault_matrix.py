@@ -28,12 +28,16 @@ BUILD = {
     "manifest_file_sha256": "9" * 64,
     "build_input_tree_hash": "a" * 64,
 }
+CORE = {
+    "src/crypto_quant/challenger_replacement_events.py": "b" * 64,
+    "src/crypto_quant/challenger_replacement_fault_matrix.py": "c" * 64,
+}
 
 
 class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
     def setUp(self):
         self.receipt = run_challenger_replacement_fault_matrix(
-            build_identity=BUILD
+            build_identity=BUILD, runtime_core_identity=CORE,
         )
 
     def test_exact_order_all_cases_pass_and_receipt_is_deterministic(self):
@@ -53,6 +57,8 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
             self.assertRegex(item["result_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(self.receipt["status"], "FAULT_MATRIX_PASSED")
         self.assertEqual(self.receipt["build_identity"], BUILD)
+        self.assertEqual(self.receipt["runtime_core_identity"], CORE)
+        self.assertRegex(self.receipt["runtime_core_hash"], r"^[0-9a-f]{64}$")
         self.assertEqual(
             self.receipt["authority"],
             {"network_requests": 0, "account_requests": 0,
@@ -60,7 +66,9 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
              "production_state_writes": 0},
         )
         self.assertEqual(
-            run_challenger_replacement_fault_matrix(build_identity=BUILD),
+            run_challenger_replacement_fault_matrix(
+                build_identity=BUILD, runtime_core_identity=CORE
+            ),
             self.receipt,
         )
 
@@ -68,7 +76,7 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
         body = canonical_json(self.receipt).encode("utf-8")
         self.assertEqual(
             load_challenger_replacement_fault_matrix_bytes(
-                body, build_identity=BUILD
+                body, build_identity=BUILD, runtime_core_identity=CORE,
             ),
             self.receipt,
         )
@@ -95,19 +103,21 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
                 with self.assertRaises(ChallengerReplacementFaultMatrixError):
                     load_challenger_replacement_fault_matrix_bytes(
                         canonical_json(mutation).encode("utf-8"),
-                        build_identity=BUILD,
+                        build_identity=BUILD, runtime_core_identity=CORE,
                     )
         other_build = dict(BUILD, peeled_commit="6" * 40)
         with self.assertRaises(ChallengerReplacementFaultMatrixError):
             load_challenger_replacement_fault_matrix_bytes(
-                body, build_identity=other_build
+                body, build_identity=other_build, runtime_core_identity=CORE,
             )
 
     def test_runner_has_no_caller_supplied_case_results_or_fault_callback(self):
         parameters = inspect.signature(
             run_challenger_replacement_fault_matrix
         ).parameters
-        self.assertEqual(tuple(parameters), ("build_identity",))
+        self.assertEqual(
+            tuple(parameters), ("build_identity", "runtime_core_identity")
+        )
         source = inspect.getsource(run_challenger_replacement_fault_matrix)
         self.assertNotIn("fault_injector", source)
         self.assertNotIn("case_results", source)
@@ -119,7 +129,7 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
             side_effect=AssertionError("strict replay must not execute probes"),
         ):
             loaded = load_challenger_replacement_fault_matrix_bytes(
-                body, build_identity=BUILD
+                body, build_identity=BUILD, runtime_core_identity=CORE,
             )
         self.assertEqual(loaded, self.receipt)
 
