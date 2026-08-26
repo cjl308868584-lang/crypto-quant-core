@@ -52,7 +52,6 @@ The following new Python files are counted in full:
 - `challenger_replacement_binance_private_lifecycle.py`
 - `challenger_replacement_binance_reconciliation.py`
 - `challenger_replacement_binance_private_runtime.py`
-- `challenger_replacement_opportunity_projection.py`
 - `challenger_replacement_canary_controller.py`, when present
 - `challenger_replacement_private_fault_matrix.py`, when present
 
@@ -60,35 +59,40 @@ Physical lines are `len(path.read_text(encoding="utf-8").splitlines())`.
 Generated files are forbidden in this set. Renaming or moving logic does not
 remove it from the count.
 
-Delivery changes to the pre-existing operations projection, alerts and
-dashboard are measured as added physical lines relative to the exact released
-v0.76 peeled commit. The final aggregate is:
+Changes to the pre-existing opportunity projection, operations projection,
+alerts and dashboard are measured as added physical lines relative to the exact
+v0.76 build-input tree
+`4d8e9acf8e68c037c8ad274d970bfe67c71d4766`. The v0.77 release gate also
+requires the released v0.76 peeled commit to resolve to that tree identity. The
+final aggregate is:
 
 ```text
 full lines of the listed new Python files
-+ added production lines in the fixed delivery-file allowlist
++ added production lines in the fixed pre-existing-file allowlist
 <= 4,500
 ```
 
-The fixed delivery allowlist is:
+The fixed pre-existing-file allowlist is:
 
+- `src/crypto_quant/challenger_replacement_opportunity_projection.py`
 - `src/crypto_quant/operations_projection_v3.py`
 - `src/crypto_quant/operations_alerts.py`
 - `src/crypto_quant/dashboard/app.js`
 
-Deleted delivery lines do not create budget credit. Schemas, fixtures, tests,
-configuration examples and documentation are not production-line budget
-inputs, but remain subject to review, package and release gates.
+Deleted lines do not create budget credit. Binary or unparseable diff entries
+fail closed. Schemas, fixtures, tests, configuration examples and documentation
+are not production-line budget inputs, but remain subject to review, package
+and release gates.
 
 ## 4. Component ceilings
 
 - protocol + transport: at most 600 lines;
 - credential capability: at most 220 lines;
 - preflight: at most 380 lines;
-- private event contract + opportunity projection: at most 650 lines;
+- private event contract + opportunity-projection additions: at most 650 lines;
 - lifecycle + reconciliation + runtime: at most 2,100 lines;
 - Canary controller + fixed fault runner: at most 850 lines;
-- delivery additions: at most 150 lines; and
+- operations and dashboard delivery additions: at most 150 lines; and
 - aggregate under section 3: at most 4,500 lines.
 
 Passing the numeric caps is insufficient. Review must still reject generic

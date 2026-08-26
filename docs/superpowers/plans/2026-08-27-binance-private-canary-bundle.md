@@ -41,7 +41,7 @@ and
   but local v0.77 TDD may continue against reviewed tree
   `4d8e9acf8e68c037c8ad274d970bfe67c71d4766`.
 - New production code budget: protocol+transport ≤600 lines, credential ≤220,
-  preflight ≤380, private event contract+opportunity projection ≤650,
+  preflight ≤380, private event contract+opportunity-projection additions ≤650,
   lifecycle+reconciliation+runtime ≤2,100, Canary controller+fault runner ≤850,
   delivery additions ≤150, and exact aggregate ≤4,500 physical lines. Count
   files and delivery additions exactly as defined by the budget amendment.
@@ -129,7 +129,6 @@ CREDENTIAL = ("challenger_replacement_binance_credential.py",)
 PREFLIGHT = ("challenger_replacement_binance_preflight.py",)
 PRIVATE_PROJECTION = (
     "challenger_replacement_binance_private_contract.py",
-    "challenger_replacement_opportunity_projection.py",
 )
 ORDER_RUNTIME = (
     "challenger_replacement_binance_private_lifecycle.py",
@@ -143,8 +142,12 @@ CONTROLLERS = (
 ```
 
 Optional future controller files count as zero only while absent. Every other
-file must exist. Assert each flattened name is unique and enforce caps
-`600/220/380/650/2100/850`, then enforce the sum at `4500`.
+file must exist. Use `git diff --numstat` against exact v0.76 build-input tree
+`4d8e9acf8e68c037c8ad274d970bfe67c71d4766` to add the opportunity-projection
+delta to the private-projection component and to measure the fixed delivery
+allowlist. Reject binary or unparseable entries and give no credit for deleted
+lines. Assert each flattened new-file name is unique and enforce caps
+`600/220/380/650/2100/850/150`, then enforce the sum at `4500`.
 
 - [ ] **Step 3: Run the amended GREEN gate and behavior adjacency**
 
