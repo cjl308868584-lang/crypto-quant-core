@@ -606,6 +606,8 @@ def _apply_private_transition(private, event_type, payload, event):
         if payload["trade_id"] in private["fill_ids"]:
             _invalid()
         private["fill_ids"].append(payload["trade_id"])
+    elif event_type == "BINANCE_ABSENCE_CHECKED":
+        private["absence_proven"] = True
     elif event_type == "BINANCE_SIGNED_REQUEST_PREPARED":
         private["request_id"] = payload["request_id"]
         private["request_endpoint_id"] = payload["endpoint_id"]

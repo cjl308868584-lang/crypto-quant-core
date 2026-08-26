@@ -7,8 +7,8 @@ from types import MappingProxyType
 from typing import Mapping
 
 from .canonical import canonical_decimal, canonical_json
-from .challenger_replacement_binance_private_lifecycle import _FUTURES_ORDER_KEYS, _document, _number, _strict_pairs
-from .challenger_replacement_binance_preflight import _FUTURES_ACCOUNT_KEYS, _FUTURES_ASSET_KEYS, _POSITION_KEYS
+from .challenger_replacement_binance_private_lifecycle import _FUTURES_ORDER_KEYS, _SPOT_ORDER_KEYS, _SPOT_TRADE_KEYS, _document, _number, _strict_pairs
+from .challenger_replacement_binance_preflight import _FUTURES_ACCOUNT_KEYS, _FUTURES_ASSET_KEYS, _POSITION_KEYS, _SPOT_KEYS
 _FACT_KEYS = frozenset({
     "product", "signed_quantity", "average_entry_price_or_null",
     "realized_pnl", "unrealized_pnl", "cumulative_fee", "funding",
@@ -118,7 +118,76 @@ def _array_document(data):
         return value
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)
+def _spot_venue(event, orders, trades, account, position, incomes, algos):
+    if position != b"[]" or incomes or algos:
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+    order_values = _unique(
+        orders, "orderId", "BINANCE_RECONCILIATION_CONFLICTING_ORDER"
+    )
+    if len(order_values) != 1:
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+    order = order_values[0]
+    if (frozenset(order) != _SPOT_ORDER_KEYS or order["symbol"] != "ETHUSDT"
+            or order["type"] != "MARKET" or order["side"] not in {"BUY", "SELL"}
+            or order["status"] not in {
+                "NEW", "PARTIALLY_FILLED", "FILLED", "CANCELED", "EXPIRED",
+            }):
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+    trade_values = _unique(
+        trades, "id", "BINANCE_RECONCILIATION_CONFLICTING_FILL"
+    )
+    quantity = quote = fee = Decimal("0")
+    for trade in trade_values:
+        if (frozenset(trade) != _SPOT_TRADE_KEYS
+                or trade["symbol"] != "ETHUSDT"
+                or trade["orderId"] != order["orderId"]
+                or trade["commissionAsset"] != "USDT"
+                or trade["isBuyer"] is not (order["side"] == "BUY")):
+            _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+        item_quantity = _number(trade["qty"], positive=True)
+        item_price = _number(trade["price"], positive=True)
+        item_quote = _number(trade["quoteQty"])
+        if item_quote != item_quantity * item_price:
+            _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+        quantity += item_quantity; quote += item_quote
+        fee += _number(trade["commission"])
+    if (_number(order["executedQty"]) != quantity
+            or _number(order["cummulativeQuoteQty"]) != quote):
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+    account_value = _document(account)
+    if (frozenset(account_value) != _SPOT_KEYS
+            or not isinstance(account_value["balances"], list)):
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+    balances = {}
+    for item in account_value["balances"]:
+        if (not isinstance(item, dict)
+                or frozenset(item) != {"asset", "free", "locked"}
+                or item["asset"] in balances):
+            _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+        balances[item["asset"]] = (
+            _number(item["free"]), _number(item["locked"])
+        )
+    if not {"ETH", "USDT"}.issubset(balances):
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+    signed = sum(balances["ETH"])
+    average = None if signed == 0 else quote / quantity
+    available = balances["USDT"][0]
+    wallet = sum(balances["USDT"]) + signed * (average or Decimal("0"))
+    return {
+        "product": "SPOT", "signed_quantity": canonical_decimal(signed),
+        "average_entry_price_or_null": (
+            None if average is None else canonical_decimal(average)
+        ), "realized_pnl": "0", "unrealized_pnl": "0",
+        "cumulative_fee": canonical_decimal(fee), "funding": "0",
+        "wallet_balance": canonical_decimal(wallet),
+        "available_balance": canonical_decimal(available),
+        "open_order_count": int(order["status"] in {"NEW", "PARTIALLY_FILLED"}),
+        "protective_stop_client_id_or_null": None,
+        "fill_ids": [trade["id"] for trade in trade_values],
+    }
 def _venue(event, orders, trades, account, position, incomes, algos):
+    if event["product"] == "SPOT":
+        return _spot_venue(event, orders, trades, account, position, incomes, algos)
     order_values = _unique(
         orders, "orderId", "BINANCE_RECONCILIATION_CONFLICTING_ORDER"
     )

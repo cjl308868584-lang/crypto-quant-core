@@ -107,6 +107,49 @@ class BinanceReconciliationTests(unittest.TestCase):
         self.assertEqual(json.loads(canonical_json(loaded)), document)
         self.assertEqual(self.reconcile(), data)
 
+    def test_spot_open_reconciles_full_account_at_fill_cost_basis(self):
+        facts = {
+            "product": "SPOT", "signed_quantity": "0.001",
+            "average_entry_price_or_null": "2000", "realized_pnl": "0",
+            "unrealized_pnl": "0", "cumulative_fee": "0.002",
+            "funding": "0", "wallet_balance": "99.998",
+            "available_balance": "97.998", "open_order_count": 0,
+            "protective_stop_client_id_or_null": None, "fill_ids": [301],
+        }
+        account = json.loads(resources.files("crypto_quant").joinpath(
+            "fixtures", "challenger-replacement-v077",
+            "account-preflight-flat.json",
+        ).read_text(encoding="utf-8"))["SPOT_ACCOUNT"]
+        balances = {item["asset"]: item for item in account["balances"]}
+        balances["ETH"]["free"] = "0.001"
+        balances["USDT"]["free"] = "97.998"
+        order = self.body({
+            "symbol": "ETHUSDT", "orderId": 101,
+            "clientOrderId": "cq77" + "6" * 32, "price": "0",
+            "origQty": "0.001", "executedQty": "0.001",
+            "cummulativeQuoteQty": "2", "status": "FILLED",
+            "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
+            "transactTime": 1787832000000,
+        })
+        trade = self.body({
+            "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+            "qty": "0.001", "price": "2000", "quoteQty": "2",
+            "commission": "0.002", "commissionAsset": "USDT",
+            "time": 1787832000001, "isBuyer": True,
+        })
+        data = reconcile_binance_private_state(
+            event_projection={**facts, "ledger_projection": dict(facts)},
+            order_documents=(order,), trade_documents=(trade,),
+            account_document=self.body(account), position_document=b"[]",
+            income_documents=(), algo_documents=(),
+        )
+        loaded = load_binance_reconciliation_bytes(data)
+        self.assertEqual(
+            json.loads(canonical_json(loaded["venue_projection"])), facts
+        )
+        self.assertEqual(loaded["status"],
+                         "BINANCE_PRIVATE_RECONCILIATION_MATCHED")
+
     def test_exact_duplicate_fill_and_funding_are_idempotent(self):
         self.assertEqual(
             self.reconcile(

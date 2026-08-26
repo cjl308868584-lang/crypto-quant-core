@@ -54,21 +54,15 @@ def _runtime_projection(state):
     active = None
     unresolved = []
     absent = []
-    for event in projection["events"]:
-        header = json.loads(event.final_bytes.decode("utf-8"))
-        event_type = header["event_type"]
-        if not event_type.startswith("BINANCE_"):
+    for slot in projection["opportunities"].values():
+        private = slot.get("private")
+        if not isinstance(private, dict):
             continue
-        payload = json.loads(
-            __import__("base64").b64decode(header["payload_bytes_base64"])
-        )
-        slot = projection["opportunities"][header["slot_id"]]
-        if event_type == "BINANCE_ABSENCE_CHECKED":
-            absent.append(payload["venue_client_order_id"])
-        elif event_type == "BINANCE_ORDER_UNKNOWN":
-            unresolved.append(slot["private"]["venue_client_order_id"])
-        elif event_type == "BINANCE_RECONCILIATION_SUCCEEDED":
-            private = slot["private"]
+        if private.get("absence_proven") is True:
+            absent.append(private["venue_client_order_id"])
+        if private["stage"] == "BINANCE_ORDER_UNKNOWN":
+            unresolved.append(private["venue_client_order_id"])
+        elif private["stage"] == "BINANCE_RECONCILIATION_SUCCEEDED":
             active = (
                 private["product"]
                 if private["action"] in {"OPEN_LONG", "OPEN_SHORT"}
@@ -238,6 +232,23 @@ def _record_unknown(state, attempt, result, recorded_at):
         "blocks_new_risk": True,
     }, recorded_at)
     return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
+def _query_order(attempt, context):
+    return _query(
+        attempt["required_first_endpoint"], {
+            "symbol": "ETHUSDT",
+            "origClientOrderId": attempt["venue_client_order_id"],
+        }, context,
+    )
+def _send_request(state, attempt, request, context):
+    result = _execute(request, context)
+    if result.response_class == "UNKNOWN":
+        return _record_unknown(state, attempt, result, context.recorded_at)
+    if result.response_class != "ACKNOWLEDGED":
+        _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_REQUIRED")
+    return _observe_order(
+        state=state, attempt=attempt,
+        order_result=_query_order(attempt, context), context=context,
+    )
 def run_challenger_replacement_binance_private_intent(
     *, state, event_root, intent, preflight, activation, credential,
     build_identity
@@ -285,24 +296,16 @@ def run_challenger_replacement_binance_private_intent(
                     "request_id": request.request_id,
                 }, recorded_at,
             )
-            result = _execute(request, context)
-            if result.response_class != "UNKNOWN":
-                _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_REQUIRED")
-            return _record_unknown(state, attempt, result, recorded_at)
+            return _send_request(state, attempt, request, context)
         if existing["stage"] == "BINANCE_ORDER_UNKNOWN":
             return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
         if existing["stage"] in {
             "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
             "BINANCE_ORDER_PARTIALLY_FILLED",
         }:
-            observed = _query(
-                attempt["required_first_endpoint"], {
-                    "symbol": "ETHUSDT",
-                    "origClientOrderId": attempt["venue_client_order_id"],
-                }, context,
-            )
             return _observe_order(
-                state=state, attempt=attempt, order_result=observed,
+                state=state, attempt=attempt,
+                order_result=_query_order(attempt, context),
                 context=context,
             )
         _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_STAGE_UNSUPPORTED")
@@ -347,17 +350,4 @@ def run_challenger_replacement_binance_private_intent(
     _append(state, "BINANCE_REQUEST_SEND_STARTED", attempt["opportunity_id"], {
         "intent_id": attempt["intent_id"], "request_id": request.request_id,
     }, recorded_at)
-    result = _execute(request, context)
-    if result.response_class == "UNKNOWN":
-        return _record_unknown(state, attempt, result, recorded_at)
-    if result.response_class != "ACKNOWLEDGED":
-        _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_REQUIRED")
-    observed = _query(
-        attempt["required_first_endpoint"], {
-            "symbol": "ETHUSDT",
-            "origClientOrderId": attempt["venue_client_order_id"],
-        }, context,
-    )
-    return _observe_order(
-        state=state, attempt=attempt, order_result=observed, context=context,
-    )
+    return _send_request(state, attempt, request, context)
