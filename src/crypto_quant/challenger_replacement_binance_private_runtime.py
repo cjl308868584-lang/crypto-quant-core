@@ -1,13 +1,11 @@
 """Append-only orchestration for the fixed Binance private boundary."""
-
 from datetime import datetime, timezone
 import hashlib
 import json
 from typing import Mapping
-
 from .canonical import canonical_json, utc_datetime
 from .challenger_replacement_binance_private_lifecycle import (
-    prepare_binance_order_attempt,
+    _document, apply_binance_order_observation, prepare_binance_order_attempt,
 )
 from .challenger_replacement_binance_private_protocol import (
     build_binance_private_request,
@@ -19,21 +17,15 @@ from .challenger_replacement_events import ChallengerReplacementEventRoot
 from .challenger_replacement_opportunities import (
     ChallengerReplacementOpportunityState,
 )
-
-
 class BinancePrivateRuntimeError(RuntimeError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
         self.reason_code = reason_code
-
-
 def _fail(reason, error=None):
     failure = BinancePrivateRuntimeError(reason)
     if error is None:
         raise failure
     raise failure from error
-
-
 def _require_identity(state, event_root, build_identity):
     if (
         not isinstance(state, ChallengerReplacementOpportunityState)
@@ -47,12 +39,8 @@ def _require_identity(state, event_root, build_identity):
         event_root.validate()
     except Exception as error:
         _fail("BINANCE_PRIVATE_RUNTIME_IDENTITY_INVALID", error)
-
-
 def _wall_now():
     return datetime.now(timezone.utc)
-
-
 def _runtime_projection(state):
     projection = state._replay()
     active = None
@@ -84,8 +72,6 @@ def _runtime_projection(state):
         "unresolved_client_order_ids": unresolved,
         "proven_absent_client_order_ids": absent,
     }
-
-
 def _append(state, event_type, opportunity_id, payload, recorded_at):
     projection = state.replay()
     return state.append(
@@ -96,8 +82,6 @@ def _append(state, event_type, opportunity_id, payload, recorded_at):
         payload=payload,
         expected_last_event_hash=projection["last_event_hash"],
     )
-
-
 def _request(endpoint_id, attempt, timestamp_ms):
     if endpoint_id.endswith("ORDER_QUERY"):
         parameters = {
@@ -122,8 +106,6 @@ def _request(endpoint_id, attempt, timestamp_ms):
     return build_binance_private_request(
         endpoint_id, parameters, timestamp_ms=timestamp_ms
     )
-
-
 def _proven_absent(result):
     try:
         document = json.loads(result.body.decode("utf-8"))
@@ -133,8 +115,6 @@ def _proven_absent(result):
         result.status_or_null == 400
         and document == {"code": -2013, "msg": "Order does not exist."}
     )
-
-
 def _existing_private(state, attempt):
     try:
         private = state.replay()["opportunities"][
@@ -155,8 +135,6 @@ def _existing_private(state, attempt):
     if any(private.get(key) != value for key, value in expected.items()):
         _fail("BINANCE_PRIVATE_RUNTIME_INTENT_CONFLICT")
     return private
-
-
 def _recover_after_send(*, state, attempt, credential, activation,
                         build_identity, recorded_at, timestamp_ms):
     query = _request(attempt["required_first_endpoint"], attempt, timestamp_ms)
@@ -168,15 +146,75 @@ def _recover_after_send(*, state, attempt, credential, activation,
         _fail("BINANCE_PRIVATE_RUNTIME_ABSENT_AFTER_SEND_STARTED")
     if result.response_class != "QUERY_SUCCEEDED":
         _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_QUERY_UNRESOLVED")
+    return _observe_order(
+        state=state, attempt=attempt, order_result=result,
+        credential=credential, activation=activation,
+        build_identity=build_identity, recorded_at=recorded_at,
+        timestamp_ms=timestamp_ms,
+    )
+def _query(endpoint_id, parameters, *, credential, activation,
+           build_identity, recorded_at, timestamp_ms):
+    request = build_binance_private_request(
+        endpoint_id, parameters, timestamp_ms=timestamp_ms
+    )
+    result = execute_binance_private_request(
+        request, credential=credential, activation=activation,
+        expected_build_identity=build_identity, now=recorded_at,
+    )
+    if result.response_class != "QUERY_SUCCEEDED":
+        _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_QUERY_UNRESOLVED")
+    return result
+def _tuple_documents(data):
+    try:
+        values = json.loads(data.decode("utf-8"))
+        if not isinstance(values, list) or canonical_json(values).encode() != data:
+            raise ValueError
+        return tuple(canonical_json(value).encode() for value in values)
+    except (AttributeError, TypeError, UnicodeDecodeError, ValueError) as error:
+        _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID", error)
+def _observe_order(*, state, attempt, order_result, credential, activation,
+                   build_identity, recorded_at, timestamp_ms):
+    order = _document(order_result.body)
+    order_id = order.get("orderId")
+    if isinstance(order_id, bool) or not isinstance(order_id, int) or order_id <= 0:
+        _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID")
+    spot = attempt["product"] == "SPOT"
+    trades = _query(
+        "SPOT_TRADES" if spot else "FUTURES_TRADES",
+        {"symbol": "ETHUSDT", "orderId": str(order_id)},
+        credential=credential, activation=activation,
+        build_identity=build_identity, recorded_at=recorded_at,
+        timestamp_ms=timestamp_ms,
+    )
+    account = _query(
+        "SPOT_ACCOUNT" if spot else "FUTURES_POSITION",
+        {} if spot else {"symbol": "ETHUSDT"},
+        credential=credential, activation=activation,
+        build_identity=build_identity, recorded_at=recorded_at,
+        timestamp_ms=timestamp_ms,
+    )
+    events = apply_binance_order_observation(
+        attempt=attempt, order=order_result.body,
+        trades=_tuple_documents(trades.body), account=account.body,
+    )
+    for event in events:
+        _append(
+            state, event["event_type"], attempt["opportunity_id"],
+            event["payload"], recorded_at,
+        )
+    terminal = events[-1]["event_type"] if events else None
     return {
-        "status": "ORDER_FOUND_REQUIRES_RECONCILIATION",
+        "status": (
+            "ORDER_IN_PROGRESS"
+            if terminal in {"BINANCE_ORDER_ACKNOWLEDGED",
+                            "BINANCE_ORDER_PARTIALLY_FILLED"}
+            else "ORDER_TERMINAL_REQUIRES_RECONCILIATION"
+        ),
         "opportunity_id": attempt["opportunity_id"],
         "intent_id": attempt["intent_id"],
         "venue_client_order_id": attempt["venue_client_order_id"],
-        "order_response_sha256": result.response_sha256,
+        "order_response_sha256": order_result.response_sha256,
     }
-
-
 def _record_unknown(state, attempt, result, recorded_at):
     try:
         document = json.loads(result.body.decode("utf-8"))
@@ -195,8 +233,6 @@ def _record_unknown(state, attempt, result, recorded_at):
         "intent_id": attempt["intent_id"],
         "venue_client_order_id": attempt["venue_client_order_id"],
     }
-
-
 def run_challenger_replacement_binance_private_intent(
     *, state, event_root, intent, preflight, activation, credential,
     build_identity
@@ -306,6 +342,21 @@ def run_challenger_replacement_binance_private_intent(
         request, credential=credential, activation=activation,
         expected_build_identity=build_identity, now=recorded_at,
     )
-    if result.response_class != "UNKNOWN":
+    if result.response_class == "UNKNOWN":
+        return _record_unknown(state, attempt, result, recorded_at)
+    if result.response_class != "ACKNOWLEDGED":
         _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_REQUIRED")
-    return _record_unknown(state, attempt, result, recorded_at)
+    observed = _query(
+        attempt["required_first_endpoint"], {
+            "symbol": "ETHUSDT",
+            "origClientOrderId": attempt["venue_client_order_id"],
+        }, credential=credential, activation=activation,
+        build_identity=build_identity, recorded_at=recorded_at,
+        timestamp_ms=timestamp_ms,
+    )
+    return _observe_order(
+        state=state, attempt=attempt, order_result=observed,
+        credential=credential, activation=activation,
+        build_identity=build_identity, recorded_at=recorded_at,
+        timestamp_ms=timestamp_ms,
+    )
