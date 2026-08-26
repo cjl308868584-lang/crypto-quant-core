@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import tempfile
+from dataclasses import replace
 from functools import lru_cache
 from importlib import resources
 from typing import Any, Dict, Mapping
@@ -13,6 +14,10 @@ from unittest.mock import patch
 from jsonschema import Draft202012Validator
 
 from . import challenger_replacement_events as event_module
+from . import challenger_replacement_binance_lifecycle as lifecycle_module
+from .challenger_replacement_binance_simulation_input import (
+    load_challenger_replacement_binance_simulation_input_bytes,
+)
 from .canonical import business_hash, canonical_json, stable_id
 from .challenger_replacement_accelerated_canary_plan import (
     build_challenger_replacement_accelerated_canary_plan,
@@ -28,7 +33,10 @@ from .challenger_replacement_events import (
 )
 from .challenger_replacement_opportunity_projection import validate_build_identity
 from .challenger_replacement_plan import _strict_json_bytes
+from .challenger_replacement_plan_v3 import build_challenger_replacement_plan_v3
 from .challenger_replacement_public_http import transport_failure_attempt
+from .challenger_replacement_simulation import build_challenger_replacement_genesis_snapshot
+from .challenger_replacement_simulation_contract import build_challenger_replacement_simulation_contract
 from .evidence import artifact_self_hash
 
 
@@ -176,6 +184,55 @@ def _event_probe(case_id, build_identity):
             return _boundary(case_id)
 
 
+def _lifecycle_probe(case_id):
+    data = resources.files("crypto_quant").joinpath(
+        "fixtures", "challenger-replacement-v076",
+        "binance-lifecycle-long-input.json",
+    ).read_bytes()
+    if data.endswith(b"\n"):
+        data = data[:-1]
+    document = _strict_json_bytes(data)
+    plan = build_challenger_replacement_plan_v3()
+    contract = build_challenger_replacement_simulation_contract(plan=plan)
+    source = load_challenger_replacement_binance_simulation_input_bytes(
+        data, plan=plan, contract=contract,
+        build_identity=document["build_identity"],
+        opportunity_id=document["opportunity"]["opportunity_id"],
+    )
+    changes = {
+        "PARTIAL_SIMULATED_FILL": {"partial_first_quantity_or_null": "0.01"},
+        "LATE_SIMULATED_FILL": {"fill_before_ack": True},
+        "SIMULATED_CANCEL_RACE": {
+            "partial_first_quantity_or_null": "0.01",
+            "second_fill_before_stop_ack": True,
+        },
+        "UNRESOLVED_UNKNOWN_CLASSIFICATION": {"unknown_reason_or_null": "TIMEOUT"},
+        "PROTECTIVE_STOP_MODEL_FAILURE": {"stop_confirmed": False},
+        "PROTECTIVE_STOP_REPLACE_MODEL_FAILURE": {
+            "partial_first_quantity_or_null": "0.01", "missing_new_stop_ack": True,
+        },
+        "ENGINE_VENUE_MODEL_LEDGER_DISAGREEMENT": {
+            "partial_first_quantity_or_null": "0.01", "wrong_product_or_side": True,
+        },
+    }[case_id]
+    original = lifecycle_module._normal_lifecycle_observations
+    def observation(*args):
+        return (replace(original(*args)[0], **changes),)
+    with patch.object(lifecycle_module, "_normal_lifecycle_observations",
+                      side_effect=observation):
+        result = lifecycle_module.simulate_challenger_replacement_binance_lifecycle(
+            source=source,
+            previous_projection=build_challenger_replacement_genesis_snapshot(
+                plan=plan, contract=contract
+            ),
+            plan=plan, contract=contract, build_identity=document["build_identity"],
+        )
+    reconciled = case_id in {"PARTIAL_SIMULATED_FILL", "LATE_SIMULATED_FILL"}
+    if (result.status == "RECONCILED_FIXTURE") != reconciled:
+        _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
+    return _boundary(case_id)
+
+
 def _probe_boundary(case_id, build_identity):
     if (
         case_id.startswith("PROCESS_TERMINATION")
@@ -192,6 +249,13 @@ def _probe_boundary(case_id, build_identity):
         if attempt["outcome"] != "TRANSPORT_ERROR":
             _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
         return _boundary(case_id)
+    if case_id in {
+        "PARTIAL_SIMULATED_FILL", "LATE_SIMULATED_FILL",
+        "SIMULATED_CANCEL_RACE", "UNRESOLVED_UNKNOWN_CLASSIFICATION",
+        "PROTECTIVE_STOP_MODEL_FAILURE", "PROTECTIVE_STOP_REPLACE_MODEL_FAILURE",
+        "ENGINE_VENUE_MODEL_LEDGER_DISAGREEMENT",
+    }:
+        return _lifecycle_probe(case_id)
     if "CLOCK" in case_id or case_id == "MONOTONIC_INCONSISTENCY":
         from datetime import datetime, timedelta, timezone
         moment = datetime(2026, 8, 26, tzinfo=timezone.utc)

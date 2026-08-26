@@ -11,6 +11,7 @@ from crypto_quant.challenger_replacement_fault_matrix import (
     run_challenger_replacement_fault_matrix,
 )
 import crypto_quant.challenger_replacement_fault_matrix as fault_module
+import crypto_quant.challenger_replacement_binance_lifecycle as lifecycle_module
 
 
 BUILD = {
@@ -136,6 +137,24 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
                     "IDEMPOTENT_EVENT_REPLAY",
                 )
             self.assertEqual(counts[0], expected)
+
+    def test_lifecycle_fault_cases_execute_the_existing_deterministic_kernel(self):
+        cases = (
+            "PARTIAL_SIMULATED_FILL", "LATE_SIMULATED_FILL",
+            "SIMULATED_CANCEL_RACE", "UNRESOLVED_UNKNOWN_CLASSIFICATION",
+            "PROTECTIVE_STOP_MODEL_FAILURE",
+            "PROTECTIVE_STOP_REPLACE_MODEL_FAILURE",
+            "ENGINE_VENUE_MODEL_LEDGER_DISAGREEMENT",
+        )
+        original = lifecycle_module.simulate_challenger_replacement_binance_lifecycle
+        for case_id in cases:
+            with self.subTest(case_id=case_id), patch.object(
+                lifecycle_module,
+                "simulate_challenger_replacement_binance_lifecycle",
+                wraps=original,
+            ) as invoked:
+                fault_module._probe_boundary(case_id, BUILD)
+            self.assertEqual(invoked.call_count, 1)
 
 
 if __name__ == "__main__":
