@@ -639,7 +639,7 @@ def load_challenger_replacement_public_market_capture_bytes(
         or nested["capture_hash"] != live["capture_hash"]
         or opportunity["sequence"] != live["slot"]["sequence"]
         or opportunity["scheduled_for"] != live["slot"]["scheduled_for"]
-        or opportunity["captured_at"] != live["slot"]["captured_at"]
+        or captured < _utc(live["slot"]["captured_at"])
     ):
         _invalid("PUBLIC_MARKET_CAPTURE_NESTED_INVALID")
     expected = _expected_requests(scheduled)
@@ -800,7 +800,7 @@ def acquire_challenger_replacement_public_market_capture(*, state):
                     _invalid("PUBLIC_MARKET_CAPTURE_RESPONSE_INVALID")
                 started = _utc(response.request_started_at)
                 received = _utc(response.response_received_at)
-                if not scheduled <= started <= received <= captured:
+                if not scheduled <= started <= received:
                     _invalid("PUBLIC_MARKET_CAPTURE_TIME_INVALID")
             except PublicHttpError as error:
                 if error.reason_code != "PUBLIC_HTTP_TRANSPORT_FAILURE":
@@ -850,6 +850,14 @@ def acquire_challenger_replacement_public_market_capture(*, state):
             "selected_success_attempt_index": selected,
         })
         payloads.append(selected_payload)
+    captured = max(
+        [captured]
+        + [_utc(attempt["response_received_at"])
+           for ledger in ledgers for attempt in ledger["attempts"]]
+    )
+    captured_text = captured.isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    )
     normalized = _normalized_capture(
         live, payloads, scheduled=scheduled, captured=captured
     )
@@ -857,7 +865,7 @@ def acquire_challenger_replacement_public_market_capture(*, state):
         "opportunity_id": opportunity_id_for(live["slot"]["scheduled_for"]),
         "sequence": live["slot"]["sequence"],
         "scheduled_for": live["slot"]["scheduled_for"],
-        "captured_at": live["slot"]["captured_at"],
+        "captured_at": captured_text,
     }
     document = {
         "$schema": "./challenger-replacement-public-market-capture-v2.schema.json",

@@ -1060,21 +1060,19 @@ class PublicMarketAcquisitionTests(unittest.TestCase):
                 self.assertEqual(len(self.requests), request_count)
                 self.assertEqual(self.sleeps, sleeps)
 
-    def test_response_after_trusted_capture_window_stops_immediately(self):
+    def test_outer_capture_window_extends_through_later_public_responses(self):
         responses = self._responses()
-        expired = replace(
+        later = replace(
             responses[0],
             request_started_at="2026-08-26T04:05:00.001Z",
             response_received_at="2026-08-26T04:05:00.101Z",
         )
-
-        with self.assertRaisesRegex(
-            ChallengerReplacementPublicMarketCaptureError,
-            "^PUBLIC_MARKET_CAPTURE_TIME_INVALID$",
-        ):
-            self._acquire_from_pending([expired, *responses[1:]])
-
-        self.assertEqual(len(self.requests), 1)
+        capture = self._acquire_from_pending([later, *responses[1:]])
+        self.assertEqual(
+            capture.document["opportunity"]["captured_at"],
+            "2026-08-26T04:05:00.101Z",
+        )
+        self.assertEqual(len(self.requests), 6)
         self.assertEqual(self.sleeps, [])
 
     def test_v067_clock_or_window_failure_maps_before_six_new_requests(self):
