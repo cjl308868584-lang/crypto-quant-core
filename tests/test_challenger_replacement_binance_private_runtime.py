@@ -169,11 +169,14 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
 
     @staticmethod
-    def _spot_account():
+    def _spot_account(eth="0", usdt="100"):
         document = json.loads(resources.files("crypto_quant").joinpath(
             "fixtures", "challenger-replacement-v077",
             "account-preflight-flat.json",
         ).read_text(encoding="utf-8"))["SPOT_ACCOUNT"]
+        balances = {item["asset"]: item for item in document["balances"]}
+        balances["ETH"]["free"] = eth
+        balances["USDT"]["free"] = usdt
         return canonical_json(document).encode("utf-8")
 
     def test_query_proven_absent_then_single_unknown_send_blocks_new_risk(self):
@@ -279,6 +282,50 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             self.workspace.opportunity_id
         ]["private"]
         self.assertEqual(private["stage"], "BINANCE_ORDER_ACKNOWLEDGED")
+
+        filled = canonical_json({
+            **json.loads(order), "executedQty": "0.001",
+            "cummulativeQuoteQty": "2", "status": "FILLED",
+        }).encode("utf-8")
+        trade = canonical_json([{
+            "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+            "qty": "0.001", "price": "2000", "quoteQty": "2",
+            "commission": "0.002", "commissionAsset": "USDT",
+            "time": 1787832000001, "isBuyer": True,
+        }]).encode("utf-8")
+        account = self._spot_account("0.001", "97.998")
+        followup = tuple(
+            BinancePrivateTransportResult(
+                "QUERY_SUCCEEDED", 200, body,
+                hashlib.sha256(body).hexdigest(), (),
+            )
+            for body in (filled, trade, account)
+        )
+        fresh = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW + timedelta(seconds=1),
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=followup,
+        ) as transport:
+            result = run_challenger_replacement_binance_private_intent(
+                state=fresh, event_root=self.workspace.root,
+                intent=self.intent, preflight=self.preflight,
+                activation=self.activation, credential=object(),
+                build_identity=self.workspace.build,
+            )
+        self.assertEqual(
+            [call.args[0].endpoint_id for call in transport.call_args_list],
+            ["SPOT_ORDER_QUERY", "SPOT_TRADES", "SPOT_ACCOUNT"],
+        )
+        self.assertEqual(result["status"],
+                         "ORDER_TERMINAL_REQUIRES_RECONCILIATION")
+        private = fresh.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_ORDER_FILLED")
+        self.assertEqual(private["fill_ids"], [301])
 
     def test_fresh_retry_after_send_started_queries_id_without_resend(self):
         absent = canonical_json({
