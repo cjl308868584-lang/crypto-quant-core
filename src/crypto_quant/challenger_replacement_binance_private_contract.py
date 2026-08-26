@@ -382,6 +382,49 @@ def _stop_target(stop, stage):
     return None
 
 
+_STOP_CHAIN = {
+    "BINANCE_STOP_ABSENCE_CHECKED": (
+        "BINANCE_STOP_INTENT_AUTHORIZED", ("query_response_sha256",),
+    ),
+    "BINANCE_STOP_SIGNED_REQUEST_PREPARED": (
+        "BINANCE_STOP_ABSENCE_CHECKED",
+        ("request_id", "request_sha256", "timestamp_ms"),
+    ),
+    "BINANCE_STOP_REQUEST_SEND_STARTED": (
+        "BINANCE_STOP_SIGNED_REQUEST_PREPARED", (),
+    ),
+    "BINANCE_STOP_ACKNOWLEDGED": (
+        "BINANCE_STOP_REQUEST_SEND_STARTED", ("algo_id",),
+    ),
+    "BINANCE_STOP_RECONCILED": ("BINANCE_STOP_ACKNOWLEDGED", ()),
+}
+
+
+def _advance_stop(stop, private, event_type, payload):
+    previous, copied = _STOP_CHAIN[event_type]
+    target = _stop_target(stop, previous)
+    valid = (target is not None
+             and payload.get("client_algo_id") == target.get("client_algo_id")
+             and (event_type == "BINANCE_STOP_RECONCILED"
+                  or payload.get("protected_intent_id") == private["intent_id"]))
+    if event_type == "BINANCE_STOP_REQUEST_SEND_STARTED":
+        valid = valid and payload.get("request_id") == target.get("request_id")
+    elif event_type == "BINANCE_STOP_RECONCILED":
+        valid = valid and all((
+            payload.get("status") == "BINANCE_PROTECTIVE_STOP_VERIFIED",
+            payload.get("exposed") is True,
+            payload.get("algo_id") == target.get("algo_id"),
+            payload.get("quantity") == target.get("quantity"),
+            payload.get("trigger_price") == target.get("trigger_price"),
+        ))
+    if not valid:
+        _invalid()
+    updates = {name: payload[name] for name in copied}
+    if "timestamp_ms" in updates:
+        updates["request_timestamp_ms"] = updates.pop("timestamp_ms")
+    target.update(stage=event_type, **updates)
+
+
 def _apply_stop_transition(private, event_type, payload, event):
     stop = private.get("stop")
     if event_type == "BINANCE_STOP_INTENT_AUTHORIZED":
@@ -414,54 +457,8 @@ def _apply_stop_transition(private, event_type, payload, event):
             replacement["candidate"] = candidate
         else:
             private["stop"] = candidate
-    elif event_type == "BINANCE_STOP_ABSENCE_CHECKED":
-        target = _stop_target(stop, "BINANCE_STOP_INTENT_AUTHORIZED")
-        if (target is None
-                or payload["protected_intent_id"] != private["intent_id"]
-                or payload["client_algo_id"] != target["client_algo_id"]):
-            _invalid()
-        target.update(
-            stage=event_type,
-            query_response_sha256=payload["query_response_sha256"],
-        )
-    elif event_type == "BINANCE_STOP_SIGNED_REQUEST_PREPARED":
-        target = _stop_target(stop, "BINANCE_STOP_ABSENCE_CHECKED")
-        timestamp = payload.get("timestamp_ms")
-        if (target is None
-                or payload["protected_intent_id"] != private["intent_id"]
-                or payload["client_algo_id"] != target["client_algo_id"]):
-            _invalid()
-        target.update(
-            stage=event_type, request_id=payload["request_id"],
-            request_sha256=payload["request_sha256"],
-            request_timestamp_ms=timestamp,
-        )
-    elif event_type == "BINANCE_STOP_REQUEST_SEND_STARTED":
-        target = _stop_target(stop, "BINANCE_STOP_SIGNED_REQUEST_PREPARED")
-        if (target is None
-                or payload["protected_intent_id"] != private["intent_id"]
-                or payload["client_algo_id"] != target["client_algo_id"]
-                or payload["request_id"] != target["request_id"]):
-            _invalid()
-        target["stage"] = event_type
-    elif event_type == "BINANCE_STOP_ACKNOWLEDGED":
-        target = _stop_target(stop, "BINANCE_STOP_REQUEST_SEND_STARTED")
-        if (target is None
-                or payload["protected_intent_id"] != private["intent_id"]
-                or payload["client_algo_id"] != target["client_algo_id"]):
-            _invalid()
-        target.update(stage=event_type, algo_id=payload["algo_id"])
-    elif event_type == "BINANCE_STOP_RECONCILED":
-        target = _stop_target(stop, "BINANCE_STOP_ACKNOWLEDGED")
-        if (target is None
-                or payload["status"] != "BINANCE_PROTECTIVE_STOP_VERIFIED"
-                or payload["exposed"] is not True
-                or payload["client_algo_id"] != target["client_algo_id"]
-                or payload["algo_id"] != target["algo_id"]
-                or payload["quantity"] != target["quantity"]
-                or payload["trigger_price"] != target["trigger_price"]):
-            _invalid()
-        target["stage"] = event_type
+    elif event_type in _STOP_CHAIN:
+        _advance_stop(stop, private, event_type, payload)
     elif event_type == "BINANCE_STOP_REPLACEMENT_STARTED":
         if (not isinstance(stop, dict)
                 or stop["stage"] != "BINANCE_STOP_RECONCILED"

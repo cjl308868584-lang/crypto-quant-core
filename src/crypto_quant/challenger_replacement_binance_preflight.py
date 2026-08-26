@@ -5,7 +5,10 @@ from types import MappingProxyType
 from typing import Mapping
 from .canonical import canonical_json
 from .challenger_replacement_binance_credential import BinanceCredentialIdentity
-from .challenger_replacement_binance_private_contract import BinanceAccountApproval, _canonical_time, load_binance_account_approval_bytes
+from .challenger_replacement_binance_private_contract import (
+    BinanceAccountApproval, _canonical_time, _validator,
+    load_binance_account_approval_bytes,
+)
 _ENDPOINTS = frozenset({
     "API_RESTRICTIONS", "API_TRADING_STATUS", "SPOT_ACCOUNT",
     "SPOT_OPEN_ORDERS", "FUTURES_POSITION_MODE",
@@ -46,9 +49,6 @@ _POSITION_KEYS = frozenset({
     "maintMargin", "positionInitialMargin", "openOrderInitialMargin", "adl",
     "bidNotional", "askNotional", "updateTime",
 })
-_BUILD_KEYS = frozenset({"release_tag", "peeled_commit", "package_version",
-                         "manifest_version", "build_input_tree_hash",
-                         "manifest_hash", "manifest_file_sha256"})
 _PERMISSIONS = {"ip_restricted": True, "read": True, "spot_trade": True,
                 "futures_trade": True, "withdraw": False, "transfer": False,
                 "margin": False}
@@ -107,13 +107,6 @@ def _number(value, reason="BINANCE_ACCOUNT_PREFLIGHT_INPUT_INVALID"):
 def _hash(value, length=64):
     return (isinstance(value, str) and len(value) == length
             and not set(value) - _HASHES)
-def _valid_build(value):
-    return (isinstance(value, Mapping) and frozenset(value) == _BUILD_KEYS
-            and all(isinstance(value[key], str) and value[key]
-                    for key in {"release_tag", "package_version", "manifest_version"})
-            and _hash(value["peeled_commit"], 40)
-            and all(_hash(value[key]) for key in {
-                "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"}))
 def _ipv4(value):
     try:
         address = ipaddress.ip_address(value)
@@ -296,8 +289,6 @@ def _identity(document):
     ).hexdigest()
 def evaluate_binance_account_preflight(*, responses, account_approval,
                                         credential_identity, build_identity, now):
-    if not _valid_build(build_identity):
-        _fail("BINANCE_ACCOUNT_PREFLIGHT_INPUT_INVALID")
     parsed, hashes = _parse_responses(responses)
     permission = _require_permissions(parsed)
     configuration = _require_configuration(parsed)
@@ -323,6 +314,10 @@ def evaluate_binance_account_preflight(*, responses, account_approval,
         "authority_counts": _COUNTS,
     }
     document["preflight_id"] = _identity(document)
+    if tuple(_validator(
+        "challenger-replacement-binance-account-preflight-v1.schema.json"
+    ).iter_errors(document)):
+        _fail("BINANCE_ACCOUNT_PREFLIGHT_INPUT_INVALID")
     return (canonical_json(document) + "\n").encode("utf-8")
 def load_binance_account_preflight_bytes(data, *, build_identity):
     try:
@@ -330,47 +325,15 @@ def load_binance_account_preflight_bytes(data, *, build_identity):
             raise ValueError
         document = json.loads(data[:-1].decode("utf-8"), object_pairs_hook=_strict_pairs)
         if ((canonical_json(document) + "\n").encode() != data
-                or not isinstance(document, dict)
-                or frozenset(document) != {
-                    "$schema", "schema_version", "preflight_id", "status",
-                    "observed_at", "build_identity", "account_approval",
-                    "permissions", "configuration", "flatness",
-                    "response_sha256", "authority_counts",
-                }
-                or document["$schema"] != "./challenger-replacement-binance-account-preflight-v1.schema.json"
-                or document["schema_version"] != "1.0.0"
-                or document["status"] != "BINANCE_ACCOUNT_PREFLIGHT_VERIFIED_FLAT"
-                or not _valid_build(build_identity)
+                or tuple(_validator(
+                    "challenger-replacement-binance-account-preflight-v1.schema.json"
+                ).iter_errors(document))
                 or document["build_identity"] != build_identity
-                or document["preflight_id"] != _identity(document)
-                or document["permissions"] != _PERMISSIONS
-                or document["flatness"] != _FLATNESS
-                or document["authority_counts"] != _COUNTS):
+                or document["preflight_id"] != _identity(document)):
             raise ValueError
-        approval = _keys(document["account_approval"], {
-            "account_identity_sha256", "key_fingerprint",
-            "reviewed_egress_ip_attestation", "reviewer_uid",
-        })
-        configuration = _keys(document["configuration"], {
-            "position_mode", "asset_mode", "symbol", "margin_type",
-            "leverage", "auto_add_margin",
-        })
-        hashes = document["response_sha256"]
-        if (not _hash(approval["account_identity_sha256"])
-                or not _hash(approval["key_fingerprint"])
-                or not isinstance(approval["reviewer_uid"], int)
-                or isinstance(approval["reviewer_uid"], bool)
-                or not _ipv4(approval["reviewed_egress_ip_attestation"])
-                or configuration not in (
-                    {"position_mode": "ONE_WAY", "asset_mode": "SINGLE_ASSET",
-                     "symbol": "ETHUSDT", "margin_type": "ISOLATED",
-                     "leverage": 1, "auto_add_margin": False},
-                    {"position_mode": "ONE_WAY", "asset_mode": "SINGLE_ASSET",
-                     "symbol": "ETHUSDT", "margin_type": "ISOLATED",
-                     "leverage": 2, "auto_add_margin": False},
-                )
-                or not isinstance(hashes, dict) or frozenset(hashes) != _ENDPOINTS
-                or any(not _hash(value) for value in hashes.values())):
+        if not _ipv4(document["account_approval"][
+            "reviewed_egress_ip_attestation"
+        ]):
             raise ValueError
         _canonical_time(document["observed_at"])
         return MappingProxyType({key: MappingProxyType(value) if isinstance(value, dict) else value for key, value in document.items()})
