@@ -17,7 +17,10 @@ observer/UI; do not create generic exchange, broker, storage or UI frameworks.
 helpers already in `crypto_quant`, `unittest`, fixed official Binance examples,
 Git/GitHub Actions.
 
-**Spec:** `docs/superpowers/specs/2026-08-27-binance-private-canary-bundle-design.md`
+**Specs:**
+`docs/superpowers/specs/2026-08-27-binance-private-canary-bundle-design.md`
+and
+`docs/superpowers/specs/2026-08-27-binance-private-canary-budget-amendment-design.md`
 
 ## Global Constraints
 
@@ -38,8 +41,10 @@ Git/GitHub Actions.
   but local v0.77 TDD may continue against reviewed tree
   `4d8e9acf8e68c037c8ad274d970bfe67c71d4766`.
 - New production code budget: protocol+transport ≤600 lines, credential ≤220,
-  preflight ≤380, order/reconciliation ≤850, controllers ≤650,
-  projection/delivery ≤300; aggregate ≤3,000 physical lines.
+  preflight ≤380, private event contract+opportunity projection ≤650,
+  lifecycle+reconciliation+runtime ≤2,100, Canary controller+fault runner ≤850,
+  delivery additions ≤150, and exact aggregate ≤4,500 physical lines. Count
+  files and delivery additions exactly as defined by the budget amendment.
 - One final local full suite per final code state; no repeated unchanged full run.
 
 ## File Map
@@ -83,6 +88,100 @@ Modify:
 - build/version/manifest files only after final reviewed code is frozen.
 
 ---
+
+### Task 0: Enforce the amended architecture budget
+
+**Files:**
+- Create: `tests/test_challenger_replacement_v077_architecture.py`
+- Modify later at the release gate:
+  `tests/test_challenger_replacement_v077_release.py`
+
+**Interfaces:**
+- Consumes: the exact accounting and component ceilings in
+  `2026-08-27-binance-private-canary-budget-amendment-design.md`.
+- Produces: a deterministic physical-line gate over an explicit inventory;
+  Task 12 extends it with immutable-v0.76 delivery-diff accounting.
+
+- [ ] **Step 1: Preserve the original-budget RED evidence**
+
+Run the existing test before changing its 3,000-line assertion:
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_v077_architecture -v
+```
+
+Expected: FAIL with the measured new-module total above 3,000. Preserve the
+exact command and failure total in the commit message body or implementation
+checkpoint; do not manufacture a new failure after changing the threshold.
+
+- [ ] **Step 2: Replace glob accounting with the exact inventory**
+
+Use explicit tuples so a rename, omission or duplicate cannot silently alter
+the budget population:
+
+```python
+PROTOCOL_TRANSPORT = (
+    "challenger_replacement_binance_private_protocol.py",
+    "challenger_replacement_binance_private_transport.py",
+)
+CREDENTIAL = ("challenger_replacement_binance_credential.py",)
+PREFLIGHT = ("challenger_replacement_binance_preflight.py",)
+PRIVATE_PROJECTION = (
+    "challenger_replacement_binance_private_contract.py",
+    "challenger_replacement_opportunity_projection.py",
+)
+ORDER_RUNTIME = (
+    "challenger_replacement_binance_private_lifecycle.py",
+    "challenger_replacement_binance_reconciliation.py",
+    "challenger_replacement_binance_private_runtime.py",
+)
+CONTROLLERS = (
+    "challenger_replacement_canary_controller.py",
+    "challenger_replacement_private_fault_matrix.py",
+)
+```
+
+Optional future controller files count as zero only while absent. Every other
+file must exist. Assert each flattened name is unique and enforce caps
+`600/220/380/650/2100/850`, then enforce the sum at `4500`.
+
+- [ ] **Step 3: Run the amended GREEN gate and behavior adjacency**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_v077_architecture \
+  tests.test_challenger_replacement_binance_private_contract \
+  tests.test_challenger_replacement_binance_private_protocol \
+  tests.test_challenger_replacement_binance_credential \
+  tests.test_challenger_replacement_binance_private_transport \
+  tests.test_challenger_replacement_binance_preflight \
+  tests.test_challenger_replacement_binance_private_lifecycle \
+  tests.test_challenger_replacement_binance_protective_stop \
+  tests.test_challenger_replacement_binance_reconciliation \
+  tests.test_challenger_replacement_binance_private_runtime -v
+python3 -m compileall -q src tests
+git diff --check
+```
+
+Expected: all tests green. This is focused verification, not the final full
+suite.
+
+- [ ] **Step 4: Commit the governance correction**
+
+```bash
+git add \
+  docs/superpowers/specs/2026-08-27-binance-private-canary-budget-amendment-design.md \
+  docs/superpowers/plans/2026-08-27-binance-private-canary-bundle.md \
+  tests/test_challenger_replacement_v077_architecture.py
+git commit -m "test: enforce amended v0.77 architecture budget"
+```
+
+Task 12 must add a release regression that resolves exact annotated `v0.76.0`,
+requires its peeled commit to equal the released predecessor identity, counts
+only added lines in the fixed delivery allowlist, gives no credit for deleted
+lines, and combines that value with the Task 0 module total. Missing Git/tag
+identity is a release blocker, never a skipped or synthetic pass.
 
 ### Task 1: Freeze private event and endpoint contracts
 
@@ -868,9 +967,9 @@ git commit -m "test: freeze v0.77 private fault evidence"
 - [ ] **Step 1: Write release/dossier RED tests**
 
 Require every v0.75-v0.77 requirement to map to exact code/test/artifact; exact
-v0.76 released identity; package/manifest versions; fault receipt binding;
-≤3,000 new production lines; secret/endpoint/static authority scans; and the
-exact non-activation conclusion.
+v0.76 released identity; package/manifest versions; fault receipt binding; all
+amended component caps and the ≤4,500 exact aggregate; secret/endpoint/static
+authority scans; and the exact non-activation conclusion.
 
 - [ ] **Step 2: Write ADR/status/dossier and refresh manifest once**
 
