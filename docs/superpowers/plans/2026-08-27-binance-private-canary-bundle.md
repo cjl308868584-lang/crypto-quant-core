@@ -389,8 +389,14 @@ class BinancePrivateTransportResult:
 
 def execute_binance_private_request(request: BinancePrivateRequest, *,
     credential: BinanceCredentialCapability,
-    activation: BinancePrivateActivation) -> BinancePrivateTransportResult
+    activation: BinancePrivateActivation,
+    expected_build_identity: Mapping[str, str],
+    now: str) -> BinancePrivateTransportResult
 ```
+
+`expected_build_identity` and `now` are mandatory authority inputs: without
+them the transport could not independently reject a wrong-build or expired
+activation before credential authorization and socket construction.
 
 - [ ] **Step 1: Write no-authority and HTTP boundary RED tests**
 
