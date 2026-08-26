@@ -741,7 +741,13 @@ or duplicate whole-branch review.
 ## 13. YAGNI and size gate
 
 The new production Python net addition across v0.76-specific modules is capped
-at 4,200 physical lines. This is the revised hard cap approved before Task 8:
+at 5,000 physical lines. The original 4,200-line cap was reached while closing
+the first independent review. The additional 800 lines are a one-time
+review-remediation allowance: they may only replace labelled fault probes with
+case-specific executable probes, derive evaluator facts from strict event
+replay, and close the fixed-source observer/CLI findings. They may not add a
+generic engine, Broker, scheduler, exchange adapter, UI or activation surface.
+The original budget approved before Task 8 was:
 the first six completed modules measure 2,324 physical lines, so the original
 2,600-line estimate cannot contain the still-mandatory fault matrix, 72-hour
 qualifier, 90-day evaluator and observer without either deleting approved
@@ -755,12 +761,13 @@ completed capture/simulation/runtime/deployment/start   2,324 actual
 90-day evaluator + strict result loader                   800 maximum
 observer + operations projection integration              350 maximum
 deletion/refactor and measurement contingency              151 maximum
-hard cap                                                  4,200
+independent-review remediation                              800 maximum
+hard cap                                                  5,000
 ```
 
 The cap is a maximum, not a target. Each remaining task first reuses or deletes
 existing code and records its actual increment. Crossing a task allowance
-requires deletion or a documented redistribution that leaves the 4,200-line
+requires deletion or a documented redistribution that leaves the 5,000-line
 hard cap unchanged; crossing the hard cap requires a new design amendment.
 
 Cross-platform atomic publication, strict JSON, canonical Decimal, event replay

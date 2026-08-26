@@ -52,7 +52,7 @@ existing loopback HTML/CSS/JavaScript console and GitHub Actions.
   IDs, plan/build bindings and derived fields.
 - Every feature/fix is exact RED, minimal GREEN, focused verification and one
   atomic commit. Do not run the unchanged full suite twice.
-- Net new production Python across v0.76 modules is below the revised 4,200
+- Net new production Python across v0.76 modules is at most the revised 5,000
   physical-line hard cap, with 2,324 lines measured after Task 7 and remaining
   task allowances fixed by the approved design section 13;
   no generic exchange, Broker, scheduler, storage, evaluator or second UI
@@ -1570,7 +1570,7 @@ FORBIDDEN_CAPABILITIES = {
 Allow `urllib` only in the shared public HTTP/capture boundary, filesystem only
 in observer/fixed CLI/deployment-document utilities, and no subprocess in pure
 simulation/qualification/evaluation/projection modules. Enforce net-new v0.76
-production Python below the revised 4,200 physical-line hard cap, each
+production Python at or below the revised 5,000 physical-line hard cap, each
 remaining task within its section-13 allowance, and the no-generic-framework
 gate.
 
@@ -1733,9 +1733,11 @@ or retag another commit.
 - [ ] Operational qualification cannot synthesize 72 hours; economic evaluator
   cannot inspect or disclose pre-tail outcomes.
 - [ ] v1/v2 operations projections remain exact; v3 is loopback-only/read-only.
-- [ ] New production Python is below 4,200 physical lines; Task 8 adds 575
+- [ ] New production Python is at most 5,000 physical lines; Task 8 adds 575
   measured lines, Tasks 9-10 together add at most 800, and Task 11 adds at most
   350. The 75-line Task 8 overage is deducted from the section-13 contingency.
+  The final 800 lines are reserved exclusively for independent-review
+  remediation; unused allowance is not available for feature expansion.
 - [ ] No install, start, credential, account, Broker, real order, fund movement,
   production state write, 72-hour timer or 90-day timer occurred.
 - [ ] Critical/Important review findings are zero and final local/remote release
