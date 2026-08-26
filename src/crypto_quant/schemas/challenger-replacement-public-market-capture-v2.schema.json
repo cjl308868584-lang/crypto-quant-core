@@ -31,16 +31,47 @@
       }
     },
     "build": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["reviewed_code_checkpoint", "package_version", "predecessor_manifest_identity", "executable_core_hash"],
+          "properties": {
+            "reviewed_code_checkpoint": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "package_version": {"const": "0.76.0"},
+            "predecessor_manifest_identity": {"$ref": "#/$defs/predecessor_manifest"},
+            "executable_core_hash": {"$ref": "#/$defs/hash"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["release_tag", "peeled_commit", "package_version", "manifest_version", "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"],
+          "properties": {
+            "release_tag": {"const": "v0.76.0-fixture"},
+            "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "package_version": {"const": "0.76.0"},
+            "manifest_version": {"const": "1.70.0"},
+            "build_input_tree_hash": {"$ref": "#/$defs/hash"},
+            "manifest_hash": {"$ref": "#/$defs/hash"},
+            "manifest_file_sha256": {"$ref": "#/$defs/hash"}
+          }
+        }
+      ]
+    },
+    "predecessor_manifest": {
       "type": "object", "additionalProperties": false,
-      "required": ["release_tag", "peeled_commit", "package_version", "manifest_version", "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"],
+      "required": ["repository", "visibility", "release_tag", "tag_object", "peeled_commit", "package_version", "manifest_version", "manifest_hash", "manifest_file_sha256", "build_input_tree_hash", "main_ci_run"],
       "properties": {
-        "release_tag": {"const": "v0.76.0"},
-        "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "package_version": {"const": "0.76.0"},
-        "manifest_version": {"const": "1.70.0"},
-        "build_input_tree_hash": {"$ref": "#/$defs/hash"},
-        "manifest_hash": {"$ref": "#/$defs/hash"},
-        "manifest_file_sha256": {"$ref": "#/$defs/hash"}
+        "repository": {"const": "cjl308868584-lang/crypto-quant-core"},
+        "visibility": {"const": "PUBLIC"},
+        "release_tag": {"const": "v0.75.0"},
+        "tag_object": {"const": "4bd4b2e21c760d6fad2a27903c67ee509ac116c9"},
+        "peeled_commit": {"const": "a51ed15d5a484e5bb9a54dc75a7fef4e8876e4d5"},
+        "package_version": {"const": "0.75.0"},
+        "manifest_version": {"const": "1.69.0"},
+        "manifest_hash": {"const": "b15479590536c302e173a41a758c9113cd7452b0000d8b6c5cb5c2ad8b9404d9"},
+        "manifest_file_sha256": {"const": "df1695827975cbeb9c094b8182839e132219a52a19dc4166677a742d48442220"},
+        "build_input_tree_hash": {"const": "07812c0a352dabab3742aa1c3417eaa8a8363e46a5059e49323f2b1c0d8a4a78"},
+        "main_ci_run": {"const": 32869868571}
       }
     },
     "opportunity": {

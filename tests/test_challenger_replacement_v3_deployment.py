@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from copy import deepcopy
 
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import business_hash, canonical_json
 from crypto_quant.challenger_replacement_accelerated_canary_plan import (
     build_challenger_replacement_accelerated_canary_plan,
 )
@@ -21,6 +21,9 @@ from crypto_quant.challenger_replacement_simulation_contract import (
 )
 from crypto_quant.challenger_replacement_public_simulation_contract import (
     build_challenger_replacement_public_simulation_contract,
+)
+from crypto_quant.challenger_replacement_public_market_capture import (
+    _validate_build,
 )
 from crypto_quant.challenger_replacement_v3_deployment import (
     ChallengerReplacementV3DeploymentError,
@@ -43,14 +46,15 @@ PREDECESSOR_RELEASE = {
     "build_input_tree_hash": "07812c0a352dabab3742aa1c3417eaa8a8363e46a5059e49323f2b1c0d8a4a78",
     "main_ci_run": 32869868571,
 }
+INVENTORY = {
+    path: hashlib.sha256(path.encode("utf-8")).hexdigest()
+    for path in sorted(_CORE_PATHS)
+}
 CANDIDATE_BUILD = {
     "reviewed_code_checkpoint": "7" * 40,
     "package_version": "0.76.0",
     "predecessor_manifest_identity": PREDECESSOR_RELEASE,
-}
-INVENTORY = {
-    path: hashlib.sha256(path.encode("utf-8")).hexdigest()
-    for path in sorted(_CORE_PATHS)
+    "executable_core_hash": business_hash(INVENTORY),
 }
 
 
@@ -94,10 +98,7 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
         )
         self.assertEqual(deployment, self.build())
         self.assertEqual(deployment["executable_core_identity"], INVENTORY)
-        self.assertEqual(deployment["candidate_build"], {
-            **CANDIDATE_BUILD,
-            "executable_core_hash": deployment["executable_core_hash"],
-        })
+        self.assertEqual(deployment["candidate_build"], CANDIDATE_BUILD)
         self.assertNotIn("release_tag", deployment["candidate_build"])
         self.assertNotIn("manifest_hash", deployment["candidate_build"])
         self.assertEqual(deployment["authority"], {
@@ -109,6 +110,23 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
             "real_orders_allowed": False,
             "fund_movement_allowed": False,
         })
+
+    def test_formal_identity_replays_through_fixed_loader_and_capture_boundary(self):
+        deployment = self.build()
+        body = canonical_json(deployment).encode("utf-8")
+        self.assertEqual(
+            load_challenger_replacement_v3_deployment_bytes(
+                body, predecessor_release=PREDECESSOR_RELEASE,
+                plan=self.plan, economic_plan=self.economic,
+                accelerated_plan=self.accelerated,
+                predecessor_contract=self.predecessor,
+                public_contract=self.public,
+                build_identity=deployment["candidate_build"],
+                strategy_inventory=INVENTORY,
+            ),
+            deployment,
+        )
+        _validate_build(deployment["candidate_build"])
 
     def test_inventory_covers_recursive_local_imports_and_v076_resources(self):
         root = __import__("pathlib").Path(__file__).resolve().parents[1]

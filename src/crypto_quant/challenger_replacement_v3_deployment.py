@@ -120,13 +120,15 @@ def _inputs(
         or not isinstance(build_identity, Mapping)
         or set(build_identity) != {
             "reviewed_code_checkpoint", "package_version",
-            "predecessor_manifest_identity",
+            "predecessor_manifest_identity", "executable_core_hash",
         }
         or build_identity.get("package_version") != "0.76.0"
         or build_identity.get("predecessor_manifest_identity") != _PREDECESSOR
         or not isinstance(build_identity.get("reviewed_code_checkpoint"), str)
         or len(build_identity["reviewed_code_checkpoint"]) != 40
         or set(build_identity["reviewed_code_checkpoint"]) - hashes
+        or build_identity.get("executable_core_hash")
+        != business_hash(dict(sorted(strategy_inventory.items())))
         or not isinstance(strategy_inventory, Mapping)
         or set(strategy_inventory) != _CORE_PATHS
         or any(
@@ -193,12 +195,7 @@ def _document(
             "predecessor": {"contract_id": predecessor_contract["contract_id"], "contract_hash": predecessor_contract["contract_hash"]},
             "public": {"contract_id": public_contract["contract_id"], "contract_hash": public_contract["contract_hash"]},
         },
-        "candidate_build": {
-            **copy.deepcopy(dict(build_identity)),
-            "executable_core_hash": business_hash(
-                dict(sorted(strategy_inventory.items()))
-            ),
-        },
+        "candidate_build": copy.deepcopy(dict(build_identity)),
         "executable_core_identity": dict(sorted(strategy_inventory.items())),
         "executable_core_hash": business_hash(dict(sorted(strategy_inventory.items()))),
         "service": {"label": "local.crypto-quant.challenger-replacement-v1", "identity": "gui/501/local.crypto-quant.challenger-replacement-v1"},

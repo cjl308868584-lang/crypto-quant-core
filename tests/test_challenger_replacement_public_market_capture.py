@@ -60,13 +60,31 @@ V067_BUILD = {
     "manifest_file_sha256": "ec2ba2d48dd35676eb442ed80cd0e45a642a2b109626db2f54a25d25823a2bf8",
 }
 V076_BUILD = {
-    "release_tag": "v0.76.0",
+    "release_tag": "v0.76.0-fixture",
     "peeled_commit": "7" * 40,
     "package_version": "0.76.0",
     "manifest_version": "1.70.0",
     "build_input_tree_hash": "1" * 64,
     "manifest_hash": "2" * 64,
     "manifest_file_sha256": "3" * 64,
+}
+V076_FORMAL_BUILD = {
+    "reviewed_code_checkpoint": "7" * 40,
+    "package_version": "0.76.0",
+    "predecessor_manifest_identity": {
+        "repository": "cjl308868584-lang/crypto-quant-core",
+        "visibility": "PUBLIC",
+        "release_tag": "v0.75.0",
+        "tag_object": "4bd4b2e21c760d6fad2a27903c67ee509ac116c9",
+        "peeled_commit": "a51ed15d5a484e5bb9a54dc75a7fef4e8876e4d5",
+        "package_version": "0.75.0",
+        "manifest_version": "1.69.0",
+        "manifest_hash": "b15479590536c302e173a41a758c9113cd7452b0000d8b6c5cb5c2ad8b9404d9",
+        "manifest_file_sha256": "df1695827975cbeb9c094b8182839e132219a52a19dc4166677a742d48442220",
+        "build_input_tree_hash": "07812c0a352dabab3742aa1c3417eaa8a8363e46a5059e49323f2b1c0d8a4a78",
+        "main_ci_run": 32869868571,
+    },
+    "executable_core_hash": "4" * 64,
 }
 SPOT_EXCHANGE_INFO_URL = "https://data-api.binance.vision/api/v3/exchangeInfo?symbol=ETHUSDT"
 SPOT_BOOK_TICKER_URL = "https://data-api.binance.vision/api/v3/ticker/bookTicker?symbol=ETHUSDT"
@@ -327,6 +345,41 @@ class PublicMarketCaptureLoaderTests(unittest.TestCase):
             "funding_time": "2026-08-26T04:00:00.000Z", "rate": "-0.0001", "mark": "3310.25",
         }])
         self.assertNotIn("last", loaded.document["normalized"]["quotes"]["spot"])
+
+    def test_schema_and_loader_accept_formal_candidate_identity(self):
+        document = _outer_document()
+        document["build_identity"] = deepcopy(V076_FORMAL_BUILD)
+        document["capture_id"] = stable_id(
+            "challenger_replacement_public_market_capture",
+            {
+                "plan": document["plan"],
+                "build_identity": document["build_identity"],
+                "opportunity": document["opportunity"],
+                "nested_live_capture_sha256": document["nested_live_capture"]["sha256"],
+            },
+        )
+        body = _canonical_capture(document)
+
+        loaded = load_challenger_replacement_public_market_capture_bytes(
+            body, plan=fixture_v3_plan(), build_identity=V076_FORMAL_BUILD,
+            previous_source_bundle=None,
+        )
+
+        self.assertEqual(loaded.document["build_identity"], V076_FORMAL_BUILD)
+
+    def test_schema_rejects_legacy_seven_key_v076_release_identity(self):
+        schema = json.loads(
+            resources.files("crypto_quant").joinpath(
+                "schemas",
+                "challenger-replacement-public-market-capture-v2.schema.json",
+            ).read_text(encoding="utf-8")
+        )
+        document = _outer_document()
+        document["build_identity"]["release_tag"] = "v0.76.0"
+
+        errors = tuple(Draft202012Validator(schema).iter_errors(document))
+
+        self.assertTrue(errors)
 
     def test_selected_response_without_json_content_type_fails_closed(self):
         document = _outer_document()
@@ -750,11 +803,11 @@ class PublicMarketCaptureLoaderTests(unittest.TestCase):
         self.assertEqual(
             loaded.document["capture_id"],
             "challenger_replacement_public_market_capture_"
-            "eb4a77233273a01ef3d92eab3698144c73067f11eedb92d7313bd92cc1248106",
+            "39552325dfbc524f2e3787c220a23e7dcf06bf231c005b9e610a837a0adeb248",
         )
         self.assertEqual(
             loaded.document["capture_hash"],
-            "c719e52e9c44e50868cb08339cd65b7c5afcc7ddd00f42ea7fbe45a25129a5fc",
+            "eddecf6df397b2c025f974932ae4477b246e8fb4456d1a30f248b9d536f48a0c",
         )
 
     def test_nested_capture_rejects_noncanonical_base64_pad_bits(self):

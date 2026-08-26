@@ -877,6 +877,9 @@ v0.75 manifest/release identity, and the aggregate covers the exact path-to-SHA
 inventory. The final v0.76 manifest later binds that inventory and deployment.
 No candidate document claims a future release tag, merge commit, v0.76 manifest
 hash/file SHA or any self-referential identity.
+Committed deterministic vectors may use only the explicit seven-key
+`v0.76.0-fixture` identity. It is not a deployment authority; production
+boundaries reject the unqualified seven-key `v0.76.0` form.
 
 Start receipt construction scans the strict projection in canonical sequence,
 derives the first eligible natural `OPPORTUNITY_OBSERVED`, and derives all

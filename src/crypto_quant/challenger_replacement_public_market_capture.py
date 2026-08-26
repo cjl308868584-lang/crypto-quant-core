@@ -22,7 +22,9 @@ from .challenger_replacement_live_input import (
     acquire_challenger_replacement_live_capture as _acquire_live_capture,
     load_challenger_replacement_live_capture_bytes,
 )
-from .challenger_replacement_opportunity_projection import opportunity_id_for
+from .challenger_replacement_opportunity_projection import (
+    opportunity_id_for, validate_build_identity,
+)
 from .challenger_replacement_opportunities import (
     ChallengerReplacementOpportunityState,
 )
@@ -46,10 +48,6 @@ _MAX_SAFE_INTEGER = 2**53 - 1
 _MAX_JSON_CONTAINER_DEPTH = 64
 _HASH_CHARS = frozenset("0123456789abcdef")
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-_BUILD_KEYS = {
-    "release_tag", "peeled_commit", "package_version", "manifest_version",
-    "build_input_tree_hash", "manifest_hash", "manifest_file_sha256",
-}
 _V067_BUILD = {
     "release_tag": "v0.67.0",
     "peeled_commit": "ca022edccdcbb2d28b1ea25002e5f19512795e3e",
@@ -132,14 +130,6 @@ def _invalid(reason):
 
 def _wall_now():
     return datetime.now(timezone.utc)
-
-
-def _hash(value, length=64):
-    return (
-        isinstance(value, str)
-        and len(value) == length
-        and not set(value) - _HASH_CHARS
-    )
 
 
 def _utc(value):
@@ -251,21 +241,9 @@ def _strict_document(data):
 
 
 def _validate_build(value):
-    if (
-        not isinstance(value, Mapping)
-        or set(value) != _BUILD_KEYS
-        or value["release_tag"] != "v0.76.0"
-        or value["package_version"] != "0.76.0"
-        or value["manifest_version"] != "1.70.0"
-        or not _hash(value["peeled_commit"], 40)
-        or any(
-            not _hash(value[name])
-            for name in (
-                "build_input_tree_hash", "manifest_hash",
-                "manifest_file_sha256",
-            )
-        )
-    ):
+    try:
+        validate_build_identity(value)
+    except (TypeError, ValueError):
         _invalid("PUBLIC_MARKET_CAPTURE_BUILD_INVALID")
 
 

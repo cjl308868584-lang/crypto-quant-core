@@ -142,7 +142,7 @@ def validate_build_identity(value):
             ("v0.70.0", "0.70.0", "1.64.0"),
             ("v0.70.0-fixture", "0.70.0", "1.64.0"),
             ("v0.72.0-fixture", "0.72.0", "1.66.0"),
-            ("v0.76.0", "0.76.0", "1.70.0"),
+            ("v0.76.0-fixture", "0.76.0", "1.70.0"),
         }
         or not isinstance(value["peeled_commit"], str)
         or len(value["peeled_commit"]) != 40

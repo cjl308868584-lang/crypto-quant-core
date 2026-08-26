@@ -412,6 +412,9 @@ The candidate identity has exact keys
 v0.76 manifest hash or v0.76 manifest-file hash. The v0.76 tag/main/CI/manifest
 identity is bound only after merge by the release record; keeping it out of the
 deployment avoids a manifest self-reference and does not authorize installation.
+The seven-key `v0.76.0-fixture` identity exists only in committed deterministic
+test vectors. It is never a formal deployment authority, and the unqualified
+seven-key `v0.76.0` form is rejected.
 
 ### 6.3 Start receipts
 
