@@ -61,6 +61,7 @@ def start_receipt():
         "receipt_id": "challenger_replacement_v3_start_receipt_" + "1" * 64,
         "receipt_hash": "2" * 64,
         "status": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED",
+        "deployment": {"candidate_build": dict(V076_BUILD)},
         "shared_opportunity_id": "ETHUSDT@" + iso(START),
         "shared_event_hash": "3" * 64,
         "economic_start": {"scheduled_for": iso(START)},
@@ -561,7 +562,7 @@ class EconomicBootstrapAndResultTests(unittest.TestCase):
         )
 
     def test_build_identity_mismatch_maps_to_domain_error(self):
-        changed = dict(V076_BUILD, peeled_commit="g" * 40)
+        changed = dict(V076_BUILD, peeled_commit="6" * 40)
         with self.assertRaises(ChallengerReplacementEconomicEvaluationError):
             evaluate_challenger_replacement_economic_result(
                 self.facts, economic_plan=self.plan, build_identity=changed

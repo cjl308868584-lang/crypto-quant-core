@@ -327,8 +327,7 @@ def main(argv=None):
         if not isinstance(sources, dict) or set(sources) != _FIXED_SOURCE_KEYS:
             _invalid("CHALLENGER_REPLACEMENT_V3_RUNTIME_INSTALL_CONTRACT_INVALID")
         result = run_challenger_replacement_v3_opportunity(**sources)
-    except (ChallengerReplacementOpportunityError, OSError,
-            TypeError, ValueError) as error:
+    except (ChallengerReplacementOpportunityError, OSError, TypeError, ValueError) as error:
         sys.stderr.write(getattr(error, "reason_code",
                                  "CHALLENGER_REPLACEMENT_V3_RUNTIME_FAILED") + "\n")
         return 1

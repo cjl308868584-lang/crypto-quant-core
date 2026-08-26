@@ -58,6 +58,7 @@ def facts(*opportunities, observed_seconds=None, hard=(), position="FLAT",
             "receipt_id": "challenger_replacement_v3_start_receipt_" + "1" * 64,
             "receipt_hash": "2" * 64,
             "status": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED",
+            "deployment": {"candidate_build": deepcopy(BUILD)},
             "operational_start": {"observed_at": iso(START)},
             "economic_start": {"scheduled_for": iso(START)},
         }
@@ -88,6 +89,15 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
         return evaluate_challenger_replacement_operational_qualification(
             value, accelerated_plan=self.plan, fault_receipt=self.fault
         )
+
+    def test_fault_receipt_must_match_start_receipt_candidate_build(self):
+        value = facts(terminal(0))
+        value.start_receipt["deployment"]["candidate_build"]["peeled_commit"] = "6" * 40
+        with self.assertRaisesRegex(
+            ChallengerReplacementOperationalQualificationError,
+            "CHALLENGER_REPLACEMENT_FAULT_MATRIX_NOT_PASSED",
+        ):
+            self.evaluate(value)
 
     def test_not_started_active_exact_boundary_and_loader(self):
         self.assertEqual(self.evaluate(facts(started=False))["status"], "NOT_STARTED")
@@ -128,6 +138,7 @@ class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
             "receipt_id": "challenger_replacement_v3_start_receipt_" + "1" * 64,
             "receipt_hash": "2" * 64,
             "status": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED",
+            "deployment": {"candidate_build": deepcopy(BUILD)},
             "operational_start": {"observed_at": iso(START + timedelta(seconds=delay))},
             "economic_start": {"scheduled_for": iso(START)},
         }

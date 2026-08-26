@@ -33,8 +33,8 @@ _SNAPSHOT = _RUNTIME + "/deployment/snapshot"
 _CORE_NAMES = (
     "public_http events opportunity_projection public_market_capture "
     "public_simulation_contract public_simulation v3_runtime v3_deployment v3_start "
-    "fault_matrix operational_qualification economic_evaluation "
-    "economic_evaluation_cli v3_observer operations_projection_v3"
+    "fault_matrix operational_qualification economic_evaluation economic_evaluation_cli "
+    "v3_observer operations_projection_v3"
 ).split()
 _CORE_PATHS = {"src/crypto_quant/challenger_replacement_" + name + ".py"
                for name in _CORE_NAMES[:-1]} | {"src/crypto_quant/operations_projection_v3.py"}

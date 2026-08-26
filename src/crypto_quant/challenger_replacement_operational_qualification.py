@@ -84,7 +84,8 @@ def _validated_inputs(facts, plan, fault):
     try:
         load_challenger_replacement_fault_matrix_bytes(
             canonical_json(fault).encode("utf-8"),
-            build_identity=fault["build_identity"],
+            build_identity=(facts.start_receipt.get("deployment", {}).get(
+                "candidate_build") if facts.start_receipt else fault["build_identity"]),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ChallengerReplacementOperationalQualificationError(

@@ -109,6 +109,7 @@ def _document(*, deployment, event_projection, event_root_identity):
             "deployment_id": deployment["deployment_id"],
             "deployment_hash": deployment["deployment_hash"],
             "executable_core_hash": deployment["executable_core_hash"],
+            "candidate_build": copy.deepcopy(deployment["candidate_build"]),
         },
         "plans": copy.deepcopy(deployment["plans"]),
         "shared_opportunity_id": header["slot_id"],

@@ -170,7 +170,8 @@ def observe_challenger_replacement_economic_progress(
     }
 
 
-def _strict_result(envelope, *, economic_plan, expected_previous_hash=None):
+def _strict_result(envelope, *, economic_plan, expected_previous_hash=None,
+                   expected_build=None):
     if not isinstance(envelope, Mapping) or set(envelope) != {
         "source", "previous_projection", "result", "sequence",
         "parent_event_hash",
@@ -194,7 +195,7 @@ def _strict_result(envelope, *, economic_plan, expected_previous_hash=None):
             canonical_json(result).encode("utf-8"), source=envelope["source"],
             previous_projection=envelope["previous_projection"], plan=plan,
             economic_plan=economic_plan, public_contract=public,
-            build_identity=result["build_identity"], sequence=envelope["sequence"],
+            build_identity=expected_build or result["build_identity"], sequence=envelope["sequence"],
             parent_event_hash=envelope["parent_event_hash"],
         )
     except ChallengerReplacementEconomicEvaluationError:
@@ -207,7 +208,7 @@ def _strict_result(envelope, *, economic_plan, expected_previous_hash=None):
 
 def _strict_tail_mark(
     envelope, *, economic_plan, expected_previous_hash=None,
-    expected_scheduled_for=None
+    expected_scheduled_for=None, expected_build=None
 ):
     if not isinstance(envelope, Mapping) or set(envelope) != {
         "source", "previous_projection", "marked_equity"
@@ -222,7 +223,7 @@ def _strict_tail_mark(
         )
         source = _validated_source(
             envelope["source"], plan=plan, public_contract=public,
-            build_identity=envelope["source"]["build_identity"],
+            build_identity=expected_build or envelope["source"]["build_identity"],
         )
         snapshot = copy.deepcopy(dict(envelope["previous_projection"]))
         if (
@@ -301,6 +302,7 @@ def _build_economic_boundary_series(
     start = _start(facts.start_receipt)
     observed = _time(facts.observed_at)
     tail = start + timedelta(seconds=_TAIL_SECONDS)
+    expected_build = facts.start_receipt["deployment"]["candidate_build"]
     if observed < tail:
         _invalid("ECONOMIC_TAIL_NOT_REACHED")
     window = []
@@ -364,6 +366,7 @@ def _build_economic_boundary_series(
             result = _strict_result(
                 fact.result_or_null, economic_plan=plan,
                 expected_previous_hash=last_snapshot_hash,
+                expected_build=expected_build,
             )
             if (
                 result["opportunity"]["opportunity_id"] != fact.opportunity_id
@@ -415,6 +418,7 @@ def _build_economic_boundary_series(
                 expected_scheduled_for=(
                     tail.isoformat(timespec="milliseconds").replace("+00:00", "Z")
                 ),
+                expected_build=expected_build,
             ))
         else:
             ending_base = base
@@ -559,6 +563,8 @@ def _empty_result(facts, plan, build_identity, reason):
 
 def _result_document(facts, plan, build_identity):
     validate_build_identity(build_identity)
+    if facts.start_receipt.get("deployment", {}).get("candidate_build") != dict(build_identity):
+        _invalid("ECONOMIC_RESULT_REPLAY_INVALID")
     try:
         series = _build_economic_boundary_series(facts, economic_plan=plan)
     except ChallengerReplacementEconomicEvaluationError as error:
