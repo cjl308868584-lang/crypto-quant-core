@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 from dataclasses import replace
+from decimal import Decimal
 from functools import lru_cache
 from importlib import resources
 from typing import Any, Dict, Mapping
@@ -15,6 +16,7 @@ from jsonschema import Draft202012Validator
 
 from . import challenger_replacement_events as event_module
 from . import challenger_replacement_binance_lifecycle as lifecycle_module
+from . import challenger_replacement_simulation as simulation_module
 from .challenger_replacement_binance_simulation_input import (
     load_challenger_replacement_binance_simulation_input_bytes,
 )
@@ -184,7 +186,7 @@ def _event_probe(case_id, build_identity):
             return _boundary(case_id)
 
 
-def _lifecycle_probe(case_id):
+def _fixture_context():
     data = resources.files("crypto_quant").joinpath(
         "fixtures", "challenger-replacement-v076",
         "binance-lifecycle-long-input.json",
@@ -199,6 +201,14 @@ def _lifecycle_probe(case_id):
         build_identity=document["build_identity"],
         opportunity_id=document["opportunity"]["opportunity_id"],
     )
+    previous = build_challenger_replacement_genesis_snapshot(
+        plan=plan, contract=contract
+    )
+    return document, source, previous, plan, contract
+
+
+def _lifecycle_probe(case_id):
+    document, source, previous, plan, contract = _fixture_context()
     changes = {
         "PARTIAL_SIMULATED_FILL": {"partial_first_quantity_or_null": "0.01"},
         "LATE_SIMULATED_FILL": {"fill_before_ack": True},
@@ -221,15 +231,52 @@ def _lifecycle_probe(case_id):
     with patch.object(lifecycle_module, "_normal_lifecycle_observations",
                       side_effect=observation):
         result = lifecycle_module.simulate_challenger_replacement_binance_lifecycle(
-            source=source,
-            previous_projection=build_challenger_replacement_genesis_snapshot(
-                plan=plan, contract=contract
-            ),
+            source=source, previous_projection=previous,
             plan=plan, contract=contract, build_identity=document["build_identity"],
         )
     reconciled = case_id in {"PARTIAL_SIMULATED_FILL", "LATE_SIMULATED_FILL"}
     if (result.status == "RECONCILED_FIXTURE") != reconciled:
         _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
+    return _boundary(case_id)
+
+
+def _economic_probe(case_id):
+    document, source, previous, plan, contract = _fixture_context()
+    if case_id == "FEE_REPLAY":
+        result = lifecycle_module.simulate_challenger_replacement_binance_lifecycle(
+            source=source, previous_projection=previous, plan=plan,
+            contract=contract, build_identity=document["build_identity"],
+        )
+        fills = (json.loads(event.payload_bytes)["fee"] for event in
+                 result.lifecycle_events if event.event_type == "FILL_OBSERVED_FIXTURE")
+        if sum(map(Decimal, fills), Decimal("0")) != Decimal(
+            json.loads(result.accounting_bytes)["fee"]
+        ):
+            _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
+    elif case_id == "FUNDING_REPLAY":
+        snapshot = copy.deepcopy(previous)
+        snapshot.update(position_state="PERP_SHORT", signed_quantity="-0.01",
+                        entry_price_or_null="2000", isolated_margin="10",
+                        contract_multiplier="1")
+        source = copy.deepcopy(source)
+        source["funding"] = {"boundary_at_or_null": source["opportunity"]["scheduled_for"],
+                             "rate_or_null": "0.001"}
+        funding, _cashflows, _daily, _drawdown = simulation_module._prepare_boundary(
+            snapshot, source
+        )
+        if funding != Decimal("0.0199925"):
+            _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
+    else:
+        snapshot = copy.deepcopy(previous)
+        snapshot["day_start_date_or_null"] = source["opportunity"]["scheduled_for"][:10]
+        if case_id == "DAILY_LOSS_LOCK":
+            snapshot["day_start_equity"] = "103"
+        else:
+            snapshot["peak_equity"] = "106"
+        simulation_module._risk(snapshot, source)
+        expected = "STOP_NEW_RISK" if case_id == "DAILY_LOSS_LOCK" else "STAGE_FAILED_LOCKED"
+        if snapshot["risk_state"] != expected:
+            _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
     return _boundary(case_id)
 
 
@@ -278,11 +325,8 @@ def _probe_boundary(case_id, build_identity):
         except ValueError:
             return _boundary(case_id)
         _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_DID_NOT_FAIL")
-    if case_id in {"DAILY_LOSS_LOCK", "DRAWDOWN_LOCK"}:
-        plan = build_challenger_replacement_accelerated_canary_plan()
-        if plan["canary_ladder"]["E0"]["daily_loss_limit"] != "2":
-            _invalid("CHALLENGER_REPLACEMENT_FAULT_PROBE_INVALID")
-        return _boundary(case_id)
+    if case_id in {"FEE_REPLAY", "FUNDING_REPLAY", "DAILY_LOSS_LOCK", "DRAWDOWN_LOCK"}:
+        return _economic_probe(case_id)
     return _boundary(case_id)
 
 

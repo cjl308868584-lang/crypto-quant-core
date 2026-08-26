@@ -12,6 +12,7 @@ from crypto_quant.challenger_replacement_fault_matrix import (
 )
 import crypto_quant.challenger_replacement_fault_matrix as fault_module
 import crypto_quant.challenger_replacement_binance_lifecycle as lifecycle_module
+import crypto_quant.challenger_replacement_simulation as simulation_module
 
 
 BUILD = {
@@ -155,6 +156,26 @@ class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
             ) as invoked:
                 fault_module._probe_boundary(case_id, BUILD)
             self.assertEqual(invoked.call_count, 1)
+
+    def test_economic_and_risk_cases_execute_accounting_boundaries(self):
+        with patch.object(
+            lifecycle_module,
+            "simulate_challenger_replacement_binance_lifecycle",
+            wraps=lifecycle_module.simulate_challenger_replacement_binance_lifecycle,
+        ) as lifecycle:
+            fault_module._probe_boundary("FEE_REPLAY", BUILD)
+        self.assertEqual(lifecycle.call_count, 1)
+        for case_id, boundary_name in (
+            ("FUNDING_REPLAY", "_prepare_boundary"),
+            ("DAILY_LOSS_LOCK", "_risk"),
+            ("DRAWDOWN_LOCK", "_risk"),
+        ):
+            original = getattr(simulation_module, boundary_name)
+            with self.subTest(case_id=case_id), patch.object(
+                simulation_module, boundary_name, wraps=original,
+            ) as invoked:
+                fault_module._probe_boundary(case_id, BUILD)
+            self.assertGreaterEqual(invoked.call_count, 1)
 
 
 if __name__ == "__main__":
