@@ -347,14 +347,20 @@ def apply_challenger_replacement_private_event(projection, event):
         slot = projection["opportunities"][opportunity_id]
     except (AttributeError, KeyError, TypeError, UnicodeDecodeError, ValueError) as error:
         raise ChallengerReplacementBinancePrivateContractError() from error
-    if (
-        event_type not in PRIVATE_EVENT_TYPES
-        or slot.get("outcome") != "OBSERVED"
-        or slot.get("stage") != "OPPORTUNITY_OBSERVED"
-    ):
+    if (event_type not in PRIVATE_EVENT_TYPES
+            or slot.get("outcome") != "OBSERVED"):
         _invalid()
     payload = _payload(header)
     if event_type != "BINANCE_INTENT_AUTHORIZED":
+        private = slot.get("private")
+        if (slot.get("stage") != "OPPORTUNITY_OBSERVED"
+                or not isinstance(private, dict)
+                or private.get("terminal") is not False
+                or payload.get("intent_id") != private.get("intent_id")):
+            _invalid()
+        _apply_private_transition(private, event_type, payload, event)
+        return
+    if slot.get("stage") != "OPPORTUNITY_OBSERVED":
         _invalid()
     expected_keys = {
         "opportunity_id",
@@ -410,7 +416,203 @@ def apply_challenger_replacement_private_event(projection, event):
         "unsigned_intent_sha256": payload["unsigned_intent_sha256"],
         "intent_event_hash": event.event_hash,
         "intent_event_sequence": event.sequence,
+        "last_private_event_hash": event.event_hash,
+        "last_private_event_sequence": event.sequence,
+        "fill_ids": [],
+        "unresolved_unknown": False,
+        "terminal": False,
     }
+
+
+_PRIVATE_TRANSITIONS = {
+    "BINANCE_ABSENCE_CHECKED": {"BINANCE_INTENT_AUTHORIZED"},
+    "BINANCE_SIGNED_REQUEST_PREPARED": {"BINANCE_ABSENCE_CHECKED"},
+    "BINANCE_REQUEST_SEND_STARTED": {"BINANCE_SIGNED_REQUEST_PREPARED"},
+    "BINANCE_ORDER_ACKNOWLEDGED": {"BINANCE_REQUEST_SEND_STARTED"},
+    "BINANCE_FILL_OBSERVED": {
+        "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
+        "BINANCE_ORDER_PARTIALLY_FILLED",
+    },
+    "BINANCE_ORDER_PARTIALLY_FILLED": {
+        "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
+    },
+    "BINANCE_ORDER_FILLED": {
+        "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
+        "BINANCE_ORDER_PARTIALLY_FILLED",
+    },
+    "BINANCE_ORDER_CANCELED": {
+        "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
+        "BINANCE_ORDER_PARTIALLY_FILLED",
+    },
+    "BINANCE_ORDER_EXPIRED": {
+        "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
+        "BINANCE_ORDER_PARTIALLY_FILLED",
+    },
+    "BINANCE_ORDER_REJECTED": {"BINANCE_REQUEST_SEND_STARTED"},
+    "BINANCE_ORDER_UNKNOWN": {
+        "BINANCE_REQUEST_SEND_STARTED", "BINANCE_ORDER_ACKNOWLEDGED",
+        "BINANCE_FILL_OBSERVED", "BINANCE_ORDER_PARTIALLY_FILLED",
+    },
+    "BINANCE_FILLS_FEES_REPLAYED": {
+        "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED",
+        "BINANCE_ORDER_EXPIRED", "BINANCE_ORDER_REJECTED",
+    },
+    "BINANCE_POSITION_BALANCE_RECONCILED": {
+        "BINANCE_FILLS_FEES_REPLAYED",
+    },
+    "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED": {
+        "BINANCE_POSITION_BALANCE_RECONCILED",
+    },
+    "BINANCE_RECONCILIATION_SUCCEEDED": {
+        "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
+    },
+    "BINANCE_RECONCILIATION_FAILED": {
+        "BINANCE_POSITION_BALANCE_RECONCILED",
+        "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
+    },
+}
+
+
+def _private_payload_valid(event_type, payload, private):
+    common = {"intent_id"}
+    keys = {
+        "BINANCE_ABSENCE_CHECKED": common | {
+            "venue_client_order_id", "query_response_sha256", "proven_absent",
+        },
+        "BINANCE_SIGNED_REQUEST_PREPARED": common | {
+            "request_id", "endpoint_id", "request_sha256",
+        },
+        "BINANCE_REQUEST_SEND_STARTED": common | {"request_id"},
+        "BINANCE_ORDER_ACKNOWLEDGED": common | {
+            "order_id", "venue_client_order_id",
+        },
+        "BINANCE_FILL_OBSERVED": common | {
+            "trade_id", "order_id", "quantity", "price", "quote_quantity",
+            "fee", "fee_asset", "cumulative_filled_quantity",
+        },
+        "BINANCE_ORDER_PARTIALLY_FILLED": common | {
+            "cumulative_filled_quantity", "cumulative_fee",
+            "venue_terminal_status",
+        },
+        "BINANCE_ORDER_FILLED": common | {
+            "cumulative_filled_quantity", "cumulative_fee",
+            "venue_terminal_status",
+        },
+        "BINANCE_ORDER_CANCELED": common | {
+            "cumulative_filled_quantity", "cumulative_fee",
+            "venue_terminal_status",
+        },
+        "BINANCE_ORDER_EXPIRED": common | {
+            "cumulative_filled_quantity", "cumulative_fee",
+            "venue_terminal_status",
+        },
+        "BINANCE_ORDER_REJECTED": common | {"venue_code", "blocks_new_risk"},
+        "BINANCE_ORDER_UNKNOWN": common | {"venue_code", "blocks_new_risk"},
+        "BINANCE_FILLS_FEES_REPLAYED": common | {
+            "fill_ids", "cumulative_fee",
+        },
+        "BINANCE_POSITION_BALANCE_RECONCILED": common | {"reconciliation_id"},
+        "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED": common | {
+            "required", "client_algo_id_or_null", "status",
+        },
+        "BINANCE_RECONCILIATION_SUCCEEDED": common | {"reconciliation_id"},
+        "BINANCE_RECONCILIATION_FAILED": common | {"reason_code"},
+    }
+    if event_type not in keys or set(payload) != keys[event_type]:
+        return False
+    if event_type == "BINANCE_ABSENCE_CHECKED":
+        return (payload["venue_client_order_id"]
+                == private["venue_client_order_id"]
+                and _lower_hash(payload["query_response_sha256"])
+                and payload["proven_absent"] is True)
+    if event_type == "BINANCE_SIGNED_REQUEST_PREPARED":
+        return (payload["endpoint_id"] in {
+            "SPOT_ORDER_CREATE", "FUTURES_ORDER_CREATE",
+        } and _bounded_identity(payload["request_id"])
+                and _lower_hash(payload["request_sha256"]))
+    if event_type == "BINANCE_REQUEST_SEND_STARTED":
+        return _bounded_identity(payload["request_id"])
+    if event_type == "BINANCE_ORDER_ACKNOWLEDGED":
+        return (isinstance(payload["order_id"], int)
+                and not isinstance(payload["order_id"], bool)
+                and payload["order_id"] > 0
+                and payload["venue_client_order_id"]
+                == private["venue_client_order_id"])
+    if event_type == "BINANCE_FILL_OBSERVED":
+        try:
+            return (isinstance(payload["trade_id"], int)
+                    and payload["trade_id"] >= 0
+                    and all(canonical_decimal(payload[key]) == payload[key]
+                            for key in ("quantity", "price", "quote_quantity",
+                                        "fee", "cumulative_filled_quantity"))
+                    and isinstance(payload["fee_asset"], str)
+                    and bool(payload["fee_asset"]))
+        except (TypeError, ValueError):
+            return False
+    if event_type.startswith("BINANCE_ORDER_") and event_type not in {
+        "BINANCE_ORDER_REJECTED", "BINANCE_ORDER_UNKNOWN",
+    }:
+        try:
+            return (all(canonical_decimal(payload[key]) == payload[key]
+                        for key in ("cumulative_filled_quantity",
+                                    "cumulative_fee"))
+                    and payload["venue_terminal_status"] in {
+                        "PARTIALLY_FILLED", "FILLED", "CANCELED", "EXPIRED",
+                    })
+        except (TypeError, ValueError):
+            return False
+    if event_type in {"BINANCE_ORDER_REJECTED", "BINANCE_ORDER_UNKNOWN"}:
+        return (isinstance(payload["venue_code"], int)
+                and not isinstance(payload["venue_code"], bool)
+                and payload["blocks_new_risk"]
+                is (event_type == "BINANCE_ORDER_UNKNOWN"))
+    if event_type == "BINANCE_FILLS_FEES_REPLAYED":
+        try:
+            return (payload["fill_ids"] == private["fill_ids"]
+                    and canonical_decimal(payload["cumulative_fee"])
+                    == payload["cumulative_fee"])
+        except (TypeError, ValueError):
+            return False
+    if event_type in {
+        "BINANCE_POSITION_BALANCE_RECONCILED",
+        "BINANCE_RECONCILIATION_SUCCEEDED",
+    }:
+        return (isinstance(payload["reconciliation_id"], str)
+                and payload["reconciliation_id"].startswith(
+                    "binance_reconciliation_"
+                ) and _lower_hash(payload["reconciliation_id"][23:]))
+    if event_type == "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED":
+        return (isinstance(payload["required"], bool)
+                and payload["status"] in {"NOT_REQUIRED", "VERIFIED"}
+                and ((payload["required"] is False
+                      and payload["client_algo_id_or_null"] is None
+                      and payload["status"] == "NOT_REQUIRED")
+                     or (payload["required"] is True
+                         and isinstance(payload["client_algo_id_or_null"], str)
+                         and payload["status"] == "VERIFIED")))
+    return (event_type == "BINANCE_RECONCILIATION_FAILED"
+            and _bounded_identity(payload["reason_code"]))
+
+
+def _apply_private_transition(private, event_type, payload, event):
+    if (event_type not in _PRIVATE_TRANSITIONS
+            or private["stage"] not in _PRIVATE_TRANSITIONS[event_type]
+            or not _private_payload_valid(event_type, payload, private)):
+        _invalid()
+    if event_type == "BINANCE_FILL_OBSERVED":
+        if payload["trade_id"] in private["fill_ids"]:
+            _invalid()
+        private["fill_ids"].append(payload["trade_id"])
+    private["stage"] = event_type
+    private["last_private_event_hash"] = event.event_hash
+    private["last_private_event_sequence"] = event.sequence
+    if event_type == "BINANCE_ORDER_UNKNOWN":
+        private["unresolved_unknown"] = True
+        private["terminal"] = True
+    elif event_type in {
+        "BINANCE_RECONCILIATION_SUCCEEDED", "BINANCE_RECONCILIATION_FAILED",
+    }:
+        private["terminal"] = True
 
 
 def require_binance_private_endpoint(endpoint_id):

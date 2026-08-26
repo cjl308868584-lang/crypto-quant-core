@@ -220,6 +220,10 @@ class BinancePrivateEventContractTests(unittest.TestCase):
     def setUp(self):
         self.workspace = OpportunityStateWorkspace()
         self.state = self.workspace.state()
+        schema = json.loads(resources.files("crypto_quant").joinpath(
+            "schemas", "challenger-replacement-binance-private-event-v1.schema.json"
+        ).read_text(encoding="utf-8"))
+        self.private_validator = Draft202012Validator(schema)
 
     def tearDown(self):
         self.workspace.close()
@@ -293,6 +297,48 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             expected_last_event_hash=projection["last_event_hash"],
         )
 
+    def _append_private(self, event_type, payload):
+        envelope = {
+            "$schema": "./challenger-replacement-binance-private-event-v1.schema.json",
+            "schema_version": "1.0.0", "event_type": event_type,
+            "opportunity_id": self.workspace.opportunity_id,
+            "payload": payload,
+        }
+        self.assertEqual(tuple(self.private_validator.iter_errors(envelope)), ())
+        projection = self.state.replay()
+        return self.state.append(
+            event_type=event_type,
+            opportunity_id=self.workspace.opportunity_id,
+            worker_id="fixture-private-worker",
+            recorded_at=DEFAULT_OBSERVED_AT,
+            payload=payload,
+            expected_last_event_hash=projection["last_event_hash"],
+        )
+
+    def _authorize(self):
+        self._observe_opportunity()
+        self._append_private("BINANCE_INTENT_AUTHORIZED", self._intent_payload())
+
+    def _pre_send(self):
+        self._authorize()
+        intent = self._intent_payload()
+        self._append_private("BINANCE_ABSENCE_CHECKED", {
+            "intent_id": intent["intent_id"],
+            "venue_client_order_id": intent["venue_client_order_id"],
+            "query_response_sha256": "7" * 64,
+            "proven_absent": True,
+        })
+        self._append_private("BINANCE_SIGNED_REQUEST_PREPARED", {
+            "intent_id": intent["intent_id"],
+            "request_id": "binance_private_request_" + "8" * 64,
+            "endpoint_id": "SPOT_ORDER_CREATE",
+            "request_sha256": "9" * 64,
+        })
+        self._append_private("BINANCE_REQUEST_SEND_STARTED", {
+            "intent_id": intent["intent_id"],
+            "request_id": "binance_private_request_" + "8" * 64,
+        })
+
     def test_observed_opportunity_accepts_one_exact_private_intent(self):
         self._observe_opportunity()
         projection = self.state.replay()
@@ -347,6 +393,80 @@ class BinancePrivateEventContractTests(unittest.TestCase):
                 payload=self._intent_payload(),
                 expected_last_event_hash=projection["last_event_hash"],
             )
+
+    def test_exact_private_lifecycle_replays_to_terminal_reconciliation(self):
+        self._pre_send()
+        intent = self._intent_payload()
+        self._append_private("BINANCE_ORDER_ACKNOWLEDGED", {
+            "intent_id": intent["intent_id"], "order_id": 101,
+            "venue_client_order_id": intent["venue_client_order_id"],
+        })
+        self._append_private("BINANCE_FILL_OBSERVED", {
+            "intent_id": intent["intent_id"], "trade_id": 301,
+            "order_id": 101, "quantity": "0.001", "price": "2000",
+            "quote_quantity": "2", "fee": "0.002", "fee_asset": "USDT",
+            "cumulative_filled_quantity": "0.001",
+        })
+        self._append_private("BINANCE_ORDER_FILLED", {
+            "intent_id": intent["intent_id"],
+            "cumulative_filled_quantity": "0.001",
+            "cumulative_fee": "0.002", "venue_terminal_status": "FILLED",
+        })
+        self._append_private("BINANCE_FILLS_FEES_REPLAYED", {
+            "intent_id": intent["intent_id"], "fill_ids": [301],
+            "cumulative_fee": "0.002",
+        })
+        self._append_private("BINANCE_POSITION_BALANCE_RECONCILED", {
+            "intent_id": intent["intent_id"],
+            "reconciliation_id": "binance_reconciliation_" + "a" * 64,
+        })
+        self._append_private("BINANCE_PROTECTION_RECONCILED_IF_EXPOSED", {
+            "intent_id": intent["intent_id"], "required": False,
+            "client_algo_id_or_null": None, "status": "NOT_REQUIRED",
+        })
+        self._append_private("BINANCE_RECONCILIATION_SUCCEEDED", {
+            "intent_id": intent["intent_id"],
+            "reconciliation_id": "binance_reconciliation_" + "a" * 64,
+        })
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_RECONCILIATION_SUCCEEDED")
+        self.assertTrue(private["terminal"])
+        self.assertFalse(private["unresolved_unknown"])
+        self.assertEqual(private["fill_ids"], [301])
+
+    def test_out_of_order_private_event_is_rejected_without_append(self):
+        self._authorize()
+        before = self.state.replay()
+        with self.assertRaisesRegex(
+            ChallengerReplacementOpportunityError,
+            "CHALLENGER_REPLACEMENT_BINANCE_PRIVATE_EVENT_INVALID",
+        ):
+            self._append_private("BINANCE_REQUEST_SEND_STARTED", {
+                "intent_id": self._intent_payload()["intent_id"],
+                "request_id": "binance_private_request_" + "8" * 64,
+            })
+        after = self.state.replay()
+        self.assertEqual(after["last_event_hash"], before["last_event_hash"])
+
+    def test_unknown_is_terminal_and_blocks_any_following_transition(self):
+        self._pre_send()
+        intent = self._intent_payload()
+        self._append_private("BINANCE_ORDER_UNKNOWN", {
+            "intent_id": intent["intent_id"], "venue_code": -1007,
+            "blocks_new_risk": True,
+        })
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertTrue(private["terminal"])
+        self.assertTrue(private["unresolved_unknown"])
+        with self.assertRaises(ChallengerReplacementOpportunityError):
+            self._append_private("BINANCE_ORDER_ACKNOWLEDGED", {
+                "intent_id": intent["intent_id"], "order_id": 101,
+                "venue_client_order_id": intent["venue_client_order_id"],
+            })
 
 
 if __name__ == "__main__":
