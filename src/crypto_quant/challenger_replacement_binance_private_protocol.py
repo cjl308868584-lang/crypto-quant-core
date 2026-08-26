@@ -23,64 +23,38 @@ _UNSIGNED_ENDPOINTS = frozenset({
     "FUTURES_EXCHANGE_INFO",
     "FUTURES_MARK_PRICE",
 })
-_PARAMETER_SETS = {
-    "SPOT_SERVER_TIME": (frozenset(),),
-    "SPOT_EXCHANGE_INFO": (frozenset({"symbol"}),),
-    "FUTURES_SERVER_TIME": (frozenset(),),
-    "FUTURES_EXCHANGE_INFO": (frozenset(),),
-    "FUTURES_MARK_PRICE": (frozenset({"symbol"}),),
-    "API_RESTRICTIONS": (frozenset(),),
-    "API_TRADING_STATUS": (frozenset(),),
-    "SPOT_ACCOUNT": (frozenset(),),
-    "SPOT_OPEN_ORDERS": (frozenset({"symbol"}),),
-    "SPOT_ORDER_QUERY": (frozenset({"symbol", "origClientOrderId"}),),
-    "SPOT_TRADES": (frozenset({"symbol", "orderId"}),),
-    "FUTURES_POSITION_MODE": (frozenset(),),
-    "FUTURES_MULTI_ASSET_MODE": (frozenset(),),
-    "FUTURES_SYMBOL_CONFIG": (frozenset({"symbol"}),),
-    "FUTURES_ACCOUNT": (frozenset(),),
-    "FUTURES_POSITION": (frozenset({"symbol"}),),
-    "FUTURES_OPEN_ORDERS": (frozenset({"symbol"}),),
-    "FUTURES_ORDER_QUERY": (
-        frozenset({"symbol", "origClientOrderId"}),
-    ),
-    "FUTURES_TRADES": (frozenset({"symbol", "orderId"}),),
-    "FUTURES_INCOME": (
-        frozenset({"symbol", "incomeType", "startTime", "endTime"}),
-    ),
-    "FUTURES_ALGO_QUERY": (frozenset({"clientAlgoId"}),),
-    "FUTURES_OPEN_ALGO_ORDERS": (frozenset({"symbol"}),),
-    "SPOT_ORDER_CREATE": (
-        frozenset({
-            "symbol", "side", "type", "quantity", "newClientOrderId",
-            "newOrderRespType",
-        }),
-    ),
-    "SPOT_ORDER_CANCEL": (
-        frozenset({"symbol", "origClientOrderId"}),
-    ),
-    "FUTURES_ORDER_CREATE": (
-        frozenset({
-            "symbol", "side", "type", "quantity", "newClientOrderId",
-            "positionSide", "reduceOnly",
-        }),
-    ),
-    "FUTURES_ORDER_CANCEL": (
-        frozenset({"symbol", "origClientOrderId"}),
-    ),
+_PARAMETER_NAMES = {
+    "SPOT_SERVER_TIME": "", "SPOT_EXCHANGE_INFO": "symbol",
+    "FUTURES_SERVER_TIME": "", "FUTURES_EXCHANGE_INFO": "",
+    "FUTURES_MARK_PRICE": "symbol", "API_RESTRICTIONS": "",
+    "API_TRADING_STATUS": "", "SPOT_ACCOUNT": "",
+    "SPOT_OPEN_ORDERS": "symbol",
+    "SPOT_ORDER_QUERY": "symbol origClientOrderId",
+    "SPOT_TRADES": "symbol orderId", "FUTURES_POSITION_MODE": "",
+    "FUTURES_MULTI_ASSET_MODE": "", "FUTURES_SYMBOL_CONFIG": "symbol",
+    "FUTURES_ACCOUNT": "", "FUTURES_POSITION": "symbol",
+    "FUTURES_OPEN_ORDERS": "symbol",
+    "FUTURES_ORDER_QUERY": "symbol origClientOrderId",
+    "FUTURES_TRADES": "symbol orderId",
+    "FUTURES_INCOME": "symbol incomeType startTime endTime",
+    "FUTURES_ALGO_QUERY": "clientAlgoId",
+    "FUTURES_OPEN_ALGO_ORDERS": "symbol",
+    "SPOT_ORDER_CREATE":
+        "symbol side type quantity newClientOrderId newOrderRespType",
+    "SPOT_ORDER_CANCEL": "symbol origClientOrderId",
+    "FUTURES_ORDER_CREATE":
+        "symbol side type quantity newClientOrderId positionSide reduceOnly",
+    "FUTURES_ORDER_CANCEL": "symbol origClientOrderId",
     "FUTURES_ALGO_CREATE": (
-        frozenset({
-            "algoType", "symbol", "side", "positionSide", "type",
-            "quantity", "triggerPrice", "workingType", "reduceOnly",
-            "closePosition", "clientAlgoId",
-        }),
+        "algoType symbol side positionSide type quantity triggerPrice "
+        "workingType reduceOnly closePosition clientAlgoId"
     ),
-    "FUTURES_ALGO_CANCEL": (frozenset({"clientAlgoId"}),),
-    "FUTURES_SET_LEVERAGE": (frozenset({"symbol", "leverage"}),),
-    "FUTURES_SET_MARGIN_TYPE": (
-        frozenset({"symbol", "marginType"}),
-    ),
+    "FUTURES_ALGO_CANCEL": "clientAlgoId",
+    "FUTURES_SET_LEVERAGE": "symbol leverage",
+    "FUTURES_SET_MARGIN_TYPE": "symbol marginType",
 }
+_PARAMETER_SETS = {key: frozenset(value.split())
+                   for key, value in _PARAMETER_NAMES.items()}
 
 
 @dataclass(frozen=True)
@@ -177,11 +151,11 @@ def build_binance_private_request(endpoint_id, parameters, *, timestamp_ms):
     """Build one deterministic request from a closed endpoint identifier."""
 
     host, method, path, mutating = require_binance_private_endpoint(endpoint_id)
-    allowed_sets = _PARAMETER_SETS.get(endpoint_id)
+    allowed = _PARAMETER_SETS.get(endpoint_id)
     if (
-        allowed_sets is None
+        allowed is None
         or not isinstance(parameters, Mapping)
-        or frozenset(parameters) not in allowed_sets
+        or frozenset(parameters) != allowed
         or isinstance(timestamp_ms, bool)
         or not isinstance(timestamp_ms, int)
         or not 0 <= timestamp_ms <= _MAX_SAFE_INTEGER
