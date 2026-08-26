@@ -387,3 +387,155 @@ def apply_binance_order_observation(*, attempt, order, trades, account):
             },
         })
     return tuple(events)
+
+
+_STOP_KEYS = frozenset({
+    "protected_intent_id", "symbol", "algo_type", "order_type", "side",
+    "position_side", "working_type", "quantity", "trigger_price",
+    "reduce_only", "close_position", "client_algo_id",
+    "required_first_endpoint", "send_permitted",
+})
+_ALGO_KEYS = frozenset({
+    "algoId", "clientAlgoId", "algoType", "orderType", "symbol", "side",
+    "positionSide", "quantity", "triggerPrice", "workingType", "reduceOnly",
+    "closePosition", "algoStatus",
+})
+
+
+def prepare_binance_protective_stop(*, short_quantity, trigger_price,
+                                    intent_identity):
+    """Prepare one query-first USDⓈ-M short protective stop."""
+    keys = frozenset({"plan_hash", "block_id", "intent_id"})
+    try:
+        if (not isinstance(intent_identity, Mapping)
+                or frozenset(intent_identity) != keys
+                or not _hash(intent_identity["plan_hash"])
+                or not _identity(intent_identity["block_id"])
+                or not _identity(intent_identity["intent_id"])):
+            raise ValueError
+        quantity = canonical_decimal(short_quantity)
+        trigger = canonical_decimal(trigger_price)
+        if quantity == "0" or quantity.startswith("-") or trigger == "0" \
+                or trigger.startswith("-"):
+            raise ValueError
+    except (KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_STOP_INTENT_INVALID", error)
+    stop_identity = "replacement_stop_" + hashlib.sha256(canonical_json({
+        "protected_intent_id": intent_identity["intent_id"],
+        "quantity": quantity, "trigger_price": trigger,
+    }).encode()).hexdigest()
+    client_id = derive_binance_client_order_id(
+        plan_hash=intent_identity["plan_hash"],
+        block_id=intent_identity["block_id"], intent_id=stop_identity,
+        attempt_ordinal=1, product="PERPETUAL",
+    )
+    return {
+        "protected_intent_id": intent_identity["intent_id"],
+        "symbol": "ETHUSDT", "algo_type": "CONDITIONAL",
+        "order_type": "STOP_MARKET", "side": "BUY",
+        "position_side": "BOTH", "working_type": "MARK_PRICE",
+        "quantity": quantity, "trigger_price": trigger,
+        "reduce_only": True, "close_position": False,
+        "client_algo_id": client_id,
+        "required_first_endpoint": "FUTURES_ALGO_QUERY",
+        "send_permitted": False,
+    }
+
+
+def _valid_stop_expected(expected):
+    if not isinstance(expected, Mapping) or frozenset(expected) != _STOP_KEYS:
+        return False
+    try:
+        quantity = canonical_decimal(expected["quantity"])
+        trigger = canonical_decimal(expected["trigger_price"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    client = expected.get("client_algo_id")
+    return (expected.get("symbol") == "ETHUSDT"
+            and expected.get("algo_type") == "CONDITIONAL"
+            and expected.get("order_type") == "STOP_MARKET"
+            and expected.get("side") == "BUY"
+            and expected.get("position_side") == "BOTH"
+            and expected.get("working_type") == "MARK_PRICE"
+            and expected.get("reduce_only") is True
+            and expected.get("close_position") is False
+            and expected.get("required_first_endpoint") == "FUTURES_ALGO_QUERY"
+            and isinstance(expected.get("send_permitted"), bool)
+            and quantity == expected.get("quantity") and quantity != "0"
+            and trigger == expected.get("trigger_price") and trigger != "0"
+            and _identity(expected.get("protected_intent_id"))
+            and isinstance(client, str) and len(client) == 36
+            and client.startswith("cq77") and not set(client[4:]) - _HEX)
+
+
+def reconcile_binance_protective_stop(*, position, algo_order, expected):
+    """Prove the exact stop covers current short exposure or fail closed."""
+    if not _valid_stop_expected(expected):
+        _fail("BINANCE_STOP_INTENT_INVALID")
+    position_value = _document(position)
+    algo = _document(algo_order)
+    if frozenset(position_value) != {
+        "symbol", "positionSide", "positionAmt", "entryPrice",
+    }:
+        _fail("BINANCE_STOP_OBSERVATION_INVALID")
+    amount = _number(position_value.get("positionAmt"), signed=True)
+    if (position_value.get("symbol") != "ETHUSDT"
+            or position_value.get("positionSide") != "BOTH"
+            or amount > 0):
+        _fail("BINANCE_STOP_OBSERVATION_INVALID")
+    _number(position_value.get("entryPrice"))
+    exposed = amount < 0
+    if frozenset(algo) == {"code", "msg"}:
+        if (not isinstance(algo["code"], int)
+                or isinstance(algo["code"], bool)
+                or not isinstance(algo["msg"], str)):
+            _fail("BINANCE_STOP_OBSERVATION_INVALID")
+        if exposed:
+            _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
+        return {
+            "status": "BINANCE_FLAT_STOP_ABSENT", "exposed": False,
+            "new_risk_blocked": False,
+            "client_algo_id": expected["client_algo_id"], "algo_id": None,
+            "quantity": "0", "trigger_price": expected["trigger_price"],
+        }
+    if frozenset(algo) != _ALGO_KEYS:
+        _fail("BINANCE_STOP_OBSERVATION_INVALID")
+    if (isinstance(algo.get("algoId"), bool)
+            or not isinstance(algo.get("algoId"), int) or algo["algoId"] <= 0
+            or not isinstance(algo.get("reduceOnly"), bool)
+            or not isinstance(algo.get("closePosition"), bool)):
+        _fail("BINANCE_STOP_OBSERVATION_INVALID")
+    try:
+        quantity = canonical_decimal(algo["quantity"])
+        trigger = canonical_decimal(algo["triggerPrice"])
+    except (KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_STOP_OBSERVATION_INVALID", error)
+    exact = (
+        algo["clientAlgoId"] == expected["client_algo_id"]
+        and algo["algoType"] == "CONDITIONAL"
+        and algo["orderType"] == "STOP_MARKET"
+        and algo["symbol"] == "ETHUSDT" and algo["side"] == "BUY"
+        and algo["positionSide"] == "BOTH"
+        and quantity == expected["quantity"]
+        and trigger == expected["trigger_price"]
+        and algo["workingType"] == "MARK_PRICE"
+        and algo["reduceOnly"] is True and algo["closePosition"] is False
+    )
+    active = algo.get("algoStatus") == "NEW"
+    if exposed and (not exact or not active or -amount != Decimal(quantity)):
+        _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
+    if not exposed and active:
+        _fail("BINANCE_FLAT_ORPHAN_STOP_ACTIVE")
+    if not exposed and algo.get("algoStatus") not in {
+        "CANCELED", "REJECTED", "EXPIRED", "FINISHED",
+    }:
+        _fail("BINANCE_STOP_OBSERVATION_INVALID")
+    return {
+        "status": ("BINANCE_PROTECTIVE_STOP_VERIFIED" if exposed
+                   else "BINANCE_FLAT_STOP_CLEANED"),
+        "exposed": exposed, "new_risk_blocked": False,
+        "client_algo_id": expected["client_algo_id"],
+        "algo_id": algo["algoId"],
+        "quantity": quantity if exposed else "0",
+        "trigger_price": trigger,
+    }
