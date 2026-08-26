@@ -524,6 +524,18 @@ wall-clock seconds and cannot qualify a production service by itself.
 - the canonical pre-action tail mark at
   `start_scheduled_for + 7776000 seconds`.
 
+`EconomicOpportunityFact.result_or_null` is an exact replay envelope, not a
+bare result summary. Its keys are exactly `source`, `previous_projection`,
+`result`, `sequence` and `parent_event_hash`. The evaluator derives the v0.69
+plan and public contract from frozen builders, then invokes the released public
+simulation result loader on canonical bytes before reading accounting. A tail
+mark envelope contains exactly `source`, `previous_projection` and
+`marked_equity`; the source is strictly replayed and `marked_equity` is rebuilt
+from the frozen conservative mark function. This is required because a result
+summary contains source hashes but not the price evidence needed to reconstruct
+friction or an open-position tail mark. No caller may provide a precomputed
+return, cost, PnL or mark without these replay inputs.
+
 No public evaluator accepts a path, start, price, fee, funding, PnL, daily
 return, bootstrap seed, threshold, status, result ID or filename from the
 caller. A thin fixed-path production CLI may be released for future use, but it

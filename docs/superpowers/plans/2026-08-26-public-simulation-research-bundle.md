@@ -1124,6 +1124,14 @@ def _build_economic_boundary_series(
 ) -> Mapping[str, Any]: ...
 ```
 
+`result_or_null`, when present, has exactly `source`, `previous_projection`,
+`result`, `sequence` and `parent_event_hash`. `tail_mark_or_null`, when present,
+has exactly `source`, `previous_projection` and `marked_equity`. Production
+code must strict-load the source/result and recompute the tail mark; tests may
+patch only the private strict-replay boundary when constructing 540-item
+known-answer populations. No production callback or trusted-result flag is
+added.
+
 - `EconomicProgressFacts` contains only schedule/outcome headers and never
   carries result payloads, prices or accounting. `_build_economic_boundary_series`
   remains private, derives
