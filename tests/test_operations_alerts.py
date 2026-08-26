@@ -20,6 +20,9 @@ from crypto_quant.operations_projection import (
     build_operations_projection,
 )
 from crypto_quant.operations_projection_v2 import build_operations_projection_v2
+from crypto_quant.operations_projection_v3 import build_operations_projection_v3
+from tests.test_operations_projection_v3 import observation as _v3_observation
+from tests.test_challenger_replacement_public_market_capture import V076_BUILD
 from tests.test_operations_projection_v2 import (
     boundary as _v2_boundary,
     sources as _v2_sources,
@@ -107,6 +110,16 @@ def _projection_v2_body(mutate=None):
     return canonical_json(value).encode("utf-8")
 
 
+def _projection_v3_body(*, operational="ACTIVE", health="HEALTHY", missed=1):
+    value = build_operations_projection_v3(
+        _v3_observation(
+            operational=operational, health=health, missed=missed
+        ),
+        build_identity=V076_BUILD,
+    )
+    return canonical_json(value).encode("utf-8")
+
+
 class OperationsAlertsStrictBoundaryTests(unittest.TestCase):
     def assert_invalid(self, body):
         with self.assertRaises(OperationsAlertsError) as caught:
@@ -157,6 +170,26 @@ class OperationsAlertsStrictBoundaryTests(unittest.TestCase):
         for body in cases:
             with self.subTest(body_type=type(body).__name__):
                 self.assert_invalid(body)
+
+    def test_v3_projection_is_strictly_dispatched_and_never_authorizes_risk(self):
+        result = derive_operations_alerts(_projection_v3_body())
+        self.assertEqual(result["schema_version"], "3.0.0")
+        self.assertFalse(result["new_risk_allowed"])
+        self.assertEqual(
+            [item["alert_id"] for item in result["alerts"]],
+            ["OPS-REPLACEMENT-V3-MISSED"],
+        )
+
+        failed = derive_operations_alerts(
+            _projection_v3_body(operational="BLOCK_FAILED")
+        )
+        self.assertGreaterEqual(failed["counts"]["CRITICAL"], 1)
+        self.assertFalse(failed["new_risk_allowed"])
+
+    def test_v3_mutated_hash_is_rejected_before_alert_derivation(self):
+        value = json.loads(_projection_v3_body())
+        value["status"] = "FAILED_CLOSED"
+        self.assert_invalid(canonical_json(value).encode("utf-8"))
 
 
 class OperationsAlertClassificationTests(unittest.TestCase):

@@ -16,7 +16,11 @@ from crypto_quant.operations_dashboard import (
 )
 from crypto_quant.operations_projection import load_operations_projection_bytes
 
-from tests.test_operations_alerts import _projection_body, _projection_v2_body
+from tests.test_operations_alerts import (
+    _projection_body,
+    _projection_v2_body,
+    _projection_v3_body,
+)
 
 
 EXPECTED_CSP = (
@@ -132,6 +136,22 @@ class OperationsDashboardConstructionTests(unittest.TestCase):
     def test_v2_api_uses_same_read_only_route_and_exact_status_bytes(self):
         calls = []
         projection = _projection_v2_body()
+
+        def provider():
+            calls.append("called")
+            return projection
+
+        with RunningServer(provider) as running:
+            status, _, body = running.request(
+                "GET", "/api/v1/status", host=f"127.0.0.1:{running.port}"
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(calls, ["called"])
+        self.assertEqual(body, build_operations_status_body(projection))
+
+    def test_v3_api_reuses_same_read_only_route_and_exact_status_bytes(self):
+        calls = []
+        projection = _projection_v3_body()
 
         def provider():
             calls.append("called")
@@ -430,6 +450,21 @@ class OperationsDashboardAssetTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, lowered)
+
+    def test_javascript_handles_v3_tail_blind_projection_without_actions(self):
+        with RunningServer(_projection_v3_body) as running:
+            _, _, body = running.request(
+                "GET", "/app.js", host=f"127.0.0.1:{running.port}"
+            )
+        script = body.decode("utf-8")
+        for required in (
+            'projection.schema_version === "3.0.0"',
+            "运行资格", "下一机会", "证据健康", "只读观察",
+        ):
+            self.assertIn(required, script)
+        lowered = script.lower()
+        for forbidden in ("api_key", "secret_key", "place_order", "innerhtml"):
+            self.assertNotIn(forbidden, lowered)
 
     def test_modules_import_no_operational_or_mutating_capability(self):
         root = Path(__file__).resolve().parents[1] / "src" / "crypto_quant"
