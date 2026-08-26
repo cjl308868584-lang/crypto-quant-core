@@ -1,16 +1,22 @@
 """Tail-blind progress and exact Decimal reconstruction for replacement v3."""
 
 import copy
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
+from functools import lru_cache
+from importlib import resources
 from typing import Any, Mapping, Optional, Tuple
 
-from .canonical import canonical_decimal, canonical_json
+from jsonschema import Draft202012Validator
+
+from .canonical import business_hash, canonical_decimal, canonical_json, stable_id
 from .challenger_replacement_economic_plan import (
     build_challenger_replacement_economic_plan,
 )
 from .challenger_replacement_plan_v3 import build_challenger_replacement_plan_v3
+from .challenger_replacement_plan import _strict_json_bytes
 from .challenger_replacement_public_simulation import (
     _kernel_source,
     _snapshot_validator,
@@ -24,7 +30,9 @@ from .challenger_replacement_simulation import _mark
 from .challenger_replacement_simulation_contract import (
     build_challenger_replacement_simulation_contract,
 )
+from .challenger_replacement_opportunity_projection import validate_build_identity
 from .evidence import artifact_self_hash
+from .statistics import _draw_start, _fixed_decimal_context
 
 
 _CADENCE = 14_400
@@ -32,6 +40,7 @@ _TAIL_SECONDS = 7_776_000
 _PUBLIC = (
     "PUBLIC_MARKET_DETERMINISTIC_SIMULATION_NO_ACCOUNT_NO_BROKER_NO_REAL_ORDER"
 )
+_SCHEMA = "challenger-replacement-economic-evaluation-v1.schema.json"
 
 
 class ChallengerReplacementEconomicEvaluationError(ValueError):
@@ -243,6 +252,15 @@ def _c(value):
     return canonical_decimal(value)
 
 
+@lru_cache(maxsize=1)
+def _validator():
+    schema = json.loads(resources.files("crypto_quant").joinpath(
+        "schemas", _SCHEMA
+    ).read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
 def _series(equities):
     returns = [
         (equities[index] - equities[index - 1]) / Decimal("100")
@@ -273,6 +291,7 @@ def _continuous_drawdown(values):
     return result
 
 
+@_fixed_decimal_context
 def _build_economic_boundary_series(
     facts: EconomicEvaluationFacts, *, economic_plan: Mapping[str, Any]
 ):
@@ -434,3 +453,225 @@ def _build_economic_boundary_series(
         "confirmed_failure_boundaries": sorted(set(confirmed)),
         "nonpositive_equity": any(value <= 0 for value in continuous_base),
     }
+
+
+def _nearest_rank(values, numerator, denominator):
+    ordered = sorted(values)
+    rank = (len(ordered) * numerator + denominator - 1) // denominator
+    return ordered[max(1, rank) - 1]
+
+
+@_fixed_decimal_context
+def _bootstrap_statistics(values, *, economic_plan):
+    plan = _validated_plan(economic_plan)
+    try:
+        if any(isinstance(value, (bool, float)) for value in values):
+            _invalid("ECONOMIC_BOOTSTRAP_INPUT_INVALID")
+        sample = tuple(Decimal(value) for value in values)
+    except (TypeError, ValueError) as error:
+        raise ChallengerReplacementEconomicEvaluationError(
+            "ECONOMIC_BOOTSTRAP_INPUT_INVALID"
+        ) from error
+    design = plan["statistical_design"]
+    if len(sample) != design["sample_length"]:
+        _invalid("ECONOMIC_BOOTSTRAP_INPUT_INVALID")
+    length = design["block_length_days"]
+    start_count = len(sample) - length + 1
+    draws = (len(sample) + length - 1) // length
+    replicates = []
+    for replicate in range(design["resample_count"]):
+        selected = []
+        for draw in range(draws):
+            start = _draw_start(
+                seed=design["seed"], replicate=replicate, draw=draw,
+                start_count=start_count,
+            )
+            selected.extend(sample[start:start + length])
+        selected = selected[:len(sample)]
+        replicates.append(sum(selected, Decimal("0")) / Decimal(len(sample)))
+    observed = sum(sample, Decimal("0")) / Decimal(len(sample))
+    lcb = _nearest_rank(replicates, 5, 100)
+    errors = tuple(value - observed for value in replicates)
+    critical = _nearest_rank(errors, 95, 100)
+    mere = Decimal(design["minimum_economic_effect_daily"])
+    power = Decimal(sum(mere + error > critical for error in errors)) / Decimal(
+        design["resample_count"]
+    )
+    return {
+        "observed_mean": _c(observed), "lcb95": _c(lcb),
+        "centered_error_critical95": _c(critical),
+        "achieved_power_at_mere": _c(power),
+    }
+
+
+def _economic_gates(one, statistics, stress_total):
+    total = Decimal(one["boundary_equities"][-1]) - Decimal(
+        one["boundary_equities"][0]
+    )
+    return {
+        "mean_daily_net_return_lcb95_gt_zero": Decimal(statistics["lcb95"]) > 0,
+        "total_net_pnl_usdt_gt_zero": total > 0,
+        "maximum_drawdown_fraction_lt_0_05": (
+            Decimal(one["maximum_drawdown_fraction"]) < Decimal("0.05")
+        ),
+        "nonnegative_fixed_15_day_blocks_gte_5": sum(
+            Decimal(value) >= 0 for value in one["fixed_15_day_blocks"]
+        ) >= 5,
+        "stress_total_net_pnl_usdt_gte_zero": stress_total >= 0,
+    }
+
+
+def _finish_result(value):
+    identity = {key: item for key, item in value.items() if key not in {
+        "$schema", "schema_version", "result_id", "result_hash"
+    }}
+    value["result_id"] = stable_id(
+        "challenger_replacement_economic_evaluation", identity
+    )
+    value["result_hash"] = artifact_self_hash(value, "result_hash")
+    if tuple(_validator().iter_errors(value)):
+        _invalid("ECONOMIC_EVALUATION_RESULT_INVALID")
+    return value
+
+
+def _empty_result(facts, plan, build_identity, reason):
+    return _finish_result({
+        "$schema": "./" + _SCHEMA, "schema_version": "1.0.0",
+        "result_id": "", "result_hash": "0" * 64,
+        "status": "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+        "bindings": {
+            "economic_plan_id": plan["plan_id"],
+            "economic_plan_hash": plan["plan_hash"],
+            "build_identity": copy.deepcopy(dict(build_identity)),
+            "facts_hash": business_hash(facts),
+        },
+        "facts": {"reason_codes": [reason]}, "series": {},
+        "statistics": {}, "gates": {},
+        "authority": {"production_activation": False, "account_requests": 0,
+                      "broker_requests": 0, "orders": 0, "fund_movement": 0},
+    })
+
+
+def _result_document(facts, plan, build_identity):
+    validate_build_identity(build_identity)
+    try:
+        series = _build_economic_boundary_series(facts, economic_plan=plan)
+    except ChallengerReplacementEconomicEvaluationError as error:
+        if error.reason_code == "ECONOMIC_TAIL_NOT_REACHED":
+            raise
+        return _empty_result(
+            facts, plan, build_identity, error.reason_code
+        )
+    candidates = {
+        "optimistic": series["optimistic_flat_miss"],
+        "pessimistic": series["pessimistic_flat_miss"],
+    }
+    cache = {}
+    statistics = {}
+    for name, item in candidates.items():
+        if item is None:
+            statistics[name] = None
+            continue
+        key = tuple(item["daily_returns"])
+        if key not in cache:
+            cache[key] = _bootstrap_statistics(key, economic_plan=plan)
+        statistics[name] = cache[key]
+    stress_total = Decimal(series["stress"]["boundary_equities"][-1]) - Decimal(
+        series["stress"]["boundary_equities"][0]
+    )
+    economic = {
+        name: None if candidates[name] is None else _economic_gates(
+            candidates[name], statistics[name], stress_total
+        ) for name in candidates
+    }
+    sample = {
+        "calendar_days_eq_90": len(series["base"]["daily_returns"]) == 90,
+        "daily_return_count_eq_90": len(series["base"]["daily_returns"]) == 90,
+        "terminal_coverage_eq_1": series["terminal_opportunity_count"] == 540,
+        "observed_coverage_gte_0_95": Decimal(series["observed_coverage"]) >= Decimal("0.95"),
+        "completed_cycles_gte_12": series["completed_cycle_count"] >= 12,
+        "spot_completed_cycles_gte_3": series["spot_completed_cycle_count"] >= 3,
+        "perpetual_completed_cycles_gte_3": series["perpetual_completed_cycle_count"] >= 3,
+        "nonempty_fixed_blocks_eq_6": (
+            len(series["base"]["daily_returns"]) == 90
+            and len(series["base"]["fixed_15_day_blocks"]) == 6
+        ),
+        "minimum_mbb_blocks_gte_12": 90 // 7 >= 12,
+        "achieved_power_gte_0_80": all(
+            item is not None and Decimal(item["achieved_power_at_mere"]) >= Decimal("0.80")
+            for item in statistics.values()
+        ),
+    }
+    confirmed = bool(series["confirmed_failure_boundaries"] or series["nonpositive_equity"])
+    bounds = [item is not None and all(item.values()) for item in economic.values()]
+    if confirmed:
+        status = "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"
+    elif not all(sample.values()) or None in economic.values() or bounds[0] != bounds[1]:
+        status = "INCONCLUSIVE_INSUFFICIENT_EVIDENCE"
+    elif all(bounds):
+        status = "RESEARCH_CONTINUATION_GATE_PASS"
+    else:
+        status = "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"
+    value = {
+        "$schema": "./" + _SCHEMA, "schema_version": "1.0.0",
+        "result_id": "", "result_hash": "0" * 64, "status": status,
+        "bindings": {
+            "economic_plan_id": plan["plan_id"],
+            "economic_plan_hash": plan["plan_hash"],
+            "build_identity": copy.deepcopy(dict(build_identity)),
+            "facts_hash": business_hash(facts),
+        },
+        "facts": {
+            key: copy.deepcopy(series[key]) for key in (
+                "terminal_opportunity_count", "observed_opportunity_count",
+                "missed_opportunity_count", "observed_coverage",
+                "flat_miss_count", "completed_cycle_count",
+                "spot_completed_cycle_count", "perpetual_completed_cycle_count",
+                "confirmed_failure_boundaries", "nonpositive_equity",
+            )
+        },
+        "series": copy.deepcopy({key: series[key] for key in (
+            "base", "stress", "optimistic_flat_miss", "pessimistic_flat_miss"
+        )}),
+        "statistics": statistics,
+        "gates": {"sample": sample, "economic": economic},
+        "authority": {"production_activation": False, "account_requests": 0,
+                      "broker_requests": 0, "orders": 0, "fund_movement": 0},
+    }
+    return _finish_result(value)
+
+
+def evaluate_challenger_replacement_economic_result(
+    facts: EconomicEvaluationFacts, *, economic_plan: Mapping[str, Any],
+    build_identity: Mapping[str, Any]
+):
+    try:
+        return copy.deepcopy(_result_document(
+            facts, _validated_plan(economic_plan), build_identity
+        ))
+    except ChallengerReplacementEconomicEvaluationError:
+        raise
+    except (KeyError, TypeError, ValueError) as error:
+        raise ChallengerReplacementEconomicEvaluationError(
+            "ECONOMIC_EVALUATION_RESULT_INVALID"
+        ) from error
+
+
+def load_challenger_replacement_economic_evaluation_bytes(
+    data: bytes, *, facts: EconomicEvaluationFacts,
+    economic_plan: Mapping[str, Any], build_identity: Mapping[str, Any]
+):
+    if not isinstance(data, bytes) or not 0 < len(data) <= 4_194_304:
+        _invalid("ECONOMIC_EVALUATION_BYTES_INVALID")
+    try:
+        value = _strict_json_bytes(data)
+        expected = _result_document(facts, _validated_plan(economic_plan), build_identity)
+        if data != canonical_json(value).encode("utf-8") or value != expected:
+            _invalid("ECONOMIC_EVALUATION_RESULT_INVALID")
+        return copy.deepcopy(value)
+    except ChallengerReplacementEconomicEvaluationError:
+        raise
+    except (KeyError, TypeError, ValueError) as error:
+        raise ChallengerReplacementEconomicEvaluationError(
+            "ECONOMIC_EVALUATION_BYTES_INVALID"
+        ) from error

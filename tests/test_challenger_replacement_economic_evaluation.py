@@ -3,6 +3,7 @@ import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from decimal import getcontext, setcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,8 +15,13 @@ from crypto_quant.challenger_replacement_economic_evaluation import (
     _build_economic_boundary_series,
     _strict_result,
     _strict_tail_mark,
+    _bootstrap_statistics,
+    _draw_start,
+    evaluate_challenger_replacement_economic_result,
+    load_challenger_replacement_economic_evaluation_bytes,
     observe_challenger_replacement_economic_progress,
 )
+from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_economic_plan import (
     build_challenger_replacement_economic_plan,
 )
@@ -43,6 +49,7 @@ UTC = timezone.utc
 START = datetime(2026, 9, 1, tzinfo=UTC)
 TAIL = START + timedelta(days=90)
 GOLDEN = Path(__file__).parent / "fixtures/challenger_replacement_v076/public-simulation-golden.json"
+KNOWN = Path(__file__).parent / "fixtures/challenger_replacement_v076/economic-evaluation-known-answers.json"
 
 
 def iso(value):
@@ -307,6 +314,243 @@ class EconomicBoundarySeriesTests(unittest.TestCase):
                 changed, economic_plan=self.plan,
                 expected_previous_hash=previous["snapshot_hash"],
                 expected_scheduled_for=source["opportunity"]["scheduled_for"],
+            )
+
+
+DRAW_VECTORS = (
+    (2026082574, 0, 0, 84, 32,
+     "005ef479a250f41a49dd0717ea738f9979847e07b44ea39c9b322526388edbf8"),
+    (2026082574, 0, 1, 84, 65,
+     "8ca3b4c3bc8ed7cbb09736de1f197052158e81be999c70b230a8ca58cbbdef29"),
+    (2026082574, 9999, 12, 84, 78,
+     "3f4f7ea1df3036efdd288a800ef5b7eda452549f1c736e49d58519e632cc4636"),
+    (2026082574, 0, 0, 1, 0,
+     "98ac38b561532aaab998dfe0cb92ab74e9205fde4d37df1c78c90c4dcf82f5e8"),
+)
+
+
+def final_series(value="0.001"):
+    daily = [value] * 90
+    boundaries = ["100"]
+    equity = Decimal("100")
+    for item in daily:
+        equity += Decimal(item) * Decimal("100")
+        boundaries.append(str(equity))
+    one = {
+        "boundary_equities": boundaries,
+        "daily_returns": daily,
+        "fixed_15_day_blocks": [str(Decimal(value) * 15)] * 6,
+        "maximum_drawdown_fraction": "0" if Decimal(value) >= 0 else "0.09",
+    }
+    return {
+        "base": dict(one), "stress": dict(one),
+        "optimistic_flat_miss": dict(one),
+        "pessimistic_flat_miss": dict(one),
+        "terminal_opportunity_count": 540,
+        "observed_opportunity_count": 540,
+        "missed_opportunity_count": 0, "observed_coverage": "1",
+        "flat_miss_count": 0, "completed_cycle_count": 12,
+        "spot_completed_cycle_count": 6,
+        "perpetual_completed_cycle_count": 6,
+        "stress_extra_cost_usdt": "0",
+        "confirmed_failure_boundaries": [], "nonpositive_equity": False,
+    }
+
+
+class EconomicBootstrapAndResultTests(unittest.TestCase):
+    def setUp(self):
+        self.plan = build_challenger_replacement_economic_plan()
+        self.facts = EconomicEvaluationFacts(
+            start_receipt=start_receipt(), opportunities=(),
+            observed_at=iso(TAIL), tail_mark_or_null={},
+        )
+
+    def test_sha256_draw_vectors_and_rejection_sampling(self):
+        import hashlib
+        for seed, replicate, draw, count, expected, digest in DRAW_VECTORS:
+            material = f"MBB_V1:{seed}:{replicate}:{draw}:{count}:0".encode("ascii")
+            self.assertEqual(hashlib.sha256(material).hexdigest(), digest)
+            self.assertEqual(_draw_start(
+                seed=seed, replicate=replicate, draw=draw, start_count=count
+            ), expected)
+
+        class Digest:
+            def __init__(self, value): self.value = value
+            def digest(self): return self.value.to_bytes(32, "big")
+        with patch(
+            "crypto_quant.statistics.hashlib.sha256",
+            side_effect=(Digest((1 << 256) - 1), Digest(5)),
+        ) as mocked:
+            self.assertEqual(_draw_start(
+                seed=2026082574, replicate=0, draw=0, start_count=3
+            ), 2)
+        self.assertTrue(mocked.call_args_list[0].args[0].endswith(b":0"))
+        self.assertTrue(mocked.call_args_list[1].args[0].endswith(b":1"))
+
+    def test_constant_bootstrap_known_answers_keep_power_distinct(self):
+        positive = _bootstrap_statistics(["0.001"] * 90, economic_plan=self.plan)
+        self.assertEqual(positive, {
+            "observed_mean": "0.001", "lcb95": "0.001",
+            "centered_error_critical95": "0", "achieved_power_at_mere": "1",
+        })
+        negative = _bootstrap_statistics(["-0.001"] * 90, economic_plan=self.plan)
+        self.assertEqual(negative["lcb95"], "-0.001")
+        self.assertEqual(negative["achieved_power_at_mere"], "1")
+
+    def test_bootstrap_ignores_process_decimal_context_and_rejects_binary_float(self):
+        original = getcontext().copy()
+        try:
+            getcontext().prec = 7
+            first = _bootstrap_statistics(["0.001"] * 90, economic_plan=self.plan)
+            getcontext().prec = 31
+            second = _bootstrap_statistics(["0.001"] * 90, economic_plan=self.plan)
+        finally:
+            setcontext(original)
+        self.assertEqual(first, second)
+        with self.assertRaises(ChallengerReplacementEconomicEvaluationError):
+            _bootstrap_statistics([0.001] * 90, economic_plan=self.plan)
+
+    def evaluate(self, series):
+        with patch(
+            "crypto_quant.challenger_replacement_economic_evaluation._build_economic_boundary_series",
+            return_value=series,
+        ):
+            return evaluate_challenger_replacement_economic_result(
+                self.facts, economic_plan=self.plan, build_identity=V076_BUILD
+            )
+
+    def test_pass_negative_and_bound_disagreement_map_to_exact_states(self):
+        passed = self.evaluate(final_series())
+        self.assertEqual(passed["status"], "RESEARCH_CONTINUATION_GATE_PASS")
+        failed = self.evaluate(final_series("-0.001"))
+        self.assertEqual(
+            failed["status"], "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS"
+        )
+        disagreement = final_series()
+        disagreement["pessimistic_flat_miss"] = final_series("-0.001")["base"]
+        self.assertEqual(
+            self.evaluate(disagreement)["status"],
+            "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+        )
+
+    def test_sample_shortfall_and_confirmed_failure_precedence(self):
+        short = final_series()
+        short["observed_coverage"] = "0.949999"
+        self.assertEqual(
+            self.evaluate(short)["status"],
+            "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+        )
+        confirmed = final_series()
+        confirmed["confirmed_failure_boundaries"] = ["EXPOSED_MISSED"]
+        self.assertEqual(
+            self.evaluate(confirmed)["status"],
+            "RESEARCH_CONTINUATION_GATE_DID_NOT_PASS",
+        )
+        for field in (
+            "completed_cycle_count", "spot_completed_cycle_count",
+            "perpetual_completed_cycle_count",
+        ):
+            candidate = final_series()
+            candidate[field] = 2
+            with self.subTest(field=field):
+                self.assertEqual(
+                    self.evaluate(candidate)["status"],
+                    "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+                )
+        blocks = final_series()
+        blocks["base"]["fixed_15_day_blocks"] = ["0.015"] * 5
+        self.assertEqual(
+            self.evaluate(blocks)["status"],
+            "INCONCLUSIVE_INSUFFICIENT_EVIDENCE",
+        )
+
+    def test_achieved_power_shortfall_is_inconclusive(self):
+        low_power = {
+            "observed_mean": "0.001", "lcb95": "0.001",
+            "centered_error_critical95": "0",
+            "achieved_power_at_mere": "0.7999",
+        }
+        with patch(
+            "crypto_quant.challenger_replacement_economic_evaluation._build_economic_boundary_series",
+            return_value=final_series(),
+        ), patch(
+            "crypto_quant.challenger_replacement_economic_evaluation._bootstrap_statistics",
+            return_value=low_power,
+        ):
+            result = evaluate_challenger_replacement_economic_result(
+                self.facts, economic_plan=self.plan, build_identity=V076_BUILD
+            )
+        self.assertEqual(result["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE")
+
+    def test_tail_evidence_shortfall_is_inconclusive_but_pre_tail_refuses(self):
+        missing = EconomicEvaluationFacts(
+            start_receipt=start_receipt(), opportunities=(),
+            observed_at=iso(TAIL), tail_mark_or_null=None,
+        )
+        result = evaluate_challenger_replacement_economic_result(
+            missing, economic_plan=self.plan, build_identity=V076_BUILD
+        )
+        self.assertEqual(result["status"], "INCONCLUSIVE_INSUFFICIENT_EVIDENCE")
+        self.assertIn("ECONOMIC_TERMINAL_COVERAGE_INCOMPLETE", result["facts"]["reason_codes"])
+        pre_tail = replace(missing, observed_at=iso(TAIL - timedelta(milliseconds=1)))
+        with self.assertRaisesRegex(
+            ChallengerReplacementEconomicEvaluationError,
+            "ECONOMIC_TAIL_NOT_REACHED",
+        ):
+            evaluate_challenger_replacement_economic_result(
+                pre_tail, economic_plan=self.plan, build_identity=V076_BUILD
+            )
+
+    def test_loader_rebuilds_all_fields_and_rejects_status_selection(self):
+        series = final_series()
+        result = self.evaluate(series)
+        body = canonical_json(result).encode("utf-8")
+        with patch(
+            "crypto_quant.challenger_replacement_economic_evaluation._build_economic_boundary_series",
+            return_value=series,
+        ):
+            self.assertEqual(
+                load_challenger_replacement_economic_evaluation_bytes(
+                    body, facts=self.facts, economic_plan=self.plan,
+                    build_identity=V076_BUILD,
+                ),
+                result,
+            )
+            changed = dict(result, status="RESEARCH_CONTINUATION_GATE_DID_NOT_PASS")
+            with self.assertRaises(ChallengerReplacementEconomicEvaluationError):
+                load_challenger_replacement_economic_evaluation_bytes(
+                    canonical_json(changed).encode("utf-8"), facts=self.facts,
+                    economic_plan=self.plan, build_identity=V076_BUILD,
+                )
+
+    def test_committed_known_answers_match_exact_algorithms(self):
+        known = json.loads(KNOWN.read_text(encoding="utf-8"))
+        self.assertEqual(
+            known["evidence_qualification"],
+            "COMMITTED_DETERMINISTIC_TEST_VECTOR_NOT_RUNTIME_OR_ECONOMIC_EVIDENCE",
+        )
+        self.assertEqual(
+            known["bootstrap"]["positive_constant"],
+            _bootstrap_statistics(["0.001"] * 90, economic_plan=self.plan),
+        )
+        self.assertEqual(
+            known["bootstrap"]["negative_constant"],
+            _bootstrap_statistics(["-0.001"] * 90, economic_plan=self.plan),
+        )
+        self.assertEqual(
+            tuple(
+                (item["seed"], item["replicate"], item["draw"],
+                 item["start_count"], item["result"], item["digest"])
+                for item in known["draw_vectors"]
+            ),
+            DRAW_VECTORS,
+        )
+
+    def test_build_identity_mismatch_maps_to_domain_error(self):
+        changed = dict(V076_BUILD, peeled_commit="g" * 40)
+        with self.assertRaises(ChallengerReplacementEconomicEvaluationError):
+            evaluate_challenger_replacement_economic_result(
+                self.facts, economic_plan=self.plan, build_identity=changed
             )
 
 
