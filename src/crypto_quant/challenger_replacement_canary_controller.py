@@ -9,18 +9,12 @@ from types import MappingProxyType
 from typing import Mapping
 from jsonschema import Draft202012Validator
 from .canonical import canonical_decimal, canonical_json, utc_datetime
-from .challenger_replacement_accelerated_canary_plan import (
-    build_challenger_replacement_accelerated_canary_plan,
-)
-from .challenger_replacement_plan import (
-    ChallengerReplacementPlanError,
-    _strict_json_bytes,
-)
-from .challenger_replacement_events import (
-    ChallengerReplacementEventRoot, replay_challenger_replacement_events,
-)
+from .challenger_replacement_accelerated_canary_plan import build_challenger_replacement_accelerated_canary_plan
+from .challenger_replacement_plan import ChallengerReplacementPlanError, _strict_json_bytes
+from .challenger_replacement_events import ChallengerReplacementEventRoot, replay_challenger_replacement_events
 from .challenger_replacement_install_trust import business_hash
 _SCHEMA = "challenger-replacement-canary-projection-v1.schema.json"
+_APPROVAL_SCHEMA = "challenger-replacement-canary-authority-approval-v1.schema.json"
 _CEREMONY = (
     "CEREMONY_READY_FLAT", "SPOT_BUY_SUBMITTED",
     "SPOT_LONG_RECONCILED", "SPOT_SELL_SUBMITTED",
@@ -245,11 +239,33 @@ def _eligible(block, plan, now):
         block["perpetual_complete_cycles"] >= 1,
     ))
 def _projection_id(document):
-    core = dict(document)
-    core.pop("projection_id", None)
-    return "challenger_replacement_canary_projection_" + hashlib.sha256(
-        canonical_json(core).encode()
-    ).hexdigest()
+    core = dict(document); core.pop("projection_id", None)
+    return "challenger_replacement_canary_projection_" + hashlib.sha256(canonical_json(core).encode()).hexdigest()
+def _approval_id(document):
+    core = dict(document); core.pop("approval_id", None)
+    prefix = ("canary_promotion_" if document.get("approval_kind") == "PROMOTION"
+              else "incident_unlock_")
+    return prefix + hashlib.sha256(canonical_json(core).encode()).hexdigest()
+def load_challenger_replacement_canary_approval_bytes(data, *, plan, build_identity, now):
+    """Strictly load one bounded promotion or incident-unlock approval."""
+    reason = "CHALLENGER_REPLACEMENT_CANARY_APPROVAL_INVALID"
+    try:
+        if not isinstance(data, bytes) or not data.endswith(b"\n"): raise ValueError
+        document = _strict_json_bytes(data[:-1])
+        schema = json.loads(resources.files("crypto_quant").joinpath("schemas", _APPROVAL_SCHEMA).read_text(encoding="utf-8"))
+        observed, approved, expires = _time(now), _time(document["approved_at"]), _time(document["expires_at"])
+        if (canonical_json(document).encode() != data[:-1]
+                or tuple(Draft202012Validator(schema).iter_errors(document))
+                or not isinstance(plan, Mapping) or dict(plan) != build_challenger_replacement_accelerated_canary_plan()
+                or document["plan"] != {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]}
+                or not isinstance(build_identity, Mapping) or document["build_identity"] != dict(build_identity)
+                or document["approval_id"] != _approval_id(document)
+                or (document["approval_kind"] == "PROMOTION" and document["stage"] == "E0")
+                or not approved <= observed < expires): raise ValueError
+        return _freeze(document)
+    except (ChallengerReplacementCanaryControllerError, ChallengerReplacementPlanError,
+            KeyError, TypeError, UnicodeDecodeError, ValueError) as error:
+        _fail(reason, error)
 def _project_challenger_replacement_canary(*, events, plan, now):
     """Pure reducer used only after canonical event replay."""
     if (not isinstance(events, tuple) or not isinstance(plan, Mapping)
@@ -328,8 +344,7 @@ def project_challenger_replacement_canary(*, event_root, plan, build_identity, n
     """Project only from the retained canonical event-root capability."""
     try:
         if (not isinstance(event_root, ChallengerReplacementEventRoot)
-                or not isinstance(build_identity, Mapping)):
-            raise ValueError
+                or not isinstance(build_identity, Mapping)): raise ValueError
         replay = replay_challenger_replacement_events(event_root)
         expected_build = business_hash(build_identity)
         events = []
@@ -338,48 +353,33 @@ def project_challenger_replacement_canary(*, event_root, plan, build_identity, n
             if (outer["plan_hash"] != plan["plan_hash"]
                     or outer["build_identity_hash"] != expected_build): raise ValueError
             if outer["event_type"] not in _CANARY_TYPES: continue
-            payload = _strict_json_bytes(base64.b64decode(
-                outer["payload_bytes_base64"], validate=True,
-            ))
+            payload = _strict_json_bytes(base64.b64decode(outer["payload_bytes_base64"], validate=True))
             if (payload.get("event_type") != outer["event_type"]
                     or payload.get("occurred_at") != outer["recorded_at"]
                     or payload.get("block_id") != outer["slot_id"]):
                 raise ValueError
             events.append(payload)
         event_root.validate()
-        return _project_challenger_replacement_canary(
-            events=tuple(events), plan=plan, now=now,
-        )
+        return _project_challenger_replacement_canary(events=tuple(events), plan=plan, now=now)
     except (KeyError, TypeError, ValueError) as error:
         if isinstance(error, ChallengerReplacementCanaryControllerError): raise
         _fail("CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID", error)
 def load_challenger_replacement_canary_projection_bytes(data, *, plan):
     """Strictly replay one canonical Canary projection."""
     try:
-        if not isinstance(data, bytes) or not data.endswith(b"\n"):
-            raise ValueError
+        if not isinstance(data, bytes) or not data.endswith(b"\n"): raise ValueError
         document = _strict_json_bytes(data[:-1])
-        schema = json.loads(resources.files("crypto_quant").joinpath(
-            "schemas", _SCHEMA,
-        ).read_text(encoding="utf-8"))
+        schema = json.loads(resources.files("crypto_quant").joinpath("schemas", _SCHEMA).read_text(encoding="utf-8"))
         if (canonical_json(document).encode() != data[:-1]
                 or tuple(Draft202012Validator(schema).iter_errors(document))
-                or not isinstance(plan, Mapping)
-                or dict(plan)
-                != build_challenger_replacement_accelerated_canary_plan()
-                or document["plan"] != {
-                    "plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"],
-                } or document["projection_id"] != _projection_id(document)):
-            raise ValueError
+                or not isinstance(plan, Mapping) or dict(plan) != build_challenger_replacement_accelerated_canary_plan()
+                or document["plan"] != {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]}
+                or document["projection_id"] != _projection_id(document)): raise ValueError
         return _freeze(document)
-    except (
-        ChallengerReplacementPlanError, KeyError, TypeError,
-        UnicodeDecodeError, ValueError,
-    ) as error:
+    except (ChallengerReplacementPlanError, KeyError, TypeError,
+            UnicodeDecodeError, ValueError) as error:
         _fail("CHALLENGER_REPLACEMENT_CANARY_PROJECTION_INVALID", error)
 def _freeze(value):
-    if isinstance(value, dict):
-        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
-    if isinstance(value, list):
-        return tuple(_freeze(item) for item in value)
+    if isinstance(value, dict): return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, list): return tuple(_freeze(item) for item in value)
     return value

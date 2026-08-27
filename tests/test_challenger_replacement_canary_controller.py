@@ -1,4 +1,5 @@
 import json
+import hashlib
 import unittest
 
 from crypto_quant.challenger_replacement_accelerated_canary_plan import (
@@ -6,6 +7,7 @@ from crypto_quant.challenger_replacement_accelerated_canary_plan import (
 )
 from crypto_quant.challenger_replacement_canary_controller import (
     ChallengerReplacementCanaryControllerError,
+    load_challenger_replacement_canary_approval_bytes,
     load_challenger_replacement_canary_projection_bytes,
     project_challenger_replacement_canary,
 )
@@ -34,6 +36,52 @@ STATES = (
 class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
     def setUp(self):
         self.plan = build_challenger_replacement_accelerated_canary_plan()
+
+    def approval_bytes(self, kind="PROMOTION", **changes):
+        document = {
+            "$schema": "./challenger-replacement-canary-authority-approval-v1.schema.json",
+            "schema_version": "1.0.0", "approval_id": "",
+            "approval_kind": kind,
+            "plan": {"plan_id": self.plan["plan_id"],
+                     "plan_hash": self.plan["plan_hash"]},
+            "build_identity": dict(V076_BUILD),
+            "stage": "E1" if kind == "PROMOTION" else "E0",
+            "block_id": "approved-block", "previous_block_id": "prior-block",
+            "approved_at": "2026-09-01T00:00:00.000Z",
+            "expires_at": "2026-09-03T00:00:00.000Z",
+            "authority": {"network_requests": 0, "orders": 0,
+                          "state_writes": 0, "production_activation": False},
+        }
+        document.update(changes)
+        core = dict(document); core.pop("approval_id")
+        prefix = "canary_promotion_" if kind == "PROMOTION" else "incident_unlock_"
+        document["approval_id"] = prefix + hashlib.sha256(
+            canonical_json(core).encode(),
+        ).hexdigest()
+        return (canonical_json(document) + "\n").encode()
+
+    def test_approval_loader_binds_self_hash_plan_build_and_time(self):
+        data = self.approval_bytes()
+        loaded = load_challenger_replacement_canary_approval_bytes(
+            data, plan=self.plan, build_identity=V076_BUILD,
+            now="2026-09-02T00:00:00.000Z",
+        )
+        self.assertEqual(loaded["approval_kind"], "PROMOTION")
+        wrong_id = json.loads(data)
+        wrong_id["approval_id"] = "canary_promotion_" + "0" * 64
+        for changed in (
+            (canonical_json(wrong_id) + "\n").encode(),
+            self.approval_bytes(build_identity={**V076_BUILD, "release_tag": "wrong"}),
+            self.approval_bytes(expires_at="2026-09-02T00:00:00.000Z"),
+        ):
+            with self.subTest(), self.assertRaisesRegex(
+                ChallengerReplacementCanaryControllerError,
+                "CHALLENGER_REPLACEMENT_CANARY_APPROVAL_INVALID",
+            ):
+                load_challenger_replacement_canary_approval_bytes(
+                    changed, plan=self.plan, build_identity=V076_BUILD,
+                    now="2026-09-02T00:00:00.000Z",
+                )
 
     @staticmethod
     def ceremony_events():
