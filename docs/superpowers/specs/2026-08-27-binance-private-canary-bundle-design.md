@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-27  
 **Target release:** `v0.77.0`  
-**Status:** architecture direction approved; exact written spec awaiting review  
+**Status:** original exact spec approved; independent-review safety amendment
+awaiting exact written review
 **Release class:** code, schemas, deterministic fixtures, disabled configuration
 templates, fault evidence and completion dossier only; no installation, secret,
 account request, order, transfer, funding or activation authority
@@ -143,14 +144,22 @@ This pure module owns:
 - deterministic UTF-8 form/query encoding;
 - HMAC-SHA256 signature construction and official known-answer tests;
 - fixed `recvWindow=5000` validation;
-- server-time midpoint/skew calculation;
-- request and response size limits;
+- server-time midpoint/skew calculation and request-authority binding;
+- request and response size limits plus a fixed maximum JSON nesting depth;
 - exact HTTP/error classification; and
 - secret-safe structured diagnostics.
 
 It does not open a socket, read a file or decide whether an order is allowed.
 HMAC is the single v0.77 key type. RSA and Ed25519 are not silently accepted;
 adding either requires a later versioned design.
+
+Every signed private request binds a fresh server-time observation from the
+correct Spot or Futures time endpoint. The observation records local time
+immediately before and after the request, derives the midpoint, validates the
+maximum round-trip duration and skew, and is appended before signing authority
+is granted. Caller-authored timestamps and previously accepted skew objects
+cannot authorize a request. Missing, expired, cross-product or disagreeing
+time evidence fails before credential access or transport.
 
 ### 4.2 `binance_credential_capability`
 
@@ -166,6 +175,11 @@ deployment contract, not by a user-supplied CLI argument. The capability:
   exceptions or event payloads;
 - provides one-use signing access and explicit close/zeroization attempts; and
 - fails closed when platform capabilities or identity checks are unavailable.
+
+The retained identity includes `st_mtime_ns` and `st_ctime_ns` as well as
+device, inode, owner, mode, link count and size. Each use revalidates the held
+descriptor before and after reading; an in-place mutation is rejected even when
+device, inode and size are unchanged.
 
 Python cannot guarantee that immutable `bytes` are physically zeroized. The
 threat model states this limitation and minimizes lifetime/copies rather than
@@ -197,6 +211,11 @@ Network rules:
 Tests patch the lowest socket/HTTP boundary. They cannot pass an arbitrary URL,
 callback, command or production path.
 
+Raw-response carriers have an explicitly redacted `repr` and exception
+surface. JSON parsing checks depth before any response field is consumed and
+maps excessive nesting, recursion failure, duplicate keys and malformed
+encoding to a fixed response-domain failure.
+
 ### 4.4 `binance_account_preflight`
 
 The preflight is read-only. It verifies, from exact responses and a separate
@@ -225,6 +244,16 @@ If margin type, position mode, multi-assets mode or leverage is wrong, preflight
 fails. It does not silently change account configuration. Future configuration
 POSTs require the separately approved configuration ceremony.
 
+The production order runtime never accepts a preflight `Mapping`. It accepts
+exact preflight receipt bytes through a retained owner-only artifact capability
+and invokes the strict loader itself. The receipt binds the exact released
+build, account-approval hash, credential fingerprint, configuration, account
+identity, observed server-time evidence, collection time and expiry. Those
+bindings must equal the activation artifact and currently retained credential
+capability before any request, signing or event authorization. Loader success
+proves structural and hash binding, not the truth of the separately approved
+human account attestation.
+
 ### 4.5 `binance_order_adapter`
 
 The adapter consumes only a frozen v0.72-compatible intent plus:
@@ -237,6 +266,13 @@ The adapter consumes only a frozen v0.72-compatible intent plus:
 
 It emits normalized Binance venue events into the replacement-v3 event log. It
 does not return a free-standing mutable position object.
+
+The runtime reconstructs the intent unconditionally from the retained
+replacement-v3 event root, the exact observed DecisionOpportunity, frozen
+decision and accounting records, and current expected-last-event hash. A
+caller-supplied intent is comparison input only and must be byte-equivalent to
+that reconstruction. No schema variant or missing discriminator may bypass
+reconstruction.
 
 The v0.72 internal `replacement_client_` plus 64-lower-hex fixture identity exceeds the
 current Binance 36-character `newClientOrderId` limit and is never sent. The
@@ -258,13 +294,32 @@ never submits a second economic order until the first attempt is proved absent
 under the frozen resolution protocol. If absence cannot be proved, the order
 remains `UNRESOLVED_ECONOMIC_ORDER_UNKNOWN` and new risk is rejected.
 
+`UNKNOWN` is a durable hard-stop state, but not a terminal observation. Every
+entry or fresh-process replay in that state first queries the exact client
+order ID, replays matching trades, fills and fees, queries position and balance,
+and continues reconciliation. It never resends the economic mutation. If
+exposure is discovered, protective-stop management and the safest reconciled
+flatten path remain authorized while all new risk stays blocked. The state can
+be terminal only after the venue effect and position/protection outcome are
+durably reconciled.
+
+The event `BINANCE_ORDER_UNKNOWN` records the ambiguous transport observation
+and sets `private_stage=UNKNOWN_QUERY_REQUIRED`; it is not a terminal event.
+Only `BINANCE_UNKNOWN_QUERY_OBSERVED`, bound to the exact client-ID order query,
+trade query and account-position response identities, may advance it into the
+normal acknowledged/rejected/fill/reconciliation path. A query failure leaves
+the stage unchanged. `BINANCE_RECONCILIATION_FAILED` is appended before a
+runtime reconciliation failure is returned and preserves safe management
+authority without granting new-risk authority.
+
 ### 4.6 `binance_reconciliation`
 
 Reconciliation compares three independently parsed projections:
 
 1. intended/internal event state;
 2. Binance order, trade, balance, position and funding responses; and
-3. the existing deterministic local ledger.
+3. the existing deterministic local ledger, independently replayed from its
+   canonical published accounting artifacts rather than copied from item 1.
 
 Exact Decimal arithmetic is used throughout. No float enters a financial
 calculation. Fill IDs are unique and append-only. Replayed fills/fees/funding are
@@ -274,6 +329,13 @@ untrusted publication identity are not silently adopted.
 Success requires exact agreement on product, signed quantity, average entry,
 realized/unrealized PnL inputs, cumulative fees, funding, open orders and
 protective-stop identity. A mismatch never chooses the most favorable source.
+
+Each input uses a retained read-only capability and binds its publication
+record: device, inode, owner, mode, link count, size and SHA-256. Venue trades
+must bind the exact Binance order ID and deterministic client order ID. For
+Futures, the reconciled stop trigger, side, quantity, reduce-only flag and
+client-algo ID must equal the authorized protective intent. Same bytes under a
+different publication identity are rejected, including on fresh-process replay.
 
 ### 4.7 `binance_protective_stop`
 
@@ -326,6 +388,16 @@ uses the same candidate substate while the verified old stop remains active;
 only a reconciled candidate may precede replacement success and old-stop
 cancellation.
 
+Any newly observed partial short fill creates exposed quantity and enters
+protection handling before the runtime may return `ORDER_IN_PROGRESS` or
+perform another risk-increasing action. Replacement is query-first and no-gap:
+retain the verified old stop, create the deterministic candidate for the new
+exact quantity, query and reconcile the candidate, then cancel the old stop and
+query its terminal status. A crash at every boundary resumes from canonical
+events without duplicate creation. Failure to establish verified protection
+returns only the protective hard stop and continues safe query/flatten
+management.
+
 ### 4.8 Ceremony and stage controllers
 
 The ceremony controller implements the exact v0.75 sequence and label
@@ -356,6 +428,14 @@ PnL, fees and funding:
 
 Restart, product switch, a new process or a new calendar object cannot clear a
 daily stop or reuse duration/cycles from a failed block.
+
+The controller does not accept caller-authored ceremony, equity, hard-stop,
+promotion or incident mappings as authority. It strictly replays the retained
+replacement-v3 event root and loads every referenced activation, promotion,
+reconciliation and incident/unlock artifact through its exact strict loader and
+publication identity. Runtime reconciliation failures append their canonical
+failure event before returning. An in-memory or fixture-only projection cannot
+authorize a stage transition.
 
 ## 5. Exact Binance REST inventory
 
@@ -433,8 +513,8 @@ INTENT_AUTHORIZED
   -> VENUE_ABSENCE_CHECKED
   -> SIGNED_REQUEST_PREPARED
   -> REQUEST_SEND_STARTED
-  -> ACKNOWLEDGED | REJECTED | UNKNOWN
-  -> PARTIALLY_FILLED | FILLED | CANCELED | EXPIRED | UNKNOWN
+  -> ACKNOWLEDGED | REJECTED | UNKNOWN_QUERY_REQUIRED
+  -> PARTIALLY_FILLED | FILLED | CANCELED | EXPIRED | UNKNOWN_QUERY_REQUIRED
   -> FILLS_AND_FEES_REPLAYED
   -> POSITION_BALANCE_RECONCILED
   -> PROTECTION_RECONCILED_IF_EXPOSED
@@ -445,6 +525,12 @@ Only `TERMINAL_RECONCILED` permits the next economic transition. `REJECTED` is
 terminal only when Binance proves no fill and no position effect. `CANCELED`
 still requires fill replay because cancel/fill races are possible. A local
 timeout does not mean rejection.
+
+`UNKNOWN_QUERY_REQUIRED` blocks all new risk and is one of the four absolute
+hard-stop classes. It retains read-only query, reconciliation,
+protective-stop and safe-flatten authority for the already-started attempt. It
+cannot become `TERMINAL_RECONCILED` merely because the original response was
+lost; exact order, fill, position and protection observations are mandatory.
 
 Crash recovery replays the canonical event log, queries the exact client ID,
 replays fills/fees/funding and reconciles before deciding. It never reconstructs
@@ -561,6 +647,29 @@ All tests use deterministic fixtures, mocks or fixed official examples. Their
 authority counters must remain zero. No test result is a real account or market
 qualification.
 
+The matrix is an executable campaign, not a catalogue of test names. Every
+listed condition has a unique atomic case ID and a dedicated probe that invokes
+the relevant production boundary. A combined case is permitted only when the
+receipt records and tests separately assert every named subcondition. Metadata
+such as `fresh_process=true` or hard-coded zero authority counts is not evidence.
+
+For every case the immutable receipt records exact fixture bytes and SHA-256;
+observed return/failure code and stdout/stderr hashes; measured credential,
+private-network, mutating-request, order, fund and production-state boundary
+counts; subprocess executable, argv, exit status and output hashes where a
+fresh interpreter is required; and exact canonical event/artifact identities
+before and after the probe.
+
+The campaign binds a sorted per-file inventory of every v0.77 executable
+runtime module, schema and fixture plus an aggregate executable-core hash. It
+may reuse a released v0.76 fault receipt only for a byte-identical requirement
+whose exact foundation case, artifact hash and build identity are cited; all
+private Binance semantics require direct v0.77 probes. Secret-absence probes
+place a synthetic sentinel only at the controlled test boundary and scan all
+captured logs, exceptions, events and artifacts, publishing only hashes and
+zero occurrence counts. The strict loader recomputes all identities and rejects
+open caller-provided build objects.
+
 ## 11. Review, release and code-size gates
 
 The implementation stays in one semantic version with internal TDD commits.
@@ -582,6 +691,13 @@ release identity but does not authorize weakening or deleting the gate.
 The implementation plan must set per-component and aggregate line budgets after
 inventorying reusable v0.71/v0.72/v0.76 code. Any design that grows a generic
 transport, broker or order platform is rejected even if under the numeric cap.
+
+The amended 4,500-line aggregate cap remains a release gate. Remediation first
+deletes the invalid Task 11 label runner and consolidates duplicated projection
+and reconciliation logic. If the measured safe implementation still cannot
+meet the cap, work stops for an explicit measured budget amendment; receipt
+authority, UNKNOWN recovery, protection and reconciliation may not be weakened
+to pass the numeric gate.
 
 ## 12. Completion dossier
 
@@ -643,11 +759,19 @@ The v0.77 design is satisfied only when:
 - client IDs fit Binance's 36-character contract and remain mapped to full
   internal identities;
 - mutating retries are query-first and unresolved UNKNOWN is a hard stop;
+- UNKNOWN remains query/reconciliation/protection recoverable but never grants
+  mutation-resend or new-risk authority;
 - Spot and perpetual lifecycles cover ACK, partial fill, cancel, late fill,
   fees, funding, balances and positions;
-- perpetual exposure cannot be healthy without a queried Algo protective stop;
-- three-way reconciliation is deterministic and fresh-process replayable;
-- ceremony and stage controllers exactly preserve v0.75 policies;
+- every partial perpetual exposure is protected before runtime return and stop
+  replacement has no unprotected gap;
+- three-way reconciliation is independently derived, publication-identity
+  bound, deterministic and fresh-process replayable;
+- ceremony and stage controllers strictly replay canonical authority and
+  preserve v0.75 policies;
+- preflight, activation, approval, credential and server-time inputs are
+  strictly loaded and mutually bound before signing;
+- bounded response parsing rejects excessive JSON depth with a fixed error;
 - secrets cannot enter logs, exceptions, events, manifests or fixtures;
 - the existing loopback UI remains read-only and non-authoritative;
 - fault/recovery evidence is bound to the exact released build;
