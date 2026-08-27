@@ -21,6 +21,7 @@ from crypto_quant.challenger_replacement_events import (
     publish_challenger_replacement_event,
 )
 from crypto_quant.challenger_replacement_install_trust import business_hash
+from crypto_quant.challenger_replacement_binance_reconciliation import load_binance_reconciliation_capture
 from tests.test_challenger_replacement_events import EventWorkspace
 from tests.test_challenger_replacement_public_market_capture import V076_BUILD
 
@@ -176,7 +177,8 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
         }) + "\n").encode()
 
     def project(self, events, now="2026-09-09T00:00:00.000Z", prefix=(),
-                raw_stage_authority=False, replace_first_artifact=False):
+                raw_stage_authority=False, replace_first_artifact=False,
+                reconciliation_equity_override=None):
         workspace = EventWorkspace()
         self.addCleanup(workspace.close)
         previous = "0" * 64
@@ -201,11 +203,69 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                 publication = publish_challenger_replacement_event(root, event)
                 previous = event.event_hash
                 return publication
+            def reconcile(candidate, ordinal):
+                capture = {"intent_id": "canary-capture-%064x" % ordinal,
+                           "capture_version": "1.0.0"}
+                for selector in ("event_input", "ledger_input", "venue_input"):
+                    body = canonical_json({"selector": selector, "ordinal": ordinal}).encode()
+                    capture[selector + "_bytes_base64"] = base64.b64encode(body).decode()
+                    capture[selector + "_sha256"] = hashlib.sha256(body).hexdigest()
+                captured = publish({
+                    "event_type": "BINANCE_RECONCILIATION_INPUTS_CAPTURED",
+                    "slot_id": candidate["block_id"], "recorded_at": candidate["occurred_at"],
+                    "payload": capture,
+                })
+                publications = load_binance_reconciliation_capture(
+                    event_root=root, capture_event_sequence=captured.sequence,
+                    capture_event_hash=captured.event_hash,
+                )["publications"]
+                if candidate["event_type"] == "CEREMONY_STATE_RECONCILED":
+                    state = candidate["state"]
+                    expected_flat = state in {"CEREMONY_READY_FLAT", "FLAT_RECONCILED_AFTER_SPOT",
+                        "FLAT_RECONCILED_AFTER_PERP", "CEREMONY_QUALIFIED"}
+                    exposed = state in {"SPOT_LONG_RECONCILED", "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED"}
+                    flat = expected_flat if expected_flat or exposed else True
+                    product = "PERPETUAL" if "PERP" in state else "SPOT"
+                    equity = "100"
+                else:
+                    flat, product = candidate["flat"], "SPOT"
+                    equity = reconciliation_equity_override or candidate["equity"]
+                signed = "0" if flat else "-0.001" if product == "PERPETUAL" else "0.001"
+                facts = {"product": product, "signed_quantity": signed,
+                    "average_entry_price_or_null": None if signed == "0" else "2000",
+                    "realized_pnl": "0", "unrealized_pnl": "0", "cumulative_fee": "0",
+                    "funding": "0", "wallet_balance": equity, "available_balance": equity,
+                    "open_order_count": 0,
+                    "protective_stop_client_id_or_null": ("cq77" + "9" * 32 if signed.startswith("-") else None),
+                    "fill_ids": [ordinal]}
+                document = {"$schema": "./challenger-replacement-binance-reconciliation-v1.schema.json",
+                    "schema_version": "1.0.0", "reconciliation_id": "",
+                    "status": "BINANCE_PRIVATE_RECONCILIATION_MATCHED",
+                    "event_projection": facts, "venue_projection": facts, "ledger_projection": facts,
+                    "capture_publications": json.loads(canonical_json(publications)),
+                    "authority": {"network_requests": 0, "orders": 0, "state_writes": 0}}
+                core = dict(document); core.pop("reconciliation_id")
+                document["reconciliation_id"] = "binance_reconciliation_" + hashlib.sha256(
+                    canonical_json(core).encode()).hexdigest()
+                data = (canonical_json(document) + "\n").encode()
+                artifact = {"event_type": "CANARY_AUTHORITY_ARTIFACT_PUBLISHED",
+                    "block_id": candidate["block_id"], "occurred_at": candidate["occurred_at"],
+                    "artifact_kind": "RECONCILIATION", "artifact_id": document["reconciliation_id"],
+                    "artifact_bytes_base64": base64.b64encode(data).decode(),
+                    "artifact_sha256": hashlib.sha256(data).hexdigest()}
+                candidate["reconciliation_id"] = document["reconciliation_id"]
+                candidate["reconciliation_publication"] = self.publication_record(publish(artifact))
             candidates = tuple(prefix) + tuple(events)
             activation_ids = set()
             first_artifact_path = None
             for original in candidates:
                 candidate = dict(original)
+                if (candidate["event_type"] in {"CEREMONY_STATE_RECONCILED", "CANARY_EQUITY_RECONCILED"}
+                        and (candidate.get("reconciliation_id", "binance_reconciliation_" + "0" * 64)
+                             .removeprefix("binance_reconciliation_").isalnum())
+                        and len(candidate.get("reconciliation_id", "binance_reconciliation_" + "0" * 64)
+                                .removeprefix("binance_reconciliation_")) == 64):
+                    reconcile(candidate, sequence + 1)
                 if (candidate["event_type"] == "CANARY_STAGE_BLOCK_STARTED"
                         and not raw_stage_authority):
                     if candidate["activation_id"] in activation_ids:
@@ -322,6 +382,15 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             self.project(self.ceremony_events() + (self.start(),),
                          replace_first_artifact=True)
 
+    def test_equity_claim_must_equal_strict_reconciliation(self):
+        with self.assertRaisesRegex(
+            ChallengerReplacementCanaryControllerError,
+            "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
+        ):
+            self.project(self.ceremony_events() + (
+                self.start(), self.mark("2026-09-02T04:00:00.000Z", "99"),
+            ), reconciliation_equity_override="100")
+
     def test_daily_loss_stops_new_risk_until_utc_rollover(self):
         events = self.ceremony_events() + (
             self.start(),
@@ -387,7 +456,9 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                 events[index] = {**events[index], field: value}
                 with self.assertRaisesRegex(
                     ChallengerReplacementCanaryControllerError,
-                    "CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID",
+                    ("CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID" if field ==
+                     "minimum_amount_satisfied_or_null" else
+                     "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID"),
                 ):
                     self.project(events)
 
@@ -480,17 +551,18 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                     self.project(invalid)
 
     def test_exact_activation_and_reconciliation_identities_are_required(self):
-        for events in (
-            self.ceremony_events() + (
+        for events, reason in (
+            (self.ceremony_events() + (
                 self.start() | {"activation_id": "approval"},
-            ),
-            ({**self.ceremony_events()[0],
+            ), "CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID"),
+            (({**self.ceremony_events()[0],
               "reconciliation_id": "binance_reconciliation_short"},),
+             "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID"),
         ):
             with self.subTest(events=events):
                 with self.assertRaisesRegex(
                     ChallengerReplacementCanaryControllerError,
-                    "CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID",
+                    reason,
                 ):
                     self.project(events)
 

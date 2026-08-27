@@ -15,6 +15,7 @@ from .challenger_replacement_events import (ChallengerReplacementEventRoot, repl
     verify_challenger_replacement_event_publication)
 from .challenger_replacement_install_trust import business_hash
 from .challenger_replacement_binance_private_contract import load_binance_private_activation_bytes
+from .challenger_replacement_binance_reconciliation import load_binance_reconciliation_bytes_strict
 _SCHEMA = "challenger-replacement-canary-projection-v1.schema.json"
 _APPROVAL_SCHEMA = "challenger-replacement-canary-authority-approval-v1.schema.json"
 _CEREMONY = (
@@ -257,58 +258,55 @@ def _authorize_stage(root, outer, payload, plan, build_identity):
     normalized = dict(payload)
     for key in ("activation_publication", "promotion_approval_id_or_null", "approval_publication_or_null"): normalized.pop(key)
     return normalized
+def _authorize_reconciliation(root, outer, payload):
+    data = _referenced_artifact(root, payload["reconciliation_publication"],
+        before_sequence=outer["sequence"], artifact_id=payload["reconciliation_id"], kind="RECONCILIATION")
+    loaded = load_binance_reconciliation_bytes_strict(data, event_root=root)
+    facts = loaded["venue_projection"]
+    equity = canonical_decimal(Decimal(facts["wallet_balance"]) + Decimal(facts["unrealized_pnl"]))
+    flat = Decimal(facts["signed_quantity"]) == 0 and facts["open_order_count"] == 0
+    if (loaded["reconciliation_id"] != payload["reconciliation_id"]
+            or (payload["event_type"] == "CEREMONY_STATE_RECONCILED"
+                and payload["flat_or_null"] is not None and payload["flat_or_null"] is not flat)
+            or (payload["event_type"] == "CANARY_EQUITY_RECONCILED"
+                and (payload["equity"] != equity or payload["flat"] is not flat))): raise ValueError
+    normalized = dict(payload); normalized.pop("reconciliation_publication")
+    if payload["event_type"] == "CANARY_EQUITY_RECONCILED": normalized.pop("reconciliation_id")
+    return normalized
 def _project_challenger_replacement_canary(*, events, plan, now):
     """Pure reducer used only after canonical event replay."""
     if (not isinstance(events, tuple) or not isinstance(plan, Mapping)
             or dict(plan) != build_challenger_replacement_accelerated_canary_plan()):
         _fail()
-    now_value = _time(now)
-    ceremony = None
-    block = None
-    previous_time = None
+    now_value = _time(now); ceremony = block = previous_time = None
     ceremony_index = 0
     for candidate in events:
         event, occurred = _event(candidate, previous_time)
-        if occurred > now_value:
-            _fail()
+        if occurred > now_value: _fail()
         previous_time = occurred
         if event["event_type"] == "CEREMONY_STATE_RECONCILED":
             state = event["state"]
-            amount_required = state in {
-                "SPOT_LONG_RECONCILED", "FLAT_RECONCILED_AFTER_SPOT",
-                "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED",
-                "FLAT_RECONCILED_AFTER_PERP",
-            }
-            expected_flat = (
-                True if state in {
+            amount_required = state in {"SPOT_LONG_RECONCILED", "FLAT_RECONCILED_AFTER_SPOT",
+                "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED", "FLAT_RECONCILED_AFTER_PERP"}
+            expected_flat = (True if state in {
                     "CEREMONY_READY_FLAT", "FLAT_RECONCILED_AFTER_SPOT",
-                    "FLAT_RECONCILED_AFTER_PERP", "CEREMONY_QUALIFIED",
-                } else False if state in {
-                    "SPOT_LONG_RECONCILED",
-                    "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED",
-                } else None
-            )
+                    "FLAT_RECONCILED_AFTER_PERP", "CEREMONY_QUALIFIED"}
+                else False if state in {"SPOT_LONG_RECONCILED",
+                    "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED"} else None)
             if (block is not None or ceremony_index >= len(_CEREMONY)
                     or state != _CEREMONY[ceremony_index]
                     or event["label"] != _LABEL
                     or not _identity(event["block_id"])
-                    or not _prefixed_hash(
-                        event["reconciliation_id"], "binance_reconciliation_"
-                    ) or event["minimum_amount_satisfied_or_null"] != (
-                        True if amount_required else None
-                    ) or event["flat_or_null"] is not expected_flat
-                    or (ceremony is not None
-                          and event["block_id"] != ceremony["block_id"])):
-                _fail()
+                    or not _prefixed_hash(event["reconciliation_id"], "binance_reconciliation_")
+                    or event["minimum_amount_satisfied_or_null"] != (True if amount_required else None)
+                    or event["flat_or_null"] is not expected_flat or (ceremony is not None
+                    and event["block_id"] != ceremony["block_id"])): _fail()
             ceremony_index += 1
-            ceremony = {
-                "block_id": event["block_id"], "state": event["state"],
+            ceremony = {"block_id": event["block_id"], "state": event["state"],
                 "qualified": event["state"] == "CEREMONY_QUALIFIED",
-                "strategy_cycle_count": 0, "economic_evidence_count": 0,
-            }
+                "strategy_cycle_count": 0, "economic_evidence_count": 0}
         elif event["event_type"] == "CANARY_STAGE_BLOCK_STARTED":
-            if ceremony is None or ceremony["qualified"] is not True:
-                _fail()
+            if ceremony is None or ceremony["qualified"] is not True: _fail()
             if block is not None and _eligible(block, plan, occurred):
                 block["status"] = "STAGE_ELIGIBLE_AWAITING_APPROVAL"
             block = _new_block(event, plan, block)
@@ -358,6 +356,8 @@ def project_challenger_replacement_canary(*, event_root, plan, build_identity, n
             if outer["event_type"] == "CANARY_STAGE_BLOCK_STARTED":
                 payload = _authorize_stage(event_root, outer, payload, plan,
                                            build_identity)
+            elif outer["event_type"] in {"CEREMONY_STATE_RECONCILED", "CANARY_EQUITY_RECONCILED"}:
+                payload = _authorize_reconciliation(event_root, outer, payload)
             events.append(payload)
         event_root.validate()
         return _project_challenger_replacement_canary(events=tuple(events), plan=plan, now=now)
