@@ -278,6 +278,17 @@ def _private_payloads(state, opportunity_id):
                 document["payload_bytes_base64"], validate=True,
             ))))
     return values
+def _order_authority(state, attempt):
+    acknowledgements = [payload for event_type, payload in _private_payloads(state,
+        attempt["opportunity_id"]) if event_type == "BINANCE_ORDER_ACKNOWLEDGED"]
+    if (len(acknowledgements) != 1
+            or acknowledgements[0]["venue_client_order_id"] != attempt["venue_client_order_id"]):
+        _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
+    return {"order_id": acknowledgements[0]["order_id"], "client_order_id": attempt["venue_client_order_id"]}
+def _stop_authority(stop):
+    if stop is None: return None
+    return {key: stop[key] for key in ("client_algo_id", "side", "quantity",
+                                       "trigger_price", "reduce_only")}
 def _spot_facts(state, attempt, activation,
                 previous_reconciliation_bytes_or_null=None):
     fills = [payload for event_type, payload in _private_payloads(
@@ -337,7 +348,7 @@ def _spot_facts(state, attempt, activation,
             item["trade_id"] for item in fills
         ])),
     }
-    return {**facts, "ledger_projection": dict(facts)}
+    return facts
 def _append_fills_fees(state, attempt, recorded_at):
     private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
     if private["stage"] == "BINANCE_FILLS_FEES_REPLAYED":
@@ -356,11 +367,17 @@ def _finish_spot(state, attempt, activation, order, trades, account, recorded_at
     previous = _previous_reconciliation_bytes(
         state, product="SPOT", before_opportunity_id=attempt["opportunity_id"],
     )
-    data = reconcile_binance_private_state(
-        event_projection=_spot_facts(
+    event_facts = _spot_facts(
             state, attempt, activation,
             previous_reconciliation_bytes_or_null=previous,
-        ),
+        )
+    data = reconcile_binance_private_state(
+        event_projection=event_facts,
+        ledger_projection=_spot_facts(
+            state, attempt, activation,
+            previous_reconciliation_bytes_or_null=previous,
+        ), authorized_order=_order_authority(state, attempt),
+        authorized_stop_or_null=None,
         order_documents=(order,), trade_documents=trades,
         account_document=account, position_document=b"[]",
         income_documents=(), algo_documents=(),
@@ -628,7 +645,7 @@ def _perpetual_facts(state, attempt, activation, position, incomes, stop,
             "open_order_count": 0,
             "protective_stop_client_id_or_null": client,
             "fill_ids": sorted(set(prior_fills + [item["trade_id"] for item in fills]))}
-        return {**facts, "ledger_projection": dict(facts)}
+        return facts
     except (KeyError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID", error)
 def _finish_perpetual(state, attempt, activation, stop, context,
@@ -665,7 +682,12 @@ def _finish_perpetual(state, attempt, activation, stop, context,
         previous_reconciliation_bytes_or_null=previous,
     )
     data = reconcile_binance_private_state(
-        event_projection=facts, order_documents=(order_result.body,),
+        event_projection=facts, ledger_projection=_perpetual_facts(
+            state, attempt, activation, position.body, income_documents, stop,
+            previous_reconciliation_bytes_or_null=previous,
+        ), authorized_order=_order_authority(state, attempt),
+        authorized_stop_or_null=_stop_authority(stop),
+        order_documents=(order_result.body,),
         trade_documents=_tuple_documents(trades.body),
         account_document=account.body, position_document=position.body,
         income_documents=income_documents, algo_documents=algo_documents,

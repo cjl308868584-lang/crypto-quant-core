@@ -29,7 +29,8 @@ class BinanceReconciliationTests(unittest.TestCase):
             "protective_stop_client_id_or_null": self.CLIENT,
             "fill_ids": [401],
         }
-        self.event = {**facts, "ledger_projection": dict(facts)}
+        self.event = facts
+        self.ledger = dict(facts)
         self.orders = (self.body({
             "symbol": "ETHUSDT", "orderId": 202,
             "clientOrderId": "cq77" + "2" * 32, "avgPrice": "2000",
@@ -88,6 +89,16 @@ class BinanceReconciliationTests(unittest.TestCase):
     def reconcile(self, **changes):
         values = {
             "event_projection": self.event,
+            "ledger_projection": self.ledger,
+            "authorized_order": {
+                "order_id": 202,
+                "client_order_id": "cq77" + "2" * 32,
+            },
+            "authorized_stop_or_null": {
+                "client_algo_id": self.CLIENT, "side": "BUY",
+                "quantity": "0.025", "trigger_price": "2036.43",
+                "reduce_only": True,
+            },
             "order_documents": self.orders, "trade_documents": self.trades,
             "account_document": self.account,
             "position_document": self.position,
@@ -138,7 +149,10 @@ class BinanceReconciliationTests(unittest.TestCase):
             "time": 1787832000001, "isBuyer": True,
         })
         data = reconcile_binance_private_state(
-            event_projection={**facts, "ledger_projection": dict(facts)},
+            event_projection=facts, ledger_projection=facts,
+            authorized_order={"order_id": 101,
+                              "client_order_id": "cq77" + "6" * 32},
+            authorized_stop_or_null=None,
             order_documents=(order,), trade_documents=(trade,),
             account_document=self.body(account), position_document=b"[]",
             income_documents=(), algo_documents=(),
@@ -181,8 +195,10 @@ class BinanceReconciliationTests(unittest.TestCase):
             "time": 1787832000001, "isBuyer": True,
         })
         previous = reconcile_binance_private_state(
-            event_projection={**previous_facts,
-                              "ledger_projection": dict(previous_facts)},
+            event_projection=previous_facts, ledger_projection=previous_facts,
+            authorized_order={"order_id": 101,
+                              "client_order_id": "cq77" + "6" * 32},
+            authorized_stop_or_null=None,
             order_documents=(open_order,), trade_documents=(open_trade,),
             account_document=self.body(account), position_document=b"[]",
             income_documents=(), algo_documents=(),
@@ -214,7 +230,10 @@ class BinanceReconciliationTests(unittest.TestCase):
             "fill_ids": [301, 302],
         }
         data = reconcile_binance_private_state(
-            event_projection={**final, "ledger_projection": dict(final)},
+            event_projection=final, ledger_projection=final,
+            authorized_order={"order_id": 102,
+                              "client_order_id": "cq77" + "7" * 32},
+            authorized_stop_or_null=None,
             order_documents=(close_order,), trade_documents=(close_trade,),
             account_document=self.body(account), position_document=b"[]",
             income_documents=(), algo_documents=(),
@@ -267,7 +286,10 @@ class BinanceReconciliationTests(unittest.TestCase):
             "fill_ids": [401, 402],
         }
         data = reconcile_binance_private_state(
-            event_projection={**final, "ledger_projection": dict(final)},
+            event_projection=final, ledger_projection=final,
+            authorized_order={"order_id": 203,
+                              "client_order_id": "cq77" + "3" * 32},
+            authorized_stop_or_null=None,
             order_documents=(order,), trade_documents=(trade,),
             account_document=self.body(account),
             position_document=self.body(fixture["FUTURES_POSITION"]),
@@ -318,23 +340,86 @@ class BinanceReconciliationTests(unittest.TestCase):
             "fill_ids": [402],
         }
         for key, value in mutations.items():
-            event = {**self.event, key: value,
-                     "ledger_projection": {
-                         **self.event["ledger_projection"], key: value,
-                     }}
+            event = {**self.event, key: value}
             with self.subTest(key=key), self.assertRaisesRegex(
                 BinanceReconciliationError, "VENUE_LOCAL_POSITION_MISMATCH"
             ):
-                self.reconcile(event_projection=event)
+                self.reconcile(
+                    event_projection=event,
+                    ledger_projection={**self.ledger, key: value},
+                )
 
     def test_ledger_mismatch_is_independently_detected(self):
-        event = {**self.event, "ledger_projection": {
-            **self.event["ledger_projection"], "cumulative_fee": "0.03",
-        }}
         with self.assertRaisesRegex(
             BinanceReconciliationError, "BINANCE_LEDGER_PROJECTION_MISMATCH"
         ):
-            self.reconcile(event_projection=event)
+            self.reconcile(ledger_projection={
+                **self.ledger, "cumulative_fee": "0.03",
+            })
+
+    def test_ledger_projection_is_a_separate_required_input(self):
+        event = dict(self.event)
+        with self.assertRaisesRegex(
+            BinanceReconciliationError,
+            "BINANCE_LEDGER_PROJECTION_MISMATCH",
+        ):
+            self.reconcile(
+                event_projection=event,
+                ledger_projection={**self.ledger,
+                                   "cumulative_fee": "0.03"},
+            )
+
+    def test_trade_must_bind_authorized_order_and_client_order_ids(self):
+        event = dict(self.event)
+        authorization = {
+            "order_id": 202,
+            "client_order_id": "cq77" + "2" * 32,
+        }
+        for changed in (
+            {"order_id": 999, "client_order_id": authorization["client_order_id"]},
+            {"order_id": 202, "client_order_id": "cq77" + "8" * 32},
+        ):
+            with self.subTest(changed=changed), self.assertRaisesRegex(
+                BinanceReconciliationError,
+                "BINANCE_RECONCILIATION_INPUT_INVALID",
+            ):
+                self.reconcile(
+                    event_projection=event,
+                    ledger_projection=self.ledger,
+                    authorized_order=changed,
+                    authorized_stop_or_null={
+                        "client_algo_id": self.CLIENT,
+                        "side": "BUY", "quantity": "0.025",
+                        "trigger_price": "2036.43", "reduce_only": True,
+                    },
+                )
+
+    def test_stop_must_bind_every_authorized_protection_field(self):
+        event = dict(self.event)
+        stop = {
+            "client_algo_id": self.CLIENT, "side": "BUY",
+            "quantity": "0.025", "trigger_price": "2036.43",
+            "reduce_only": True,
+        }
+        mutations = {
+            "client_algo_id": "cq77" + "8" * 32,
+            "side": "SELL", "quantity": "0.024",
+            "trigger_price": "2036.44", "reduce_only": False,
+        }
+        for key, value in mutations.items():
+            with self.subTest(key=key), self.assertRaisesRegex(
+                BinanceReconciliationError,
+                "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+            ):
+                self.reconcile(
+                    event_projection=event,
+                    ledger_projection=self.ledger,
+                    authorized_order={
+                        "order_id": 202,
+                        "client_order_id": "cq77" + "2" * 32,
+                    },
+                    authorized_stop_or_null={**stop, key: value},
+                )
 
     def test_missing_or_wrong_protection_while_exposed_is_hard_stop(self):
         for algos in ((), (self.body({**json.loads(self.algos[0]),

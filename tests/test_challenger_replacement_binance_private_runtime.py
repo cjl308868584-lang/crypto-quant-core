@@ -643,7 +643,10 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "time": 1787832000001, "isBuyer": True,
         }).encode()
         return reconcile_binance_private_state(
-            event_projection={**facts, "ledger_projection": dict(facts)},
+            event_projection=facts, ledger_projection=facts,
+            authorized_order={"order_id": order_id,
+                              "client_order_id": "cq77" + format(trade_id, "032x")},
+            authorized_stop_or_null=None,
             order_documents=(order,), trade_documents=(trade,),
             account_document=self._spot_account("0.001", "97.998"),
             position_document=b"[]", income_documents=(), algo_documents=(),
@@ -716,7 +719,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "protective_stop_client_id_or_null": None,
             "fill_ids": [301, 302],
         }
-        self.assertEqual(facts, {**expected, "ledger_projection": expected})
+        self.assertEqual(facts, expected)
 
     def _futures_stop(self, quantity="0.025"):
         return prepare_binance_protective_stop(
@@ -749,7 +752,15 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "fill_ids": [401],
         }
         return reconcile_binance_private_state(
-            event_projection={**facts, "ledger_projection": dict(facts)},
+            event_projection=facts, ledger_projection=facts,
+            authorized_order={"order_id": 202,
+                              "client_order_id": json.loads(order)["clientOrderId"]},
+            authorized_stop_or_null={
+                "client_algo_id": stop["client_algo_id"],
+                "side": stop["side"], "quantity": stop["quantity"],
+                "trigger_price": stop["trigger_price"],
+                "reduce_only": stop["reduce_only"],
+            },
             order_documents=(order,), trade_documents=trade_documents,
             account_document=self._futures_account(),
             position_document=position, income_documents=(income,),
@@ -832,7 +843,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "protective_stop_client_id_or_null": None,
             "fill_ids": [401, 402],
         }
-        self.assertEqual(facts, {**expected, "ledger_projection": expected})
+        self.assertEqual(facts, expected)
 
     def test_perpetual_close_queries_then_cancels_orphan_stop_once(self):
         attempt = self._prime_perpetual_close_fills()
