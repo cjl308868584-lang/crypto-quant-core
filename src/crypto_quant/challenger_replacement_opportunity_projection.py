@@ -301,6 +301,9 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
             or header.get("build_identity_hash") != business_hash(build_identity)
         ):
             invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
+        if (event_type == "BINANCE_RECONCILIATION_INPUTS_CAPTURED"
+                and opportunity_id not in projection["opportunities"]):
+            return
         try:
             apply_challenger_replacement_private_event(projection, event)
         except ChallengerReplacementBinancePrivateContractError as error:

@@ -10,6 +10,7 @@ from crypto_quant.challenger_replacement_accelerated_canary_plan import (
 )
 from crypto_quant.challenger_replacement_canary_controller import (
     ChallengerReplacementCanaryControllerError,
+    _project_challenger_replacement_canary,
     load_challenger_replacement_canary_approval_bytes,
     load_challenger_replacement_canary_projection_bytes,
     project_challenger_replacement_canary,
@@ -338,6 +339,14 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             data, plan=self.plan,
         )
 
+    def reduce(self, events, now="2026-09-09T00:00:00.000Z"):
+        data = _project_challenger_replacement_canary(
+            events=tuple(events), plan=self.plan, now=now,
+        )
+        return data, load_challenger_replacement_canary_projection_bytes(
+            data, plan=self.plan,
+        )
+
     def test_exact_ceremony_sequence_qualifies_but_counts_no_strategy_cycle(self):
         data, loaded = self.project(self.ceremony_events())
         self.assertEqual(loaded["ceremony"], {
@@ -361,14 +370,17 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                 now="2026-09-09T00:00:00.000Z",
             )
 
-    def test_projection_ignores_non_canary_events_after_chain_validation(self):
+    def test_projection_rejects_non_canary_event_that_fails_chain_validation(self):
         prefix = ({
             "event_type": "INPUT_PREPARED", "slot_id": "ETHUSDT@fixture",
             "recorded_at": "2026-08-31T20:00:00.000Z",
             "payload": {"fixture": "non-canary-authority"},
         },)
-        _, loaded = self.project(self.ceremony_events(), prefix=prefix)
-        self.assertTrue(loaded["ceremony"]["qualified"])
+        with self.assertRaisesRegex(
+            ChallengerReplacementCanaryControllerError,
+            "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
+        ):
+            self.project(self.ceremony_events(), prefix=prefix)
 
     def test_stage_start_without_exact_activation_publication_is_rejected(self):
         with self.assertRaisesRegex(
@@ -395,6 +407,29 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                 self.start(), self.mark("2026-09-02T04:00:00.000Z", "99"),
             ), reconciliation_equity_override="100")
 
+    def test_hard_stop_string_without_exact_private_event_is_rejected(self):
+        with self.assertRaisesRegex(
+            ChallengerReplacementCanaryControllerError,
+            "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
+        ):
+            self.project(self.ceremony_events() + (
+                self.start(),
+                self.mark(
+                    "2026-09-02T04:00:00.000Z", "99", flat=False,
+                    hard_stop="VENUE_LOCAL_POSITION_MISMATCH",
+                ),
+            ))
+
+    def test_manufactured_cycle_mapping_without_private_lifecycle_is_rejected(self):
+        with self.assertRaisesRegex(
+            ChallengerReplacementCanaryControllerError,
+            "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
+        ):
+            self.project(self.ceremony_events() + (
+                self.start(),
+                self.cycle("SPOT", 1, "2026-09-03T00:00:00.000Z"),
+            ))
+
     def test_replacement_and_canary_plans_cannot_be_substituted(self):
         cases = ({"outer_plan": self.plan}, {"replacement_plan": self.plan},
                  {"canary_plan": self.replacement_plan})
@@ -420,7 +455,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             "2026-09-02T08:00:00.000Z", "97.999", new_risk=True,
             hard_stop="RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT",
         ),)
-        _, failed = self.project(events, now="2026-09-02T12:00:00.000Z")
+        _, failed = self.reduce(events, now="2026-09-02T12:00:00.000Z")
         self.assertEqual(failed["stage_block_or_null"]["status"],
                          "STAGE_FAILED_LOCKED")
 
@@ -441,7 +476,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             self.cycle("PERPETUAL", 2, "2026-09-05T00:00:00.000Z"),
             self.cycle("SPOT", 3, "2026-09-08T00:00:00.000Z"),
         ))
-        _, loaded = self.project(events, now="2026-09-09T00:00:00.000Z")
+        _, loaded = self.reduce(events, now="2026-09-09T00:00:00.000Z")
         block = loaded["stage_block_or_null"]
         self.assertEqual(block["status"], "STAGE_ELIGIBLE_AWAITING_APPROVAL")
         self.assertEqual(block["strategy_cycle_count"], 3)
@@ -458,7 +493,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             ChallengerReplacementCanaryControllerError,
             "CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID",
         ):
-            self.project(premature)
+            self.reduce(premature)
 
     def test_ceremony_rejects_unmet_minimum_or_nonflat_qualification(self):
         for index, field, value in (
@@ -497,7 +532,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             self.start("E1", "2026-09-09T04:00:00.000Z",
                        previous="e0-block-1"),
         ))
-        _, loaded = self.project(events, now="2026-09-09T08:00:00.000Z")
+        _, loaded = self.reduce(events, now="2026-09-09T08:00:00.000Z")
         block = loaded["stage_block_or_null"]
         self.assertEqual(block["stage"], "E1")
         self.assertEqual(block["status"], "STAGE_ACTIVE")
@@ -523,7 +558,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             self.mark("2026-09-24T04:00:00.000Z", "980", flat=True),
             stage="E2", block_id="e2-block-1",
         ))
-        _, loaded = self.project(events, now="2026-09-24T08:00:00.000Z")
+        _, loaded = self.reduce(events, now="2026-09-24T08:00:00.000Z")
         self.assertEqual(loaded["stage_block_or_null"]["status"],
                          "STAGE_DAILY_STOPPED")
 
@@ -536,7 +571,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             ),
             self.mark("2026-09-02T08:00:00.000Z", "98.9", flat=True),
         )
-        _, failed = self.project(events, now="2026-09-02T12:00:00.000Z")
+        _, failed = self.reduce(events, now="2026-09-02T12:00:00.000Z")
         self.assertEqual(failed["stage_block_or_null"]["status"],
                          "STAGE_FAILED_LOCKED")
         self.assertTrue(failed["stage_block_or_null"]["flat"])
@@ -546,7 +581,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             "E0", "2026-09-02T12:00:00.000Z", previous="e0-block-1",
             unlock="incident_unlock_" + "4" * 64,
         ) | {"block_id": "e0-block-2"},)
-        _, loaded = self.project(restarted, now="2026-09-02T16:00:00.000Z")
+        _, loaded = self.reduce(restarted, now="2026-09-02T16:00:00.000Z")
         self.assertEqual(loaded["stage_block_or_null"]["block_id"],
                          "e0-block-2")
         self.assertEqual(loaded["stage_block_or_null"]["status"],
@@ -560,9 +595,9 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                 ) | {"block_id": "e0-block-2"},)
                 with self.assertRaisesRegex(
                     ChallengerReplacementCanaryControllerError,
-                    "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
+                    "CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID",
                 ):
-                    self.project(invalid)
+                    self.reduce(invalid)
 
     def test_exact_activation_and_reconciliation_identities_are_required(self):
         for events, reason in (
@@ -609,7 +644,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             ChallengerReplacementCanaryControllerError,
-            "CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID",
+            "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
         ):
             self.project(invalid)
 

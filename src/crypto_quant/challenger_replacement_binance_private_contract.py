@@ -48,14 +48,12 @@ _ENDPOINT_ROWS = (
 BINANCE_PRIVATE_ENDPOINTS = MappingProxyType({key: tuple(values) for key, *values in _ENDPOINT_ROWS})
 @dataclass(frozen=True)
 class BinanceAccountApproval:
-    account_identity_sha256: str; key_fingerprint: str
-    reviewed_egress_ip: str; reviewer_uid: int
-    reviewed_at: str; expires_at: str
+    account_identity_sha256: str; key_fingerprint: str; reviewed_egress_ip: str
+    reviewer_uid: int; reviewed_at: str; expires_at: str
     spot_trading_approved: bool; futures_trading_approved: bool
 @dataclass(frozen=True)
 class BinancePrivateActivation:
-    activation_id: str; build_identity: Mapping[str, str]
-    configuration_sha256: str; account_approval_sha256: str
+    activation_id: str; build_identity: Mapping[str, str]; configuration_sha256: str; account_approval_sha256: str
     block_id: str; stage: str; capital_usdt: str
     max_gross_exposure_usdt: str; max_leverage: str
     expires_at: str; production_activation: bool

@@ -61,7 +61,8 @@ def canary_body(*, equity="100", hard_stop=None):
     fixture = canary_fixtures.ChallengerReplacementCanaryControllerTests()
     fixture.setUp()
     try:
-        return fixture.project(
+        projector = fixture.reduce if hard_stop is not None else fixture.project
+        return projector(
             events, now="2026-09-02T08:00:00.000Z",
         )[0]
     finally:
