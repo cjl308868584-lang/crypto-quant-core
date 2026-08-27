@@ -896,6 +896,8 @@ def _observe_order(*, state, attempt, order_result, context):
         return _ensure_stop(
             state, attempt, account_result.body, context,
         )
+    if terminal == "BINANCE_ORDER_PARTIALLY_FILLED" and not spot:
+        _append_fills_fees(state, attempt, context.recorded_at); return _ensure_stop(state, attempt, account_result.body, context)
     return _status(
         (
             "ORDER_IN_PROGRESS"

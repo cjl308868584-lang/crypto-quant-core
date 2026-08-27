@@ -1120,6 +1120,65 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             stop["client_algo_id"],
         )
 
+    def test_first_partial_perpetual_fill_is_protected_before_return(self):
+        self._use_perpetual_decision()
+        absent, filled, trades, _position = self._futures_filled_documents(
+            self.intent["quantity"]
+        )
+        order = json.loads(filled)
+        order.update(executedQty="0.01", cumQuote="20", status="PARTIALLY_FILLED")
+        partial = canonical_json(order).encode("utf-8")
+        trade = json.loads(trades)[0]
+        trade.update(qty="0.01", quoteQty="20", commission="0.008")
+        trades = canonical_json([trade]).encode("utf-8")
+        position = self._futures_position("-0.01")
+        stop = self._futures_stop("0.01")
+        algo = canonical_json({
+            "algoId": 901, "clientAlgoId": stop["client_algo_id"],
+            "algoType": "CONDITIONAL", "orderType": "STOP_MARKET",
+            "symbol": "ETHUSDT", "side": "BUY", "positionSide": "BOTH",
+            "quantity": "0.01", "triggerPrice": stop["trigger_price"],
+            "workingType": "MARK_PRICE", "reduceOnly": True,
+            "closePosition": False, "algoStatus": "NEW",
+        }).encode("utf-8")
+        documents = (
+            ("RESPONSE_INVALID", 400, absent), ("ACKNOWLEDGED", 200, partial),
+            ("QUERY_SUCCEEDED", 200, partial), ("QUERY_SUCCEEDED", 200, trades),
+            ("QUERY_SUCCEEDED", 200, position), ("RESPONSE_INVALID", 400, absent),
+            ("ACKNOWLEDGED", 200, algo), ("QUERY_SUCCEEDED", 200, algo),
+        )
+        responses = tuple(BinancePrivateTransportResult(
+            kind, status, body, hashlib.sha256(body).hexdigest(), (),
+        ) for kind, status, body in documents)
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_expected_stop", return_value=stop,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=responses,
+        ) as transport:
+            result = run_challenger_replacement_binance_private_intent(
+                state=self.state, event_root=self.workspace.root,
+                intent=self.intent, preflight_capability=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        self.assertEqual(result["status"],
+                         "PROTECTION_VERIFIED_RECONCILIATION_PENDING")
+        self.assertEqual([call.args[0].endpoint_id for call in
+                          transport.call_args_list][-3:], [
+            "FUTURES_ALGO_QUERY", "FUTURES_ALGO_CREATE", "FUTURES_ALGO_QUERY",
+        ])
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_FILLS_FEES_REPLAYED")
+        self.assertEqual(private["stop"]["quantity"], "0.01")
+        self.assertEqual(private["stop"]["stage"], "BINANCE_STOP_RECONCILED")
+
     def test_fresh_retry_after_stop_send_started_queries_without_recreate(self):
         self._use_perpetual_decision()
         absent, filled, trades, position = self._futures_filled_documents(
