@@ -1,5 +1,8 @@
 import json
 import hashlib
+import base64
+import os
+from pathlib import Path
 import unittest
 
 from crypto_quant.challenger_replacement_accelerated_canary_plan import (
@@ -150,29 +153,119 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
         changed["block_id"] = block_id
         return changed
 
-    def project(self, events, now="2026-09-09T00:00:00.000Z", prefix=()):
+    @staticmethod
+    def publication_record(publication):
+        return {name: getattr(publication, name) for name in (
+            "sequence", "event_hash", "device", "inode", "size",
+        )}
+
+    @staticmethod
+    def activation_bytes(candidate):
+        limits = {"E0": ("100", "50", "0.5"),
+                  "E1": ("300", "300", "1"),
+                  "E2": ("1000", "2000", "2")}
+        capital, exposure, leverage = limits[candidate["stage"]]
+        return (canonical_json({
+            "$schema": "./challenger-replacement-binance-private-activation-v1.schema.json",
+            "schema_version": "1.0.0", "activation_id": candidate["activation_id"],
+            "build_identity": dict(V076_BUILD), "configuration_sha256": "6" * 64,
+            "account_approval_sha256": "7" * 64, "block_id": candidate["block_id"],
+            "stage": candidate["stage"], "capital_usdt": capital,
+            "max_gross_exposure_usdt": exposure, "max_leverage": leverage,
+            "expires_at": "2027-01-01T00:00:00.000Z", "production_activation": True,
+        }) + "\n").encode()
+
+    def project(self, events, now="2026-09-09T00:00:00.000Z", prefix=(),
+                raw_stage_authority=False, replace_first_artifact=False):
         workspace = EventWorkspace()
         self.addCleanup(workspace.close)
         previous = "0" * 64
         with open_challenger_replacement_event_root(workspace.identity()) as root:
-            candidates = tuple(prefix) + tuple(events)
-            for sequence, candidate in enumerate(candidates, 1):
+            sequence = 0
+            def publish(payload):
+                nonlocal sequence, previous
+                sequence += 1
                 event = build_challenger_replacement_event(
-                    sequence=sequence, event_type=candidate["event_type"],
-                    slot_id=(candidate["block_id"] if "block_id" in candidate
-                             else candidate["slot_id"]),
+                    sequence=sequence, event_type=payload["event_type"],
+                    slot_id=(payload["block_id"] if "block_id" in payload
+                             else payload["slot_id"]),
                     worker_id="canary-controller-fixture",
-                    recorded_at=(candidate["occurred_at"]
-                                 if "occurred_at" in candidate
-                                 else candidate["recorded_at"]),
+                    recorded_at=(payload["occurred_at"] if "occurred_at" in payload
+                                 else payload["recorded_at"]),
                     previous_event_hash=previous,
-                    payload_bytes=canonical_json(candidate.get("payload", candidate)).encode(),
+                    payload_bytes=canonical_json(payload.get("payload", payload)).encode(),
                     plan_hash=self.plan["plan_hash"],
                     build_identity_hash=business_hash(V076_BUILD),
                     event_root=root,
                 )
-                publish_challenger_replacement_event(root, event)
+                publication = publish_challenger_replacement_event(root, event)
                 previous = event.event_hash
+                return publication
+            candidates = tuple(prefix) + tuple(events)
+            activation_ids = set()
+            first_artifact_path = None
+            for original in candidates:
+                candidate = dict(original)
+                if (candidate["event_type"] == "CANARY_STAGE_BLOCK_STARTED"
+                        and not raw_stage_authority):
+                    if candidate["activation_id"] in activation_ids:
+                        candidate["activation_id"] = "binance_private_activation_" + hashlib.sha256(
+                            (candidate["block_id"] + candidate["occurred_at"]).encode(),
+                        ).hexdigest()
+                    activation_ids.add(candidate["activation_id"])
+                    activation = self.activation_bytes(candidate)
+                    artifact = {
+                        "event_type": "CANARY_AUTHORITY_ARTIFACT_PUBLISHED",
+                        "block_id": candidate["block_id"],
+                        "occurred_at": candidate["occurred_at"],
+                        "artifact_kind": "ACTIVATION",
+                        "artifact_id": candidate["activation_id"],
+                        "artifact_bytes_base64": base64.b64encode(activation).decode(),
+                        "artifact_sha256": hashlib.sha256(activation).hexdigest(),
+                    }
+                    activation_publication = publish(artifact)
+                    first_artifact_path = first_artifact_path or Path(
+                        activation_publication.absolute_path,
+                    )
+                    candidate["activation_publication"] = self.publication_record(
+                        activation_publication,
+                    )
+                    unlock = candidate["incident_unlock_id_or_null"]
+                    kind = ("INCIDENT_UNLOCK" if isinstance(unlock, str)
+                            and unlock.startswith("incident_unlock_")
+                            and len(unlock.removeprefix("incident_unlock_")) == 64
+                            else "PROMOTION" if candidate["stage"] != "E0" else None)
+                    candidate["promotion_approval_id_or_null"] = None
+                    candidate["approval_publication_or_null"] = None
+                    if kind is not None:
+                        approval = self.approval_bytes(
+                            kind, stage=candidate["stage"], block_id=candidate["block_id"],
+                            previous_block_id=candidate["previous_block_id_or_null"],
+                            approved_at="2026-08-31T00:00:00.000Z",
+                            expires_at="2027-01-01T00:00:00.000Z",
+                        )
+                        approval_id = json.loads(approval)["approval_id"]
+                        if kind == "PROMOTION":
+                            candidate["promotion_approval_id_or_null"] = approval_id
+                        else:
+                            candidate["incident_unlock_id_or_null"] = approval_id
+                        approval_artifact = {
+                            "event_type": "CANARY_AUTHORITY_ARTIFACT_PUBLISHED",
+                            "block_id": candidate["block_id"],
+                            "occurred_at": candidate["occurred_at"],
+                            "artifact_kind": kind, "artifact_id": approval_id,
+                            "artifact_bytes_base64": base64.b64encode(approval).decode(),
+                            "artifact_sha256": hashlib.sha256(approval).hexdigest(),
+                        }
+                        candidate["approval_publication_or_null"] = self.publication_record(
+                            publish(approval_artifact),
+                        )
+                publish(candidate)
+            if replace_first_artifact:
+                replacement = first_artifact_path.with_name("same-bytes-new-inode.tmp")
+                replacement.write_bytes(first_artifact_path.read_bytes())
+                replacement.chmod(0o600)
+                os.replace(replacement, first_artifact_path)
             data = project_challenger_replacement_canary(
                 event_root=root, plan=self.plan, build_identity=V076_BUILD,
                 now=now,
@@ -212,6 +305,22 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
         },)
         _, loaded = self.project(self.ceremony_events(), prefix=prefix)
         self.assertTrue(loaded["ceremony"]["qualified"])
+
+    def test_stage_start_without_exact_activation_publication_is_rejected(self):
+        with self.assertRaisesRegex(
+            ChallengerReplacementCanaryControllerError,
+            "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
+        ):
+            self.project(self.ceremony_events() + (self.start(),),
+                         raw_stage_authority=True)
+
+    def test_stage_start_rejects_same_activation_bytes_at_different_inode(self):
+        with self.assertRaisesRegex(
+            ChallengerReplacementCanaryControllerError,
+            "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
+        ):
+            self.project(self.ceremony_events() + (self.start(),),
+                         replace_first_artifact=True)
 
     def test_daily_loss_stops_new_risk_until_utc_rollover(self):
         events = self.ceremony_events() + (
@@ -366,7 +475,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                 ) | {"block_id": "e0-block-2"},)
                 with self.assertRaisesRegex(
                     ChallengerReplacementCanaryControllerError,
-                    "CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID",
+                    "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
                 ):
                     self.project(invalid)
 

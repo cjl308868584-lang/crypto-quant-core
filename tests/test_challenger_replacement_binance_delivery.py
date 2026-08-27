@@ -3,18 +3,6 @@ from pathlib import Path
 import unittest
 
 from crypto_quant.canonical import business_hash, canonical_json
-from crypto_quant.challenger_replacement_accelerated_canary_plan import (
-    build_challenger_replacement_accelerated_canary_plan,
-)
-from crypto_quant.challenger_replacement_canary_controller import (
-    project_challenger_replacement_canary,
-)
-from crypto_quant.challenger_replacement_events import (
-    build_challenger_replacement_event,
-    open_challenger_replacement_event_root,
-    publish_challenger_replacement_event,
-)
-from crypto_quant.challenger_replacement_install_trust import business_hash as build_hash
 from crypto_quant.operations_alerts import derive_operations_alerts
 from crypto_quant.operations_projection_v3 import (
     OperationsProjectionV3Error,
@@ -22,7 +10,7 @@ from crypto_quant.operations_projection_v3 import (
     load_operations_projection_v3_bytes,
 )
 from tests.test_challenger_replacement_public_market_capture import V076_BUILD
-from tests.test_challenger_replacement_events import EventWorkspace
+from tests import test_challenger_replacement_canary_controller as canary_fixtures
 from tests.test_operations_projection_v3 import observation
 
 
@@ -70,29 +58,14 @@ def canary_body(*, equity="100", hard_stop=None):
             "hard_stop_or_null": hard_stop,
         },
     )
-    workspace = EventWorkspace()
-    plan = build_challenger_replacement_accelerated_canary_plan()
+    fixture = canary_fixtures.ChallengerReplacementCanaryControllerTests()
+    fixture.setUp()
     try:
-        previous = "0" * 64
-        with open_challenger_replacement_event_root(workspace.identity()) as root:
-            for sequence, candidate in enumerate(events, 1):
-                event = build_challenger_replacement_event(
-                    sequence=sequence, event_type=candidate["event_type"],
-                    slot_id=candidate["block_id"], worker_id="delivery-fixture",
-                    recorded_at=candidate["occurred_at"],
-                    previous_event_hash=previous,
-                    payload_bytes=canonical_json(candidate).encode(),
-                    plan_hash=plan["plan_hash"],
-                    build_identity_hash=build_hash(V076_BUILD), event_root=root,
-                )
-                publish_challenger_replacement_event(root, event)
-                previous = event.event_hash
-            return project_challenger_replacement_canary(
-                event_root=root, plan=plan, build_identity=V076_BUILD,
-                now="2026-09-02T08:00:00.000Z",
-            )
+        return fixture.project(
+            events, now="2026-09-02T08:00:00.000Z",
+        )[0]
     finally:
-        workspace.close()
+        fixture.doCleanups()
 
 
 def operations_body(*, equity="100", hard_stop=None):

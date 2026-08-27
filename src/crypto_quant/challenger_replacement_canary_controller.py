@@ -11,8 +11,10 @@ from jsonschema import Draft202012Validator
 from .canonical import canonical_decimal, canonical_json, utc_datetime
 from .challenger_replacement_accelerated_canary_plan import build_challenger_replacement_accelerated_canary_plan
 from .challenger_replacement_plan import ChallengerReplacementPlanError, _strict_json_bytes
-from .challenger_replacement_events import ChallengerReplacementEventRoot, replay_challenger_replacement_events
+from .challenger_replacement_events import (ChallengerReplacementEventRoot, replay_challenger_replacement_events,
+    verify_challenger_replacement_event_publication)
 from .challenger_replacement_install_trust import business_hash
+from .challenger_replacement_binance_private_contract import load_binance_private_activation_bytes
 _SCHEMA = "challenger-replacement-canary-projection-v1.schema.json"
 _APPROVAL_SCHEMA = "challenger-replacement-canary-authority-approval-v1.schema.json"
 _CEREMONY = (
@@ -24,7 +26,8 @@ _CEREMONY = (
     "CEREMONY_QUALIFIED",
 )
 _LABEL = "OPERATIONAL_CEREMONY_NOT_STRATEGY_EVIDENCE"
-_CANARY_TYPES = frozenset({"CEREMONY_STATE_RECONCILED", "CANARY_STAGE_BLOCK_STARTED", "CANARY_EQUITY_RECONCILED", "CANARY_STRATEGY_CYCLE_RECONCILED"})
+_CANARY_TYPES = frozenset({"CANARY_AUTHORITY_ARTIFACT_PUBLISHED", "CEREMONY_STATE_RECONCILED", "CANARY_STAGE_BLOCK_STARTED", "CANARY_EQUITY_RECONCILED", "CANARY_STRATEGY_CYCLE_RECONCILED"})
+_ARTIFACT_KEYS = frozenset({"event_type", "block_id", "occurred_at", "artifact_kind", "artifact_id", "artifact_bytes_base64", "artifact_sha256"})
 _HARD_STOPS = frozenset({
     "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN",
     "VENUE_LOCAL_POSITION_MISMATCH",
@@ -72,81 +75,46 @@ def _prefixed_hash(value, prefix):
         and len(suffix) == 64 and not set(suffix) - set("0123456789abcdef")
     )
 def _event(value, previous_time):
-    if not isinstance(value, Mapping):
-        _fail()
+    if not isinstance(value, Mapping): _fail()
     event_type = value.get("event_type")
     keys = {
-        "CEREMONY_STATE_RECONCILED": {
-            "event_type", "block_id", "label", "state", "occurred_at",
-            "reconciliation_id", "minimum_amount_satisfied_or_null",
-            "flat_or_null",
-        },
-        "CANARY_STAGE_BLOCK_STARTED": {
-            "event_type", "stage", "block_id", "activation_id",
-            "previous_block_id_or_null", "incident_unlock_id_or_null",
-            "occurred_at", "starting_equity",
-        },
-        "CANARY_EQUITY_RECONCILED": {
-            "event_type", "block_id", "occurred_at", "equity", "flat",
-            "new_risk_attempted", "hard_stop_or_null",
-        },
-        "CANARY_STRATEGY_CYCLE_RECONCILED": {
-            "event_type", "block_id", "occurred_at", "cycle_id", "product",
-            "complete", "evidence_label",
-        },
+        "CEREMONY_STATE_RECONCILED": {"event_type", "block_id", "label", "state", "occurred_at", "reconciliation_id", "minimum_amount_satisfied_or_null", "flat_or_null"},
+        "CANARY_STAGE_BLOCK_STARTED": {"event_type", "stage", "block_id", "activation_id", "previous_block_id_or_null", "incident_unlock_id_or_null", "occurred_at", "starting_equity"},
+        "CANARY_EQUITY_RECONCILED": {"event_type", "block_id", "occurred_at", "equity", "flat", "new_risk_attempted", "hard_stop_or_null"},
+        "CANARY_STRATEGY_CYCLE_RECONCILED": {"event_type", "block_id", "occurred_at", "cycle_id", "product", "complete", "evidence_label"},
     }
-    if event_type not in keys or frozenset(value) != keys[event_type]:
-        _fail()
+    if event_type not in keys or frozenset(value) != keys[event_type]: _fail()
     occurred = _time(value["occurred_at"])
-    if previous_time is not None and occurred <= previous_time:
-        _fail()
+    if previous_time is not None and occurred <= previous_time: _fail()
     return dict(value), occurred
 def _new_block(event, plan, previous):
     stage = event["stage"]
-    if stage not in {"E0", "E1", "E2"}:
-        _fail()
+    if stage not in {"E0", "E1", "E2"}: _fail()
     policy = plan["canary_ladder"][stage]
     if (not _identity(event["block_id"])
-            or not _prefixed_hash(
-                event["activation_id"], "binance_private_activation_"
-            )
-            or _decimal(event["starting_equity"])
-            != Decimal(policy["capital_limit_usdt"])):
-        _fail()
+            or not _prefixed_hash(event["activation_id"], "binance_private_activation_")
+            or _decimal(event["starting_equity"]) != Decimal(policy["capital_limit_usdt"])): _fail()
     if previous is None:
         if (stage != "E0" or event["previous_block_id_or_null"] is not None
-                or event["incident_unlock_id_or_null"] is not None):
-            _fail()
+                or event["incident_unlock_id_or_null"] is not None): _fail()
     else:
         order = {"E0": "E1", "E1": "E2"}
-        promoted = (
-            previous["status"] == "STAGE_ELIGIBLE_AWAITING_APPROVAL"
-            and order.get(previous["stage"]) == stage
-            and event["incident_unlock_id_or_null"] is None
-        )
-        recovered = (
-            previous["status"] == "STAGE_FAILED_LOCKED"
-            and previous["flat"] is True and previous["stage"] == stage
-            and _prefixed_hash(
-                event["incident_unlock_id_or_null"], "incident_unlock_"
-            )
-        )
+        promoted = (previous["status"] == "STAGE_ELIGIBLE_AWAITING_APPROVAL"
+                    and order.get(previous["stage"]) == stage and event["incident_unlock_id_or_null"] is None)
+        recovered = (previous["status"] == "STAGE_FAILED_LOCKED" and previous["flat"] is True
+                     and previous["stage"] == stage and _prefixed_hash(event["incident_unlock_id_or_null"], "incident_unlock_"))
         if (not (promoted or recovered)
                 or event["previous_block_id_or_null"] != previous["block_id"]
-                or event["block_id"] == previous["block_id"]):
-            _fail()
+                or event["block_id"] == previous["block_id"]): _fail()
     equity = event["starting_equity"]
     return {
-        "stage": stage, "block_id": event["block_id"],
-        "activation_id": event["activation_id"],
+        "stage": stage, "block_id": event["block_id"], "activation_id": event["activation_id"],
         "previous_block_id_or_null": event["previous_block_id_or_null"],
         "incident_unlock_id_or_null": event["incident_unlock_id_or_null"],
-        "started_at": event["occurred_at"], "status": "STAGE_ACTIVE",
-        "starting_equity": equity, "current_equity": equity,
+        "started_at": event["occurred_at"], "status": "STAGE_ACTIVE", "starting_equity": equity, "current_equity": equity,
         "high_water_equity": equity, "day_start_date": event["occurred_at"][:10],
         "day_start_equity": equity, "daily_loss": "0", "drawdown": "0",
-        "new_risk_blocked": False, "hard_stop_or_null": None,
-        "failure_reason_or_null": None,
+        "new_risk_blocked": False, "hard_stop_or_null": None, "failure_reason_or_null": None,
         "flat": True, "flatten_required": False,
         "strategy_cycle_count": 0, "spot_complete_cycles": 0,
         "perpetual_complete_cycles": 0, "cycle_ids": [],
@@ -160,60 +128,35 @@ def _apply_equity(block, event, policy):
         _fail()
     equity = _decimal(event["equity"])
     if block["status"] == "STAGE_FAILED_LOCKED":
-        if event["new_risk_attempted"] or event["hard_stop_or_null"] is not None:
-            _fail()
+        if event["new_risk_attempted"] or event["hard_stop_or_null"] is not None: _fail()
         high = max(Decimal(block["high_water_equity"]), equity)
-        block.update(
-            current_equity=canonical_decimal(equity),
-            high_water_equity=canonical_decimal(high),
+        block.update(current_equity=canonical_decimal(equity), high_water_equity=canonical_decimal(high),
             drawdown=canonical_decimal(max(Decimal(0), high - equity)),
-            flat=event["flat"], flatten_required=not event["flat"],
-        )
+            flat=event["flat"], flatten_required=not event["flat"])
         return
     if event["occurred_at"][:10] != block["day_start_date"]:
-        block.update(
-            day_start_date=event["occurred_at"][:10],
-            day_start_equity=event["equity"], daily_loss="0",
-            new_risk_blocked=False, status="STAGE_ACTIVE",
-        )
+        block.update(day_start_date=event["occurred_at"][:10], day_start_equity=event["equity"],
+                     daily_loss="0", new_risk_blocked=False, status="STAGE_ACTIVE")
     high = max(Decimal(block["high_water_equity"]), equity)
     daily = max(Decimal(0), Decimal(block["day_start_equity"]) - equity)
     drawdown = max(Decimal(0), high - equity)
-    daily_limit = (Decimal(policy["daily_loss_limit"])
-                   if policy["daily_loss_limit_kind"] == "ABSOLUTE_USDT"
-                   else Decimal(policy["capital_limit_usdt"])
-                   * Decimal(policy["daily_loss_limit"]))
-    drawdown_limit = (Decimal(policy["drawdown_limit"])
-                      if policy["drawdown_limit_kind"] == "ABSOLUTE_USDT"
+    daily_limit = (Decimal(policy["daily_loss_limit"]) if policy["daily_loss_limit_kind"] == "ABSOLUTE_USDT"
+                   else Decimal(policy["capital_limit_usdt"]) * Decimal(policy["daily_loss_limit"]))
+    drawdown_limit = (Decimal(policy["drawdown_limit"]) if policy["drawdown_limit_kind"] == "ABSOLUTE_USDT"
                       else high * Decimal(policy["drawdown_limit"]))
     hard_stop = event["hard_stop_or_null"]
-    post_limit_attempt = (
-        event["new_risk_attempted"]
-        and (block["new_risk_blocked"] or daily >= daily_limit)
-    )
+    post_limit_attempt = event["new_risk_attempted"] and (block["new_risk_blocked"] or daily >= daily_limit)
     if hard_stop == "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT":
-        if not post_limit_attempt:
-            _fail()
-    elif post_limit_attempt:
-        if hard_stop != "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT":
-            _fail()
-    block.update(
-        current_equity=canonical_decimal(equity),
-        high_water_equity=canonical_decimal(high),
+        if not post_limit_attempt: _fail()
+    elif post_limit_attempt: _fail()
+    block.update(current_equity=canonical_decimal(equity), high_water_equity=canonical_decimal(high),
         daily_loss=canonical_decimal(daily), drawdown=canonical_decimal(drawdown),
-        flat=event["flat"],
-    )
+        flat=event["flat"])
     if hard_stop is not None or drawdown >= drawdown_limit:
-        block.update(
-            status="STAGE_FAILED_LOCKED", new_risk_blocked=True,
-            hard_stop_or_null=hard_stop,
-            failure_reason_or_null=(
-                hard_stop or "STAGE_DRAWDOWN_LIMIT_REACHED"
-            ),
-            flatten_required=not event["flat"],
-        )
-    elif daily >= daily_limit:
-        block.update(status="STAGE_DAILY_STOPPED", new_risk_blocked=True)
+        block.update(status="STAGE_FAILED_LOCKED", new_risk_blocked=True, hard_stop_or_null=hard_stop,
+                     failure_reason_or_null=hard_stop or "STAGE_DRAWDOWN_LIMIT_REACHED",
+                     flatten_required=not event["flat"])
+    elif daily >= daily_limit: block.update(status="STAGE_DAILY_STOPPED", new_risk_blocked=True)
 def _apply_cycle(block, event):
     if (event["block_id"] != block["block_id"]
             or block["status"] == "STAGE_FAILED_LOCKED"
@@ -266,6 +209,54 @@ def load_challenger_replacement_canary_approval_bytes(data, *, plan, build_ident
     except (ChallengerReplacementCanaryControllerError, ChallengerReplacementPlanError,
             KeyError, TypeError, UnicodeDecodeError, ValueError) as error:
         _fail(reason, error)
+def _artifact_payload(event, *, expected_id=None, expected_kind=None):
+    outer = json.loads(event.final_bytes.decode("utf-8"))
+    payload = _strict_json_bytes(base64.b64decode(outer["payload_bytes_base64"], validate=True))
+    data = base64.b64decode(payload["artifact_bytes_base64"], validate=True)
+    if (outer["event_type"] != "CANARY_AUTHORITY_ARTIFACT_PUBLISHED"
+            or frozenset(payload) != _ARTIFACT_KEYS
+            or payload["event_type"] != outer["event_type"]
+            or payload["block_id"] != outer["slot_id"]
+            or payload["occurred_at"] != outer["recorded_at"]
+            or payload["artifact_kind"] not in {"ACTIVATION", "PROMOTION", "RECONCILIATION", "INCIDENT_UNLOCK"}
+            or not _identity(payload["artifact_id"])
+            or not 1 <= len(data) <= 4_194_304
+            or hashlib.sha256(data).hexdigest() != payload["artifact_sha256"]
+            or (expected_id is not None and payload["artifact_id"] != expected_id)
+            or (expected_kind is not None and payload["artifact_kind"] != expected_kind)):
+        raise ValueError
+    return payload, data
+def _referenced_artifact(root, record, *, before_sequence, artifact_id, kind):
+    if (not isinstance(record, Mapping) or record.get("sequence", before_sequence)
+            >= before_sequence): raise ValueError
+    event = verify_challenger_replacement_event_publication(root, record)
+    return _artifact_payload(event, expected_id=artifact_id, expected_kind=kind)[1]
+def _authorize_stage(root, outer, payload, plan, build_identity):
+    activation_data = _referenced_artifact(root, payload["activation_publication"],
+        before_sequence=outer["sequence"], artifact_id=payload["activation_id"], kind="ACTIVATION")
+    activation = load_binance_private_activation_bytes(activation_data, build_identity=build_identity, now=payload["occurred_at"])
+    if (activation.activation_id != payload["activation_id"]
+            or activation.block_id != payload["block_id"] or activation.stage != payload["stage"]
+            or activation.capital_usdt != payload["starting_equity"]
+            or activation.production_activation is not True): raise ValueError
+    previous, unlock = payload["previous_block_id_or_null"], payload["incident_unlock_id_or_null"]
+    promotion = payload["promotion_approval_id_or_null"]
+    record = payload["approval_publication_or_null"]
+    if previous is None:
+        if payload["stage"] != "E0" or unlock is not None or promotion is not None or record is not None: raise ValueError
+    else:
+        kind, approval_id = (("INCIDENT_UNLOCK", unlock) if unlock is not None else ("PROMOTION", promotion))
+        if (not _identity(approval_id) or not isinstance(record, Mapping)): raise ValueError
+        approval_data = _referenced_artifact(root, record, before_sequence=outer["sequence"], artifact_id=approval_id, kind=kind)
+        approval = load_challenger_replacement_canary_approval_bytes(approval_data,
+            plan=plan, build_identity=build_identity, now=payload["occurred_at"])
+        if (approval["approval_kind"] != kind or approval["approval_id"] != approval_id
+                or approval["stage"] != payload["stage"] or approval["block_id"] != payload["block_id"]
+                or approval["previous_block_id"] != previous
+                or (kind == "PROMOTION") is (unlock is not None)): raise ValueError
+    normalized = dict(payload)
+    for key in ("activation_publication", "promotion_approval_id_or_null", "approval_publication_or_null"): normalized.pop(key)
+    return normalized
 def _project_challenger_replacement_canary(*, events, plan, now):
     """Pure reducer used only after canonical event replay."""
     if (not isinstance(events, tuple) or not isinstance(plan, Mapping)
@@ -348,16 +339,25 @@ def project_challenger_replacement_canary(*, event_root, plan, build_identity, n
         replay = replay_challenger_replacement_events(event_root)
         expected_build = business_hash(build_identity)
         events = []
+        artifact_ids = set()
         for event in replay.events:
             outer = json.loads(event.final_bytes.decode("utf-8"))
             if (outer["plan_hash"] != plan["plan_hash"]
                     or outer["build_identity_hash"] != expected_build): raise ValueError
             if outer["event_type"] not in _CANARY_TYPES: continue
             payload = _strict_json_bytes(base64.b64decode(outer["payload_bytes_base64"], validate=True))
+            if outer["event_type"] == "CANARY_AUTHORITY_ARTIFACT_PUBLISHED":
+                artifact, _data = _artifact_payload(event)
+                if artifact["artifact_id"] in artifact_ids: raise ValueError
+                artifact_ids.add(artifact["artifact_id"])
+                continue
             if (payload.get("event_type") != outer["event_type"]
                     or payload.get("occurred_at") != outer["recorded_at"]
                     or payload.get("block_id") != outer["slot_id"]):
                 raise ValueError
+            if outer["event_type"] == "CANARY_STAGE_BLOCK_STARTED":
+                payload = _authorize_stage(event_root, outer, payload, plan,
+                                           build_identity)
             events.append(payload)
         event_root.validate()
         return _project_challenger_replacement_canary(events=tuple(events), plan=plan, now=now)
