@@ -2,6 +2,7 @@ import json
 import hashlib
 import base64
 import os
+from contextlib import nullcontext
 from pathlib import Path
 import unittest
 
@@ -20,6 +21,7 @@ from crypto_quant.challenger_replacement_events import (
     build_challenger_replacement_event,
     open_challenger_replacement_event_root,
     publish_challenger_replacement_event,
+    replay_challenger_replacement_events,
 )
 from crypto_quant.challenger_replacement_install_trust import business_hash
 from crypto_quant.challenger_replacement_binance_reconciliation import load_binance_reconciliation_capture
@@ -182,12 +184,14 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
     def project(self, events, now="2026-09-09T00:00:00.000Z", prefix=(),
                 raw_stage_authority=False, replace_first_artifact=False,
                 reconciliation_equity_override=None, outer_plan=None,
-                replacement_plan=None, canary_plan=None):
-        workspace = EventWorkspace()
-        self.addCleanup(workspace.close)
-        previous = "0" * 64
-        with open_challenger_replacement_event_root(workspace.identity()) as root:
-            sequence = 0
+                replacement_plan=None, canary_plan=None, event_root=None):
+        workspace = None if event_root is not None else EventWorkspace()
+        if workspace is not None: self.addCleanup(workspace.close)
+        context = (nullcontext(event_root) if event_root is not None
+                   else open_challenger_replacement_event_root(workspace.identity()))
+        with context as root:
+            replay = replay_challenger_replacement_events(root)
+            sequence, previous = replay.next_sequence - 1, replay.last_event_hash
             def publish(payload):
                 nonlocal sequence, previous
                 sequence += 1

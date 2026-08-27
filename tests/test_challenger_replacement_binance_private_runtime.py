@@ -1939,6 +1939,42 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         self.assertEqual(private["stage"], "BINANCE_ORDER_UNKNOWN")
         self.assertFalse(private["terminal"])
         self.assertTrue(private["unresolved_unknown"])
+        from tests import test_challenger_replacement_canary_controller as canary
+        unknown = next(event for event in replay["events"] if json.loads(
+            event.final_bytes)["event_type"] == "BINANCE_ORDER_UNKNOWN")
+        event_stat = os.stat(self.workspace.root.path /
+                             ("%020d.event.json" % unknown.sequence))
+        publication = {"sequence": unknown.sequence,
+            "event_hash": unknown.event_hash, "device": event_stat.st_dev,
+            "inode": event_stat.st_ino, "size": event_stat.st_size}
+        fixture = canary.ChallengerReplacementCanaryControllerTests()
+        fixture.setUp(); self.addCleanup(fixture.doCleanups)
+        start = fixture.start() | {"block_id": self.block_id}
+        mark = fixture.stage_event(fixture.mark(
+            "2026-09-02T04:00:00.000Z", "99", flat=False,
+            hard_stop="UNRESOLVED_ECONOMIC_ORDER_UNKNOWN",
+        ), stage="E0", block_id=self.block_id)
+        mark["private_event_publication_or_null"] = publication
+        _data, projected = fixture.project(
+            fixture.ceremony_events() + (start, mark),
+            now="2026-09-02T08:00:00.000Z", event_root=self.workspace.root,
+        )
+        self.assertEqual(projected["stage_block_or_null"]["hard_stop_or_null"],
+                         "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN")
+        event_path = self.workspace.root.path / ("%020d.event.json" % unknown.sequence)
+        replacement = event_path.with_name("same-private-bytes-new-inode.tmp")
+        replacement.write_bytes(event_path.read_bytes()); replacement.chmod(0o600)
+        os.replace(replacement, event_path)
+        with self.assertRaisesRegex(
+            canary.ChallengerReplacementCanaryControllerError,
+            "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
+        ):
+            canary.project_challenger_replacement_canary(
+                event_root=self.workspace.root,
+                replacement_plan=self.workspace.plan, canary_plan=fixture.plan,
+                build_identity=self.workspace.build,
+                now="2026-09-02T08:00:00.000Z",
+            )
 
     def test_unknown_fresh_process_queries_exact_client_id_and_never_resends(self):
         absent = canonical_json({
