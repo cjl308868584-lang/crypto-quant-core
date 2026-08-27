@@ -853,36 +853,27 @@ def _observe_order(*, state, attempt, order_result, context):
     if isinstance(order_id, bool) or not isinstance(order_id, int) or order_id <= 0:
         _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID")
     spot = attempt["product"] == "SPOT"
-    trades_result = _query(
-        "SPOT_TRADES" if spot else "FUTURES_TRADES",
-        {"symbol": "ETHUSDT", "orderId": str(order_id)},
-        context,
-    )
-    account_result = _query(
-        "SPOT_ACCOUNT" if spot else "FUTURES_POSITION",
-        {} if spot else {"symbol": "ETHUSDT"},
-        context,
-    )
-    events = apply_binance_order_observation(
-        attempt=attempt, order=order_result.body,
-        trades=_tuple_documents(trades_result.body), account=account_result.body,
-    )
+    trades_result = _query("SPOT_TRADES" if spot else "FUTURES_TRADES", {"symbol": "ETHUSDT", "orderId": str(order_id)}, context)
+    account_result = _query("SPOT_ACCOUNT" if spot else "FUTURES_POSITION", {} if spot else {"symbol": "ETHUSDT"}, context)
     private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
-    replaying_terminal = private["stage"] in _TERMINAL_ORDERS | {
-        "BINANCE_FILLS_FEES_REPLAYED",
-    }
+    if private["stage"] == "BINANCE_ORDER_UNKNOWN":
+        _append_intent(state, attempt, "BINANCE_UNKNOWN_QUERY_OBSERVED", context.recorded_at,
+            venue_client_order_id=attempt["venue_client_order_id"],
+            order_response_sha256=order_result.response_sha256,
+            trades_response_sha256=trades_result.response_sha256,
+            account_response_sha256=account_result.response_sha256)
+        private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
+    events = apply_binance_order_observation(attempt=attempt, order=order_result.body, trades=_tuple_documents(trades_result.body), account=account_result.body)
+    replaying_terminal = private["stage"] in _TERMINAL_ORDERS | {"BINANCE_FILLS_FEES_REPLAYED"}
     for event in events:
         if (replaying_terminal
                 or event["event_type"] == "BINANCE_ORDER_ACKNOWLEDGED"
-                and private["stage"] != "BINANCE_REQUEST_SEND_STARTED"):
+                and private["stage"] not in {"BINANCE_REQUEST_SEND_STARTED", "BINANCE_UNKNOWN_QUERY_OBSERVED"}):
             continue
         if (event["event_type"] == "BINANCE_FILL_OBSERVED"
                 and event["payload"]["trade_id"] in private["fill_ids"]):
             continue
-        _append(
-            state, event["event_type"], attempt["opportunity_id"],
-            event["payload"], context.recorded_at,
-        )
+        _append(state, event["event_type"], attempt["opportunity_id"], event["payload"], context.recorded_at)
     terminal = events[-1]["event_type"] if events else None
     if terminal in _TERMINAL_ORDERS:
         if spot:
@@ -984,8 +975,6 @@ def run_challenger_replacement_binance_private_intent(
             return _resume_reconciliation(
                 state, attempt, existing, recorded_at,
             )
-        if existing["stage"] == "BINANCE_ORDER_UNKNOWN":
-            return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
     else:
         _append_intent(state, attempt, "BINANCE_INTENT_AUTHORIZED", recorded_at,
             opportunity_id=attempt["opportunity_id"], block_id=attempt["block_id"],
@@ -1000,6 +989,11 @@ def run_challenger_replacement_binance_private_intent(
     )
     timestamp_ms = context.timestamp_ms
     if existing is not None:
+        if existing["stage"] == "BINANCE_ORDER_UNKNOWN":
+            observed = _execute(_request(attempt["required_first_endpoint"], attempt, context.timestamp_ms), context)
+            if observed.response_class != "QUERY_SUCCEEDED":
+                return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
+            return _observe_order(state=state, attempt=attempt, order_result=observed, context=context)
         if (existing["stage"] in _TERMINAL_ORDERS | {
                 "BINANCE_FILLS_FEES_REPLAYED",
             }

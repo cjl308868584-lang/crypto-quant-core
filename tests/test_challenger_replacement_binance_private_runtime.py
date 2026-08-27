@@ -1335,8 +1335,122 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "venue_client_order_id": private["venue_client_order_id"],
         })
         self.assertEqual(private["stage"], "BINANCE_ORDER_UNKNOWN")
-        self.assertTrue(private["terminal"])
+        self.assertFalse(private["terminal"])
         self.assertTrue(private["unresolved_unknown"])
+
+    def test_unknown_fresh_process_queries_exact_client_id_and_never_resends(self):
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode("utf-8")
+        unknown = canonical_json({
+            "code": -1007, "msg": "Timeout waiting for response.",
+        }).encode("utf-8")
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=(
+                self._result("RESPONSE_INVALID", absent),
+                self._result("UNKNOWN", unknown),
+            ),
+        ) as first_transport:
+            run_challenger_replacement_binance_private_intent(
+                state=self.state, event_root=self.workspace.root,
+                intent=self.intent, preflight_capability=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        filled = canonical_json({
+            "symbol": "ETHUSDT", "orderId": 101,
+            "clientOrderId": self.client_id, "price": "0",
+            "origQty": "0.015", "executedQty": "0.015",
+            "cummulativeQuoteQty": "30", "status": "FILLED",
+            "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
+            "transactTime": 1787832000000,
+        }).encode("utf-8")
+        trades = canonical_json([{
+            "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+            "qty": "0.015", "price": "2000", "quoteQty": "30",
+            "commission": "0.03", "commissionAsset": "USDT",
+            "time": 1787832000001, "isBuyer": True,
+        }]).encode("utf-8")
+        account = self._spot_account("0.015", "69.97")
+        followup = tuple(self._result("QUERY_SUCCEEDED", body)
+                         for body in (filled, trades, account))
+        fresh = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=followup,
+        ) as second_transport:
+            result = run_challenger_replacement_binance_private_intent(
+                state=fresh, event_root=self.workspace.root,
+                intent=self.intent, preflight_capability=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        endpoints = [call.args[0].endpoint_id for call in
+                     first_transport.call_args_list + second_transport.call_args_list]
+        self.assertEqual(endpoints.count("SPOT_ORDER_CREATE"), 1)
+        self.assertEqual(endpoints[-3:], [
+            "SPOT_ORDER_QUERY", "SPOT_TRADES", "SPOT_ACCOUNT",
+        ])
+        self.assertEqual(result["status"], "TERMINAL_RECONCILED")
+        events = fresh._replay()["events"]
+        self.assertIn("BINANCE_UNKNOWN_QUERY_OBSERVED",
+                      [json.loads(event.final_bytes)["event_type"]
+                       for event in events])
+
+    def test_unknown_query_failure_remains_recoverable_without_resend(self):
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode("utf-8")
+        unknown = canonical_json({
+            "code": -1007, "msg": "Timeout waiting for response.",
+        }).encode("utf-8")
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=(
+                self._result("RESPONSE_INVALID", absent),
+                self._result("UNKNOWN", unknown),
+            ),
+        ):
+            run_challenger_replacement_binance_private_intent(
+                state=self.state, event_root=self.workspace.root,
+                intent=self.intent, preflight_capability=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        fresh = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+            return_value=self._result("UNKNOWN", unknown),
+        ) as transport:
+            result = run_challenger_replacement_binance_private_intent(
+                state=fresh, event_root=self.workspace.root,
+                intent=self.intent, preflight_capability=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        self.assertEqual(result["status"], "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN")
+        self.assertEqual([call.args[0].endpoint_id for call in
+                          transport.call_args_list], ["SPOT_ORDER_QUERY"])
+        private = fresh.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_ORDER_UNKNOWN")
+        self.assertTrue(private["unresolved_unknown"])
+        self.assertFalse(private["terminal"])
 
     def test_acknowledged_create_is_requeried_before_event_observation(self):
         absent = canonical_json({

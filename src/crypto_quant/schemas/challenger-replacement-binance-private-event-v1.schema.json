@@ -8,7 +8,7 @@
   "properties": {
     "$schema": {"const": "./challenger-replacement-binance-private-event-v1.schema.json"},
     "schema_version": {"const": "1.0.0"},
-    "event_type": {"enum": ["BINANCE_INTENT_AUTHORIZED", "BINANCE_SERVER_TIME_OBSERVED", "BINANCE_ABSENCE_CHECKED", "BINANCE_SIGNED_REQUEST_PREPARED", "BINANCE_REQUEST_SEND_STARTED", "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_ORDER_REJECTED", "BINANCE_ORDER_UNKNOWN", "BINANCE_ORDER_PARTIALLY_FILLED", "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED", "BINANCE_ORDER_EXPIRED", "BINANCE_FILL_OBSERVED", "BINANCE_FILLS_FEES_REPLAYED", "BINANCE_POSITION_BALANCE_RECONCILED", "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED", "BINANCE_RECONCILIATION_SUCCEEDED", "BINANCE_RECONCILIATION_FAILED", "BINANCE_STOP_INTENT_AUTHORIZED", "BINANCE_STOP_ABSENCE_CHECKED", "BINANCE_STOP_SIGNED_REQUEST_PREPARED", "BINANCE_STOP_REQUEST_SEND_STARTED", "BINANCE_STOP_ACKNOWLEDGED", "BINANCE_STOP_RECONCILED", "BINANCE_STOP_REPLACEMENT_STARTED", "BINANCE_STOP_REPLACEMENT_SUCCEEDED", "BINANCE_STOP_REPLACEMENT_FAILED", "BINANCE_STOP_CLEANUP_AUTHORIZED", "BINANCE_STOP_CLEANUP_REQUEST_PREPARED", "BINANCE_STOP_CLEANUP_SEND_STARTED", "BINANCE_STOP_CLEANUP_RECONCILED"]},
+    "event_type": {"enum": ["BINANCE_INTENT_AUTHORIZED", "BINANCE_SERVER_TIME_OBSERVED", "BINANCE_ABSENCE_CHECKED", "BINANCE_SIGNED_REQUEST_PREPARED", "BINANCE_REQUEST_SEND_STARTED", "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_ORDER_REJECTED", "BINANCE_ORDER_UNKNOWN", "BINANCE_UNKNOWN_QUERY_OBSERVED", "BINANCE_ORDER_PARTIALLY_FILLED", "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED", "BINANCE_ORDER_EXPIRED", "BINANCE_FILL_OBSERVED", "BINANCE_FILLS_FEES_REPLAYED", "BINANCE_POSITION_BALANCE_RECONCILED", "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED", "BINANCE_RECONCILIATION_SUCCEEDED", "BINANCE_RECONCILIATION_FAILED", "BINANCE_STOP_INTENT_AUTHORIZED", "BINANCE_STOP_ABSENCE_CHECKED", "BINANCE_STOP_SIGNED_REQUEST_PREPARED", "BINANCE_STOP_REQUEST_SEND_STARTED", "BINANCE_STOP_ACKNOWLEDGED", "BINANCE_STOP_RECONCILED", "BINANCE_STOP_REPLACEMENT_STARTED", "BINANCE_STOP_REPLACEMENT_SUCCEEDED", "BINANCE_STOP_REPLACEMENT_FAILED", "BINANCE_STOP_CLEANUP_AUTHORIZED", "BINANCE_STOP_CLEANUP_REQUEST_PREPARED", "BINANCE_STOP_CLEANUP_SEND_STARTED", "BINANCE_STOP_CLEANUP_RECONCILED"]},
     "opportunity_id": {"$ref": "#/$defs/opportunityId"},
     "payload": {"type": "object"}
   },
@@ -19,6 +19,7 @@
     {"if": {"properties": {"event_type": {"const": "BINANCE_FILL_OBSERVED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/fill"}}}},
     {"if": {"properties": {"event_type": {"enum": ["BINANCE_ORDER_PARTIALLY_FILLED", "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED", "BINANCE_ORDER_EXPIRED"]}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/orderState"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_ORDER_UNKNOWN"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/venueFailure"}}}},
+    {"if": {"properties": {"event_type": {"const": "BINANCE_UNKNOWN_QUERY_OBSERVED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/unknownQueryObserved"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_ORDER_REJECTED"}}}, "then": {"properties": {"payload": {"oneOf": [{"$ref": "#/$defs/venueFailure"}, {"$ref": "#/$defs/orderState"}]}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_ABSENCE_CHECKED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/absenceChecked"}}}},
     {"if": {"properties": {"event_type": {"const": "BINANCE_SIGNED_REQUEST_PREPARED"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/requestPrepared"}}}},
@@ -90,6 +91,11 @@
     "venueFailure": {
       "type": "object", "additionalProperties": false, "required": ["intent_id", "venue_code", "blocks_new_risk"],
       "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "venue_code": {"type": "integer"}, "blocks_new_risk": {"type": "boolean"}}
+    },
+    "unknownQueryObserved": {
+      "type": "object", "additionalProperties": false,
+      "required": ["intent_id", "venue_client_order_id", "order_response_sha256", "trades_response_sha256", "account_response_sha256"],
+      "properties": {"intent_id": {"$ref": "#/$defs/intentId"}, "venue_client_order_id": {"$ref": "#/$defs/clientOrderId"}, "order_response_sha256": {"$ref": "#/$defs/sha256"}, "trades_response_sha256": {"$ref": "#/$defs/sha256"}, "account_response_sha256": {"$ref": "#/$defs/sha256"}}
     },
     "absenceChecked": {
       "type": "object", "additionalProperties": false, "required": ["intent_id", "venue_client_order_id", "query_response_sha256", "proven_absent"],

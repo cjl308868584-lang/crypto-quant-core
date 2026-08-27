@@ -201,18 +201,18 @@ def prepare_binance_order_attempt(*, intent, projection, preflight,
             raise ValueError
     except (KeyError, TypeError, ValueError) as error:
         _fail("BINANCE_ORDER_INTENT_INVALID", error)
-    if unresolved:
+    client_id = derive_binance_client_order_id(
+        plan_hash=projection["plan_hash"], block_id=intent["block_id"],
+        intent_id=intent["intent_id"],
+        attempt_ordinal=intent["attempt_ordinal"], product=intent["product"],
+    )
+    if unresolved and unresolved != [client_id]:
         _fail("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN")
     if ((intent["action"] in {"OPEN_LONG", "OPEN_SHORT"}
          and active not in (None, intent["product"]))
             or (intent["action"] in {"CLOSE_LONG", "CLOSE_SHORT"}
                 and active != intent["product"])):
         _fail("BINANCE_PRODUCT_MUTUAL_EXCLUSION_BLOCKED")
-    client_id = derive_binance_client_order_id(
-        plan_hash=projection["plan_hash"], block_id=intent["block_id"],
-        intent_id=intent["intent_id"],
-        attempt_ordinal=intent["attempt_ordinal"], product=intent["product"],
-    )
     if intent["attempt_ordinal"] > 1 and client_id not in absent:
         _fail("BINANCE_ORDER_ABSENCE_NOT_PROVEN")
     return {

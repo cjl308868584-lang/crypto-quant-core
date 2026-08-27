@@ -307,7 +307,9 @@ _PRIVATE_TRANSITIONS = {
     "BINANCE_ABSENCE_CHECKED": {"BINANCE_INTENT_AUTHORIZED"},
     "BINANCE_SIGNED_REQUEST_PREPARED": {"BINANCE_ABSENCE_CHECKED"},
     "BINANCE_REQUEST_SEND_STARTED": {"BINANCE_SIGNED_REQUEST_PREPARED"},
-    "BINANCE_ORDER_ACKNOWLEDGED": {"BINANCE_REQUEST_SEND_STARTED"},
+    "BINANCE_ORDER_ACKNOWLEDGED": {
+        "BINANCE_REQUEST_SEND_STARTED", "BINANCE_UNKNOWN_QUERY_OBSERVED",
+    },
     "BINANCE_FILL_OBSERVED": {
         "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
         "BINANCE_ORDER_PARTIALLY_FILLED",
@@ -332,6 +334,7 @@ _PRIVATE_TRANSITIONS = {
         "BINANCE_REQUEST_SEND_STARTED", "BINANCE_ORDER_ACKNOWLEDGED",
         "BINANCE_FILL_OBSERVED", "BINANCE_ORDER_PARTIALLY_FILLED",
     },
+    "BINANCE_UNKNOWN_QUERY_OBSERVED": {"BINANCE_ORDER_UNKNOWN"},
     "BINANCE_FILLS_FEES_REPLAYED": {
         "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED",
         "BINANCE_ORDER_EXPIRED", "BINANCE_ORDER_REJECTED",
@@ -555,6 +558,8 @@ def _private_payload_valid(event_type, payload, private):
     if event_type in {"BINANCE_ORDER_REJECTED", "BINANCE_ORDER_UNKNOWN"}:
         return ("venue_code" in payload and payload["blocks_new_risk"]
                 is (event_type == "BINANCE_ORDER_UNKNOWN"))
+    if event_type == "BINANCE_UNKNOWN_QUERY_OBSERVED":
+        return payload["venue_client_order_id"] == private["venue_client_order_id"]
     if event_type == "BINANCE_FILLS_FEES_REPLAYED":
         return payload["fill_ids"] == private["fill_ids"]
     if event_type == "BINANCE_POSITION_BALANCE_RECONCILED":
@@ -606,11 +611,12 @@ def _apply_private_transition(private, event_type, payload, event):
     private["last_private_event_sequence"] = event.sequence
     if event_type == "BINANCE_ORDER_UNKNOWN":
         private["unresolved_unknown"] = True
-        private["terminal"] = True
     elif event_type in {
         "BINANCE_RECONCILIATION_SUCCEEDED", "BINANCE_RECONCILIATION_FAILED",
     }:
         private["terminal"] = True
+        if event_type == "BINANCE_RECONCILIATION_SUCCEEDED":
+            private["unresolved_unknown"] = False
 def require_binance_private_endpoint(endpoint_id):
     """Return one frozen endpoint tuple or fail before request construction."""
     try:

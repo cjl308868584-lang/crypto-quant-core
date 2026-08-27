@@ -493,7 +493,7 @@ class BinancePrivateEventContractTests(unittest.TestCase):
         after = self.state.replay()
         self.assertEqual(after["last_event_hash"], before["last_event_hash"])
 
-    def test_unknown_is_terminal_and_blocks_any_following_transition(self):
+    def test_unknown_requires_bound_query_before_normal_transition(self):
         self._pre_send()
         intent = self._intent_payload()
         self._append_private("BINANCE_ORDER_UNKNOWN", {
@@ -503,13 +503,30 @@ class BinancePrivateEventContractTests(unittest.TestCase):
         private = self.state.replay()["opportunities"][
             self.workspace.opportunity_id
         ]["private"]
-        self.assertTrue(private["terminal"])
+        self.assertFalse(private["terminal"])
         self.assertTrue(private["unresolved_unknown"])
         with self.assertRaises(ChallengerReplacementOpportunityError):
             self._append_private("BINANCE_ORDER_ACKNOWLEDGED", {
                 "intent_id": intent["intent_id"], "order_id": 101,
                 "venue_client_order_id": intent["venue_client_order_id"],
             })
+        self._append_private("BINANCE_UNKNOWN_QUERY_OBSERVED", {
+            "intent_id": intent["intent_id"],
+            "venue_client_order_id": intent["venue_client_order_id"],
+            "order_response_sha256": "1" * 64,
+            "trades_response_sha256": "2" * 64,
+            "account_response_sha256": "3" * 64,
+        })
+        self._append_private("BINANCE_ORDER_ACKNOWLEDGED", {
+            "intent_id": intent["intent_id"], "order_id": 101,
+            "venue_client_order_id": intent["venue_client_order_id"],
+        })
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_ORDER_ACKNOWLEDGED")
+        self.assertTrue(private["unresolved_unknown"])
+        self.assertFalse(private["terminal"])
 
     def _perpetual_with_verified_stop(self):
         self._observe_opportunity()
