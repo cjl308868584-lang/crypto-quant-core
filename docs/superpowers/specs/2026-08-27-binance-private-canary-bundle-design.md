@@ -552,7 +552,7 @@ loaded at the referenced transition time, not the later projection-observation
 time, so expiry cannot rewrite valid historical state.
 
 The public Canary projector replays the complete mixed event root, validates
-plan/build identity on every event, indexes authority artifacts and derives
+the replacement-v3 plan/build identity on every outer event, indexes authority artifacts and derives
 state only from canonical opportunity/private events plus strictly loaded
 artifacts. The existing tuple reducer remains private and receives only the
 derived normalized facts. In particular:
@@ -574,6 +574,17 @@ Any missing, duplicate, noncanonical, forward, stale, mismatched or
 same-bytes/different-publication reference returns
 `CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID`. No partial
 projection is returned and no event or artifact is written by the projector.
+
+The two frozen plans are distinct and must never be substituted for one
+another. The public signature receives `replacement_plan` and `canary_plan`.
+Every canonical event outer header binds `replacement_plan.plan_hash`; the
+promotion/incident approval document and the stage reducer bind
+`canary_plan.plan_id/plan_hash`. `ChallengerReplacementOpportunityState`
+strictly replays the former. Its reducer recognizes the closed v0.77 Canary
+event-type set only as non-mutating companion evidence: it still verifies the
+outer event/root/plan/build contract, then ignores those payloads for
+opportunity state. Any other unknown event type remains invalid. This is not a
+compatibility mode and does not create a second event stream.
 
 ## 5. Exact Binance REST inventory
 

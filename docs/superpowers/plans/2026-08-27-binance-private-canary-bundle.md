@@ -1306,16 +1306,20 @@ git commit -m "fix: bind independent private reconciliation"
 
 **Files:**
 - Modify: `src/crypto_quant/challenger_replacement_events.py`
+- Modify: `src/crypto_quant/challenger_replacement_opportunities.py`
 - Modify: `src/crypto_quant/challenger_replacement_canary_controller.py`
 - Modify: `src/crypto_quant/challenger_replacement_binance_private_runtime.py`
 - Create: `src/crypto_quant/schemas/challenger-replacement-canary-authority-approval-v1.schema.json`
 - Modify: `tests/test_challenger_replacement_events.py`
+- Modify: `tests/test_challenger_replacement_opportunities.py`
 - Modify: `tests/test_challenger_replacement_canary_controller.py`
 - Modify: `tests/test_challenger_replacement_binance_private_runtime.py`
 
 **Interfaces:**
-- Public projection accepts the retained event root, frozen plan and build
-  identity. The same retained root is the exact artifact capability; no second
+- Public projection accepts the retained event root, exact replacement-v3 plan,
+  exact accelerated-Canary plan and build identity. Outer events bind only the
+  replacement plan; approval artifacts and stage thresholds bind only the
+  Canary plan. The same retained root is the exact artifact capability; no second
   storage root exists. The raw event-list reducer is private and is called only
   with normalized facts derived from strict replay.
 - A read-only event-publication verifier binds sequence/hash/device/inode/size.
@@ -1326,6 +1330,9 @@ git commit -m "fix: bind independent private reconciliation"
 - [ ] **Step 1: Write canonical-authority RED tests**
 
 Reject manufactured event lists and mixed roots with a wrong plan/build.
+Reject replacement/canary plan substitution in either direction. Prove the
+opportunity projection validates then ignores only the closed Canary companion
+event set and still rejects every other unknown event.
 Reject missing, duplicate, forward or same-bytes/different-inode activation,
 promotion, reconciliation and incident publications. Reject equity/flat facts
 that differ from strict reconciliation, hard stops without their exact private
@@ -1361,9 +1368,11 @@ PYTHONPATH=src:tests python3 -m unittest \
 git diff --check
 git add src/crypto_quant/challenger_replacement_canary_controller.py \
   src/crypto_quant/challenger_replacement_events.py \
+  src/crypto_quant/challenger_replacement_opportunities.py \
   src/crypto_quant/challenger_replacement_binance_private_runtime.py \
   src/crypto_quant/schemas/challenger-replacement-canary-authority-approval-v1.schema.json \
   tests/test_challenger_replacement_events.py \
+  tests/test_challenger_replacement_opportunities.py \
   tests/test_challenger_replacement_canary_controller.py \
   tests/test_challenger_replacement_binance_private_runtime.py
 git commit -m "fix: derive Canary state from canonical evidence"
