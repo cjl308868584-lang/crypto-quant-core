@@ -39,6 +39,9 @@ _EVENT_TYPES = {
     "OPPORTUNITY_OBSERVED",
     "OPPORTUNITY_MISSED",
 }
+_CANARY_COMPANION_TYPES = {"CANARY_AUTHORITY_ARTIFACT_PUBLISHED",
+    "CEREMONY_STATE_RECONCILED", "CANARY_STAGE_BLOCK_STARTED",
+    "CANARY_EQUITY_RECONCILED", "CANARY_STRATEGY_CYCLE_RECONCILED"}
 
 
 class ChallengerReplacementOpportunityError(ValueError):
@@ -287,6 +290,11 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
     header, payload = _payload(event)
     event_type = header.get("event_type")
     opportunity_id = header.get("slot_id")
+    if event_type in _CANARY_COMPANION_TYPES:
+        if (header.get("plan_hash") != PLAN_HASH
+                or header.get("build_identity_hash") != business_hash(build_identity)):
+            invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
+        return
     if event_type in PRIVATE_EVENT_TYPES:
         if (
             header.get("plan_hash") != PLAN_HASH

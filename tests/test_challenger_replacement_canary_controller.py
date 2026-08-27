@@ -22,6 +22,7 @@ from crypto_quant.challenger_replacement_events import (
 )
 from crypto_quant.challenger_replacement_install_trust import business_hash
 from crypto_quant.challenger_replacement_binance_reconciliation import load_binance_reconciliation_capture
+from crypto_quant.challenger_replacement_plan_v3 import build_challenger_replacement_plan_v3
 from tests.test_challenger_replacement_events import EventWorkspace
 from tests.test_challenger_replacement_public_market_capture import V076_BUILD
 
@@ -40,6 +41,7 @@ STATES = (
 class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
     def setUp(self):
         self.plan = build_challenger_replacement_accelerated_canary_plan()
+        self.replacement_plan = build_challenger_replacement_plan_v3()
 
     def approval_bytes(self, kind="PROMOTION", **changes):
         document = {
@@ -178,7 +180,8 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
 
     def project(self, events, now="2026-09-09T00:00:00.000Z", prefix=(),
                 raw_stage_authority=False, replace_first_artifact=False,
-                reconciliation_equity_override=None):
+                reconciliation_equity_override=None, outer_plan=None,
+                replacement_plan=None, canary_plan=None):
         workspace = EventWorkspace()
         self.addCleanup(workspace.close)
         previous = "0" * 64
@@ -196,7 +199,7 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                                  else payload["recorded_at"]),
                     previous_event_hash=previous,
                     payload_bytes=canonical_json(payload.get("payload", payload)).encode(),
-                    plan_hash=self.plan["plan_hash"],
+                    plan_hash=(outer_plan or self.replacement_plan)["plan_hash"],
                     build_identity_hash=business_hash(V076_BUILD),
                     event_root=root,
                 )
@@ -327,7 +330,8 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                 replacement.chmod(0o600)
                 os.replace(replacement, first_artifact_path)
             data = project_challenger_replacement_canary(
-                event_root=root, plan=self.plan, build_identity=V076_BUILD,
+                event_root=root, replacement_plan=(replacement_plan or self.replacement_plan),
+                canary_plan=(canary_plan or self.plan), build_identity=V076_BUILD,
                 now=now,
             )
         return data, load_challenger_replacement_canary_projection_bytes(
@@ -390,6 +394,16 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
             self.project(self.ceremony_events() + (
                 self.start(), self.mark("2026-09-02T04:00:00.000Z", "99"),
             ), reconciliation_equity_override="100")
+
+    def test_replacement_and_canary_plans_cannot_be_substituted(self):
+        cases = ({"outer_plan": self.plan}, {"replacement_plan": self.plan},
+                 {"canary_plan": self.replacement_plan})
+        for changes in cases:
+            with self.subTest(changes=changes), self.assertRaisesRegex(
+                ChallengerReplacementCanaryControllerError,
+                "CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID",
+            ):
+                self.project(self.ceremony_events(), **changes)
 
     def test_daily_loss_stops_new_risk_until_utc_rollover(self):
         events = self.ceremony_events() + (

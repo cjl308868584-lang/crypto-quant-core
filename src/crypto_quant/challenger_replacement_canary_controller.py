@@ -16,6 +16,7 @@ from .challenger_replacement_events import (ChallengerReplacementEventRoot, repl
 from .challenger_replacement_install_trust import business_hash
 from .challenger_replacement_binance_private_contract import load_binance_private_activation_bytes
 from .challenger_replacement_binance_reconciliation import load_binance_reconciliation_bytes_strict
+from .challenger_replacement_plan_v3 import build_challenger_replacement_plan_v3
 _SCHEMA = "challenger-replacement-canary-projection-v1.schema.json"
 _APPROVAL_SCHEMA = "challenger-replacement-canary-authority-approval-v1.schema.json"
 _CEREMONY = (
@@ -259,8 +260,7 @@ def _authorize_stage(root, outer, payload, plan, build_identity):
     for key in ("activation_publication", "promotion_approval_id_or_null", "approval_publication_or_null"): normalized.pop(key)
     return normalized
 def _authorize_reconciliation(root, outer, payload):
-    data = _referenced_artifact(root, payload["reconciliation_publication"],
-        before_sequence=outer["sequence"], artifact_id=payload["reconciliation_id"], kind="RECONCILIATION")
+    data = _referenced_artifact(root, payload["reconciliation_publication"], before_sequence=outer["sequence"], artifact_id=payload["reconciliation_id"], kind="RECONCILIATION")
     loaded = load_binance_reconciliation_bytes_strict(data, event_root=root)
     facts = loaded["venue_projection"]
     equity = canonical_decimal(Decimal(facts["wallet_balance"]) + Decimal(facts["unrealized_pnl"]))
@@ -329,18 +329,20 @@ def _project_challenger_replacement_canary(*, events, plan, now):
     }
     document["projection_id"] = _projection_id(document)
     return (canonical_json(document) + "\n").encode()
-def project_challenger_replacement_canary(*, event_root, plan, build_identity, now):
+def project_challenger_replacement_canary(*, event_root, replacement_plan, canary_plan, build_identity, now):
     """Project only from the retained canonical event-root capability."""
     try:
         if (not isinstance(event_root, ChallengerReplacementEventRoot)
-                or not isinstance(build_identity, Mapping)): raise ValueError
+                or not isinstance(build_identity, Mapping) or not isinstance(replacement_plan, Mapping)
+                or dict(replacement_plan) != build_challenger_replacement_plan_v3()
+                or not isinstance(canary_plan, Mapping) or dict(canary_plan) != build_challenger_replacement_accelerated_canary_plan()): raise ValueError
         replay = replay_challenger_replacement_events(event_root)
         expected_build = business_hash(build_identity)
         events = []
         artifact_ids = set()
         for event in replay.events:
             outer = json.loads(event.final_bytes.decode("utf-8"))
-            if (outer["plan_hash"] != plan["plan_hash"]
+            if (outer["plan_hash"] != replacement_plan["plan_hash"]
                     or outer["build_identity_hash"] != expected_build): raise ValueError
             if outer["event_type"] not in _CANARY_TYPES: continue
             payload = _strict_json_bytes(base64.b64decode(outer["payload_bytes_base64"], validate=True))
@@ -354,13 +356,11 @@ def project_challenger_replacement_canary(*, event_root, plan, build_identity, n
                     or payload.get("block_id") != outer["slot_id"]):
                 raise ValueError
             if outer["event_type"] == "CANARY_STAGE_BLOCK_STARTED":
-                payload = _authorize_stage(event_root, outer, payload, plan,
-                                           build_identity)
+                payload = _authorize_stage(event_root, outer, payload, canary_plan, build_identity)
             elif outer["event_type"] in {"CEREMONY_STATE_RECONCILED", "CANARY_EQUITY_RECONCILED"}:
                 payload = _authorize_reconciliation(event_root, outer, payload)
             events.append(payload)
-        event_root.validate()
-        return _project_challenger_replacement_canary(events=tuple(events), plan=plan, now=now)
+        event_root.validate(); return _project_challenger_replacement_canary(events=tuple(events), plan=canary_plan, now=now)
     except (KeyError, TypeError, ValueError) as error:
         if isinstance(error, ChallengerReplacementCanaryControllerError): raise
         _fail("CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID", error)

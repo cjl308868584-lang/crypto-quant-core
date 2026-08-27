@@ -72,16 +72,12 @@ class ChallengerReplacementBinancePrivateContractError(ValueError):
 _LOWER_HEX = frozenset("0123456789abcdef")
 @lru_cache(maxsize=3)
 def _validator(filename):
-    schema = json.loads(resources.files("crypto_quant").joinpath(
-        "schemas", filename).read_text(encoding="utf-8"))
+    schema = json.loads(resources.files("crypto_quant").joinpath("schemas", filename).read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
-PRIVATE_EVENT_TYPES = frozenset(_validator(
-    "challenger-replacement-binance-private-event-v1.schema.json"
-).schema["properties"]["event_type"]["enum"])
+PRIVATE_EVENT_TYPES = frozenset(_validator("challenger-replacement-binance-private-event-v1.schema.json").schema["properties"]["event_type"]["enum"])
 def _invalid(error=None):
-    if error is None:
-        raise ChallengerReplacementBinancePrivateContractError()
+    if error is None: raise ChallengerReplacementBinancePrivateContractError()
     raise ChallengerReplacementBinancePrivateContractError() from error
 def _payload(header):
     try:
@@ -105,14 +101,10 @@ def _lower_hash(value, length=64):
 def _bounded_identity(value):
     return isinstance(value, str) and 1 <= len(value) <= 256
 def _canonical_time(value):
-    if not isinstance(value, str):
-        raise ValueError("CHALLENGER_REPLACEMENT_BINANCE_ACTIVATION_INVALID")
+    if not isinstance(value, str): raise ValueError("CHALLENGER_REPLACEMENT_BINANCE_ACTIVATION_INVALID")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise ValueError(
-            "CHALLENGER_REPLACEMENT_BINANCE_ACTIVATION_INVALID"
-        ) from error
+    except ValueError as error: raise ValueError("CHALLENGER_REPLACEMENT_BINANCE_ACTIVATION_INVALID") from error
     parsed = parsed.astimezone(timezone.utc)
     if utc_datetime(parsed) != value:
         raise ValueError("CHALLENGER_REPLACEMENT_BINANCE_ACTIVATION_INVALID")
