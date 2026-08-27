@@ -1,5 +1,5 @@
 """Pure operational-ceremony and E0/E1/E2 Canary projection."""
-
+import base64
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
@@ -7,9 +7,7 @@ from importlib import resources
 import json
 from types import MappingProxyType
 from typing import Mapping
-
 from jsonschema import Draft202012Validator
-
 from .canonical import canonical_decimal, canonical_json, utc_datetime
 from .challenger_replacement_accelerated_canary_plan import (
     build_challenger_replacement_accelerated_canary_plan,
@@ -18,8 +16,10 @@ from .challenger_replacement_plan import (
     ChallengerReplacementPlanError,
     _strict_json_bytes,
 )
-
-
+from .challenger_replacement_events import (
+    ChallengerReplacementEventRoot, replay_challenger_replacement_events,
+)
+from .challenger_replacement_install_trust import business_hash
 _SCHEMA = "challenger-replacement-canary-projection-v1.schema.json"
 _CEREMONY = (
     "CEREMONY_READY_FLAT", "SPOT_BUY_SUBMITTED",
@@ -40,21 +40,15 @@ _AUTHORITY = {
     "network_requests": 0, "orders": 0, "state_writes": 0,
     "production_activation": False,
 }
-
-
 class ChallengerReplacementCanaryControllerError(ValueError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
         self.reason_code = reason_code
-
-
 def _fail(reason="CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID", error=None):
     failure = ChallengerReplacementCanaryControllerError(reason)
     if error is None:
         raise failure
     raise failure from error
-
-
 def _time(value):
     try:
         if not isinstance(value, str):
@@ -65,8 +59,6 @@ def _time(value):
         return parsed.astimezone(timezone.utc)
     except ValueError as error:
         _fail(error=error)
-
-
 def _decimal(value):
     try:
         number = Decimal(value)
@@ -76,20 +68,14 @@ def _decimal(value):
         return number
     except (InvalidOperation, TypeError, ValueError) as error:
         _fail(error=error)
-
-
 def _identity(value):
     return isinstance(value, str) and 1 <= len(value) <= 256
-
-
 def _prefixed_hash(value, prefix):
     suffix = value[len(prefix):] if isinstance(value, str) else ""
     return (
         isinstance(value, str) and value.startswith(prefix)
         and len(suffix) == 64 and not set(suffix) - set("0123456789abcdef")
     )
-
-
 def _event(value, previous_time):
     if not isinstance(value, Mapping):
         _fail()
@@ -120,8 +106,6 @@ def _event(value, previous_time):
     if previous_time is not None and occurred <= previous_time:
         _fail()
     return dict(value), occurred
-
-
 def _new_block(event, plan, previous):
     stage = event["stage"]
     if stage not in {"E0", "E1", "E2"}:
@@ -172,8 +156,6 @@ def _new_block(event, plan, previous):
         "strategy_cycle_count": 0, "spot_complete_cycles": 0,
         "perpetual_complete_cycles": 0, "cycle_ids": [],
     }
-
-
 def _apply_equity(block, event, policy):
     if (event["block_id"] != block["block_id"]
             or not isinstance(event["flat"], bool)
@@ -237,8 +219,6 @@ def _apply_equity(block, event, policy):
         )
     elif daily >= daily_limit:
         block.update(status="STAGE_DAILY_STOPPED", new_risk_blocked=True)
-
-
 def _apply_cycle(block, event):
     if (event["block_id"] != block["block_id"]
             or block["status"] == "STAGE_FAILED_LOCKED"
@@ -252,8 +232,6 @@ def _apply_cycle(block, event):
     block["strategy_cycle_count"] += 1
     block["spot_complete_cycles" if event["product"] == "SPOT"
           else "perpetual_complete_cycles"] += 1
-
-
 def _eligible(block, plan, now):
     policy = plan["canary_ladder"][block["stage"]]
     return all((
@@ -265,18 +243,14 @@ def _eligible(block, plan, now):
         block["spot_complete_cycles"] >= 1,
         block["perpetual_complete_cycles"] >= 1,
     ))
-
-
 def _projection_id(document):
     core = dict(document)
     core.pop("projection_id", None)
     return "challenger_replacement_canary_projection_" + hashlib.sha256(
         canonical_json(core).encode()
     ).hexdigest()
-
-
-def project_challenger_replacement_canary(*, events, plan, now):
-    """Project strict operational facts without write or trading authority."""
+def _project_challenger_replacement_canary(*, events, plan, now):
+    """Pure reducer used only after canonical event replay."""
     if (not isinstance(events, tuple) or not isinstance(plan, Mapping)
             or dict(plan) != build_challenger_replacement_accelerated_canary_plan()):
         _fail()
@@ -349,8 +323,35 @@ def project_challenger_replacement_canary(*, events, plan, now):
     }
     document["projection_id"] = _projection_id(document)
     return (canonical_json(document) + "\n").encode()
-
-
+def project_challenger_replacement_canary(*, event_root, plan, build_identity,
+                                           now):
+    """Project only from the retained canonical event-root capability."""
+    try:
+        if (not isinstance(event_root, ChallengerReplacementEventRoot)
+                or not isinstance(build_identity, Mapping)):
+            raise ValueError
+        replay = replay_challenger_replacement_events(event_root)
+        expected_build = business_hash(build_identity)
+        events = []
+        for event in replay.events:
+            outer = json.loads(event.final_bytes.decode("utf-8"))
+            payload = _strict_json_bytes(base64.b64decode(
+                outer["payload_bytes_base64"], validate=True,
+            ))
+            if (outer["plan_hash"] != plan["plan_hash"]
+                    or outer["build_identity_hash"] != expected_build
+                    or payload.get("event_type") != outer["event_type"]
+                    or payload.get("occurred_at") != outer["recorded_at"]
+                    or payload.get("block_id") != outer["slot_id"]):
+                raise ValueError
+            events.append(payload)
+        event_root.validate()
+        return _project_challenger_replacement_canary(
+            events=tuple(events), plan=plan, now=now,
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        if isinstance(error, ChallengerReplacementCanaryControllerError): raise
+        _fail("CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID", error)
 def load_challenger_replacement_canary_projection_bytes(data, *, plan):
     """Strictly replay one canonical Canary projection."""
     try:
@@ -375,8 +376,6 @@ def load_challenger_replacement_canary_projection_bytes(data, *, plan):
         UnicodeDecodeError, ValueError,
     ) as error:
         _fail("CHALLENGER_REPLACEMENT_CANARY_PROJECTION_INVALID", error)
-
-
 def _freeze(value):
     if isinstance(value, dict):
         return MappingProxyType({key: _freeze(item) for key, item in value.items()})

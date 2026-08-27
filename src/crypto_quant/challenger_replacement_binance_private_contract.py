@@ -609,10 +609,9 @@ def _apply_private_transition(private, event_type, payload, event):
             capture={key: payload[key] for key in payload if key != "intent_id"})
     elif event_type == "BINANCE_POSITION_BALANCE_RECONCILED":
         private["reconciliation_id"] = payload["reconciliation_id"]
-        private["reconciliation_bytes_base64"] = payload[
-            "reconciliation_bytes_base64"
-        ]
+        private["reconciliation_bytes_base64"] = payload["reconciliation_bytes_base64"]
         private["reconciliation_sha256"] = payload["reconciliation_sha256"]
+    elif event_type == "BINANCE_RECONCILIATION_FAILED": private["failure_reason_code"] = payload["reason_code"]
     private["stage"] = event_type
     private["last_private_event_hash"] = event.event_hash
     private["last_private_event_sequence"] = event.sequence

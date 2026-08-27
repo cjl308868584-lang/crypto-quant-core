@@ -903,8 +903,14 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             BinancePrivateRuntimeError, "BINANCE_LEDGER_PROJECTION_MISMATCH",
         ):
             private_runtime._reconcile_captured(
-                self.state, attempt, self.activation,
+                self.state, attempt, self.activation, DEFAULT_OBSERVED_AT,
             )
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["stage"], "BINANCE_RECONCILIATION_FAILED")
+        self.assertEqual(private["failure_reason_code"],
+                         "BINANCE_LEDGER_PROJECTION_MISMATCH")
 
     def test_captured_event_transcript_disagreement_is_rejected(self):
         attempt, inputs = self._flat_close_capture_inputs()
@@ -921,7 +927,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID",
         ):
             private_runtime._reconcile_captured(
-                self.state, attempt, self.activation,
+                self.state, attempt, self.activation, DEFAULT_OBSERVED_AT,
             )
 
     def test_perpetual_close_queries_then_cancels_orphan_stop_once(self):

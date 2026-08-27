@@ -313,7 +313,7 @@ def _capture(state, attempt, inputs, recorded_at):
     return load_binance_reconciliation_capture(event_root=state.event_root,
         capture_event_sequence=private["capture_event_sequence"],
         capture_event_hash=private["capture_event_hash"])
-def _reconcile_captured(state, attempt, activation):
+def _reconcile_captured(state, attempt, activation, recorded_at):
     private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
     captured = load_binance_reconciliation_capture(event_root=state.event_root,
         capture_event_sequence=private["capture_event_sequence"],
@@ -337,23 +337,26 @@ def _reconcile_captured(state, attempt, activation):
     event_facts = (_spot_facts(state, attempt, activation, previous_reconciliation_bytes_or_null=previous)
         if attempt["product"] == "SPOT" else _perpetual_facts(state, attempt, activation,
             position, incomes, stop, previous_reconciliation_bytes_or_null=previous))
-    data = _runtime_reconcile(event_projection=event_facts,
-        ledger_projection=(
+    try:
+        data = _runtime_reconcile(event_projection=event_facts,
+            ledger_projection=(
             _spot_facts(state, attempt, activation, previous_reconciliation_bytes_or_null=previous,
                 fills=ledger_input["fills"]) if attempt["product"] == "SPOT" else
             _perpetual_facts(state, attempt, activation, position, incomes,
                 stop, previous_reconciliation_bytes_or_null=previous,
                 fills=ledger_input["fills"])),
-        authorized_order=venue["authorized_order"],
-        authorized_stop_or_null=venue["authorized_stop_or_null"],
-        order_documents=tuple(map(_decoded, venue["order_documents_base64"])),
-        trade_documents=tuple(map(_decoded, venue["trade_documents_base64"])),
-        account_document=_decoded(venue["account_document_base64"]),
-        position_document=_decoded(venue["position_document_base64"]),
-        income_documents=tuple(map(_decoded, venue["income_documents_base64"])),
-        algo_documents=tuple(map(_decoded, venue["algo_documents_base64"])),
-        previous_reconciliation_bytes_or_null=previous,
-        capture_publications=captured["publications"])
+            authorized_order=venue["authorized_order"], authorized_stop_or_null=venue["authorized_stop_or_null"],
+            order_documents=tuple(map(_decoded, venue["order_documents_base64"])),
+            trade_documents=tuple(map(_decoded, venue["trade_documents_base64"])),
+            account_document=_decoded(venue["account_document_base64"]),
+            position_document=_decoded(venue["position_document_base64"]),
+            income_documents=tuple(map(_decoded, venue["income_documents_base64"])),
+            algo_documents=tuple(map(_decoded, venue["algo_documents_base64"])),
+            previous_reconciliation_bytes_or_null=previous, capture_publications=captured["publications"])
+    except BinancePrivateRuntimeError as error:
+        _append_intent(state, attempt, "BINANCE_RECONCILIATION_FAILED",
+                       recorded_at, reason_code=error.reason_code)
+        raise
     client = event_facts["protective_stop_client_id_or_null"]
     return data, client is not None, client
 def _order_authority(state, attempt):
@@ -424,7 +427,7 @@ def _finish_spot(state, attempt, activation, order, trades, account, recorded_at
         position_document=b"[]", income_documents=(), algo_documents=(),
         previous=previous, stop=None,
     ), recorded_at)
-    data, required, client = _reconcile_captured(state, attempt, activation)
+    data, required, client = _reconcile_captured(state, attempt, activation, recorded_at)
     return _publish_reconciliation(state, attempt, data, required, client, recorded_at)
 def _expected_stop(state, attempt):
     try:
@@ -718,7 +721,7 @@ def _finish_perpetual(state, attempt, activation, stop, context,
         income_documents=income_documents, algo_documents=algo_documents,
         previous=previous, stop=stop,
     ), context.recorded_at)
-    data, required, client = _reconcile_captured(state, attempt, activation)
+    data, required, client = _reconcile_captured(state, attempt, activation, context.recorded_at)
     return _publish_reconciliation(state, attempt, data, required, client, context.recorded_at)
 def _cleanup_query_observation(result, client):
     if _proven_absent(result): return False, None
@@ -1034,7 +1037,7 @@ def run_challenger_replacement_binance_private_intent(
             )
         if existing["stage"] == "BINANCE_RECONCILIATION_INPUTS_CAPTURED":
             data, required, client = _reconcile_captured(
-                state, attempt, activation,
+                state, attempt, activation, recorded_at,
             )
             return _publish_reconciliation(
                 state, attempt, data, required, client, recorded_at,

@@ -9,6 +9,15 @@ from crypto_quant.challenger_replacement_canary_controller import (
     load_challenger_replacement_canary_projection_bytes,
     project_challenger_replacement_canary,
 )
+from crypto_quant.canonical import canonical_json
+from crypto_quant.challenger_replacement_events import (
+    build_challenger_replacement_event,
+    open_challenger_replacement_event_root,
+    publish_challenger_replacement_event,
+)
+from crypto_quant.challenger_replacement_install_trust import business_hash
+from tests.test_challenger_replacement_events import EventWorkspace
+from tests.test_challenger_replacement_public_market_capture import V076_BUILD
 
 
 LABEL = "OPERATIONAL_CEREMONY_NOT_STRATEGY_EVIDENCE"
@@ -94,9 +103,28 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
         return changed
 
     def project(self, events, now="2026-09-09T00:00:00.000Z"):
-        data = project_challenger_replacement_canary(
-            events=tuple(events), plan=self.plan, now=now,
-        )
+        workspace = EventWorkspace()
+        self.addCleanup(workspace.close)
+        previous = "0" * 64
+        with open_challenger_replacement_event_root(workspace.identity()) as root:
+            for sequence, candidate in enumerate(events, 1):
+                event = build_challenger_replacement_event(
+                    sequence=sequence, event_type=candidate["event_type"],
+                    slot_id=candidate["block_id"],
+                    worker_id="canary-controller-fixture",
+                    recorded_at=candidate["occurred_at"],
+                    previous_event_hash=previous,
+                    payload_bytes=canonical_json(candidate).encode(),
+                    plan_hash=self.plan["plan_hash"],
+                    build_identity_hash=business_hash(V076_BUILD),
+                    event_root=root,
+                )
+                publish_challenger_replacement_event(root, event)
+                previous = event.event_hash
+            data = project_challenger_replacement_canary(
+                event_root=root, plan=self.plan, build_identity=V076_BUILD,
+                now=now,
+            )
         return data, load_challenger_replacement_canary_projection_bytes(
             data, plan=self.plan,
         )
@@ -116,6 +144,13 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
         self.assertEqual(
             json.loads(data)["projection_id"], loaded["projection_id"],
         )
+
+    def test_public_projection_rejects_manufactured_event_list(self):
+        with self.assertRaises(TypeError):
+            project_challenger_replacement_canary(
+                events=self.ceremony_events(), plan=self.plan,
+                now="2026-09-09T00:00:00.000Z",
+            )
 
     def test_daily_loss_stops_new_risk_until_utc_rollover(self):
         events = self.ceremony_events() + (
