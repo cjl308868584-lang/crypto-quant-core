@@ -23,6 +23,9 @@ from crypto_quant.challenger_replacement_binance_private_transport import (
     BinancePrivateTransportError,
     execute_binance_private_request,
 )
+from tests.challenger_replacement_v077_private_fixtures import (
+    loaded_private_activation,
+)
 
 
 class _Response:
@@ -102,16 +105,10 @@ class BinancePrivateTransportTests(unittest.TestCase):
         self.credential = open_binance_credential_capability(
             reference=self.reference, expected_owner_uid=os.getuid()
         )
-        self.activation = BinancePrivateActivation(
+        self.activation = loaded_private_activation(
+            build_identity=self.BUILD, now=self.NOW,
             activation_id="activation_" + "5" * 64,
-            build_identity=self.BUILD,
-            configuration_sha256="6" * 64,
-            account_approval_sha256="7" * 64,
             block_id="block_" + "8" * 64,
-            stage="E0", capital_usdt="100",
-            max_gross_exposure_usdt="50", max_leverage="0.5",
-            expires_at="2026-08-28T00:00:00.000Z",
-            production_activation=True,
         )
 
     def tearDown(self):
@@ -138,6 +135,27 @@ class BinancePrivateTransportTests(unittest.TestCase):
                 activation=activation or self.activation,
                 expected_build_identity=self.BUILD, now=self.NOW,
             )
+
+    def test_directly_constructed_activation_cannot_authorize_transport(self):
+        forged = BinancePrivateActivation(
+            activation_id=self.activation.activation_id,
+            build_identity=self.activation.build_identity,
+            configuration_sha256=self.activation.configuration_sha256,
+            account_approval_sha256=self.activation.account_approval_sha256,
+            block_id=self.activation.block_id, stage=self.activation.stage,
+            capital_usdt=self.activation.capital_usdt,
+            max_gross_exposure_usdt=self.activation.max_gross_exposure_usdt,
+            max_leverage=self.activation.max_leverage,
+            expires_at=self.activation.expires_at,
+            production_activation=True,
+        )
+        connection = _Connection()
+        with self.assertRaisesRegex(
+            BinancePrivateTransportError,
+            "BINANCE_PRIVATE_TRANSPORT_NOT_AUTHORIZED",
+        ):
+            self._execute(connection, activation=forged)
+        self.assertEqual(connection.requests, [])
 
     def test_no_authority_wrong_build_and_expiry_reject_before_secret_or_socket(self):
         cases = (

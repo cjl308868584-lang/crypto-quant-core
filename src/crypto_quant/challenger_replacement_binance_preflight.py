@@ -6,8 +6,8 @@ from typing import Mapping
 from .canonical import canonical_json
 from .challenger_replacement_binance_credential import BinanceCredentialIdentity
 from .challenger_replacement_binance_private_contract import (
-    BinanceAccountApproval, BinancePrivateActivation, _canonical_time, _validator,
-    load_binance_account_approval_bytes,
+    BinanceAccountApproval, BinancePrivateActivation, _canonical_time,
+    _is_loaded_binance_private_activation, _validator, load_binance_account_approval_bytes,
 )
 _ENDPOINTS = frozenset({
     "API_RESTRICTIONS", "API_TRADING_STATUS", "SPOT_ACCOUNT",
@@ -297,7 +297,7 @@ class BinanceAccountPreflightCapability:
     def load(self, *, activation, credential_identity, now):
         document = self._document
         try:
-            if (not isinstance(activation, BinancePrivateActivation)
+            if (not _is_loaded_binance_private_activation(activation)
                     or not isinstance(credential_identity, BinanceCredentialIdentity)
                     or activation.production_activation is not True
                     or document["build_identity"] != dict(activation.build_identity)

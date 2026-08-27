@@ -11,7 +11,8 @@ from .challenger_replacement_binance_credential import (
     BinanceCredentialCapability, _consume_binance_authorization,
 )
 from .challenger_replacement_binance_private_contract import (
-    BinancePrivateActivation, load_binance_private_activation_bytes,
+    BinancePrivateActivation, _is_loaded_binance_private_activation,
+    load_binance_private_activation_bytes,
 )
 from .challenger_replacement_binance_private_protocol import (
     BinancePrivateRequest, classify_binance_private_response,
@@ -64,7 +65,7 @@ def _activation_document(activation):
 
 def _require_authority(activation, expected_build_identity, now):
     try:
-        if not isinstance(activation, BinancePrivateActivation):
+        if not _is_loaded_binance_private_activation(activation):
             raise ValueError
         document = _activation_document(activation)
         loaded = load_binance_private_activation_bytes(

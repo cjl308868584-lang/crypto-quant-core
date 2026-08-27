@@ -65,6 +65,9 @@ from tests.test_challenger_replacement_opportunities import (
 from tests.challenger_replacement_v3_fixtures import (
     DEFAULT_OBSERVED_AT, fixture_v3_plan,
 )
+from tests.challenger_replacement_v077_private_fixtures import (
+    loaded_private_activation,
+)
 from tests.test_challenger_replacement_public_market_capture import (
     COMMITTED_CAPTURE, V076_BUILD,
 )
@@ -133,14 +136,12 @@ class BinancePrivateRuntimeDecisionBindingTests(unittest.TestCase):
                 economic_plan=economic, predecessor_contract=predecessor,
                 public_contract=public_contract, build_identity=V076_BUILD,
             )
-        activation = BinancePrivateActivation(
+        activation = loaded_private_activation(
+            build_identity=V076_BUILD, now="2026-08-27T12:00:00.000Z",
             activation_id="binance_private_activation_" + "4" * 64,
-            build_identity=V076_BUILD, configuration_sha256="5" * 64,
+            configuration_sha256="5" * 64,
             account_approval_sha256="6" * 64,
-            block_id="e0_block_" + "7" * 64, stage="E0",
-            capital_usdt="100", max_gross_exposure_usdt="50",
-            max_leverage="0.5", expires_at="2026-08-28T00:00:00.000Z",
-            production_activation=True,
+            block_id="e0_block_" + "7" * 64,
         )
         slot = state.replay()["opportunities"][
             "ETHUSDT@2026-08-26T04:00:00.000Z"
@@ -206,19 +207,6 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             },
         }
         self.raw_preflight = self.preflight
-        self.activation = BinancePrivateActivation(
-            activation_id="binance_private_activation_" + "5" * 64,
-            build_identity=self.workspace.build,
-            configuration_sha256="6" * 64,
-            account_approval_sha256="7" * 64,
-            block_id=self.block_id,
-            stage="E0",
-            capital_usdt="100",
-            max_gross_exposure_usdt="50",
-            max_leverage="0.5",
-            expires_at="2026-08-28T00:00:00.000Z",
-            production_activation=True,
-        )
         preflight_fixture = json.loads(resources.files("crypto_quant").joinpath(
             "fixtures", "challenger-replacement-v077",
             "account-preflight-flat.json",
@@ -249,10 +237,12 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
         receipt_document = json.loads(receipt)
         self.preflight_document = receipt_document
-        self.activation = BinancePrivateActivation(
-            **{**self.activation.__dict__,
-               "configuration_sha256": receipt_document["configuration_sha256"],
-               "account_approval_sha256": receipt_document["account_approval_sha256"]}
+        self.activation = loaded_private_activation(
+            build_identity=self.workspace.build,
+            now="2026-08-27T12:00:00.000Z",
+            block_id=self.block_id,
+            configuration_sha256=receipt_document["configuration_sha256"],
+            account_approval_sha256=receipt_document["account_approval_sha256"],
         )
         self.preflight = load_binance_account_preflight_capability_bytes(
             receipt, build_identity=self.workspace.build,

@@ -1,7 +1,6 @@
 """Closed Binance endpoint and event contracts for replacement v3."""
-
 import base64
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 import hashlib
@@ -10,15 +9,12 @@ import ipaddress
 import json
 from types import MappingProxyType
 from typing import Mapping
-
 from jsonschema import Draft202012Validator
-
 from .canonical import canonical_decimal, canonical_json, utc_datetime
 from .challenger_replacement_plan import (
     ChallengerReplacementPlanError,
     _strict_json_bytes,
 )
-
 _SPOT, _FUTURES = "api.binance.com", "fapi.binance.com"
 _ENDPOINT_ROWS = (
     ("SPOT_SERVER_TIME", _SPOT, "GET", "/api/v3/time", False),
@@ -55,7 +51,6 @@ _ENDPOINT_ROWS = (
 BINANCE_PRIVATE_ENDPOINTS = MappingProxyType({
     key: tuple(values) for key, *values in _ENDPOINT_ROWS
 })
-
 @dataclass(frozen=True)
 class BinanceAccountApproval:
     account_identity_sha256: str
@@ -66,7 +61,6 @@ class BinanceAccountApproval:
     expires_at: str
     spot_trading_approved: bool
     futures_trading_approved: bool
-
 @dataclass(frozen=True)
 class BinancePrivateActivation:
     activation_id: str
@@ -80,6 +74,11 @@ class BinancePrivateActivation:
     max_leverage: str
     expires_at: str
     production_activation: bool
+    _authority_token: object = field(default=None, repr=False, compare=False)
+_ACTIVATION_AUTHORITY_TOKEN = object()
+def _is_loaded_binance_private_activation(value):
+    return (isinstance(value, BinancePrivateActivation)
+            and value._authority_token is _ACTIVATION_AUTHORITY_TOKEN)
 
 class ChallengerReplacementBinancePrivateContractError(ValueError):
     """A Binance-private event violated the closed projection contract."""
@@ -188,6 +187,7 @@ def load_binance_private_activation_bytes(data, *, build_identity, now):
             max_leverage=document["max_leverage"],
             expires_at=document["expires_at"],
             production_activation=document["production_activation"],
+            _authority_token=_ACTIVATION_AUTHORITY_TOKEN,
         )
     except (ChallengerReplacementPlanError, KeyError, TypeError, ValueError) as error:
         if isinstance(error, ValueError) and str(error) == reason:

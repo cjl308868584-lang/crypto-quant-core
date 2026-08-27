@@ -14,6 +14,9 @@ from crypto_quant.challenger_replacement_binance_credential import (
 from crypto_quant.challenger_replacement_binance_private_contract import (
     BinanceAccountApproval, BinancePrivateActivation,
 )
+from tests.challenger_replacement_v077_private_fixtures import (
+    loaded_private_activation,
+)
 from crypto_quant.challenger_replacement_binance_preflight import (
     BinanceAccountPreflightError,
     evaluate_binance_account_preflight,
@@ -277,18 +280,14 @@ class BinanceAccountPreflightTests(unittest.TestCase):
             "schema_version": "1.0.0",
             **self.approval.__dict__,
         }) + "\n").encode("utf-8")
-        activation = BinancePrivateActivation(
+        activation = loaded_private_activation(
+            build_identity=self.BUILD, now=self.NOW,
             activation_id="binance_private_activation_" + "a" * 64,
-            build_identity=self.BUILD,
             configuration_sha256=hashlib.sha256(canonical_json(
                 document["configuration"]
             ).encode("utf-8")).hexdigest(),
             account_approval_sha256=hashlib.sha256(approval_bytes).hexdigest(),
             block_id="e0_block_" + "b" * 64,
-            stage="E0", capital_usdt="100",
-            max_gross_exposure_usdt="50", max_leverage="0.5",
-            expires_at="2026-08-28T00:00:00.000Z",
-            production_activation=True,
         )
         capability = load_binance_account_preflight_capability_bytes(
             data, build_identity=self.BUILD

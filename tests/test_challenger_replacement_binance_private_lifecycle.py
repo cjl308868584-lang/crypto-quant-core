@@ -16,27 +16,27 @@ from crypto_quant.challenger_replacement_binance_private_lifecycle import (
     derive_binance_client_order_id,
     prepare_binance_order_attempt,
 )
+from tests.challenger_replacement_v077_private_fixtures import (
+    loaded_private_activation,
+)
 
 
 class BinancePrivateLifecycleTests(unittest.TestCase):
+    BUILD = {
+        "release_tag": "v0.77.0", "peeled_commit": "1" * 40,
+        "package_version": "0.77.0", "manifest_version": "v0.77.0",
+        "build_input_tree_hash": "2" * 64, "manifest_hash": "3" * 64,
+        "manifest_file_sha256": "4" * 64,
+    }
     PLAN_HASH = "1" * 64
     BLOCK_ID = "e0-block-" + "2" * 64
     INTENT_ID = "replacement_intent_" + "3" * 64
     PREFLIGHT_ID = "binance_account_preflight_" + "4" * 64
 
     def setUp(self):
-        self.activation = BinancePrivateActivation(
-            activation_id="binance_private_activation_" + "5" * 64,
-            build_identity={"release_tag": "v0.77.0"},
-            configuration_sha256="6" * 64,
-            account_approval_sha256="7" * 64,
+        self.activation = loaded_private_activation(
+            build_identity=self.BUILD, now="2026-08-27T12:00:00.000Z",
             block_id=self.BLOCK_ID,
-            stage="E0",
-            capital_usdt="100",
-            max_gross_exposure_usdt="50",
-            max_leverage="0.5",
-            expires_at="2026-08-28T00:00:00.000Z",
-            production_activation=True,
         )
         self.preflight = {
             "status": "BINANCE_ACCOUNT_PREFLIGHT_VERIFIED_FLAT",
