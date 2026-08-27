@@ -279,12 +279,10 @@ def _private_payloads(state, opportunity_id):
             ))))
     return values
 def _order_authority(state, attempt):
-    acknowledgements = [payload for event_type, payload in _private_payloads(state,
-        attempt["opportunity_id"]) if event_type == "BINANCE_ORDER_ACKNOWLEDGED"]
-    if (len(acknowledgements) != 1
-            or acknowledgements[0]["venue_client_order_id"] != attempt["venue_client_order_id"]):
+    private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
+    if not isinstance(private.get("order_id"), int):
         _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
-    return {"order_id": acknowledgements[0]["order_id"], "client_order_id": attempt["venue_client_order_id"]}
+    return {"order_id": private["order_id"], "client_order_id": attempt["venue_client_order_id"]}
 def _stop_authority(stop):
     if stop is None: return None
     return {key: stop[key] for key in ("client_algo_id", "side", "quantity",

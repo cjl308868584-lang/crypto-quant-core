@@ -474,10 +474,29 @@ class BinancePrivateEventContractTests(unittest.TestCase):
         self.assertFalse(private["unresolved_unknown"])
         self.assertEqual(private["fill_ids"], [301])
         self.assertEqual(private["reconciliation_id"], reconciliation_id)
-        self.assertEqual(
-            base64.b64decode(private["reconciliation_bytes_base64"]),
-            reconciliation,
-        )
+        self.assertEqual(base64.b64decode(
+            private["reconciliation_bytes_base64"]), reconciliation)
+
+    def test_fill_order_id_must_match_durable_acknowledgement(self):
+        self._pre_send()
+        intent = self._intent_payload()
+        self._append_private("BINANCE_ORDER_ACKNOWLEDGED", {
+            "intent_id": intent["intent_id"], "order_id": 202,
+            "venue_client_order_id": intent["venue_client_order_id"],
+        })
+        before = self.state.replay()
+        with self.assertRaisesRegex(
+            ChallengerReplacementOpportunityError,
+            "CHALLENGER_REPLACEMENT_BINANCE_PRIVATE_EVENT_INVALID",
+        ):
+            self._append_private("BINANCE_FILL_OBSERVED", {
+                "intent_id": intent["intent_id"], "trade_id": 301,
+                "order_id": 999, "quantity": "0.001", "price": "2000",
+                "quote_quantity": "2", "fee": "0.002",
+                "fee_asset": "USDT", "cumulative_filled_quantity": "0.001",
+            })
+        after = self.state.replay()
+        self.assertEqual(after["last_event_hash"], before["last_event_hash"])
 
     def test_out_of_order_private_event_is_rejected_without_append(self):
         self._authorize()

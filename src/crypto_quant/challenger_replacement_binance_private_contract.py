@@ -554,11 +554,10 @@ def _private_payload_valid(event_type, payload, private):
     if event_type in {"BINANCE_SIGNED_REQUEST_PREPARED",
                       "BINANCE_REQUEST_SEND_STARTED"}:
         return True
-    if event_type == "BINANCE_ORDER_ACKNOWLEDGED":
-        return payload["venue_client_order_id"] == private["venue_client_order_id"]
+    if event_type == "BINANCE_ORDER_ACKNOWLEDGED": return payload["venue_client_order_id"] == private["venue_client_order_id"]
     if event_type == "BINANCE_FILL_OBSERVED":
-        return (("realized_pnl" in payload)
-                is (private["product"] == "PERPETUAL"))
+        return (("realized_pnl" in payload) is (private["product"] == "PERPETUAL")
+                and payload["order_id"] == private.get("order_id"))
     if event_type.startswith("BINANCE_ORDER_") and event_type not in {
         "BINANCE_ORDER_REJECTED", "BINANCE_ORDER_UNKNOWN",
     }:
@@ -597,7 +596,8 @@ def _apply_private_transition(private, event_type, payload, event):
             or private["stage"] not in _PRIVATE_TRANSITIONS[event_type]
             or not _private_payload_valid(event_type, payload, private)):
         _invalid()
-    if event_type == "BINANCE_FILL_OBSERVED":
+    if event_type == "BINANCE_ORDER_ACKNOWLEDGED": private["order_id"] = payload["order_id"]
+    elif event_type == "BINANCE_FILL_OBSERVED":
         if payload["trade_id"] in private["fill_ids"]: _invalid()
         private["fill_ids"].append(payload["trade_id"])
     elif event_type == "BINANCE_ABSENCE_CHECKED":
