@@ -501,6 +501,80 @@ publication identity. Runtime reconciliation failures append their canonical
 failure event before returning. An in-memory or fixture-only projection cannot
 authorize a stage transition.
 
+#### 4.8.1 Single-root authority and referenced-artifact identity
+
+The `exact artifact root capability` in this section is the retained
+replacement-v3 event-root capability itself. v0.77 must not introduce a second
+mutable artifact directory, generic resolver or database. Exact approval and
+reconciliation bytes are published first as
+`CANARY_AUTHORITY_ARTIFACT_PUBLISHED` events; the canonical event file is the
+only publication. A later transition refers to the publication by the exact
+five-field record `sequence`, `event_hash`, `device`, `inode` and `size` plus
+the artifact ID. The referenced event must precede the transition.
+
+The event layer exposes one read-only verifier which reopens that exact
+sequence under the retained directory descriptor with no-follow/nonblocking
+flags, validates the five publication fields, and returns canonical event
+bytes. Missing files, same bytes on a different inode, symlinks, hardlinks,
+wrong ownership/mode/type/size, a changed root or a reference to a different
+event all fail closed. This verifier never creates, writes, renames, chmods or
+repairs an object.
+
+`CANARY_AUTHORITY_ARTIFACT_PUBLISHED` has exactly these payload fields:
+
+```text
+event_type
+block_id
+occurred_at
+artifact_kind       ACTIVATION | PROMOTION | RECONCILIATION | INCIDENT_UNLOCK
+artifact_id
+artifact_bytes_base64
+artifact_sha256
+```
+
+The artifact event itself is not a stage transition. Duplicate publication of
+the same artifact ID is invalid even when the bytes match; the first canonical
+publication is the sole identity. `ACTIVATION` uses
+`load_binance_private_activation_bytes`; `RECONCILIATION` uses
+`load_binance_reconciliation_bytes_strict` against the same retained root.
+`PROMOTION` and `INCIDENT_UNLOCK` use one closed canonical approval schema. Its
+self-hashed ID, kind, plan/build identity, stage, new block, exact previous
+block, approval/expiry times and zero-authority fields are all mandatory.
+The exact approval keys are `$schema`, `schema_version`, `approval_id`,
+`approval_kind`, `plan`, `build_identity`, `stage`, `block_id`,
+`previous_block_id`, `approved_at`, `expires_at` and `authority`.
+`approval_id` is `canary_promotion_` or `incident_unlock_` followed by the
+lowercase SHA-256 of the canonical document with only `approval_id` removed.
+`authority` is exactly `network_requests=0`, `orders=0`, `state_writes=0` and
+`production_activation=false`. The approval must satisfy
+`approved_at <= transition.occurred_at < expires_at`. Activation is likewise
+loaded at the referenced transition time, not the later projection-observation
+time, so expiry cannot rewrite valid historical state.
+
+The public Canary projector replays the complete mixed event root, validates
+plan/build identity on every event, indexes authority artifacts and derives
+state only from canonical opportunity/private events plus strictly loaded
+artifacts. The existing tuple reducer remains private and receives only the
+derived normalized facts. In particular:
+
+- stage start requires a strict activation publication; E1/E2 additionally
+  require a `PROMOTION` approval, while recovery of a failed same-stage block
+  requires an `INCIDENT_UNLOCK` approval;
+- ceremony and equity facts require an exact strict reconciliation
+  publication; equity is recomputed from the matched venue projection and
+  `flat` is recomputed from signed quantity/open-order state;
+- UNKNOWN, position mismatch and missing-stop hard stops must reference the
+  exact canonical private failure event that supplies the reason code;
+- a post-limit new-risk attempt must reference a later canonical
+  `BINANCE_INTENT_AUTHORIZED` event for that block; and
+- natural cycle counts come from completed canonical opportunity/private
+  lifecycles, never a caller-supplied cycle mapping.
+
+Any missing, duplicate, noncanonical, forward, stale, mismatched or
+same-bytes/different-publication reference returns
+`CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID`. No partial
+projection is returned and no event or artifact is written by the projector.
+
 ## 5. Exact Binance REST inventory
 
 The implementation uses only the following documented endpoints. Any method,

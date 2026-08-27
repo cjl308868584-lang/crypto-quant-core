@@ -1305,25 +1305,35 @@ git commit -m "fix: bind independent private reconciliation"
 ### Task 10F: Derive Canary state only from canonical authority
 
 **Files:**
+- Modify: `src/crypto_quant/challenger_replacement_events.py`
 - Modify: `src/crypto_quant/challenger_replacement_canary_controller.py`
 - Modify: `src/crypto_quant/challenger_replacement_binance_private_runtime.py`
+- Create: `src/crypto_quant/schemas/challenger-replacement-canary-authority-approval-v1.schema.json`
+- Modify: `tests/test_challenger_replacement_events.py`
 - Modify: `tests/test_challenger_replacement_canary_controller.py`
 - Modify: `tests/test_challenger_replacement_binance_private_runtime.py`
 
 **Interfaces:**
-- Public projection accepts retained event root, frozen plan, exact artifact
-  root capability and build identity; the raw event-list reducer becomes a
-  private pure helper used only after strict replay.
-- Activation, promotion, reconciliation, incident and unlock references are
-  strict-loaded and publication-identity checked.
+- Public projection accepts the retained event root, frozen plan and build
+  identity. The same retained root is the exact artifact capability; no second
+  storage root exists. The raw event-list reducer is private and is called only
+  with normalized facts derived from strict replay.
+- A read-only event-publication verifier binds sequence/hash/device/inode/size.
+  Activation, promotion, reconciliation and incident/unlock bytes are prior
+  canonical authority-artifact events and every transition checks the exact
+  publication identity through its strict loader.
 
 - [ ] **Step 1: Write canonical-authority RED tests**
 
-Reject manufactured event lists, missing or same-bytes/different-inode
-activation/promotion/incident artifacts, and noncanonical equity/hard-stop
-claims. Prove runtime appends `BINANCE_RECONCILIATION_FAILED` before returning a
-reconciliation failure. Prove canonical replay preserves daily stop, drawdown,
-restart and UTC rollover behavior.
+Reject manufactured event lists and mixed roots with a wrong plan/build.
+Reject missing, duplicate, forward or same-bytes/different-inode activation,
+promotion, reconciliation and incident publications. Reject equity/flat facts
+that differ from strict reconciliation, hard stops without their exact private
+failure event, post-limit risk attempts without a later exact
+`BINANCE_INTENT_AUTHORIZED`, and manufactured cycle claims. Prove runtime
+appends `BINANCE_RECONCILIATION_FAILED` before returning a reconciliation
+failure. Prove canonical replay preserves daily stop, drawdown, restart and UTC
+rollover behavior.
 
 - [ ] **Step 2: Run RED and implement minimal retained-root projection**
 
@@ -1333,9 +1343,12 @@ PYTHONPATH=src:tests python3 -m unittest \
   tests.test_challenger_replacement_binance_private_runtime -v
 ```
 
-Reuse strict event and artifact loaders. Do not create another database,
-controller log or caller-configurable resolver. Keep the raw reducer private
-and unreachable as transition authority.
+First implement the read-only exact-publication verifier and the closed
+promotion/incident approval loader. Then publish fixture authority artifacts
+as canonical events and derive normalized ceremony/stage/equity/cycle facts
+from the mixed root. Reuse strict activation/reconciliation loaders. Do not
+create another database, directory, controller log or caller-configurable
+resolver. Keep the raw reducer private and unreachable as transition authority.
 
 - [ ] **Step 3: Run GREEN, architecture gate and commit**
 
@@ -1347,7 +1360,10 @@ PYTHONPATH=src:tests python3 -m unittest \
   tests.test_challenger_replacement_v077_architecture -v
 git diff --check
 git add src/crypto_quant/challenger_replacement_canary_controller.py \
+  src/crypto_quant/challenger_replacement_events.py \
   src/crypto_quant/challenger_replacement_binance_private_runtime.py \
+  src/crypto_quant/schemas/challenger-replacement-canary-authority-approval-v1.schema.json \
+  tests/test_challenger_replacement_events.py \
   tests/test_challenger_replacement_canary_controller.py \
   tests/test_challenger_replacement_binance_private_runtime.py
 git commit -m "fix: derive Canary state from canonical evidence"
