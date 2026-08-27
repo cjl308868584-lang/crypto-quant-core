@@ -24,6 +24,9 @@ from tests.challenger_replacement_v3_fixtures import DEFAULT_OBSERVED_AT
 from tests.test_challenger_replacement_opportunities import (
     OpportunityStateWorkspace,
 )
+from tests.test_challenger_replacement_binance_reconciliation import (
+    fixture_capture_publications,
+)
 
 
 class BinancePrivateEndpointContractTests(unittest.TestCase):
@@ -334,6 +337,7 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "status": "BINANCE_PRIVATE_RECONCILIATION_MATCHED",
             "event_projection": facts, "venue_projection": facts,
             "ledger_projection": facts,
+            "capture_publications": fixture_capture_publications(),
             "authority": {"network_requests": 0, "orders": 0,
                           "state_writes": 0},
         }

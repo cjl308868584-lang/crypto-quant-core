@@ -78,6 +78,9 @@ from tests.challenger_replacement_v077_private_fixtures import (
 from tests.test_challenger_replacement_public_market_capture import (
     COMMITTED_CAPTURE, V076_BUILD, _canonical_capture, _outer_document,
 )
+from tests.test_challenger_replacement_binance_reconciliation import (
+    fixture_capture_publications,
+)
 
 
 class PrivateRuntimeWorkspace:
@@ -650,9 +653,10 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             order_documents=(order,), trade_documents=(trade,),
             account_document=self._spot_account("0.001", "97.998"),
             position_document=b"[]", income_documents=(), algo_documents=(),
+            capture_publications=fixture_capture_publications(),
         )
 
-    def test_previous_reconciliation_selects_latest_strict_same_product_parent(self):
+    def test_previous_reconciliation_rejects_unbound_historical_parent(self):
         first, latest = self._spot_reconciliation(301), self._spot_reconciliation(302)
 
         def private(data, product="SPOT"):
@@ -676,10 +680,14 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
                     "ETHUSDT@2026-08-27T12:00:00.000Z": {},
                 }}
 
-        self.assertEqual(_previous_reconciliation_bytes(
-            HistoricalState(), product="SPOT",
-            before_opportunity_id="ETHUSDT@2026-08-27T12:00:00.000Z",
-        ), latest)
+        with self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID",
+        ):
+            _previous_reconciliation_bytes(
+                HistoricalState(), product="SPOT",
+                before_opportunity_id="ETHUSDT@2026-08-27T12:00:00.000Z",
+            )
         self.assertIsNone(_previous_reconciliation_bytes(
             HistoricalState(), product="SPOT",
             before_opportunity_id="ETHUSDT@2026-08-27T00:00:00.000Z",
@@ -765,6 +773,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             account_document=self._futures_account(),
             position_document=position, income_documents=(income,),
             algo_documents=(self._active_algo(stop),),
+            capture_publications=fixture_capture_publications(),
         )
 
     def _partial_close_case(self):
@@ -844,6 +853,76 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "fill_ids": [401, 402],
         }
         self.assertEqual(facts, expected)
+
+    def _flat_close_capture_inputs(self):
+        attempt = self._prime_perpetual_close_fills()
+        previous = self._perpetual_reconciliation()
+        order = canonical_json({
+            "symbol": "ETHUSDT", "orderId": 203,
+            "clientOrderId": attempt["venue_client_order_id"],
+            "avgPrice": "1900", "origQty": "0.025",
+            "executedQty": "0.025", "cumQuote": "47.5",
+            "status": "FILLED", "type": "MARKET", "side": "BUY",
+            "positionSide": "BOTH", "reduceOnly": True,
+            "updateTime": 1787832000000,
+        }).encode()
+        trade = canonical_json({
+            "symbol": "ETHUSDT", "id": 402, "orderId": 203,
+            "qty": "0.025", "price": "1900", "quoteQty": "47.5",
+            "commission": "0.019", "commissionAsset": "USDT",
+            "realizedPnl": "2.5", "time": 1787832000001,
+            "buyer": True,
+        }).encode()
+        position = json.loads(self._futures_position("0", "0"))
+        position[0].update(
+            markPrice="0", unRealizedProfit="0", notional="0",
+            isolatedMargin="0", isolatedWallet="0", initialMargin="0",
+            maintMargin="0", positionInitialMargin="0",
+        )
+        inputs = list(private_runtime._capture_inputs(
+            self.state, attempt, self.activation, order_documents=(order,),
+            trade_documents=(trade,),
+            account_document=self._futures_account(
+                "102.456", "102.456", "0", "0",
+            ),
+            position_document=canonical_json(position).encode(),
+            income_documents=(), algo_documents=(), previous=previous,
+            stop=None,
+        ))
+        return attempt, inputs
+
+    def test_captured_ledger_disagreement_cannot_reuse_event_projection(self):
+        attempt, inputs = self._flat_close_capture_inputs()
+        ledger = json.loads(inputs[1])
+        ledger["fills"][0]["fee"] = "9"
+        inputs[1] = canonical_json(ledger).encode()
+        private_runtime._capture(
+            self.state, attempt, tuple(inputs), DEFAULT_OBSERVED_AT,
+        )
+        with self.assertRaisesRegex(
+            BinancePrivateRuntimeError, "BINANCE_LEDGER_PROJECTION_MISMATCH",
+        ):
+            private_runtime._reconcile_captured(
+                self.state, attempt, self.activation,
+            )
+
+    def test_captured_event_transcript_disagreement_is_rejected(self):
+        attempt, inputs = self._flat_close_capture_inputs()
+        event_input = json.loads(inputs[0])
+        fill = next(item["payload"] for item in event_input["private_events"]
+                    if item["event_type"] == "BINANCE_FILL_OBSERVED")
+        fill["fee"] = "9"
+        inputs[0] = canonical_json(event_input).encode()
+        private_runtime._capture(
+            self.state, attempt, tuple(inputs), DEFAULT_OBSERVED_AT,
+        )
+        with self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID",
+        ):
+            private_runtime._reconcile_captured(
+                self.state, attempt, self.activation,
+            )
 
     def test_perpetual_close_queries_then_cancels_orphan_stop_once(self):
         attempt = self._prime_perpetual_close_fills()
@@ -1429,7 +1508,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
 
         def append_then_crash(**kwargs):
             event = original_append(**kwargs)
-            if kwargs["event_type"] == "BINANCE_POSITION_BALANCE_RECONCILED":
+            if kwargs["event_type"] == "BINANCE_RECONCILIATION_INPUTS_CAPTURED":
                 raise ReconciliationCrash()
             return event
 
@@ -1461,7 +1540,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             self.workspace.opportunity_id
         ]["private"]
         self.assertEqual(private["stage"],
-                         "BINANCE_POSITION_BALANCE_RECONCILED")
+                         "BINANCE_RECONCILIATION_INPUTS_CAPTURED")
         recovered = self.workspace.state()
         with patch(
             "crypto_quant.challenger_replacement_binance_private_runtime."
@@ -1487,6 +1566,33 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             loaded["event_projection"]["protective_stop_client_id_or_null"],
             stop["client_algo_id"],
         )
+        capture_path = self.workspace.files.event_root / (
+            f"{private['capture_event_sequence']:020d}.event.json"
+        )
+        displaced = self.workspace.files.base / "displaced-capture"
+        capture_path.rename(displaced)
+        capture_path.write_bytes(displaced.read_bytes())
+        capture_path.chmod(0o600)
+        before = (displaced.read_bytes(), displaced.lstat().st_ino,
+                  displaced.lstat().st_mode, displaced.lstat().st_nlink)
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+            side_effect=AssertionError("transport must not run"),
+        ) as transport, self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID",
+        ):
+            run_challenger_replacement_binance_private_intent(
+                state=self.workspace.state(), event_root=self.workspace.root,
+                intent=self.intent, preflight_capability=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        transport.assert_not_called()
+        after = (displaced.read_bytes(), displaced.lstat().st_ino,
+                 displaced.lstat().st_mode, displaced.lstat().st_nlink)
+        self.assertEqual(after, before)
 
     def test_first_partial_perpetual_fill_is_protected_before_return(self):
         self._use_perpetual_decision()

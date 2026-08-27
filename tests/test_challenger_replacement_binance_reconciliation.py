@@ -1,15 +1,41 @@
 import json
 from importlib import resources
+import hashlib
+import os
+from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
+from jsonschema import Draft202012Validator
+
+import crypto_quant.challenger_replacement_binance_reconciliation as reconciliation_module
 from crypto_quant.canonical import canonical_json
 from crypto_quant.challenger_replacement_binance_reconciliation import (
     BinanceReconciliationError,
     load_binance_reconciliation_bytes,
     reconcile_binance_private_state,
 )
+from crypto_quant.challenger_replacement_events import (
+    ChallengerReplacementEventRootIdentity,
+    build_challenger_replacement_event,
+    open_challenger_replacement_event_root,
+    publish_challenger_replacement_event,
+)
+
+
+def fixture_capture_publications():
+    shared = {
+        "capture_event_sequence": 1, "capture_event_hash": "1" * 64,
+        "device": 1, "inode": 2, "uid": os.getuid(), "mode_octal": "0600",
+        "link_count": 1, "event_size": 1024, "event_sha256": "2" * 64,
+    }
+    return {selector: {**shared, "payload_selector": selector,
+                       "decoded_size": 64, "decoded_sha256": digit * 64}
+            for selector, digit in zip(
+                ("event_input", "ledger_input", "venue_input"), "345"
+            )}
 
 
 class BinanceReconciliationTests(unittest.TestCase):
@@ -20,6 +46,7 @@ class BinanceReconciliationTests(unittest.TestCase):
         return canonical_json(value).encode("utf-8")
 
     def setUp(self):
+        self.publications = fixture_capture_publications()
         facts = {
             "product": "PERPETUAL", "signed_quantity": "-0.025",
             "average_entry_price_or_null": "2000", "realized_pnl": "-0.01",
@@ -103,6 +130,7 @@ class BinanceReconciliationTests(unittest.TestCase):
             "account_document": self.account,
             "position_document": self.position,
             "income_documents": self.income, "algo_documents": self.algos,
+            "capture_publications": self.publications,
         }
         values.update(changes)
         return reconcile_binance_private_state(**values)
@@ -117,6 +145,12 @@ class BinanceReconciliationTests(unittest.TestCase):
         loaded = load_binance_reconciliation_bytes(data)
         self.assertEqual(json.loads(canonical_json(loaded)), document)
         self.assertEqual(self.reconcile(), data)
+
+    def test_capture_publications_are_required(self):
+        with self.assertRaisesRegex(
+            BinanceReconciliationError, "BINANCE_RECONCILIATION_INPUT_INVALID",
+        ):
+            self.reconcile(capture_publications=None)
 
     def test_spot_open_reconciles_full_account_at_fill_cost_basis(self):
         facts = {
@@ -156,6 +190,7 @@ class BinanceReconciliationTests(unittest.TestCase):
             order_documents=(order,), trade_documents=(trade,),
             account_document=self.body(account), position_document=b"[]",
             income_documents=(), algo_documents=(),
+            capture_publications=self.publications,
         )
         loaded = load_binance_reconciliation_bytes(data)
         self.assertEqual(
@@ -202,6 +237,7 @@ class BinanceReconciliationTests(unittest.TestCase):
             order_documents=(open_order,), trade_documents=(open_trade,),
             account_document=self.body(account), position_document=b"[]",
             income_documents=(), algo_documents=(),
+            capture_publications=self.publications,
         )
 
         balances["ETH"]["free"] = "0"
@@ -238,6 +274,7 @@ class BinanceReconciliationTests(unittest.TestCase):
             account_document=self.body(account), position_document=b"[]",
             income_documents=(), algo_documents=(),
             previous_reconciliation_bytes_or_null=previous,
+            capture_publications=self.publications,
         )
         self.assertEqual(
             json.loads(canonical_json(
@@ -295,6 +332,7 @@ class BinanceReconciliationTests(unittest.TestCase):
             position_document=self.body(fixture["FUTURES_POSITION"]),
             income_documents=(), algo_documents=(),
             previous_reconciliation_bytes_or_null=previous,
+            capture_publications=self.publications,
         )
         self.assertEqual(
             json.loads(canonical_json(
@@ -494,6 +532,116 @@ class BinanceReconciliationTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout,
                          b"BINANCE_PRIVATE_RECONCILIATION_MATCHED\n")
+
+    def test_capture_publication_rejects_same_bytes_at_replacement_inode(self):
+        temporary_parent = (
+            "/private/tmp"
+            if sys.platform == "darwin" and Path("/private/tmp").is_dir()
+            else tempfile.gettempdir()
+        )
+        with tempfile.TemporaryDirectory(dir=temporary_parent) as temporary:
+            directory = Path(temporary) / "events"
+            directory.mkdir(mode=0o700)
+            entry = directory.lstat()
+            identity = ChallengerReplacementEventRootIdentity(
+                str(directory), entry.st_dev, entry.st_ino, entry.st_uid, "0700",
+            )
+            with open_challenger_replacement_event_root(identity) as root:
+                payload = {"intent_id": "intent-" + "1" * 64,
+                           "capture_version": "1.0.0"}
+                for selector in ("event_input", "ledger_input", "venue_input"):
+                    data = canonical_json({"selector": selector}).encode()
+                    payload[selector + "_bytes_base64"] = __import__(
+                        "base64").b64encode(data).decode()
+                    payload[selector + "_sha256"] = hashlib.sha256(data).hexdigest()
+                event = build_challenger_replacement_event(
+                    sequence=1,
+                    event_type="BINANCE_RECONCILIATION_INPUTS_CAPTURED",
+                    slot_id="ETHUSDT@2026-08-28T00:00:00.000Z",
+                    worker_id="fixture-capture", recorded_at="2026-08-28T00:05:00.000Z",
+                    previous_event_hash="0" * 64,
+                    payload_bytes=canonical_json(payload).encode(),
+                    plan_hash="1" * 64, build_identity_hash="2" * 64,
+                    event_root=root,
+                )
+                publish_challenger_replacement_event(root, event)
+                loaded = reconciliation_module.load_binance_reconciliation_capture(
+                    event_root=root, capture_event_sequence=1,
+                    capture_event_hash=event.event_hash,
+                )
+                final = directory / "00000000000000000001.event.json"
+                sentinel = Path(temporary) / "sentinel"
+                final.rename(sentinel)
+                final.write_bytes(event.final_bytes)
+                os.chmod(final, 0o600)
+                before = (sentinel.read_bytes(), sentinel.lstat().st_ino,
+                          sentinel.lstat().st_mode, sentinel.lstat().st_nlink)
+                with self.assertRaisesRegex(
+                    BinanceReconciliationError,
+                    "BINANCE_RECONCILIATION_CAPTURE_UNTRUSTED",
+                ):
+                    reconciliation_module.verify_binance_reconciliation_capture(
+                        event_root=root, publications=loaded["publications"],
+                    )
+                after = (sentinel.read_bytes(), sentinel.lstat().st_ino,
+                         sentinel.lstat().st_mode, sentinel.lstat().st_nlink)
+                self.assertEqual(after, before)
+
+    def test_artifact_binds_three_capture_records_and_strict_loader_reopens_event(self):
+        temporary_parent = (
+            "/private/tmp"
+            if sys.platform == "darwin" and Path("/private/tmp").is_dir()
+            else tempfile.gettempdir()
+        )
+        with tempfile.TemporaryDirectory(dir=temporary_parent) as temporary:
+            directory = Path(temporary) / "events"
+            directory.mkdir(mode=0o700)
+            entry = directory.lstat()
+            identity = ChallengerReplacementEventRootIdentity(
+                str(directory), entry.st_dev, entry.st_ino, entry.st_uid, "0700",
+            )
+            with open_challenger_replacement_event_root(identity) as root:
+                payload = {"intent_id": "intent-" + "1" * 64,
+                           "capture_version": "1.0.0"}
+                for selector in ("event_input", "ledger_input", "venue_input"):
+                    body = canonical_json({"selector": selector}).encode()
+                    payload[selector + "_bytes_base64"] = __import__(
+                        "base64").b64encode(body).decode()
+                    payload[selector + "_sha256"] = hashlib.sha256(body).hexdigest()
+                event = build_challenger_replacement_event(
+                    sequence=1, event_type="BINANCE_RECONCILIATION_INPUTS_CAPTURED",
+                    slot_id="ETHUSDT@2026-08-28T00:00:00.000Z",
+                    worker_id="fixture-capture", recorded_at="2026-08-28T00:05:00.000Z",
+                    previous_event_hash="0" * 64, payload_bytes=canonical_json(payload).encode(),
+                    plan_hash="1" * 64, build_identity_hash="2" * 64, event_root=root,
+                )
+                publish_challenger_replacement_event(root, event)
+                capture = reconciliation_module.load_binance_reconciliation_capture(
+                    event_root=root, capture_event_sequence=1,
+                    capture_event_hash=event.event_hash,
+                )
+                data = self.reconcile(
+                    capture_publications=capture["publications"],
+                )
+                structural = load_binance_reconciliation_bytes(data)
+                self.assertEqual(
+                    set(structural["capture_publications"]),
+                    {"event_input", "ledger_input", "venue_input"},
+                )
+                strict = reconciliation_module.load_binance_reconciliation_bytes_strict(
+                    data, event_root=root,
+                )
+                self.assertEqual(strict["reconciliation_id"],
+                                 structural["reconciliation_id"])
+                schema = json.loads(resources.files("crypto_quant").joinpath(
+                    "schemas",
+                    "challenger-replacement-binance-reconciliation-v1.schema.json",
+                ).read_text(encoding="utf-8"))
+                Draft202012Validator.check_schema(schema)
+                self.assertEqual(
+                    list(Draft202012Validator(schema).iter_errors(json.loads(data))),
+                    [],
+                )
 
 
 if __name__ == "__main__":

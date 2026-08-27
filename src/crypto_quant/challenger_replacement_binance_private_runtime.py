@@ -17,7 +17,9 @@ from .challenger_replacement_binance_private_protocol import (build_binance_priv
 from .challenger_replacement_binance_private_transport import (BinancePrivateTransportResult,
     execute_binance_private_request)
 from .challenger_replacement_binance_preflight import BinanceAccountPreflightCapability
-from .challenger_replacement_binance_reconciliation import load_binance_reconciliation_bytes, reconcile_binance_private_state
+from .challenger_replacement_binance_reconciliation import (load_binance_reconciliation_bytes,
+    load_binance_reconciliation_bytes_strict, load_binance_reconciliation_capture,
+    reconcile_binance_private_state)
 from .challenger_replacement_events import ChallengerReplacementEventRoot
 from .challenger_replacement_opportunities import ChallengerReplacementOpportunityState
 from .challenger_replacement_public_http import open_fixed_public_request
@@ -113,10 +115,10 @@ def _append_intent(state, attempt, event_type, recorded_at, **payload): return _
 def _status(status, attempt, **extra): return {"status": status, "opportunity_id": attempt["opportunity_id"],
         "intent_id": attempt["intent_id"],
         "venue_client_order_id": attempt["venue_client_order_id"], **extra}
-def _reconciliation_bytes(private):
+def _reconciliation_bytes(private, event_root):
     try:
         data = base64.b64decode(private["reconciliation_bytes_base64"], validate=True)
-        loaded = load_binance_reconciliation_bytes(data)
+        loaded = load_binance_reconciliation_bytes_strict(data, event_root=event_root)
         if (hashlib.sha256(data).hexdigest()
                 != private["reconciliation_sha256"]
                 or loaded["reconciliation_id"]
@@ -125,7 +127,7 @@ def _reconciliation_bytes(private):
         return data, loaded
     except (KeyError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID", error)
-def _reconciliation(private): return _reconciliation_bytes(private)[1]
+def _reconciliation(private, event_root): return _reconciliation_bytes(private, event_root)[1]
 def _previous_reconciliation_bytes(state, *, product, before_opportunity_id):
     if (product not in {"SPOT", "PERPETUAL"}
             or not isinstance(before_opportunity_id, str)
@@ -148,7 +150,7 @@ def _previous_reconciliation_bytes(state, *, product, before_opportunity_id):
                     and private.get("product") == product):
                 candidates.append((opportunity_id, private))
         if not candidates: return None
-        return _reconciliation_bytes(max(candidates, key=lambda item: item[0])[1])[0]
+        return _reconciliation_bytes(max(candidates, key=lambda item: item[0])[1], state.event_root)[0]
     except BinancePrivateRuntimeError:
         raise
     except (AttributeError, KeyError, TypeError, ValueError) as error:
@@ -163,7 +165,7 @@ def _append_reconciliation_tail(state, attempt, loaded, required, client,
                    reconciliation_id=loaded["reconciliation_id"])
     return _status("TERMINAL_RECONCILED", attempt, reconciliation_id=loaded["reconciliation_id"])
 def _publish_reconciliation(state, attempt, data, required, client, recorded_at):
-    loaded = load_binance_reconciliation_bytes(data)
+    loaded = load_binance_reconciliation_bytes_strict(data, event_root=state.event_root)
     _append_intent(
         state, attempt, "BINANCE_POSITION_BALANCE_RECONCILED", recorded_at,
         reconciliation_id=loaded["reconciliation_id"],
@@ -172,7 +174,7 @@ def _publish_reconciliation(state, attempt, data, required, client, recorded_at)
     )
     return _append_reconciliation_tail(state, attempt, loaded, required, client, recorded_at)
 def _resume_reconciliation(state, attempt, private, recorded_at):
-    loaded = _reconciliation(private)
+    loaded = _reconciliation(private, state.event_root)
     if private["stage"] == "BINANCE_POSITION_BALANCE_RECONCILED":
         client = None
         required = attempt["product"] == "PERPETUAL"
@@ -272,12 +274,88 @@ def _private_payloads(state, opportunity_id):
     values = []
     for event in state._replay()["events"]:
         document = json.loads(event.final_bytes)
-        if (document["slot_id"] == opportunity_id
-                and document["event_type"].startswith("BINANCE_")):
+        if document["slot_id"] == opportunity_id and document["event_type"].startswith("BINANCE_"):
             values.append((document["event_type"], json.loads(base64.b64decode(
-                document["payload_bytes_base64"], validate=True,
-            ))))
+                document["payload_bytes_base64"], validate=True))))
     return values
+def _encoded(value): return base64.b64encode(value).decode("ascii")
+def _decoded(value): return base64.b64decode(value, validate=True)
+def _runtime_reconcile(**inputs):
+    try: return reconcile_binance_private_state(**inputs)
+    except ValueError as error: _fail(getattr(error, "reason_code", "BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID"), error)
+def _capture_inputs(state, attempt, activation, *, order_documents, trade_documents,
+                    account_document, position_document, income_documents,
+                    algo_documents, previous, stop):
+    events = [{"event_type": kind, "payload": payload} for kind, payload in _private_payloads(state, attempt["opportunity_id"])]
+    fills = [item["payload"] for item in events if item["event_type"] == "BINANCE_FILL_OBSERVED"]
+    common = {"product": attempt["product"], "action": attempt["action"],
+        "capital_usdt": activation.capital_usdt,
+        "previous_reconciliation_bytes_base64_or_null": None if previous is None else _encoded(previous),
+        "position_document_base64": _encoded(position_document),
+        "income_documents_base64": [_encoded(item) for item in income_documents], "stop_or_null": stop}
+    event_input = canonical_json({**common, "source": "EVENT", "private_events": events}).encode()
+    ledger_input = canonical_json({**common, "source": "LEDGER", "fills": fills}).encode()
+    venue_input = canonical_json({"source": "VENUE",
+        "order_documents_base64": [_encoded(item) for item in order_documents],
+        "trade_documents_base64": [_encoded(item) for item in trade_documents],
+        "account_document_base64": _encoded(account_document),
+        "position_document_base64": _encoded(position_document), "income_documents_base64": [_encoded(item) for item in income_documents],
+        "algo_documents_base64": [_encoded(item) for item in algo_documents],
+        "authorized_order": _order_authority(state, attempt), "authorized_stop_or_null": _stop_authority(stop)}).encode()
+    return event_input, ledger_input, venue_input
+def _capture(state, attempt, inputs, recorded_at):
+    payload = {"capture_version": "1.0.0"}
+    for selector, data in zip(("event_input", "ledger_input", "venue_input"), inputs):
+        payload[selector + "_bytes_base64"] = _encoded(data)
+        payload[selector + "_sha256"] = hashlib.sha256(data).hexdigest()
+    _append_intent(state, attempt, "BINANCE_RECONCILIATION_INPUTS_CAPTURED", recorded_at, **payload)
+    private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
+    return load_binance_reconciliation_capture(event_root=state.event_root,
+        capture_event_sequence=private["capture_event_sequence"],
+        capture_event_hash=private["capture_event_hash"])
+def _reconcile_captured(state, attempt, activation):
+    private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
+    captured = load_binance_reconciliation_capture(event_root=state.event_root,
+        capture_event_sequence=private["capture_event_sequence"],
+        capture_event_hash=private["capture_event_hash"])
+    event_input, ledger_input, venue = (_document(captured[key]) for key in ("event_input", "ledger_input", "venue_input"))
+    replayed_events = [{"event_type": kind, "payload": payload}
+        for kind, payload in _private_payloads(state, attempt["opportunity_id"])
+        if kind != "BINANCE_RECONCILIATION_INPUTS_CAPTURED"]
+    if (event_input.get("source") != "EVENT" or ledger_input.get("source") != "LEDGER"
+            or venue.get("source") != "VENUE"
+            or event_input.get("private_events") != replayed_events
+            or event_input.get("product") != attempt["product"]
+            or event_input.get("action") != attempt["action"]
+            or ledger_input.get("capital_usdt") != activation.capital_usdt):
+        _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
+    previous_encoded = ledger_input["previous_reconciliation_bytes_base64_or_null"]
+    previous = None if previous_encoded is None else _decoded(previous_encoded)
+    position = _decoded(ledger_input["position_document_base64"])
+    incomes = tuple(_decoded(item) for item in ledger_input["income_documents_base64"])
+    stop = ledger_input["stop_or_null"]
+    event_facts = (_spot_facts(state, attempt, activation, previous_reconciliation_bytes_or_null=previous)
+        if attempt["product"] == "SPOT" else _perpetual_facts(state, attempt, activation,
+            position, incomes, stop, previous_reconciliation_bytes_or_null=previous))
+    data = _runtime_reconcile(event_projection=event_facts,
+        ledger_projection=(
+            _spot_facts(state, attempt, activation, previous_reconciliation_bytes_or_null=previous,
+                fills=ledger_input["fills"]) if attempt["product"] == "SPOT" else
+            _perpetual_facts(state, attempt, activation, position, incomes,
+                stop, previous_reconciliation_bytes_or_null=previous,
+                fills=ledger_input["fills"])),
+        authorized_order=venue["authorized_order"],
+        authorized_stop_or_null=venue["authorized_stop_or_null"],
+        order_documents=tuple(map(_decoded, venue["order_documents_base64"])),
+        trade_documents=tuple(map(_decoded, venue["trade_documents_base64"])),
+        account_document=_decoded(venue["account_document_base64"]),
+        position_document=_decoded(venue["position_document_base64"]),
+        income_documents=tuple(map(_decoded, venue["income_documents_base64"])),
+        algo_documents=tuple(map(_decoded, venue["algo_documents_base64"])),
+        previous_reconciliation_bytes_or_null=previous,
+        capture_publications=captured["publications"])
+    client = event_facts["protective_stop_client_id_or_null"]
+    return data, client is not None, client
 def _order_authority(state, attempt):
     private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
     if not isinstance(private.get("order_id"), int):
@@ -287,70 +365,45 @@ def _stop_authority(stop):
     if stop is None: return None
     return {key: stop[key] for key in ("client_algo_id", "side", "quantity",
                                        "trigger_price", "reduce_only")}
-def _spot_facts(state, attempt, activation,
-                previous_reconciliation_bytes_or_null=None):
-    fills = [payload for event_type, payload in _private_payloads(
-        state, attempt["opportunity_id"]
-    ) if event_type == "BINANCE_FILL_OBSERVED"]
+def _spot_facts(state, attempt, activation, previous_reconciliation_bytes_or_null=None, fills=None):
+    fills = ([payload for event_type, payload in _private_payloads(state, attempt["opportunity_id"])
+              if event_type == "BINANCE_FILL_OBSERVED"] if fills is None else fills)
     quantity = sum((Decimal(item["quantity"]) for item in fills), Decimal(0))
     quote = sum((Decimal(item["quote_quantity"]) for item in fills), Decimal(0))
     fee = sum((Decimal(item["fee"]) for item in fills), Decimal(0))
-    previous = (None if previous_reconciliation_bytes_or_null is None else
-                load_binance_reconciliation_bytes(
-                    previous_reconciliation_bytes_or_null
-                )["event_projection"])
-    prior_signed = Decimal("0" if previous is None else
-                           previous["signed_quantity"])
-    prior_average = (None if previous is None else
-                     previous["average_entry_price_or_null"])
+    previous = (None if previous_reconciliation_bytes_or_null is None else load_binance_reconciliation_bytes(previous_reconciliation_bytes_or_null)["event_projection"])
+    prior_signed = Decimal("0" if previous is None else previous["signed_quantity"])
+    prior_average = None if previous is None else previous["average_entry_price_or_null"]
     prior_average = (None if prior_average is None else Decimal(prior_average))
-    prior_realized = Decimal("0" if previous is None else
-                             previous["realized_pnl"])
-    prior_fee = Decimal("0" if previous is None else
-                        previous["cumulative_fee"])
-    prior_wallet = Decimal(activation.capital_usdt if previous is None else
-                           previous["wallet_balance"])
-    prior_available = Decimal(
-        activation.capital_usdt if previous is None else
-        previous["available_balance"]
-    )
+    prior_realized = Decimal("0" if previous is None else previous["realized_pnl"])
+    prior_fee = Decimal("0" if previous is None else previous["cumulative_fee"])
+    prior_wallet = Decimal(activation.capital_usdt if previous is None else previous["wallet_balance"])
+    prior_available = Decimal(activation.capital_usdt if previous is None else previous["available_balance"])
     prior_fills = [] if previous is None else list(previous["fill_ids"])
     if attempt["action"] == "OPEN_LONG":
         signed = prior_signed + quantity
-        average = None if signed == 0 else (
-            prior_signed * (prior_average or Decimal("0")) + quote
-        ) / signed
-        realized = prior_realized
-        wallet = prior_wallet - fee
-        available = prior_available - quote - fee
+        average = None if signed == 0 else (prior_signed * (prior_average or Decimal("0")) + quote) / signed
+        realized = prior_realized; wallet = prior_wallet - fee; available = prior_available - quote - fee
     else:
         if prior_average is None or quantity > prior_signed: _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
         signed = prior_signed - quantity
         average = None if signed == 0 else prior_average
         realized_increment = quote - quantity * prior_average
-        realized = prior_realized + realized_increment
-        wallet = prior_wallet + realized_increment - fee
-        available = prior_available + quote - fee
+        realized = prior_realized + realized_increment; wallet = prior_wallet + realized_increment - fee; available = prior_available + quote - fee
     facts = {
         "product": "SPOT", "signed_quantity": canonical_decimal(signed),
-        "average_entry_price_or_null": (
-            None if average is None else canonical_decimal(average)
-        ), "realized_pnl": canonical_decimal(realized),
+        "average_entry_price_or_null": None if average is None else canonical_decimal(average), "realized_pnl": canonical_decimal(realized),
         "unrealized_pnl": "0",
         "cumulative_fee": canonical_decimal(prior_fee + fee), "funding": "0",
         "wallet_balance": canonical_decimal(wallet),
         "available_balance": canonical_decimal(available),
-        "open_order_count": 0,
-        "protective_stop_client_id_or_null": None,
-        "fill_ids": sorted(set(prior_fills + [
-            item["trade_id"] for item in fills
-        ])),
+        "open_order_count": 0, "protective_stop_client_id_or_null": None,
+        "fill_ids": sorted(set(prior_fills + [item["trade_id"] for item in fills])),
     }
     return facts
 def _append_fills_fees(state, attempt, recorded_at):
     private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
-    if private["stage"] == "BINANCE_FILLS_FEES_REPLAYED":
-        return
+    if private["stage"] == "BINANCE_FILLS_FEES_REPLAYED": return
     _append_intent(
         state, attempt, "BINANCE_FILLS_FEES_REPLAYED", recorded_at,
         fill_ids=private["fill_ids"], cumulative_fee=canonical_decimal(sum(
@@ -365,25 +418,14 @@ def _finish_spot(state, attempt, activation, order, trades, account, recorded_at
     previous = _previous_reconciliation_bytes(
         state, product="SPOT", before_opportunity_id=attempt["opportunity_id"],
     )
-    event_facts = _spot_facts(
-            state, attempt, activation,
-            previous_reconciliation_bytes_or_null=previous,
-        )
-    data = reconcile_binance_private_state(
-        event_projection=event_facts,
-        ledger_projection=_spot_facts(
-            state, attempt, activation,
-            previous_reconciliation_bytes_or_null=previous,
-        ), authorized_order=_order_authority(state, attempt),
-        authorized_stop_or_null=None,
-        order_documents=(order,), trade_documents=trades,
-        account_document=account, position_document=b"[]",
-        income_documents=(), algo_documents=(),
-        previous_reconciliation_bytes_or_null=previous,
-    )
-    return _publish_reconciliation(
-        state, attempt, data, False, None, recorded_at,
-    )
+    _capture(state, attempt, _capture_inputs(
+        state, attempt, activation, order_documents=(order,),
+        trade_documents=trades, account_document=account,
+        position_document=b"[]", income_documents=(), algo_documents=(),
+        previous=previous, stop=None,
+    ), recorded_at)
+    data, required, client = _reconcile_captured(state, attempt, activation)
+    return _publish_reconciliation(state, attempt, data, required, client, recorded_at)
 def _expected_stop(state, attempt):
     try:
         evidence = state.replay()["opportunities"][
@@ -588,19 +630,17 @@ def _ensure_stop(state, attempt, position, context):
         return _resume_stop(state, attempt, private, context,
                             stop=desired, position_bytes=position)
     return _finish_stop_replacement(state, attempt, position, context)
-def _perpetual_facts(state, attempt, activation, position, incomes, stop,
-                     previous_reconciliation_bytes_or_null=None):
-    fills = [payload for event_type, payload in _private_payloads(state,
+def _perpetual_facts(state, attempt, activation, position, incomes, stop, previous_reconciliation_bytes_or_null=None, fills=None):
+    fills = ([payload for event_type, payload in _private_payloads(state,
         attempt["opportunity_id"]) if event_type == "BINANCE_FILL_OBSERVED"]
+        if fills is None else fills)
     try:
         positions = _document(position, list)
-        if len(positions) != 1:
-            raise ValueError
+        if len(positions) != 1: raise ValueError
         position_value = positions[0]
         income_values = [_document(item) for item in incomes]
         quantity = sum((Decimal(item["quantity"]) for item in fills), Decimal(0))
-        weighted = sum((Decimal(item["quantity"]) * Decimal(item["price"])
-                        for item in fills), Decimal(0))
+        weighted = sum((Decimal(item["quantity"]) * Decimal(item["price"]) for item in fills), Decimal(0))
         fee = sum((Decimal(item["fee"]) for item in fills), Decimal(0))
         current_realized = sum((Decimal(item["realized_pnl"]) for item in fills), Decimal(0))
         current_funding = sum((Decimal(item["income"]) for item in income_values), Decimal(0))
@@ -616,18 +656,14 @@ def _perpetual_facts(state, attempt, activation, position, incomes, stop,
         prior_fills = [] if previous is None else list(previous["fill_ids"])
         if attempt["action"] == "OPEN_SHORT":
             signed = prior_signed - quantity
-            average = None if signed == 0 else (
-                -prior_signed * (prior_average or Decimal("0")) + weighted
-            ) / -signed
+            average = None if signed == 0 else (-prior_signed * (prior_average or Decimal("0")) + weighted) / -signed
         else:
             if prior_average is None or quantity > -prior_signed: _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
             signed = prior_signed + quantity
             average = None if signed == 0 else prior_average
         if Decimal(position_value["positionAmt"]) != signed: _fail("VENUE_LOCAL_POSITION_MISMATCH")
-        realized = prior_realized + current_realized
-        funding = prior_funding + current_funding
-        wallet = prior_wallet + current_realized - fee + current_funding
-        available = wallet - Decimal(position_value["isolatedMargin"])
+        realized = prior_realized + current_realized; funding = prior_funding + current_funding
+        wallet = prior_wallet + current_realized - fee + current_funding; available = wallet - Decimal(position_value["isolatedMargin"])
         client = None
         if signed < 0:
             if not isinstance(stop, Mapping): _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
@@ -675,24 +711,14 @@ def _finish_perpetual(state, attempt, activation, stop, context,
                     state, product="PERPETUAL",
                     before_opportunity_id=attempt["opportunity_id"],
                 ))
-    facts = _perpetual_facts(
-        state, attempt, activation, position.body, income_documents, stop,
-        previous_reconciliation_bytes_or_null=previous,
-    )
-    data = reconcile_binance_private_state(
-        event_projection=facts, ledger_projection=_perpetual_facts(
-            state, attempt, activation, position.body, income_documents, stop,
-            previous_reconciliation_bytes_or_null=previous,
-        ), authorized_order=_order_authority(state, attempt),
-        authorized_stop_or_null=_stop_authority(stop),
-        order_documents=(order_result.body,),
+    _capture(state, attempt, _capture_inputs(
+        state, attempt, activation, order_documents=(order_result.body,),
         trade_documents=_tuple_documents(trades.body),
         account_document=account.body, position_document=position.body,
         income_documents=income_documents, algo_documents=algo_documents,
-        previous_reconciliation_bytes_or_null=previous,
-    )
-    client = facts["protective_stop_client_id_or_null"]
-    required = client is not None
+        previous=previous, stop=stop,
+    ), context.recorded_at)
+    data, required, client = _reconcile_captured(state, attempt, activation)
     return _publish_reconciliation(state, attempt, data, required, client, context.recorded_at)
 def _cleanup_query_observation(result, client):
     if _proven_absent(result): return False, None
@@ -994,7 +1020,7 @@ def run_challenger_replacement_binance_private_intent(
     existing = _existing_private(state, attempt)
     if existing is not None:
         if existing["stage"] == "BINANCE_RECONCILIATION_SUCCEEDED":
-            loaded = _reconciliation(existing)
+            loaded = _reconciliation(existing, state.event_root)
             return _status(
                 "TERMINAL_RECONCILED", attempt,
                 reconciliation_id=existing["reconciliation_id"],
@@ -1005,6 +1031,13 @@ def run_challenger_replacement_binance_private_intent(
         }:
             return _resume_reconciliation(
                 state, attempt, existing, recorded_at,
+            )
+        if existing["stage"] == "BINANCE_RECONCILIATION_INPUTS_CAPTURED":
+            data, required, client = _reconcile_captured(
+                state, attempt, activation,
+            )
+            return _publish_reconciliation(
+                state, attempt, data, required, client, recorded_at,
             )
     else:
         _append_intent(state, attempt, "BINANCE_INTENT_AUTHORIZED", recorded_at,
