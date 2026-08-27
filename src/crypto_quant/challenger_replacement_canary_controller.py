@@ -30,6 +30,7 @@ _CEREMONY = (
     "CEREMONY_QUALIFIED",
 )
 _LABEL = "OPERATIONAL_CEREMONY_NOT_STRATEGY_EVIDENCE"
+_CANARY_TYPES = frozenset({"CEREMONY_STATE_RECONCILED", "CANARY_STAGE_BLOCK_STARTED", "CANARY_EQUITY_RECONCILED", "CANARY_STRATEGY_CYCLE_RECONCILED"})
 _HARD_STOPS = frozenset({
     "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN",
     "VENUE_LOCAL_POSITION_MISMATCH",
@@ -323,8 +324,7 @@ def _project_challenger_replacement_canary(*, events, plan, now):
     }
     document["projection_id"] = _projection_id(document)
     return (canonical_json(document) + "\n").encode()
-def project_challenger_replacement_canary(*, event_root, plan, build_identity,
-                                           now):
+def project_challenger_replacement_canary(*, event_root, plan, build_identity, now):
     """Project only from the retained canonical event-root capability."""
     try:
         if (not isinstance(event_root, ChallengerReplacementEventRoot)
@@ -335,12 +335,13 @@ def project_challenger_replacement_canary(*, event_root, plan, build_identity,
         events = []
         for event in replay.events:
             outer = json.loads(event.final_bytes.decode("utf-8"))
+            if (outer["plan_hash"] != plan["plan_hash"]
+                    or outer["build_identity_hash"] != expected_build): raise ValueError
+            if outer["event_type"] not in _CANARY_TYPES: continue
             payload = _strict_json_bytes(base64.b64decode(
                 outer["payload_bytes_base64"], validate=True,
             ))
-            if (outer["plan_hash"] != plan["plan_hash"]
-                    or outer["build_identity_hash"] != expected_build
-                    or payload.get("event_type") != outer["event_type"]
+            if (payload.get("event_type") != outer["event_type"]
                     or payload.get("occurred_at") != outer["recorded_at"]
                     or payload.get("block_id") != outer["slot_id"]):
                 raise ValueError

@@ -102,19 +102,23 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
         changed["block_id"] = block_id
         return changed
 
-    def project(self, events, now="2026-09-09T00:00:00.000Z"):
+    def project(self, events, now="2026-09-09T00:00:00.000Z", prefix=()):
         workspace = EventWorkspace()
         self.addCleanup(workspace.close)
         previous = "0" * 64
         with open_challenger_replacement_event_root(workspace.identity()) as root:
-            for sequence, candidate in enumerate(events, 1):
+            candidates = tuple(prefix) + tuple(events)
+            for sequence, candidate in enumerate(candidates, 1):
                 event = build_challenger_replacement_event(
                     sequence=sequence, event_type=candidate["event_type"],
-                    slot_id=candidate["block_id"],
+                    slot_id=(candidate["block_id"] if "block_id" in candidate
+                             else candidate["slot_id"]),
                     worker_id="canary-controller-fixture",
-                    recorded_at=candidate["occurred_at"],
+                    recorded_at=(candidate["occurred_at"]
+                                 if "occurred_at" in candidate
+                                 else candidate["recorded_at"]),
                     previous_event_hash=previous,
-                    payload_bytes=canonical_json(candidate).encode(),
+                    payload_bytes=canonical_json(candidate.get("payload", candidate)).encode(),
                     plan_hash=self.plan["plan_hash"],
                     build_identity_hash=business_hash(V076_BUILD),
                     event_root=root,
@@ -151,6 +155,15 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                 events=self.ceremony_events(), plan=self.plan,
                 now="2026-09-09T00:00:00.000Z",
             )
+
+    def test_projection_ignores_non_canary_events_after_chain_validation(self):
+        prefix = ({
+            "event_type": "INPUT_PREPARED", "slot_id": "ETHUSDT@fixture",
+            "recorded_at": "2026-08-31T20:00:00.000Z",
+            "payload": {"fixture": "non-canary-authority"},
+        },)
+        _, loaded = self.project(self.ceremony_events(), prefix=prefix)
+        self.assertTrue(loaded["ceremony"]["qualified"])
 
     def test_daily_loss_stops_new_risk_until_utc_rollover(self):
         events = self.ceremony_events() + (
