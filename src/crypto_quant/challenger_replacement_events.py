@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Tuple
+from typing import Mapping, Tuple
 
 from .canonical import canonical_json, utc_datetime
 
@@ -500,6 +500,43 @@ def _publication(outcome, root, event, name, entry):
         inode=entry.st_ino,
         size=entry.st_size,
     )
+
+
+def verify_challenger_replacement_event_publication(root, record):
+    """Read one canonical event only when its exact publication still exists."""
+
+    reason = "CHALLENGER_REPLACEMENT_EVENT_PUBLICATION_UNTRUSTED"
+    try:
+        keys = {"sequence", "event_hash", "device", "inode", "size"}
+        if (not isinstance(root, ChallengerReplacementEventRoot)
+                or not isinstance(record, Mapping)
+                or frozenset(record) != keys
+                or isinstance(record["sequence"], bool)
+                or not isinstance(record["sequence"], int)
+                or not 1 <= record["sequence"] <= _MAX_CANONICAL_EVENT_SEQUENCE
+                or not _hash_valid(record["event_hash"])
+                or any(isinstance(record[key], bool) or not isinstance(record[key], int)
+                       for key in ("device", "inode", "size"))
+                or record["device"] < 0 or record["inode"] < 1
+                or not 1 <= record["size"] <= _MAX_CANONICAL_EVENT_BYTES):
+            raise ChallengerReplacementEventError(reason)
+        root.validate()
+        loaded = _read_final(root, "%020d.event.json" % record["sequence"])
+        if loaded is None:
+            raise ChallengerReplacementEventError(reason)
+        event, entry = loaded
+        if ((event.sequence, event.event_hash, entry.st_dev, entry.st_ino,
+             entry.st_size) != (record["sequence"], record["event_hash"],
+                                record["device"], record["inode"], record["size"])):
+            raise ChallengerReplacementEventError(reason)
+        root.validate()
+        return event
+    except ChallengerReplacementEventError as error:
+        if error.reason_code == reason:
+            raise
+        raise ChallengerReplacementEventError(reason) from error
+    except (KeyError, TypeError, ValueError) as error:
+        raise ChallengerReplacementEventError(reason) from error
 
 
 def _confirm_already_committed(root, event, final_name, existing):

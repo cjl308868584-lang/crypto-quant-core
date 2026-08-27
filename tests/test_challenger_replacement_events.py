@@ -522,6 +522,56 @@ class EventPublicationTests(unittest.TestCase):
         self.root.close()
         self.workspace.close()
 
+    @staticmethod
+    def publication_record(publication):
+        return {
+            name: getattr(publication, name)
+            for name in ("sequence", "event_hash", "device", "inode", "size")
+        }
+
+    def test_read_only_verifier_binds_exact_publication_inode(self):
+        event = fixture_event(self.root)
+        publication = events_module.publish_challenger_replacement_event(
+            self.root, event,
+        )
+        record = self.publication_record(publication)
+        self.assertEqual(
+            events_module.verify_challenger_replacement_event_publication(
+                self.root, record,
+            ), event,
+        )
+
+        final = Path(publication.absolute_path)
+        replacement = final.with_name("same-bytes-new-inode.tmp")
+        replacement.write_bytes(final.read_bytes())
+        replacement.chmod(0o600)
+        os.replace(replacement, final)
+        with self.assertRaisesRegex(
+            ChallengerReplacementEventError,
+            "CHALLENGER_REPLACEMENT_EVENT_PUBLICATION_UNTRUSTED",
+        ):
+            events_module.verify_challenger_replacement_event_publication(
+                self.root, record,
+            )
+
+    def test_read_only_verifier_rejects_nonexact_record(self):
+        publication = events_module.publish_challenger_replacement_event(
+            self.root, fixture_event(self.root),
+        )
+        record = self.publication_record(publication)
+        for changed in (
+            {**record, "event_hash": "f" * 64},
+            {**record, "unexpected": 1},
+            {**record, "size": 0},
+        ):
+            with self.subTest(changed=changed), self.assertRaisesRegex(
+                ChallengerReplacementEventError,
+                "CHALLENGER_REPLACEMENT_EVENT_PUBLICATION_UNTRUSTED",
+            ):
+                events_module.verify_challenger_replacement_event_publication(
+                    self.root, changed,
+                )
+
     def test_commits_once_then_exact_fast_path_never_creates_staging(self):
         event = fixture_event(self.root)
         first = events_module.publish_challenger_replacement_event(self.root, event)
