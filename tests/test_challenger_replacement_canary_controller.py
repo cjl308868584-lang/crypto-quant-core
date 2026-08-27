@@ -11,6 +11,7 @@ from crypto_quant.challenger_replacement_accelerated_canary_plan import (
 )
 from crypto_quant.challenger_replacement_canary_controller import (
     ChallengerReplacementCanaryControllerError,
+    _authorize_private_claim,
     _project_challenger_replacement_canary,
     load_challenger_replacement_canary_approval_bytes,
     load_challenger_replacement_canary_projection_bytes,
@@ -433,6 +434,43 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                 self.start(),
                 self.cycle("SPOT", 1, "2026-09-03T00:00:00.000Z"),
             ))
+
+    def test_cycle_is_derived_from_exact_open_and_close_private_lifecycles(self):
+        workspace = EventWorkspace(); self.addCleanup(workspace.close)
+        with open_challenger_replacement_event_root(workspace.identity()) as root:
+            close = build_challenger_replacement_event(
+                sequence=1, event_type="BINANCE_RECONCILIATION_SUCCEEDED",
+                slot_id="ETHUSDT@2026-09-03T00:00:00.000Z",
+                worker_id="cycle-authority-fixture",
+                recorded_at="2026-09-03T00:05:00.000Z",
+                previous_event_hash="0" * 64,
+                payload_bytes=canonical_json({"fixture": "close-publication"}).encode(),
+                plan_hash=self.replacement_plan["plan_hash"],
+                build_identity_hash=business_hash(V076_BUILD), event_root=root,
+            )
+            publication = publish_challenger_replacement_event(root, close)
+            record = self.publication_record(publication)
+            opening_hash = "a" * 64
+            projection = {"opportunities": {
+                "open": {"private": {"block_id": "e0-block-1", "product": "SPOT",
+                    "action": "OPEN_LONG", "stage": "BINANCE_RECONCILIATION_SUCCEEDED",
+                    "last_private_event_hash": opening_hash,
+                    "last_private_event_sequence": 0}},
+                "ETHUSDT@2026-09-03T00:00:00.000Z": {"private": {
+                    "block_id": "e0-block-1", "product": "SPOT", "action": "CLOSE_LONG",
+                    "stage": "BINANCE_RECONCILIATION_SUCCEEDED"}},
+            }}
+            payload = {"event_type": "CANARY_STRATEGY_CYCLE_RECONCILED",
+                "block_id": "e0-block-1", "occurred_at": "2026-09-03T01:00:00.000Z",
+                "private_event_publication": record}
+            derived = _authorize_private_claim(root, {"sequence": 2}, payload, projection)
+            expected = "natural-cycle-" + hashlib.sha256(
+                (opening_hash + close.event_hash).encode()).hexdigest()
+            self.assertEqual((derived["cycle_id"], derived["product"], derived["complete"]),
+                             (expected, "SPOT", True))
+            projection["opportunities"].pop("open")
+            with self.assertRaises(ValueError):
+                _authorize_private_claim(root, {"sequence": 2}, payload, projection)
 
     def test_replacement_and_canary_plans_cannot_be_substituted(self):
         cases = ({"outer_plan": self.plan}, {"replacement_plan": self.plan},
