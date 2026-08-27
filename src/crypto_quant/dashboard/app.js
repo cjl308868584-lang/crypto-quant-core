@@ -47,6 +47,12 @@ document.addEventListener("DOMContentLoaded", () => {
       addFact(challenger, "当前产品", challenge.simulation_state.current_product);
       addFact(challenger, "对账", challenge.simulation_state.reconciliation_status);
       addFact(challenger, "风险", challenge.simulation_state.risk_state);
+      addFact(challenger, "Binance 私有边界", challenge.binance_private.stage_status);
+      addFact(challenger, "仪式", challenge.binance_private.ceremony_status);
+      addFact(challenger, "Canary 阶段", challenge.binance_private.stage);
+      addFact(challenger, "单日损失", challenge.binance_private.daily_loss_usdt);
+      addFact(challenger, "高水位损失", challenge.binance_private.high_water_loss_usdt);
+      addFact(challenger, "新增风险锁", challenge.binance_private.new_risk_blocked);
     } else {
       addFact(challenger, "阶段", challenge.phase);
       addFact(challenger, "服务", challenge.service_health);

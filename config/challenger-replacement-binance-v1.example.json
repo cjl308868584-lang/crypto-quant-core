@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "production_activation": false,
+  "venue": "BINANCE_ONLY",
+  "symbol": "ETHUSDT",
+  "credential_file": "",
+  "account_approval_file": "",
+  "activation_file": "",
+  "private_transport_enabled": false,
+  "real_orders_allowed": false,
+  "fund_movement_allowed": false
+}
