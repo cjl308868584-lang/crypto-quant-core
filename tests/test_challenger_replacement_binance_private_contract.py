@@ -446,6 +446,13 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "intent_id": intent["intent_id"], "fill_ids": [301],
             "cumulative_fee": "0.002",
         })
+        capture = {"intent_id": intent["intent_id"],
+                   "capture_version": "1.0.0"}
+        for selector in ("event_input", "ledger_input", "venue_input"):
+            data = canonical_json({"selector": selector}).encode()
+            capture[selector + "_bytes_base64"] = base64.b64encode(data).decode()
+            capture[selector + "_sha256"] = hashlib.sha256(data).hexdigest()
+        self._append_private("BINANCE_RECONCILIATION_INPUTS_CAPTURED", capture)
         reconciliation = self._reconciliation_bytes()
         reconciliation_id = json.loads(reconciliation)["reconciliation_id"]
         self._append_private("BINANCE_POSITION_BALANCE_RECONCILED", {
@@ -497,6 +504,51 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             })
         after = self.state.replay()
         self.assertEqual(after["last_event_hash"], before["last_event_hash"])
+
+    def test_reconciliation_inputs_capture_is_one_strict_durable_transition(self):
+        self._pre_send()
+        intent = self._intent_payload()
+        self._append_private("BINANCE_ORDER_ACKNOWLEDGED", {
+            "intent_id": intent["intent_id"], "order_id": 101,
+            "venue_client_order_id": intent["venue_client_order_id"],
+        })
+        self._append_private("BINANCE_FILL_OBSERVED", {
+            "intent_id": intent["intent_id"], "trade_id": 301,
+            "order_id": 101, "quantity": "0.001", "price": "2000",
+            "quote_quantity": "2", "fee": "0.002", "fee_asset": "USDT",
+            "cumulative_filled_quantity": "0.001",
+        })
+        self._append_private("BINANCE_ORDER_FILLED", {
+            "intent_id": intent["intent_id"],
+            "cumulative_filled_quantity": "0.001",
+            "cumulative_fee": "0.002", "venue_terminal_status": "FILLED",
+        })
+        self._append_private("BINANCE_FILLS_FEES_REPLAYED", {
+            "intent_id": intent["intent_id"], "fill_ids": [301],
+            "cumulative_fee": "0.002",
+        })
+        payload = {"intent_id": intent["intent_id"],
+                   "capture_version": "1.0.0"}
+        for selector in ("event_input", "ledger_input", "venue_input"):
+            data = canonical_json({"selector": selector}).encode()
+            payload[selector + "_bytes_base64"] = base64.b64encode(data).decode()
+            payload[selector + "_sha256"] = hashlib.sha256(data).hexdigest()
+        publication = self._append_private(
+            "BINANCE_RECONCILIATION_INPUTS_CAPTURED", payload,
+        )
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id]["private"]
+        self.assertEqual(private["stage"],
+                         "BINANCE_RECONCILIATION_INPUTS_CAPTURED")
+        self.assertEqual(private["capture_event_hash"], publication.event_hash)
+        self.assertEqual(private["capture_event_sequence"], publication.sequence)
+        with self.assertRaisesRegex(
+            ChallengerReplacementOpportunityError,
+            "CHALLENGER_REPLACEMENT_BINANCE_PRIVATE_EVENT_INVALID",
+        ):
+            self._append_private(
+                "BINANCE_RECONCILIATION_INPUTS_CAPTURED", payload,
+            )
 
     def test_out_of_order_private_event_is_rejected_without_append(self):
         self._authorize()

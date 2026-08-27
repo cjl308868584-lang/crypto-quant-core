@@ -317,16 +317,12 @@ _PRIVATE_TRANSITIONS = {
         "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED",
         "BINANCE_ORDER_EXPIRED", "BINANCE_ORDER_REJECTED", "BINANCE_ORDER_PARTIALLY_FILLED",
     },
-    "BINANCE_POSITION_BALANCE_RECONCILED": {
-        "BINANCE_FILLS_FEES_REPLAYED",
-    },
-    "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED": {
-        "BINANCE_POSITION_BALANCE_RECONCILED",
-    },
-    "BINANCE_RECONCILIATION_SUCCEEDED": {
-        "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
-    },
+    "BINANCE_RECONCILIATION_INPUTS_CAPTURED": {"BINANCE_FILLS_FEES_REPLAYED"},
+    "BINANCE_POSITION_BALANCE_RECONCILED": {"BINANCE_RECONCILIATION_INPUTS_CAPTURED"},
+    "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED": {"BINANCE_POSITION_BALANCE_RECONCILED"},
+    "BINANCE_RECONCILIATION_SUCCEEDED": {"BINANCE_PROTECTION_RECONCILED_IF_EXPOSED"},
     "BINANCE_RECONCILIATION_FAILED": {
+        "BINANCE_RECONCILIATION_INPUTS_CAPTURED",
         "BINANCE_POSITION_BALANCE_RECONCILED",
         "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
     },
@@ -567,25 +563,25 @@ def _private_payload_valid(event_type, payload, private):
                 is (event_type == "BINANCE_ORDER_UNKNOWN"))
     if event_type == "BINANCE_UNKNOWN_QUERY_OBSERVED":
         return payload["venue_client_order_id"] == private["venue_client_order_id"]
-    if event_type == "BINANCE_FILLS_FEES_REPLAYED":
-        return payload["fill_ids"] == private["fill_ids"]
+    if event_type == "BINANCE_FILLS_FEES_REPLAYED": return payload["fill_ids"] == private["fill_ids"]
+    if event_type == "BINANCE_RECONCILIATION_INPUTS_CAPTURED":
+        try:
+            if payload["intent_id"] != private["intent_id"]: return False
+            for selector in ("event_input", "ledger_input", "venue_input"):
+                data = base64.b64decode(payload[selector + "_bytes_base64"], validate=True)
+                if (not 1 <= len(data) <= 1_048_576 or hashlib.sha256(data).hexdigest()
+                        != payload[selector + "_sha256"] or canonical_json(
+                            _strict_json_bytes(data)).encode() != data): return False
+            return True
+        except (KeyError, TypeError, ValueError): return False
     if event_type == "BINANCE_POSITION_BALANCE_RECONCILED":
         try:
-            data = base64.b64decode(
-                payload["reconciliation_bytes_base64"], validate=True,
-            )
-            from .challenger_replacement_binance_reconciliation import (
-                load_binance_reconciliation_bytes,
-            )
+            data = base64.b64decode(payload["reconciliation_bytes_base64"], validate=True)
+            from .challenger_replacement_binance_reconciliation import load_binance_reconciliation_bytes
             loaded = load_binance_reconciliation_bytes(data)
-            return (
-                hashlib.sha256(data).hexdigest()
-                == payload["reconciliation_sha256"]
-                and loaded["reconciliation_id"]
-                == payload["reconciliation_id"]
-            )
-        except (TypeError, ValueError):
-            return False
+            return (hashlib.sha256(data).hexdigest() == payload["reconciliation_sha256"]
+                    and loaded["reconciliation_id"] == payload["reconciliation_id"])
+        except (TypeError, ValueError): return False
     if event_type == "BINANCE_RECONCILIATION_SUCCEEDED":
         return payload["reconciliation_id"] == private.get("reconciliation_id")
     if event_type == "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED":
@@ -607,6 +603,10 @@ def _apply_private_transition(private, event_type, payload, event):
         private["request_endpoint_id"] = payload["endpoint_id"]
         private["request_sha256"] = payload["request_sha256"]
         private["request_timestamp_ms"] = payload["timestamp_ms"]
+    elif event_type == "BINANCE_RECONCILIATION_INPUTS_CAPTURED":
+        private.update(capture_event_hash=event.event_hash,
+            capture_event_sequence=event.sequence,
+            capture={key: payload[key] for key in payload if key != "intent_id"})
     elif event_type == "BINANCE_POSITION_BALANCE_RECONCILED":
         private["reconciliation_id"] = payload["reconciliation_id"]
         private["reconciliation_bytes_base64"] = payload[
