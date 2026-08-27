@@ -4,6 +4,9 @@ from decimal import Decimal
 import hashlib
 from importlib import resources
 import json
+import os
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -17,7 +20,7 @@ from crypto_quant.challenger_replacement_binance_credential import (
 )
 from crypto_quant.challenger_replacement_binance_preflight import (
     evaluate_binance_account_preflight,
-    load_binance_account_preflight_capability_bytes,
+    open_binance_account_preflight_capability,
 )
 from crypto_quant.challenger_replacement_binance_private_lifecycle import (
     build_binance_order_intent_from_opportunity,
@@ -142,7 +145,7 @@ class BinancePrivateRuntimeIdentityTests(unittest.TestCase):
                     state=self.state,
                     event_root=root,
                     intent={},
-                    preflight={},
+                    preflight_capability={},
                     activation=object(),
                     credential=object(),
                     build_identity=self.workspace.build,
@@ -184,7 +187,7 @@ class BinancePrivateRuntimeDecisionBindingTests(unittest.TestCase):
         ):
             run_challenger_replacement_binance_private_intent(
                 state=state, event_root=workspace.root, intent=intent,
-                preflight={}, activation=activation, credential=object(),
+                preflight_capability={}, activation=activation, credential=object(),
                 build_identity=workspace.build,
             )
         self.assertEqual(state.replay()["last_event_hash"], before)
@@ -254,7 +257,7 @@ class BinancePrivateRuntimeDecisionBindingTests(unittest.TestCase):
         ):
             run_challenger_replacement_binance_private_intent(
                 state=state, event_root=root, intent=intent,
-                preflight=preflight, activation=activation,
+                preflight_capability=preflight, activation=activation,
                 credential=object(), build_identity=V076_BUILD,
             )
         transport.assert_not_called()
@@ -325,9 +328,25 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             configuration_sha256=receipt_document["configuration_sha256"],
             account_approval_sha256=receipt_document["account_approval_sha256"],
         )
-        self.preflight = load_binance_account_preflight_capability_bytes(
-            receipt, build_identity=self.workspace.build,
+        preflight_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(preflight_directory.cleanup)
+        parent = Path(preflight_directory.name) / "owner-only"
+        parent.mkdir(mode=0o700)
+        path = parent / "account-preflight.json"
+        path.write_bytes(receipt); path.chmod(0o600)
+        parent_stat, file_stat = parent.stat(), path.stat()
+        reference = {
+            "schema_version": "1.0.0", "absolute_path": str(path),
+            "parent_device": parent_stat.st_dev,
+            "parent_inode": parent_stat.st_ino,
+            "file_device": file_stat.st_dev, "file_inode": file_stat.st_ino,
+            "file_sha256": hashlib.sha256(receipt).hexdigest(),
+        }
+        self.preflight = open_binance_account_preflight_capability(
+            reference_bytes=(canonical_json(reference) + "\n").encode(),
+            expected_uid=os.getuid(), build_identity=self.workspace.build,
         )
+        self.addCleanup(self.preflight.close)
         self.credential = SimpleNamespace(identity=credential_identity)
         self.intent = build_binance_order_intent_from_opportunity(
             slot=self.state.replay()["opportunities"][self.workspace.opportunity_id],
@@ -352,8 +371,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "execute_binance_private_request",
             side_effect=AssertionError("transport must not run"),
         ) as transport, self.assertRaisesRegex(
-            BinancePrivateRuntimeError,
-            "BINANCE_PRIVATE_RUNTIME_PREFLIGHT_AUTHORITY_INVALID",
+            TypeError, "unexpected keyword argument 'preflight'",
         ):
             run_challenger_replacement_binance_private_intent(
                 state=self.state, event_root=self.state.event_root,
@@ -389,7 +407,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ):
             run_challenger_replacement_binance_private_intent(
                 state=self.state, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -949,7 +967,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ):
             run_challenger_replacement_binance_private_intent(
                 state=self.state, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1003,7 +1021,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ) as transport:
             result = run_challenger_replacement_binance_private_intent(
                 state=self.state, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1060,7 +1078,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             with self.assertRaises(ReconciliationCrash):
                 run_challenger_replacement_binance_private_intent(
                     state=fresh, event_root=self.workspace.root,
-                    intent=self.intent, preflight=self.preflight,
+                    intent=self.intent, preflight_capability=self.preflight,
                     activation=self.activation, credential=self.credential,
                     build_identity=self.workspace.build,
                 )
@@ -1083,7 +1101,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ) as recovery_transport:
             terminal = run_challenger_replacement_binance_private_intent(
                 state=recovered, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1144,7 +1162,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             with self.assertRaises(SimulatedCrash):
                 run_challenger_replacement_binance_private_intent(
                     state=self.state, event_root=self.workspace.root,
-                    intent=self.intent, preflight=self.preflight,
+                    intent=self.intent, preflight_capability=self.preflight,
                     activation=self.activation, credential=self.credential,
                     build_identity=self.workspace.build,
                 )
@@ -1175,7 +1193,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ) as transport:
             result = run_challenger_replacement_binance_private_intent(
                 state=fresh, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1229,7 +1247,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             with self.assertRaises(SimulatedCrash):
                 run_challenger_replacement_binance_private_intent(
                     state=self.state, event_root=self.workspace.root,
-                    intent=self.intent, preflight=self.preflight,
+                    intent=self.intent, preflight_capability=self.preflight,
                     activation=self.activation, credential=self.credential,
                     build_identity=self.workspace.build,
                 )
@@ -1257,7 +1275,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ) as transport:
             result = run_challenger_replacement_binance_private_intent(
                 state=fresh, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1299,7 +1317,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
                 state=self.state,
                 event_root=self.workspace.root,
                 intent=self.intent,
-                preflight=self.preflight,
+                preflight_capability=self.preflight,
                 activation=self.activation,
                 credential=self.credential,
                 build_identity=self.workspace.build,
@@ -1361,7 +1379,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ) as transport:
             result = run_challenger_replacement_binance_private_intent(
                 state=self.state, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1404,7 +1422,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ) as transport:
             result = run_challenger_replacement_binance_private_intent(
                 state=fresh, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1432,7 +1450,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ) as transport:
             replayed = run_challenger_replacement_binance_private_intent(
                 state=terminal, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1465,7 +1483,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
                     state=self.state,
                     event_root=self.workspace.root,
                     intent=self.intent,
-                    preflight=self.preflight,
+                    preflight_capability=self.preflight,
                     activation=self.activation,
                     credential=self.credential,
                     build_identity=self.workspace.build,
@@ -1522,7 +1540,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
                 state=fresh,
                 event_root=self.workspace.root,
                 intent=self.intent,
-                preflight=self.preflight,
+                preflight_capability=self.preflight,
                 activation=self.activation,
                 credential=self.credential,
                 build_identity=self.workspace.build,
@@ -1573,7 +1591,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
                     state=self.state,
                     event_root=self.workspace.root,
                     intent=self.intent,
-                    preflight=self.preflight,
+                    preflight_capability=self.preflight,
                     activation=self.activation,
                     credential=self.credential,
                     build_identity=self.workspace.build,
@@ -1604,7 +1622,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
                 state=fresh,
                 event_root=self.workspace.root,
                 intent=self.intent,
-                preflight=self.preflight,
+                preflight_capability=self.preflight,
                 activation=self.activation,
                 credential=self.credential,
                 build_identity=self.workspace.build,
@@ -1646,7 +1664,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             with self.assertRaises(SimulatedCrash):
                 run_challenger_replacement_binance_private_intent(
                     state=self.state, event_root=self.workspace.root,
-                    intent=self.intent, preflight=self.preflight,
+                    intent=self.intent, preflight_capability=self.preflight,
                     activation=self.activation, credential=self.credential,
                     build_identity=self.workspace.build,
                 )
@@ -1674,7 +1692,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ):
             run_challenger_replacement_binance_private_intent(
                 state=fresh, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1736,7 +1754,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             with self.assertRaises(SimulatedCrash):
                 run_challenger_replacement_binance_private_intent(
                     state=self.state, event_root=self.workspace.root,
-                    intent=self.intent, preflight=self.preflight,
+                    intent=self.intent, preflight_capability=self.preflight,
                     activation=self.activation, credential=self.credential,
                     build_identity=self.workspace.build,
                 )
@@ -1753,7 +1771,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ) as transport:
             result = run_challenger_replacement_binance_private_intent(
                 state=fresh, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )
@@ -1818,7 +1836,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             with self.assertRaises(SimulatedCrash):
                 run_challenger_replacement_binance_private_intent(
                     state=self.state, event_root=self.workspace.root,
-                    intent=self.intent, preflight=self.preflight,
+                    intent=self.intent, preflight_capability=self.preflight,
                     activation=self.activation, credential=self.credential,
                     build_identity=self.workspace.build,
                 )
@@ -1851,7 +1869,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             with self.assertRaises(SimulatedCrash):
                 run_challenger_replacement_binance_private_intent(
                     state=fresh, event_root=self.workspace.root,
-                    intent=self.intent, preflight=self.preflight,
+                    intent=self.intent, preflight_capability=self.preflight,
                     activation=self.activation, credential=self.credential,
                     build_identity=self.workspace.build,
                 )
@@ -1877,7 +1895,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ) as transport:
             completed = run_challenger_replacement_binance_private_intent(
                 state=terminal, event_root=self.workspace.root,
-                intent=self.intent, preflight=self.preflight,
+                intent=self.intent, preflight_capability=self.preflight,
                 activation=self.activation, credential=self.credential,
                 build_identity=self.workspace.build,
             )

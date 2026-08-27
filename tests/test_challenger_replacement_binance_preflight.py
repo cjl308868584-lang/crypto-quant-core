@@ -3,6 +3,9 @@ from dataclasses import replace
 import hashlib
 from importlib import resources
 import json
+import os
+from pathlib import Path
+import tempfile
 import unittest
 
 from jsonschema import Draft202012Validator
@@ -21,6 +24,7 @@ from crypto_quant.challenger_replacement_binance_preflight import (
     BinanceAccountPreflightError,
     evaluate_binance_account_preflight,
     load_binance_account_preflight_bytes,
+    open_binance_account_preflight_capability,
 )
 
 
@@ -78,6 +82,29 @@ class BinanceAccountPreflightTests(unittest.TestCase):
         with self.assertRaises(BinanceAccountPreflightError) as caught:
             self._evaluate(fixture, **kwargs)
         return caught.exception.reason_code
+
+    def _retained_capability(self, data):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        parent = Path(directory.name) / "owner-only"
+        parent.mkdir(mode=0o700)
+        path = parent / "account-preflight.json"
+        path.write_bytes(data)
+        path.chmod(0o600)
+        parent_stat, file_stat = parent.stat(), path.stat()
+        reference = {
+            "schema_version": "1.0.0", "absolute_path": str(path),
+            "parent_device": parent_stat.st_dev,
+            "parent_inode": parent_stat.st_ino,
+            "file_device": file_stat.st_dev, "file_inode": file_stat.st_ino,
+            "file_sha256": hashlib.sha256(data).hexdigest(),
+        }
+        capability = open_binance_account_preflight_capability(
+            reference_bytes=(canonical_json(reference) + "\n").encode(),
+            expected_uid=os.getuid(), build_identity=self.BUILD,
+        )
+        self.addCleanup(capability.close)
+        return capability, path
 
     def test_flat_approved_fixture_builds_canonical_strict_replay(self):
         data = self._evaluate()
@@ -269,10 +296,6 @@ class BinanceAccountPreflightTests(unittest.TestCase):
                     )
 
     def test_capability_binds_activation_approval_credential_and_expiry(self):
-        from crypto_quant.challenger_replacement_binance_preflight import (
-            load_binance_account_preflight_capability_bytes,
-        )
-
         data = self._evaluate()
         document = json.loads(data)
         approval_bytes = (canonical_json({
@@ -289,9 +312,7 @@ class BinanceAccountPreflightTests(unittest.TestCase):
             account_approval_sha256=hashlib.sha256(approval_bytes).hexdigest(),
             block_id="e0_block_" + "b" * 64,
         )
-        capability = load_binance_account_preflight_capability_bytes(
-            data, build_identity=self.BUILD
-        )
+        capability, _path = self._retained_capability(data)
         loaded = capability.load(
             activation=activation, credential_identity=self.identity,
             now=self.NOW,
@@ -321,6 +342,31 @@ class BinanceAccountPreflightTests(unittest.TestCase):
                 ),
                 now=self.NOW,
             )
+
+    def test_retained_capability_rejects_same_bytes_at_a_new_inode(self):
+        data = self._evaluate()
+        capability, path = self._retained_capability(data)
+        displaced = path.with_suffix(".displaced")
+        path.rename(displaced)
+        path.write_bytes(data)
+        path.chmod(0o600)
+        with self.assertRaisesRegex(
+            BinanceAccountPreflightError,
+            "BINANCE_ACCOUNT_PREFLIGHT_ATTACHMENT_CHANGED",
+        ):
+            capability.load(
+                activation=loaded_private_activation(
+                    build_identity=self.BUILD, now=self.NOW,
+                    configuration_sha256=json.loads(data)[
+                        "configuration_sha256"
+                    ],
+                    account_approval_sha256=json.loads(data)[
+                        "account_approval_sha256"
+                    ],
+                ),
+                credential_identity=self.identity, now=self.NOW,
+            )
+        self.assertEqual(displaced.read_bytes(), data)
 
 
 if __name__ == "__main__":

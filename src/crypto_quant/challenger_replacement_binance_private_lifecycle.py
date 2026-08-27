@@ -179,10 +179,10 @@ def prepare_binance_order_attempt(*, intent, projection, preflight,
                 or isinstance(intent["attempt_ordinal"], bool)
                 or not isinstance(intent["attempt_ordinal"], int)
                 or not 1 <= intent["attempt_ordinal"] <= (1 << 53) - 1
-                or preflight.get("status")
+                or preflight["status"]
                 != "BINANCE_ACCOUNT_PREFLIGHT_VERIFIED_FLAT"
-                or not _identity(preflight.get("preflight_id"))
-                or preflight.get("configuration") not in (
+                or not _identity(preflight["preflight_id"])
+                or preflight["configuration"] not in (
                     {"position_mode": "ONE_WAY", "asset_mode": "SINGLE_ASSET",
                      "symbol": "ETHUSDT", "margin_type": "ISOLATED",
                      "leverage": 1, "auto_add_margin": False},

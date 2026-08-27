@@ -943,18 +943,18 @@ def _send_request(state, attempt, request, context):
         order_result=_query_order(attempt, context), context=context,
     )
 def run_challenger_replacement_binance_private_intent(
-    *, state, event_root, intent, preflight, activation, credential,
+    *, state, event_root, intent, preflight_capability, activation, credential,
     build_identity
 ):
     """Run one query-first intent through the fixed private transport."""
     _require_identity(state, event_root, build_identity)
     _require_decision_intent(state, intent, activation)
-    if not isinstance(preflight, BinanceAccountPreflightCapability):
+    if not isinstance(preflight_capability, BinanceAccountPreflightCapability):
         _fail("BINANCE_PRIVATE_RUNTIME_PREFLIGHT_AUTHORITY_INVALID")
     now = _wall_now()
     try:
         recorded_at = utc_datetime(now)
-        preflight = preflight.load(
+        preflight = preflight_capability.load(
             activation=activation, credential_identity=credential.identity,
             now=recorded_at,
         )
