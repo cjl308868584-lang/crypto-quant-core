@@ -253,12 +253,12 @@ def _require_approval(approval, credential_identity, permission, spot, now):
         credential_identity, BinanceCredentialIdentity
     ):
         _fail("BINANCE_ACCOUNT_PREFLIGHT_APPROVAL_INVALID")
-    if (isinstance(credential_identity.device, bool)
-            or not isinstance(credential_identity.device, int)
-            or isinstance(credential_identity.inode, bool)
-            or not isinstance(credential_identity.inode, int)
-            or isinstance(credential_identity.owner_uid, bool)
-            or not isinstance(credential_identity.owner_uid, int)
+    if (any(isinstance(value, bool) or not isinstance(value, int)
+            or not 0 <= value <= (1 << 53) - 1 for value in (
+                credential_identity.device, credential_identity.inode,
+                credential_identity.owner_uid, credential_identity.mtime_ns,
+                credential_identity.ctime_ns,
+            ))
             or credential_identity.inode <= 0
             or not _hash(credential_identity.file_sha256)
             or not _hash(credential_identity.key_fingerprint)):

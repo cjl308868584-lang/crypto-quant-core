@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import replace
 import hashlib
 from importlib import resources
 import json
@@ -49,7 +50,8 @@ class BinanceAccountPreflightTests(unittest.TestCase):
             spot_trading_approved=True, futures_trading_approved=True,
         )
         self.identity = BinanceCredentialIdentity(
-            device=1, inode=2, owner_uid=501, file_sha256="7" * 64,
+            device=1, inode=2, owner_uid=501, mtime_ns=3, ctime_ns=4,
+            file_sha256="7" * 64,
             key_fingerprint=self.FINGERPRINT,
         )
 
@@ -129,10 +131,14 @@ class BinanceAccountPreflightTests(unittest.TestCase):
         self.assertEqual(self._reason(locked),
                          "BINANCE_ACCOUNT_PREFLIGHT_ACCOUNT_LOCKED")
         wrong = BinanceCredentialIdentity(
-            1, 2, 501, "7" * 64, "8" * 64
+            1, 2, 501, 3, 4, "7" * 64, "8" * 64
         )
         self.assertEqual(
             self._reason(identity=wrong),
+            "BINANCE_ACCOUNT_PREFLIGHT_APPROVAL_INVALID",
+        )
+        self.assertEqual(
+            self._reason(identity=replace(self.identity, mtime_ns=True)),
             "BINANCE_ACCOUNT_PREFLIGHT_APPROVAL_INVALID",
         )
         wrong_account = BinanceAccountApproval(
