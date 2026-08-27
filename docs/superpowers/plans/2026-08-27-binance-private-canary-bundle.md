@@ -55,7 +55,8 @@ and
 - New production code budget: protocol+transport ≤600 lines, credential ≤220,
   preflight ≤380, private event contract+opportunity-projection additions ≤650,
   lifecycle+reconciliation+runtime ≤2,100, Canary controller+fault runner ≤850,
-  delivery additions ≤150, and exact aggregate ≤4,500 physical lines. Count
+  delivery additions ≤150, controllers ≤1,250, and exact aggregate ≤5,250
+  physical lines under the measured Task 11-only amendment. Count
   files and delivery additions exactly as defined by the budget amendment.
 - One final local full suite per final code state; no repeated unchanged full run.
 - The Task 11 receipt contains observed atomic probe evidence, measured boundary
@@ -162,7 +163,11 @@ file must exist. Use `git diff --numstat` against exact v0.76 build-input tree
 delta to the private-projection component and to measure the fixed delivery
 allowlist. Reject binary or unparseable entries and give no credit for deleted
 lines. Assert each flattened new-file name is unique and enforce caps
-`600/220/380/650/2100/850/150`, then enforce the sum at `4500`.
+`600/220/380/650/2100/1250/150`, then enforce the sum at `5250`. The
+controller/aggregate amendment is measured: deleting the rejected 116-line
+label runner leaves 4,384 retained lines, while the released v0.76 direct fault
+runner alone is 654 lines for only 36 cases. The resulting maximum for the new
+59-case private runner is 866 lines. No other component receives headroom.
 
 - [ ] **Step 3: Run the amended GREEN gate and behavior adjacency**
 
@@ -1535,7 +1540,9 @@ git diff --check
 - [ ] **Step 6: Obtain targeted independent re-review**
 
 Review exact base `3fdf26347c3983cb528732fe083a04d05a7273b7`, the
-revised spec/plan, all commits after it and the uncommitted fault campaign.
+revised spec/plan (including the measured 4,384-line baseline and exclusive
+1,250/5,250 controller/aggregate amendment), all commits after it and the
+uncommitted fault campaign.
 Require explicit closure of the four Critical and four Important findings.
 Fix valid findings with targeted RED/GREEN and request only targeted re-review.
 
@@ -1577,7 +1584,7 @@ git commit -m "test: freeze v0.77 private fault evidence"
 
 Require every v0.75-v0.77 requirement to map to exact code/test/artifact; exact
 v0.76 released identity; package/manifest versions; fault receipt binding; all
-amended component caps and the ≤4,500 exact aggregate; secret/endpoint/static
+amended component caps and the ≤5,250 exact aggregate; secret/endpoint/static
 authority scans; and the exact non-activation conclusion.
 
 - [ ] **Step 2: Write ADR/status/dossier and refresh manifest once**

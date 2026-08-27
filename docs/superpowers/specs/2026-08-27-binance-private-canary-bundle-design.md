@@ -841,12 +841,19 @@ The implementation plan must set per-component and aggregate line budgets after
 inventorying reusable v0.71/v0.72/v0.76 code. Any design that grows a generic
 transport, broker or order platform is rejected even if under the numeric cap.
 
-The amended 4,500-line aggregate cap remains a release gate. Remediation first
-deletes the invalid Task 11 label runner and consolidates duplicated projection
-and reconciliation logic. If the measured safe implementation still cannot
-meet the cap, work stops for an explicit measured budget amendment; receipt
-authority, UNKNOWN recovery, protection and reconciliation may not be weakened
-to pass the numeric gate.
+The pre-Task-11 4,500-line aggregate cap left exactly 116 physical lines after
+the rejected 116-line label runner was deleted: the retained components measure
+4,384 lines. That is less than the already released v0.76 fault runner's 654
+lines for 36 cases and cannot contain 59 direct probes, observed boundary
+accounting, fresh-process evidence and a strict self-hashing loader. The
+measured amendment therefore raises only the controller component to 1,250 and
+the aggregate to 5,250, leaving at most 866 lines for the private fault runner.
+All other component and delivery caps remain unchanged. This allowance is
+exclusive to the fixed offline evidence runner; it does not authorize runtime,
+transport, broker, scheduler or UI growth. The final implementation must report
+its actual line count and remain below both amended limits. Receipt authority,
+UNKNOWN recovery, protection and reconciliation may not be weakened to pass a
+numeric gate.
 
 ## 12. Completion dossier
 
