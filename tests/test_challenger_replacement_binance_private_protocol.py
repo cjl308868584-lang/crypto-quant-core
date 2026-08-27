@@ -1,6 +1,7 @@
 from dataclasses import replace
 from importlib import resources
 import json
+from types import SimpleNamespace
 import unittest
 
 from crypto_quant.challenger_replacement_binance_private_protocol import (
@@ -8,12 +9,56 @@ from crypto_quant.challenger_replacement_binance_private_protocol import (
     build_binance_private_request,
     classify_binance_private_response,
     compute_binance_hmac_sha256,
+    observe_binance_server_time,
     sign_binance_private_request,
     validate_binance_request_time,
 )
 
 
 class BinancePrivateProtocolTests(unittest.TestCase):
+    def test_server_time_evidence_is_product_bound_and_midpoint_derived(self):
+        calls = []
+        clocks = iter((10_000, 10_200))
+
+        def transport(request):
+            calls.append(request.endpoint_id)
+            return SimpleNamespace(
+                response_class="QUERY_SUCCEEDED",
+                body=b'{"serverTime":10150}',
+            )
+
+        evidence = observe_binance_server_time(
+            product="SPOT", transport=transport,
+            local_clock=lambda: next(clocks),
+        )
+
+        self.assertEqual(calls, ["SPOT_SERVER_TIME"])
+        self.assertEqual(
+            (evidence.product, evidence.local_before_ms,
+             evidence.server_time_ms, evidence.local_after_ms,
+             evidence.midpoint_ms, evidence.skew_ms),
+            ("SPOT", 10_000, 10_150, 10_200, 10_100, 50),
+        )
+
+    def test_server_time_rejects_wrong_product_and_excessive_round_trip(self):
+        def transport(_request):
+            return SimpleNamespace(
+                response_class="QUERY_SUCCEEDED",
+                body=b'{"serverTime":10000}',
+            )
+
+        for product, clocks in (
+            ("MARGIN", iter((10_000, 10_001))),
+            ("PERPETUAL", iter((10_000, 11_001))),
+        ):
+            with self.subTest(product=product), self.assertRaisesRegex(
+                ValueError, "BINANCE_SERVER_TIME_INVALID"
+            ):
+                observe_binance_server_time(
+                    product=product, transport=transport,
+                    local_clock=lambda: next(clocks),
+                )
+
     def _mutating_request(self):
         return build_binance_private_request(
             "SPOT_ORDER_CREATE",

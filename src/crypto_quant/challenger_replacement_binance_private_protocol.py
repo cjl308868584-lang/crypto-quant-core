@@ -1,21 +1,19 @@
 """Pure Binance request encoding, signing and response classification."""
-
 from dataclasses import dataclass
 import hashlib
 import hmac
 import json
 from typing import Mapping
 from urllib.parse import parse_qsl, quote, urlencode
-
 from .canonical import canonical_decimal, stable_id
 from .errors import CanonicalizationError
 from .challenger_replacement_binance_private_contract import (
     require_binance_private_endpoint,
 )
-
-
 _MAX_SAFE_INTEGER = (1 << 53) - 1
 _MAX_JSON_DEPTH = 64
+_MAX_SERVER_TIME_ROUND_TRIP_MS = 1000
+_MAX_SERVER_TIME_SKEW_MS = 1000
 _RECV_WINDOW_MS = "5000"
 _UNSIGNED_ENDPOINTS = frozenset({
     "SPOT_SERVER_TIME",
@@ -56,12 +54,8 @@ _PARAMETER_NAMES = {
 }
 _PARAMETER_SETS = {key: frozenset(value.split())
                    for key, value in _PARAMETER_NAMES.items()}
-
-
 class _ResponseDepthError(ValueError):
     pass
-
-
 @dataclass(frozen=True)
 class BinancePrivateRequest:
     request_id: str
@@ -72,12 +66,56 @@ class BinancePrivateRequest:
     encoded_parameters: bytes
     parameter_names: tuple
     mutating: bool
-
-
+@dataclass(frozen=True)
+class BinanceServerTimeEvidence:
+    product: str
+    local_before_ms: int
+    server_time_ms: int
+    local_after_ms: int
+    midpoint_ms: int
+    skew_ms: int
+    response_sha256: str
+def observe_binance_server_time(*, product, transport, local_clock):
+    """Observe one product-matched server clock through a fixed transport."""
+    endpoint = {"SPOT": "SPOT_SERVER_TIME",
+                "PERPETUAL": "FUTURES_SERVER_TIME"}.get(product)
+    try:
+        if endpoint is None or not callable(transport) or not callable(local_clock):
+            raise ValueError
+        before = local_clock()
+        if isinstance(before, bool) or not isinstance(before, int):
+            raise ValueError
+        result = transport(build_binance_private_request(
+            endpoint, {}, timestamp_ms=0,
+        ))
+        after = local_clock()
+        if (isinstance(after, bool) or not isinstance(after, int)
+                or not 0 <= before <= after <= _MAX_SAFE_INTEGER
+                or after - before > _MAX_SERVER_TIME_ROUND_TRIP_MS
+                or result.response_class != "QUERY_SUCCEEDED"
+                or not isinstance(result.body, bytes)):
+            raise ValueError
+        document = json.loads(result.body.decode("utf-8"))
+        if (not isinstance(document, dict)
+                or frozenset(document) != {"serverTime"}
+                or isinstance(document["serverTime"], bool)
+                or not isinstance(document["serverTime"], int)
+                or not 0 <= document["serverTime"] <= _MAX_SAFE_INTEGER):
+            raise ValueError
+        midpoint = before + (after - before) // 2
+        skew = document["serverTime"] - midpoint
+        if abs(skew) > _MAX_SERVER_TIME_SKEW_MS:
+            raise ValueError
+        return BinanceServerTimeEvidence(
+            product=product, local_before_ms=before,
+            server_time_ms=document["serverTime"], local_after_ms=after,
+            midpoint_ms=midpoint, skew_ms=skew,
+            response_sha256=hashlib.sha256(result.body).hexdigest(),
+        )
+    except (AttributeError, TypeError, UnicodeDecodeError, ValueError) as error:
+        raise ValueError("BINANCE_SERVER_TIME_INVALID") from error
 def _invalid():
     raise ValueError("CHALLENGER_REPLACEMENT_BINANCE_REQUEST_INVALID")
-
-
 def _venue_id_valid(value):
     return (
         isinstance(value, str)
@@ -85,8 +123,6 @@ def _venue_id_valid(value):
         and value.startswith("cq77")
         and not set(value[4:]) - frozenset("0123456789abcdef")
     )
-
-
 def _positive_decimal(value):
     try:
         normalized = canonical_decimal(value)
