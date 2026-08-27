@@ -4,14 +4,16 @@
   "title": "Challenger Replacement Binance Account Preflight",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "preflight_id", "status", "observed_at", "build_identity", "account_approval", "permissions", "configuration", "flatness", "response_sha256", "authority_counts"],
+  "required": ["$schema", "schema_version", "preflight_id", "status", "observed_at", "expires_at", "build_identity", "account_approval_sha256", "account_approval", "permissions", "configuration", "configuration_sha256", "flatness", "response_sha256", "authority_counts"],
   "properties": {
     "$schema": {"const": "./challenger-replacement-binance-account-preflight-v1.schema.json"},
     "schema_version": {"const": "1.0.0"},
     "preflight_id": {"type": "string", "pattern": "^binance_account_preflight_[0-9a-f]{64}$"},
     "status": {"const": "BINANCE_ACCOUNT_PREFLIGHT_VERIFIED_FLAT"},
     "observed_at": {"$ref": "#/$defs/time"},
+    "expires_at": {"$ref": "#/$defs/time"},
     "build_identity": {"$ref": "#/$defs/buildIdentity"},
+    "account_approval_sha256": {"$ref": "#/$defs/hash"},
     "account_approval": {
       "type": "object", "additionalProperties": false,
       "required": ["account_identity_sha256", "key_fingerprint", "reviewed_egress_ip_attestation", "reviewer_uid"],
@@ -41,6 +43,7 @@
         "leverage": {"enum": [1, 2]}, "auto_add_margin": {"const": false}
       }
     },
+    "configuration_sha256": {"$ref": "#/$defs/hash"},
     "flatness": {
       "type": "object", "additionalProperties": false,
       "required": ["spot_open_orders", "futures_open_orders", "futures_open_algo_orders", "futures_positions", "non_usdt_spot_exposure"],

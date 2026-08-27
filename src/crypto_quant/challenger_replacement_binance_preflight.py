@@ -6,7 +6,7 @@ from typing import Mapping
 from .canonical import canonical_json
 from .challenger_replacement_binance_credential import BinanceCredentialIdentity
 from .challenger_replacement_binance_private_contract import (
-    BinanceAccountApproval, _canonical_time, _validator,
+    BinanceAccountApproval, BinancePrivateActivation, _canonical_time, _validator,
     load_binance_account_approval_bytes,
 )
 _ENDPOINTS = frozenset({
@@ -57,6 +57,7 @@ _FLATNESS = {"spot_open_orders": 0, "futures_open_orders": 0,
              "non_usdt_spot_exposure": "0"}
 _COUNTS = {"network_requests": 0, "mutating_requests": 0, "orders": 0,
            "fund_movements": 0, "state_writes": 0}
+_CAPABILITY_TOKEN = object()
 class BinanceAccountPreflightError(ValueError):
     def __init__(self, reason_code):
         super().__init__(reason_code)
@@ -287,6 +288,30 @@ def _identity(document):
     return "binance_account_preflight_" + hashlib.sha256(
         canonical_json(core).encode()
     ).hexdigest()
+class BinanceAccountPreflightCapability:
+    __slots__ = ("_document",)
+    def __init__(self, document, token):
+        if token is not _CAPABILITY_TOKEN:
+            raise TypeError("BinanceAccountPreflightCapability is loader-issued")
+        self._document = document
+    def load(self, *, activation, credential_identity, now):
+        document = self._document
+        try:
+            if (not isinstance(activation, BinancePrivateActivation)
+                    or not isinstance(credential_identity, BinanceCredentialIdentity)
+                    or activation.production_activation is not True
+                    or document["build_identity"] != dict(activation.build_identity)
+                    or document["account_approval_sha256"] != activation.account_approval_sha256
+                    or document["configuration_sha256"] != activation.configuration_sha256
+                    or document["account_approval"]["key_fingerprint"] != credential_identity.key_fingerprint
+                    or _canonical_time(document["expires_at"]) <= _canonical_time(now)
+                    or _canonical_time(activation.expires_at) <= _canonical_time(now)
+                    or _canonical_time(activation.expires_at) > _canonical_time(document["expires_at"])):
+                raise ValueError
+            return document
+        except (KeyError, TypeError, ValueError) as error:
+            _fail("BINANCE_ACCOUNT_PREFLIGHT_AUTHORITY_INVALID", error)
+    def __repr__(self): return "BinanceAccountPreflightCapability(redacted=True)"
 def evaluate_binance_account_preflight(*, responses, account_approval,
                                         credential_identity, build_identity, now):
     parsed, hashes = _parse_responses(responses)
@@ -295,12 +320,18 @@ def evaluate_binance_account_preflight(*, responses, account_approval,
     spot = _require_spot_flat(parsed)
     _require_futures_flat(parsed)
     _require_approval(account_approval, credential_identity, permission, spot, now)
+    approval_bytes = (canonical_json({
+        "$schema": "./challenger-replacement-binance-account-approval-v1.schema.json",
+        "schema_version": "1.0.0", **account_approval.__dict__,
+    }) + "\n").encode("utf-8")
     document = {
         "$schema": "./challenger-replacement-binance-account-preflight-v1.schema.json",
         "schema_version": "1.0.0",
         "status": "BINANCE_ACCOUNT_PREFLIGHT_VERIFIED_FLAT",
         "observed_at": now,
+        "expires_at": account_approval.expires_at,
         "build_identity": dict(build_identity),
+        "account_approval_sha256": hashlib.sha256(approval_bytes).hexdigest(),
         "account_approval": {
             "account_identity_sha256": account_approval.account_identity_sha256,
             "key_fingerprint": account_approval.key_fingerprint,
@@ -309,6 +340,9 @@ def evaluate_binance_account_preflight(*, responses, account_approval,
         },
         "permissions": _PERMISSIONS,
         "configuration": configuration,
+        "configuration_sha256": hashlib.sha256(
+            canonical_json(configuration).encode("utf-8")
+        ).hexdigest(),
         "flatness": _FLATNESS,
         "response_sha256": hashes,
         "authority_counts": _COUNTS,
@@ -341,3 +375,6 @@ def load_binance_account_preflight_bytes(data, *, build_identity):
         if isinstance(error, BinanceAccountPreflightError):
             raise
         _fail("BINANCE_ACCOUNT_PREFLIGHT_ARTIFACT_INVALID", error)
+def load_binance_account_preflight_capability_bytes(data, *, build_identity):
+    return BinanceAccountPreflightCapability(load_binance_account_preflight_bytes(
+        data, build_identity=build_identity), _CAPABILITY_TOKEN)

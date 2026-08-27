@@ -18,6 +18,9 @@ from .challenger_replacement_binance_private_protocol import (
 from .challenger_replacement_binance_private_transport import (
     execute_binance_private_request,
 )
+from .challenger_replacement_binance_preflight import (
+    BinanceAccountPreflightCapability,
+)
 from .challenger_replacement_binance_reconciliation import (
     load_binance_reconciliation_bytes, reconcile_binance_private_state,
 )
@@ -918,10 +921,16 @@ def run_challenger_replacement_binance_private_intent(
 
     _require_identity(state, event_root, build_identity)
     _require_decision_intent(state, intent, activation)
+    if not isinstance(preflight, BinanceAccountPreflightCapability):
+        _fail("BINANCE_PRIVATE_RUNTIME_PREFLIGHT_AUTHORITY_INVALID")
     now = _wall_now()
     try:
         recorded_at = utc_datetime(now)
         timestamp_ms = int(now.timestamp() * 1000)
+        preflight = preflight.load(
+            activation=activation, credential_identity=credential.identity,
+            now=recorded_at,
+        )
         attempt = prepare_binance_order_attempt(
             intent=intent,
             projection=_runtime_projection(state),

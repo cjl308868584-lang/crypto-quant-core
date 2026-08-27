@@ -12,7 +12,7 @@ from crypto_quant.challenger_replacement_binance_credential import (
     BinanceCredentialIdentity,
 )
 from crypto_quant.challenger_replacement_binance_private_contract import (
-    BinanceAccountApproval,
+    BinanceAccountApproval, BinancePrivateActivation,
 )
 from crypto_quant.challenger_replacement_binance_preflight import (
     BinanceAccountPreflightError,
@@ -264,6 +264,64 @@ class BinanceAccountPreflightTests(unittest.TestCase):
                         (canonical_json(document) + "\n").encode(),
                         build_identity=self.BUILD,
                     )
+
+    def test_capability_binds_activation_approval_credential_and_expiry(self):
+        from crypto_quant.challenger_replacement_binance_preflight import (
+            load_binance_account_preflight_capability_bytes,
+        )
+
+        data = self._evaluate()
+        document = json.loads(data)
+        approval_bytes = (canonical_json({
+            "$schema": "./challenger-replacement-binance-account-approval-v1.schema.json",
+            "schema_version": "1.0.0",
+            **self.approval.__dict__,
+        }) + "\n").encode("utf-8")
+        activation = BinancePrivateActivation(
+            activation_id="binance_private_activation_" + "a" * 64,
+            build_identity=self.BUILD,
+            configuration_sha256=hashlib.sha256(canonical_json(
+                document["configuration"]
+            ).encode("utf-8")).hexdigest(),
+            account_approval_sha256=hashlib.sha256(approval_bytes).hexdigest(),
+            block_id="e0_block_" + "b" * 64,
+            stage="E0", capital_usdt="100",
+            max_gross_exposure_usdt="50", max_leverage="0.5",
+            expires_at="2026-08-28T00:00:00.000Z",
+            production_activation=True,
+        )
+        capability = load_binance_account_preflight_capability_bytes(
+            data, build_identity=self.BUILD
+        )
+        loaded = capability.load(
+            activation=activation, credential_identity=self.identity,
+            now=self.NOW,
+        )
+        self.assertEqual(loaded["preflight_id"], document["preflight_id"])
+        for altered in (
+            replace(activation, account_approval_sha256="c" * 64),
+            replace(activation, configuration_sha256="d" * 64),
+            replace(activation, expires_at=self.NOW),
+        ):
+            with self.subTest(altered=altered), self.assertRaisesRegex(
+                BinanceAccountPreflightError,
+                "BINANCE_ACCOUNT_PREFLIGHT_AUTHORITY_INVALID",
+            ):
+                capability.load(
+                    activation=altered, credential_identity=self.identity,
+                    now=self.NOW,
+                )
+        with self.assertRaisesRegex(
+            BinanceAccountPreflightError,
+            "BINANCE_ACCOUNT_PREFLIGHT_AUTHORITY_INVALID",
+        ):
+            capability.load(
+                activation=activation,
+                credential_identity=replace(
+                    self.identity, key_fingerprint="e" * 64
+                ),
+                now=self.NOW,
+            )
 
 
 if __name__ == "__main__":
