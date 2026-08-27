@@ -33,6 +33,18 @@ and
 - HMAC-SHA256 is the only key type in v0.77; `recvWindow` is exactly 5000 ms.
 - Venue client/algo IDs are exactly `cq77` plus 32 lower-hex characters.
 - No mutation retry before exact client-ID query and fill reconciliation.
+- The runtime accepts only a retained, strictly loaded preflight capability;
+  caller-authored mappings never grant request authority.
+- Every private signature binds fresh product-matched server-time midpoint/skew
+  evidence; excessive JSON depth fails with a fixed domain error.
+- `BINANCE_ORDER_UNKNOWN` blocks new risk but remains query/reconciliation/
+  protection recoverable and never grants mutation resend.
+- Every observed perpetual short quantity has a queried, exact-quantity
+  protective stop before runtime return; replacements have no protection gap.
+- Event, venue and ledger reconciliation inputs are independently derived and
+  publication-identity bound.
+- Canary transitions replay canonical events and strict artifacts; fixture or
+  caller-authored mappings are never transition authority.
 - The four v0.75 hard-stop classes remain exact; no fifth hard stop.
 - Ceremony events never count as strategy, 72-hour or 90-day evidence.
 - No third-party runtime dependency and no new SQLite/mutable position store.
@@ -46,6 +58,9 @@ and
   delivery additions ≤150, and exact aggregate ≤4,500 physical lines. Count
   files and delivery additions exactly as defined by the budget amendment.
 - One final local full suite per final code state; no repeated unchanged full run.
+- The Task 11 receipt contains observed atomic probe evidence, measured boundary
+  counts, actual fresh-interpreter results and exact executable-core identity;
+  test names and hard-coded counters are not conformance evidence.
 
 ## File Map
 
@@ -900,7 +915,419 @@ git add src/crypto_quant/operations_projection_v3.py \
 git commit -m "feat: expose read-only Binance canary health"
 ```
 
-### Task 11: Execute the fixed offline fault matrix once
+### Task 10A: Close parser, transport-redaction and credential-identity gaps
+
+**Files:**
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_protocol.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_transport.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_credential.py`
+- Modify: `tests/test_challenger_replacement_binance_private_protocol.py`
+- Modify: `tests/test_challenger_replacement_binance_private_transport.py`
+- Modify: `tests/test_challenger_replacement_binance_credential.py`
+
+**Interfaces:**
+- Produces: bounded-depth response parsing with fixed failure code; redacted raw
+  transport result representation; credential attachment identity including
+  `st_mtime_ns` and `st_ctime_ns`.
+- Preserves: closed endpoint inventory, zero network in tests and one-use secret
+  authorization.
+
+- [ ] **Step 1: Write three independent RED tests**
+
+Add tests that prove:
+
+```python
+def test_response_above_fixed_json_depth_is_domain_failure_not_recursion_error():
+    request = valid_query_request()
+    body = (b'[' * 257) + b'0' + (b']' * 257)
+    with self.assertRaisesRegex(ValueError, "BINANCE_PRIVATE_RESPONSE_INVALID"):
+        classify_binance_private_response(
+            request, status=200, body=body, headers={}
+        )
+
+def test_transport_result_repr_never_contains_raw_body():
+    result = private_result_with_body(b'SENTINEL_PRIVATE_BODY')
+    self.assertNotIn("SENTINEL_PRIVATE_BODY", repr(result))
+
+def test_same_inode_same_size_in_place_credential_change_is_rejected():
+    capability, rewrite_same_size = opened_fixture_capability()
+    rewrite_same_size()
+    with self.assertRaisesRegex(ValueError,
+                                "BINANCE_CREDENTIAL_ATTACHMENT_CHANGED"):
+        capability.authorize(valid_private_request())
+```
+
+- [ ] **Step 2: Run RED and preserve exact failure modes**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_private_protocol \
+  tests.test_challenger_replacement_binance_private_transport \
+  tests.test_challenger_replacement_binance_credential -v
+```
+
+Expected: depth escapes or is accepted, raw bytes appear in `repr`, and the
+same-inode rewrite is not detected. Tests must fail for those behaviors, not a
+fixture or import error.
+
+- [ ] **Step 3: Implement minimal GREEN**
+
+Use an iterative depth walk over the parsed object with maximum depth `64` and
+map `RecursionError` into `BINANCE_PRIVATE_RESPONSE_INVALID`. Mark the raw-body
+field `repr=False` or implement a fixed redacted `__repr__`. Extend retained
+credential identity and every validation comparison with `st_mtime_ns` and
+`st_ctime_ns`; do not reopen the credential by pathname.
+
+- [ ] **Step 4: Run focused GREEN and commit**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_private_protocol \
+  tests.test_challenger_replacement_binance_private_transport \
+  tests.test_challenger_replacement_binance_credential -v
+python3 -m compileall -q src tests
+git diff --check
+git add src/crypto_quant/challenger_replacement_binance_private_protocol.py \
+  src/crypto_quant/challenger_replacement_binance_private_transport.py \
+  src/crypto_quant/challenger_replacement_binance_credential.py \
+  tests/test_challenger_replacement_binance_private_protocol.py \
+  tests/test_challenger_replacement_binance_private_transport.py \
+  tests/test_challenger_replacement_binance_credential.py
+git commit -m "fix: harden private parsing and credential identity"
+```
+
+### Task 10B: Make preflight, time and intent inputs non-forgeable
+
+**Files:**
+- Modify: `src/crypto_quant/challenger_replacement_binance_preflight.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_protocol.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_runtime.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_lifecycle.py`
+- Modify: `src/crypto_quant/schemas/challenger-replacement-binance-account-preflight-v1.schema.json`
+- Modify: `tests/test_challenger_replacement_binance_preflight.py`
+- Modify: `tests/test_challenger_replacement_binance_private_runtime.py`
+
+**Interfaces:**
+- Produces:
+
+```python
+class BinanceAccountPreflightCapability:
+    def load(self, *, activation: BinancePrivateActivation,
+             credential_identity: BinanceCredentialIdentity,
+             now: str) -> Mapping[str, object]: ...
+    def close(self) -> None: ...
+
+def open_binance_account_preflight_capability(*,
+    reference_bytes: bytes, expected_uid: int,
+    build_identity: Mapping[str, str]) -> BinanceAccountPreflightCapability: ...
+
+@dataclass(frozen=True)
+class BinanceServerTimeEvidence:
+    product: str
+    local_before_ms: int
+    server_time_ms: int
+    local_after_ms: int
+    midpoint_ms: int
+    skew_ms: int
+    response_sha256: str
+
+def observe_binance_server_time(*, product: str, transport,
+    local_clock) -> BinanceServerTimeEvidence: ...
+```
+
+- Changes `run_challenger_replacement_binance_private_intent` to accept
+  `preflight_capability`, never `preflight: Mapping`.
+- Runtime rederives the intent from retained canonical event facts for every
+  schema path and compares caller bytes only after reconstruction.
+
+- [ ] **Step 1: Write authority RED tests**
+
+Cover forged verified-flat mappings, wrong build/account approval/key
+fingerprint, expired receipt, same bytes at a different inode, wrong-product or
+stale server time, excessive round trip, and a nonstandard evidence schema that
+previously bypassed intent reconstruction. Each test asserts rejection before
+credential authorization, socket construction, private request count or event
+append.
+
+```python
+def test_verified_flat_mapping_cannot_authorize_runtime():
+    with self.assertRaisesRegex(TypeError, "preflight_capability"):
+        run_challenger_replacement_binance_private_intent(
+            preflight=forged_verified_flat_mapping(), **safe_runtime_inputs()
+        )
+
+def test_intent_is_always_rederived_from_retained_decision_and_accounting():
+    inputs = safe_runtime_inputs_with_altered_caller_intent_schema()
+    with self.assertRaisesRegex(ValueError,
+                                "BINANCE_PRIVATE_RUNTIME_INTENT_INVALID"):
+        run_challenger_replacement_binance_private_intent(**inputs)
+    self.assertEqual(inputs["transport"].private_request_count, 0)
+```
+
+- [ ] **Step 2: Run RED**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_preflight \
+  tests.test_challenger_replacement_binance_private_runtime -v
+```
+
+- [ ] **Step 3: Implement retained preflight and fresh-time authority**
+
+Use retained parent/file descriptors, no-follow opens, owner/mode/link/type/size
+checks, strict canonical bytes and pre/post attachment validation. The schema
+adds exact account-approval hash, key fingerprint, product time evidence,
+collection time and expiry. Runtime calls the strict capability loader, obtains
+fresh server time through the fixed public endpoint, durably binds that evidence
+and only then creates the signed private request. Remove every conditional
+intent-reconstruction branch and every raw preflight-mapping runtime path.
+
+- [ ] **Step 4: Run focused and adjacent GREEN, static scan and commit**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_preflight \
+  tests.test_challenger_replacement_binance_private_protocol \
+  tests.test_challenger_replacement_binance_private_lifecycle \
+  tests.test_challenger_replacement_binance_private_runtime -v
+! rg -n 'preflight:\s*Mapping|preflight\.get\(' \
+  src/crypto_quant/challenger_replacement_binance_private_runtime.py \
+  src/crypto_quant/challenger_replacement_binance_private_lifecycle.py
+git diff --check
+git add src/crypto_quant/challenger_replacement_binance_preflight.py \
+  src/crypto_quant/challenger_replacement_binance_private_protocol.py \
+  src/crypto_quant/challenger_replacement_binance_private_runtime.py \
+  src/crypto_quant/challenger_replacement_binance_private_lifecycle.py \
+  src/crypto_quant/schemas/challenger-replacement-binance-account-preflight-v1.schema.json \
+  tests/test_challenger_replacement_binance_preflight.py \
+  tests/test_challenger_replacement_binance_private_runtime.py
+git commit -m "fix: bind private runtime authority inputs"
+```
+
+### Task 10C: Recover UNKNOWN by query without resending
+
+**Files:**
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_contract.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_runtime.py`
+- Modify: `src/crypto_quant/schemas/challenger-replacement-binance-private-event-v1.schema.json`
+- Modify: `tests/test_challenger_replacement_binance_private_contract.py`
+- Modify: `tests/test_challenger_replacement_binance_private_runtime.py`
+
+**Interfaces:**
+- `BINANCE_ORDER_UNKNOWN` projects `UNKNOWN_QUERY_REQUIRED`, not terminal.
+- Produces `BINANCE_UNKNOWN_QUERY_OBSERVED` with exact order/trade/account
+  response identities and `BINANCE_RECONCILIATION_FAILED` before failure return.
+- Preserves the hard-stop/new-risk block while allowing query, protection and
+  safe flatten for the already-started attempt.
+
+- [ ] **Step 1: Write UNKNOWN RED tests**
+
+Test lost ACK followed by queried ACK, lost ACK followed by a filled order,
+repeated query failure, proven no-effect rejection, and fresh-process recovery.
+For every case assert economic create count remains exactly one. When a fill is
+found, assert fill replay and position/protection handling occurs before return.
+
+```python
+def test_unknown_fresh_process_queries_exact_client_id_and_never_resends():
+    crashed = run_until_unknown_after_one_send()
+    result = reopen_state_and_run_with_query_fixture(crashed, FILLED_FIXTURE)
+    self.assertEqual(result["status"], "TERMINAL_RECONCILED")
+    self.assertEqual(crashed.transport.economic_create_count, 1)
+    self.assertIn("BINANCE_UNKNOWN_QUERY_OBSERVED", crashed.event_types())
+```
+
+- [ ] **Step 2: Run RED, implement minimal state transition, run GREEN**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_private_contract \
+  tests.test_challenger_replacement_binance_private_runtime -v
+```
+
+Remove the replay branch that immediately returns unresolved status. Query the
+exact client ID and associated trades/account facts; append the observed-query
+event and enter normal fill/reconciliation handling. Query failure leaves the
+unknown stage unchanged. Never append an absence event or resend after a
+send-started mutation.
+
+- [ ] **Step 3: Re-run and commit**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_private_contract \
+  tests.test_challenger_replacement_binance_private_lifecycle \
+  tests.test_challenger_replacement_binance_private_runtime -v
+git diff --check
+git add src/crypto_quant/challenger_replacement_binance_private_contract.py \
+  src/crypto_quant/challenger_replacement_binance_private_runtime.py \
+  src/crypto_quant/schemas/challenger-replacement-binance-private-event-v1.schema.json \
+  tests/test_challenger_replacement_binance_private_contract.py \
+  tests/test_challenger_replacement_binance_private_runtime.py
+git commit -m "fix: reconcile unknown private mutations"
+```
+
+### Task 10D: Protect every partial perpetual fill with no-gap replacement
+
+**Files:**
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_contract.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_runtime.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_lifecycle.py`
+- Modify: `tests/test_challenger_replacement_binance_protective_stop.py`
+- Modify: `tests/test_challenger_replacement_binance_private_runtime.py`
+
+**Interfaces:**
+- Every observed nonzero short quantity runs stop reconciliation before return.
+- Candidate stop is created and verified while the old verified stop remains;
+  old-stop cancel is durably send-started only after candidate reconciliation.
+- Fresh replay queries deterministic client-algo IDs and never duplicates a
+  create or cancel mutation.
+
+- [ ] **Step 1: Write partial-fill and crash-boundary RED tests**
+
+Cover first partial entry, larger second partial, partial close, candidate
+create rejection/UNKNOWN, crash before/after candidate send, crash after
+candidate ACK, crash before/after old cancel, and query mismatch. Assert at
+every normal return that exact exposed quantity equals queried stop quantity;
+at every failure return assert the protective hard stop and zero new-risk
+authority.
+
+- [ ] **Step 2: Run RED**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_protective_stop \
+  tests.test_challenger_replacement_binance_private_runtime -v
+```
+
+- [ ] **Step 3: Implement no-gap candidate lifecycle**
+
+Route `BINANCE_ORDER_PARTIALLY_FILLED` through fill replay and `_ensure_stop`
+before returning. Add only the minimum candidate/old-stop event fields required
+to resume exact query-first create, verify, cancel and terminal-query steps.
+Do not cancel the old stop until the candidate is queried and reconciled.
+
+- [ ] **Step 4: Run GREEN and commit**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_private_contract \
+  tests.test_challenger_replacement_binance_protective_stop \
+  tests.test_challenger_replacement_binance_private_runtime -v
+git diff --check
+git add src/crypto_quant/challenger_replacement_binance_private_contract.py \
+  src/crypto_quant/challenger_replacement_binance_private_runtime.py \
+  src/crypto_quant/challenger_replacement_binance_private_lifecycle.py \
+  tests/test_challenger_replacement_binance_protective_stop.py \
+  tests/test_challenger_replacement_binance_private_runtime.py
+git commit -m "fix: protect partial perpetual exposure"
+```
+
+### Task 10E: Bind independently derived three-way reconciliation
+
+**Files:**
+- Modify: `src/crypto_quant/challenger_replacement_binance_reconciliation.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_runtime.py`
+- Modify: `src/crypto_quant/schemas/challenger-replacement-binance-reconciliation-v1.schema.json`
+- Modify: `tests/test_challenger_replacement_binance_reconciliation.py`
+- Modify: `tests/test_challenger_replacement_binance_private_runtime.py`
+
+**Interfaces:**
+- Produces retained `event_input`, `ledger_input` and venue-response publication
+  identities with device/inode/owner/mode/link/size/SHA-256.
+- Ledger values come from strict replay of canonical accounting artifacts, not
+  a copy of event facts.
+- Trades bind exact order ID/client order ID; protective stop binds authorized
+  trigger, side, quantity, reduce-only and client-algo ID.
+
+- [ ] **Step 1: Write identity and independence RED tests**
+
+Test same bytes at a different inode for each input, event-versus-ledger
+disagreement, trade belonging to another order/client ID, stop trigger mismatch,
+stop side/quantity/reduce-only mismatch, and fresh-process replay. Preserve all
+sentinel inode/bytes/mode/link/mtime/ctime values on rejection.
+
+- [ ] **Step 2: Run RED and implement strict retained inputs**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_reconciliation \
+  tests.test_challenger_replacement_binance_private_runtime -v
+```
+
+Use the existing domain-specific exact publication verifier; do not add a
+generic path loader. Replay accounting bytes independently, attach exact input
+records to the reconciliation artifact, and validate the venue identity joins
+before comparing Decimal projections.
+
+- [ ] **Step 3: Run GREEN and commit**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_binance_reconciliation \
+  tests.test_challenger_replacement_binance_private_runtime \
+  tests.test_challenger_replacement_evidence \
+  tests.test_ledger -v
+git diff --check
+git add src/crypto_quant/challenger_replacement_binance_reconciliation.py \
+  src/crypto_quant/challenger_replacement_binance_private_runtime.py \
+  src/crypto_quant/schemas/challenger-replacement-binance-reconciliation-v1.schema.json \
+  tests/test_challenger_replacement_binance_reconciliation.py \
+  tests/test_challenger_replacement_binance_private_runtime.py
+git commit -m "fix: bind independent private reconciliation"
+```
+
+### Task 10F: Derive Canary state only from canonical authority
+
+**Files:**
+- Modify: `src/crypto_quant/challenger_replacement_canary_controller.py`
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_runtime.py`
+- Modify: `tests/test_challenger_replacement_canary_controller.py`
+- Modify: `tests/test_challenger_replacement_binance_private_runtime.py`
+
+**Interfaces:**
+- Public projection accepts retained event root, frozen plan, exact artifact
+  root capability and build identity; the raw event-list reducer becomes a
+  private pure helper used only after strict replay.
+- Activation, promotion, reconciliation, incident and unlock references are
+  strict-loaded and publication-identity checked.
+
+- [ ] **Step 1: Write canonical-authority RED tests**
+
+Reject manufactured event lists, missing or same-bytes/different-inode
+activation/promotion/incident artifacts, and noncanonical equity/hard-stop
+claims. Prove runtime appends `BINANCE_RECONCILIATION_FAILED` before returning a
+reconciliation failure. Prove canonical replay preserves daily stop, drawdown,
+restart and UTC rollover behavior.
+
+- [ ] **Step 2: Run RED and implement minimal retained-root projection**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_canary_controller \
+  tests.test_challenger_replacement_binance_private_runtime -v
+```
+
+Reuse strict event and artifact loaders. Do not create another database,
+controller log or caller-configurable resolver. Keep the raw reducer private
+and unreachable as transition authority.
+
+- [ ] **Step 3: Run GREEN, architecture gate and commit**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_canary_controller \
+  tests.test_challenger_replacement_binance_private_runtime \
+  tests.test_challenger_replacement_binance_delivery \
+  tests.test_challenger_replacement_v077_architecture -v
+git diff --check
+git add src/crypto_quant/challenger_replacement_canary_controller.py \
+  src/crypto_quant/challenger_replacement_binance_private_runtime.py \
+  tests/test_challenger_replacement_canary_controller.py \
+  tests/test_challenger_replacement_binance_private_runtime.py
+git commit -m "fix: derive Canary state from canonical evidence"
+```
+
+### Task 11: Execute an evidence-valid fixed offline fault campaign once
 
 **Files:**
 - Create: `src/crypto_quant/challenger_replacement_private_fault_matrix.py`
@@ -913,47 +1340,175 @@ git commit -m "feat: expose read-only Binance canary health"
 
 ```python
 def run_challenger_replacement_private_fault_matrix(*,
-    build_identity: Mapping[str, str]) -> Mapping[str, object]
+    v076_fault_receipt_bytes: bytes) -> bytes: ...
 def load_challenger_replacement_private_fault_matrix_bytes(data: bytes, *,
-    build_identity: Mapping[str, str]) -> Mapping[str, object]
+    v076_fault_receipt_bytes: bytes,
+    expected_executable_checkpoint: str,
+    expected_executable_tree: str) -> Mapping[str, object]: ...
 ```
 
-- [ ] **Step 1: Freeze exact case IDs and write RED tests**
+- [ ] **Step 1: Remove the rejected uncommitted label runner**
 
-Encode every case from spec section 10. Require unique ordered IDs, fixture and
-result hashes, fresh-process cases, all pass booleans and zero authority
-counters. Altered/reordered/missing cases fail strict loading.
+Delete, using `apply_patch`, the three uncommitted Task 11 files whose cases
+only mapped labels to unittest methods. Preserve the independent-review finding
+in the implementation checkpoint. Do not commit those bytes and do not adapt
+them as the new implementation.
 
-- [ ] **Step 2: Run RED then implement pure fixed runner**
+- [ ] **Step 2: Freeze atomic case IDs and write RED tests**
+
+Use one ID per actual condition. The fixed order is:
+
+```text
+SIGNATURE_KNOWN_ANSWER
+SIGNATURE_PARAMETER_ORDER_MUTATION
+SIGNATURE_PERCENT_ENCODING_MUTATION
+CLOCK_AHEAD
+CLOCK_BEHIND
+SERVER_TIME_EXPIRED
+SERVER_TIME_PRODUCT_DISAGREEMENT
+DNS_FAILURE
+TLS_FAILURE
+REDIRECT_REJECTED
+PROXY_ENV_IGNORED
+HOST_REJECTED
+PATH_REJECTED
+DISCONNECT_BEFORE_SEND
+DISCONNECT_DURING_SEND
+DISCONNECT_AFTER_SEND
+ACK_LOSS_QUERY_RECOVERY
+VENUE_MINUS_1007_UNKNOWN
+VENUE_5XX_UNKNOWN
+MALFORMED_2XX_UNKNOWN
+RATE_LIMIT_418
+RATE_LIMIT_429
+DUPLICATE_CLIENT_ID
+QUERY_BEFORE_RETRY
+PROVEN_ABSENT_ONLY_BEFORE_FIRST_SEND
+PARTIAL_FILL
+CANCEL_FILL_RACE
+LATE_FILL
+OVERFILL
+CONFLICTING_FILL
+DUPLICATE_FEE
+FEE_CORRECTION_CONFLICT
+DUPLICATE_FUNDING
+FUNDING_CORRECTION_CONFLICT
+SAME_BYTES_DIFFERENT_IDENTITY
+PRIVATE_FRESH_PROCESS_UNKNOWN_REPLAY
+PRIVATE_FRESH_PROCESS_STOP_REPLAY
+SPOT_PERPETUAL_MUTUAL_EXCLUSION
+WRONG_POSITION_MODE
+WRONG_MULTI_ASSET_MODE
+WRONG_MARGIN_TYPE
+LEVERAGE_ABOVE_TWO
+PARTIAL_SHORT_REQUIRES_STOP_BEFORE_RETURN
+STOP_REJECTED
+STOP_LOST
+STOP_CANCEL_RACE
+STOP_REPLACEMENT_NO_GAP
+STOP_QUERY_MISMATCH
+BALANCE_DISAGREEMENT
+POSITION_DISAGREEMENT
+ORDER_DISAGREEMENT
+LEDGER_DISAGREEMENT
+DAILY_STOP
+DRAWDOWN_FLATTEN
+RESTART_PRESERVES_STOP
+UTC_ROLLOVER_ONLY_RESETS_DAILY_GATE
+CEREMONY_EXCLUDED_FROM_ECONOMICS
+READ_ONLY_UI_LOADER_FAILURE
+SECRET_ABSENT_FROM_LOGS_EXCEPTIONS_EVENTS_ARTIFACTS
+```
+
+Tests require exact order/uniqueness and prove every case invokes a dedicated
+probe. They alter one case result, fixture hash, observed counter, subprocess
+record, per-file hash and aggregate hash in turn and require strict-loader
+rejection. They assert the schema has no open `additionalProperties` for build,
+case or authority objects.
+
+- [ ] **Step 3: Run the structural RED**
 
 ```bash
 PYTHONPATH=src:tests python3 -m unittest tests.test_challenger_replacement_private_fault_matrix -v
 ```
 
-Patch only private low-level boundaries in tests/runner. Do not expose a
-production fault callback, enum, command, environment flag or arbitrary path.
+Expected: missing implementation after the rejected files are deleted. The RED
+must not be satisfied by importing unittest methods or hard-coded booleans.
 
-- [ ] **Step 3: Obtain one complete independent code/spec review**
+- [ ] **Step 4: Implement direct fixed probes and observed accounting**
 
-Review exact v0.76 base, v0.77 spec/plan and Tasks 1-10 diff. Critical and
-Important must be zero. Fix each valid finding with targeted RED/GREEN and ask
-only for targeted re-review.
+Each probe calls the relevant production function with fixed in-package fixture
+bytes and a closed internal fixture transport. The campaign owns a fixed
+boundary ledger that increments only at credential-read, public-network,
+private-network, mutating-request, economic-order, fund-movement and
+production-state boundaries. The receipt uses measured ledger snapshots before
+and after each probe; it never accepts caller-provided counts.
 
-- [ ] **Step 4: Freeze executable identity and run campaign once**
+Fresh-process cases use `sys.executable -I -m` with a fixed internal campaign
+entry point, fixed argv and controlled temporary root. Record executable path,
+argv, exit status, stdout/stderr bytes hashes and final event/artifact identities.
+No shell, environment-selected module, arbitrary command/path or production
+fault-injection seam is added.
 
-Commit the final executable code checkpoint. Enumerate exact runtime paths,
-compute per-file hashes and aggregate hash, build the campaign twice in memory
-for byte equality, execute it once, serialize canonical JSON with no trailing
-LF and strict-load/replay it. Any runtime/schema/fixture change invalidates the
-receipt and returns to this step.
+The executable-core inventory is a sorted exact tuple covering every v0.77
+private runtime module, schema and fixture. Compute each SHA-256 from current
+bytes and an aggregate hash over canonical `{path, sha256}` records. The runner
+derives its repository root from the reviewed package location, resolves current
+Git commit/tree without a caller-supplied path, and records the exact executable
+checkpoint. Strict load recomputes the inventory, verifies that commit/tree
+through Git, and requires the two exact expected identities; the later v0.77
+manifest binds this receipt without entering its own preimage. The released
+v0.76 receipt may satisfy only an explicitly mapped byte-identical
+foundation probe; its artifact hash and build identity are part of the case
+record. All Binance-private lifecycle cases execute direct v0.77 probes.
 
-- [ ] **Step 5: Commit immutable receipt**
+- [ ] **Step 5: Run GREEN plus safety adjacency**
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_challenger_replacement_private_fault_matrix \
+  tests.test_challenger_replacement_binance_private_protocol \
+  tests.test_challenger_replacement_binance_credential \
+  tests.test_challenger_replacement_binance_private_transport \
+  tests.test_challenger_replacement_binance_preflight \
+  tests.test_challenger_replacement_binance_private_lifecycle \
+  tests.test_challenger_replacement_binance_protective_stop \
+  tests.test_challenger_replacement_binance_reconciliation \
+  tests.test_challenger_replacement_binance_private_runtime \
+  tests.test_challenger_replacement_canary_controller \
+  tests.test_challenger_replacement_v077_architecture -v
+python3 -m compileall -q src tests
+git diff --check
+```
+
+- [ ] **Step 6: Obtain targeted independent re-review**
+
+Review exact base `3fdf26347c3983cb528732fe083a04d05a7273b7`, the
+revised spec/plan, all commits after it and the uncommitted fault campaign.
+Require explicit closure of the four Critical and four Important findings.
+Fix valid findings with targeted RED/GREEN and request only targeted re-review.
+
+- [ ] **Step 7: Commit executable checkpoint, then run campaign once**
+
+First commit the reviewed runner/schema/tests without a receipt. Record that
+commit as the executable checkpoint. Build the campaign twice in memory for
+byte equality, then execute the cases once. Serialize canonical JSON with one
+trailing LF, strict-load it, and confirm every case status is `PASS`, all
+release authority counters are zero, all fresh-process records are observed,
+and aggregate identity equals the executable checkpoint. Any runtime, schema,
+fixture or test change invalidates the campaign and returns to this step.
 
 ```bash
 git add src/crypto_quant/challenger_replacement_private_fault_matrix.py \
   src/crypto_quant/schemas/challenger-replacement-private-fault-receipt-v1.schema.json \
-  tests/test_challenger_replacement_private_fault_matrix.py \
-  artifacts/challenger-replacement/challenger-replacement-private-fault-matrix-v0.77.0.json
+  tests/test_challenger_replacement_private_fault_matrix.py
+git commit -m "test: execute v0.77 private fault campaign"
+```
+
+- [ ] **Step 8: Commit the immutable receipt separately**
+
+```bash
+git add artifacts/challenger-replacement/challenger-replacement-private-fault-matrix-v0.77.0.json
 git commit -m "test: freeze v0.77 private fault evidence"
 ```
 
@@ -1044,9 +1599,15 @@ candidate unpublished. Never replace remote CI with a local claim.
 - [ ] Exact endpoint inventory and 36-character ID contract are enforced.
 - [ ] Credential/signed data never appears in durable evidence or diagnostics.
 - [ ] UNKNOWN, position mismatch, missing stop and post-limit risk are hard stops.
+- [ ] UNKNOWN replay queries and reconciles without resending while new risk stays blocked.
+- [ ] Every partial perpetual fill is protected before return with no-gap replacement.
+- [ ] Preflight, intent and server-time authority cannot be caller-forged.
+- [ ] Reconciliation inputs are independent and exact-publication-identity bound.
+- [ ] Canary transitions replay only canonical events and strict artifacts.
 - [ ] Ceremony and stage state machines exactly preserve v0.75.
 - [ ] v0.74 90-day economics is unchanged by private operational events.
-- [ ] Fault matrix and dossier bind the exact released runtime.
+- [ ] Every atomic fault probe records observed counters and actual subprocess evidence.
+- [ ] Fault matrix and dossier bind the exact released runtime/schema/fixture inventory.
 - [ ] v0.76 and v0.77 PR/main/tag identities are all green and exact.
 - [ ] No installation, credential/account request, order, funds or timers occurred.
 - [ ] Final claim is only `CODE_COMPLETE_NOT_ACTIVATED`.
