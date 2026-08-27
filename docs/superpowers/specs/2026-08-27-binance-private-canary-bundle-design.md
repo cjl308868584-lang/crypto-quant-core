@@ -314,6 +314,70 @@ authority without granting new-risk authority.
 
 ### 4.6 `binance_reconciliation`
 
+Before reconciliation, the runtime must publish exactly one canonical
+`BINANCE_RECONCILIATION_INPUTS_CAPTURED` event for the intent.  This is the
+durability boundary for all three inputs; an in-memory response hash is not a
+publication identity.  Its strict payload contains only:
+
+```text
+intent_id
+capture_version = "1.0.0"
+event_input_bytes_base64 + event_input_sha256
+ledger_input_bytes_base64 + ledger_input_sha256
+venue_input_bytes_base64 + venue_input_sha256
+```
+
+Each decoded value is unique, bounded canonical JSON. `event_input` is the
+ordered private-event transcript and authorized intent needed to derive the
+internal projection. `ledger_input` is the ordered canonical fill, fee and
+funding accounting transcript, exact previous reconciliation bytes or null,
+and exact activation capital needed by a separate ledger reducer; it must not
+contain or copy a caller-supplied final event projection. `venue_input` contains
+the exact order, trade, account, balance, position, income and algo-order
+response documents plus the durable authorized order and protective-stop
+identities. The three reducers accept only their own decoded input.
+Each decoded value is `1..1,048,576` bytes and the existing canonical event
+limit remains `4,194,304` bytes; oversize input fails before any event staging
+file is created. The transcript ends at the exact
+`BINANCE_FILLS_FEES_REPLAYED` order stage and includes any already-reconciled
+stop/replacement/cleanup substate. The only main-stage transition is:
+
+```text
+BINANCE_FILLS_FEES_REPLAYED
+  -> BINANCE_RECONCILIATION_INPUTS_CAPTURED
+  -> BINANCE_POSITION_BALANCE_RECONCILED
+```
+
+The capture event is published by the existing atomic event protocol.  The
+reconciliation artifact carries `event_input`, `ledger_input` and `venue_input`
+publication records.  Each record repeats the capture event's device, inode,
+owner, mode, link count, final size and full-event SHA-256, and adds the fixed
+payload selector, decoded size and decoded SHA-256. Sharing one immutable outer
+event inode is intentional and does not merge the three parsing authorities.
+The retained event-root capability reopens and verifies the exact canonical
+event before any projection is trusted. Same decoded bytes in a replacement
+inode are therefore rejected.
+
+Each publication record has the exact keys
+`capture_event_sequence`, `capture_event_hash`, `device`, `inode`, `uid`,
+`mode_octal`, `link_count`, `event_size`, `event_sha256`, `payload_selector`,
+`decoded_size` and `decoded_sha256`. Mode is exactly `0600`, link count exactly
+one, and the three records must share all outer-event identity fields while
+using the three different fixed selectors. A byte-only reconciliation parser
+may validate canonical structure and hashes but is explicitly non-authorizing.
+Every runtime, observer, controller or evaluator authority path uses the strict
+loader with the retained event-root capability; it reopens the sequence file
+with the existing no-follow/nonblocking verifier and compares every stored
+identity field before returning a trusted projection.
+
+Crash semantics are fixed: before capture commit, a retry may repeat read-only
+venue queries but may not resend an economic mutation; after capture commit and
+before reconciliation commit, fresh-process retry performs zero network calls
+and replays the captured bytes; after reconciliation commit, the existing
+reconciliation replay path applies. A second capture for the same intent is
+allowed only as exact `ALREADY_COMMITTED`; any differing payload conflicts.
+Staging files remain non-authoritative under the existing event protocol.
+
 Reconciliation compares three independently parsed projections:
 
 1. intended/internal event state;
@@ -330,8 +394,8 @@ Success requires exact agreement on product, signed quantity, average entry,
 realized/unrealized PnL inputs, cumulative fees, funding, open orders and
 protective-stop identity. A mismatch never chooses the most favorable source.
 
-Each input uses a retained read-only capability and binds its publication
-record: device, inode, owner, mode, link count, size and SHA-256. Venue trades
+Each input uses the retained read-only event-root capability and binds the exact
+capture-event publication record described above. Venue trades
 must bind the exact Binance order ID and deterministic client order ID. For
 Futures, the reconciled stop trigger, side, quantity, reduce-only flag and
 client-algo ID must equal the authorized protective intent. Same bytes under a

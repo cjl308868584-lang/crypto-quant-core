@@ -1225,15 +1225,21 @@ git commit -m "fix: protect partial perpetual exposure"
 ### Task 10E: Bind independently derived three-way reconciliation
 
 **Files:**
+- Modify: `src/crypto_quant/challenger_replacement_binance_private_contract.py`
 - Modify: `src/crypto_quant/challenger_replacement_binance_reconciliation.py`
 - Modify: `src/crypto_quant/challenger_replacement_binance_private_runtime.py`
-- Modify: `src/crypto_quant/schemas/challenger-replacement-binance-reconciliation-v1.schema.json`
+- Modify: `src/crypto_quant/schemas/challenger-replacement-binance-private-event-v1.schema.json`
+- Create: `src/crypto_quant/schemas/challenger-replacement-binance-reconciliation-v1.schema.json`
+- Modify: `tests/test_challenger_replacement_binance_private_contract.py`
 - Modify: `tests/test_challenger_replacement_binance_reconciliation.py`
 - Modify: `tests/test_challenger_replacement_binance_private_runtime.py`
 
 **Interfaces:**
 - Produces retained `event_input`, `ledger_input` and venue-response publication
   identities with device/inode/owner/mode/link/size/SHA-256.
+- Publishes one strict `BINANCE_RECONCILIATION_INPUTS_CAPTURED` event before
+  reconciliation; all three records bind that exact immutable outer event and
+  their distinct fixed payload selector/decoded bytes.
 - Ledger values come from strict replay of canonical accounting artifacts, not
   a copy of event facts.
 - Trades bind exact order ID/client order ID; protective stop binds authorized
@@ -1241,10 +1247,17 @@ git commit -m "fix: protect partial perpetual exposure"
 
 - [ ] **Step 1: Write identity and independence RED tests**
 
-Test same bytes at a different inode for each input, event-versus-ledger
-disagreement, trade belonging to another order/client ID, stop trigger mismatch,
-stop side/quantity/reduce-only mismatch, and fresh-process replay. Preserve all
-sentinel inode/bytes/mode/link/mtime/ctime values on rejection.
+Test the exact capture schema and transition, same decoded bytes at a different
+capture-event inode for each selector, event-versus-ledger disagreement, trade
+belonging to another order/client ID, stop trigger mismatch, stop
+side/quantity/reduce-only mismatch, and fresh-process replay. Preserve all
+sentinel inode/bytes/mode/link/mtime/ctime values on rejection. Prove that a
+crash after capture commit but before reconciliation causes zero network calls
+and that a differing second capture conflicts.
+Test each decoded input at zero, 1 MiB and 1 MiB+1 boundaries and prove oversize
+failure occurs before staging creation. A byte-only parse must remain explicitly
+non-authorizing; all runtime/controller authority tests must require the
+retained event root and exact capture-event record.
 
 - [ ] **Step 2: Run RED and implement strict retained inputs**
 
@@ -1254,10 +1267,20 @@ PYTHONPATH=src:tests python3 -m unittest \
   tests.test_challenger_replacement_binance_private_runtime -v
 ```
 
-Use the existing domain-specific exact publication verifier; do not add a
-generic path loader. Replay accounting bytes independently, attach exact input
-records to the reconciliation artifact, and validate the venue identity joins
-before comparing Decimal projections.
+Use the existing event-root capability, atomic publisher and domain-specific
+exact final verifier; do not add a generic path loader or second artifact root.
+The capture payload holds three bounded canonical JSON byte strings. Replay the
+ledger transcript independently rather than accepting a final ledger
+projection, attach the outer event identity plus selector/decoded identity to
+the reconciliation artifact, and validate venue joins before comparing Decimal
+projections. Before capture a retry may repeat only read-only queries; after
+capture, reconciliation retry is zero-network.
+The exact transition is `FILLS_FEES_REPLAYED -> INPUTS_CAPTURED ->
+POSITION_BALANCE_RECONCILED`. The strict loader reopens the recorded canonical
+event sequence through the existing no-follow verifier and checks exact
+sequence/hash/device/inode/uid/0600/link-count-one/size/full-event-SHA plus the
+fixed selector and decoded size/SHA. Do not let the structural byte parser
+authorize a runtime, observer, controller or evaluator decision.
 
 - [ ] **Step 3: Run GREEN and commit**
 
@@ -1268,9 +1291,12 @@ PYTHONPATH=src:tests python3 -m unittest \
   tests.test_challenger_replacement_evidence \
   tests.test_ledger -v
 git diff --check
-git add src/crypto_quant/challenger_replacement_binance_reconciliation.py \
+git add src/crypto_quant/challenger_replacement_binance_private_contract.py \
+  src/crypto_quant/challenger_replacement_binance_reconciliation.py \
   src/crypto_quant/challenger_replacement_binance_private_runtime.py \
+  src/crypto_quant/schemas/challenger-replacement-binance-private-event-v1.schema.json \
   src/crypto_quant/schemas/challenger-replacement-binance-reconciliation-v1.schema.json \
+  tests/test_challenger_replacement_binance_private_contract.py \
   tests/test_challenger_replacement_binance_reconciliation.py \
   tests/test_challenger_replacement_binance_private_runtime.py
 git commit -m "fix: bind independent private reconciliation"
