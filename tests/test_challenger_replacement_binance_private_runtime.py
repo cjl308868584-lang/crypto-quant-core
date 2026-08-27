@@ -1126,18 +1126,18 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             self.intent["quantity"]
         )
         order = json.loads(filled)
-        order.update(executedQty="0.01", cumQuote="20", status="PARTIALLY_FILLED")
+        order.update(executedQty="0.005", cumQuote="10", status="PARTIALLY_FILLED")
         partial = canonical_json(order).encode("utf-8")
         trade = json.loads(trades)[0]
-        trade.update(qty="0.01", quoteQty="20", commission="0.008")
+        trade.update(qty="0.005", quoteQty="10", commission="0.004")
         trades = canonical_json([trade]).encode("utf-8")
-        position = self._futures_position("-0.01")
-        stop = self._futures_stop("0.01")
+        position = self._futures_position("-0.005")
+        stop = self._futures_stop("0.005")
         algo = canonical_json({
             "algoId": 901, "clientAlgoId": stop["client_algo_id"],
             "algoType": "CONDITIONAL", "orderType": "STOP_MARKET",
             "symbol": "ETHUSDT", "side": "BUY", "positionSide": "BOTH",
-            "quantity": "0.01", "triggerPrice": stop["trigger_price"],
+            "quantity": "0.005", "triggerPrice": stop["trigger_price"],
             "workingType": "MARK_PRICE", "reduceOnly": True,
             "closePosition": False, "algoStatus": "NEW",
         }).encode("utf-8")
@@ -1176,8 +1176,71 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             self.workspace.opportunity_id
         ]["private"]
         self.assertEqual(private["stage"], "BINANCE_FILLS_FEES_REPLAYED")
-        self.assertEqual(private["stop"]["quantity"], "0.01")
+        self.assertEqual(private["stop"]["quantity"], "0.005")
         self.assertEqual(private["stop"]["stage"], "BINANCE_STOP_RECONCILED")
+
+        larger = dict(order, executedQty="0.01", cumQuote="20",
+                      status="PARTIALLY_FILLED")
+        larger = canonical_json(larger).encode("utf-8")
+        second_trade = dict(trade, id=402)
+        larger_trades = canonical_json([trade, second_trade]).encode("utf-8")
+        larger_position = self._futures_position("-0.01")
+        candidate = self._futures_stop("0.01")
+        candidate_algo = canonical_json({
+            **json.loads(algo), "algoId": 902,
+            "clientAlgoId": candidate["client_algo_id"], "quantity": "0.01",
+            "triggerPrice": candidate["trigger_price"],
+        }).encode("utf-8")
+        canceled_old = canonical_json({
+            **json.loads(algo), "algoStatus": "CANCELED",
+        }).encode("utf-8")
+        second_documents = (
+            ("QUERY_SUCCEEDED", 200, larger),
+            ("QUERY_SUCCEEDED", 200, larger_trades),
+            ("QUERY_SUCCEEDED", 200, larger_position),
+            ("RESPONSE_INVALID", 400, absent),
+            ("ACKNOWLEDGED", 200, candidate_algo),
+            ("QUERY_SUCCEEDED", 200, candidate_algo),
+            ("QUERY_SUCCEEDED", 200, candidate_algo),
+            ("ACKNOWLEDGED", 200, canceled_old),
+            ("QUERY_SUCCEEDED", 200, canceled_old),
+        )
+        second_responses = tuple(BinancePrivateTransportResult(
+            kind, status, body, hashlib.sha256(body).hexdigest(), (),
+        ) for kind, status, body in second_documents)
+        fresh = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_expected_stop", return_value=candidate,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=second_responses,
+        ) as replacement_transport:
+            replaced = run_challenger_replacement_binance_private_intent(
+                state=fresh, event_root=self.workspace.root,
+                intent=self.intent, preflight_capability=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        self.assertEqual(replaced["status"],
+                         "PROTECTION_VERIFIED_RECONCILIATION_PENDING")
+        self.assertEqual([call.args[0].endpoint_id for call in
+                          replacement_transport.call_args_list], [
+            "FUTURES_ORDER_QUERY", "FUTURES_TRADES", "FUTURES_POSITION",
+            "FUTURES_ALGO_QUERY", "FUTURES_ALGO_CREATE", "FUTURES_ALGO_QUERY",
+            "FUTURES_ALGO_QUERY", "FUTURES_ALGO_CANCEL", "FUTURES_ALGO_QUERY",
+        ])
+        replaced_stop = fresh.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]["stop"]
+        self.assertEqual(replaced_stop["client_algo_id"],
+                         candidate["client_algo_id"])
+        self.assertEqual(replaced_stop["quantity"], "0.01")
+        self.assertEqual(replaced_stop["replacement"]["stage"],
+                         "BINANCE_STOP_REPLACEMENT_SUCCEEDED")
 
     def test_fresh_retry_after_stop_send_started_queries_without_recreate(self):
         self._use_perpetual_decision()

@@ -111,8 +111,7 @@ def _payload(header):
         ValueError,
     ) as error:
         _invalid(error)
-    if not isinstance(value, dict):
-        _invalid()
+    if not isinstance(value, dict): _invalid()
     return value
 def _lower_hash(value, length=64):
     return (
@@ -268,12 +267,10 @@ def apply_challenger_replacement_private_event(projection, event):
         if event_type.startswith("BINANCE_STOP_"):
             _apply_stop_transition(private, event_type, payload, event)
             return
-        if payload.get("intent_id") != private.get("intent_id"):
-            _invalid()
+        if payload.get("intent_id") != private.get("intent_id"): _invalid()
         _apply_private_transition(private, event_type, payload, event)
         return
-    if slot.get("stage") != "OPPORTUNITY_OBSERVED":
-        _invalid()
+    if slot.get("stage") != "OPPORTUNITY_OBSERVED": _invalid()
     try:
         quantity = canonical_decimal(payload["quantity"])
     except (KeyError, TypeError, ValueError) as error:
@@ -310,7 +307,7 @@ _PRIVATE_TRANSITIONS = {
     "BINANCE_ORDER_ACKNOWLEDGED": {"BINANCE_REQUEST_SEND_STARTED", "BINANCE_UNKNOWN_QUERY_OBSERVED"},
     "BINANCE_FILL_OBSERVED": {
         "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
-        "BINANCE_ORDER_PARTIALLY_FILLED",
+        "BINANCE_ORDER_PARTIALLY_FILLED", "BINANCE_FILLS_FEES_REPLAYED",
     },
     "BINANCE_ORDER_PARTIALLY_FILLED": {
         "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
@@ -393,8 +390,7 @@ def _advance_stop(stop, private, event_type, payload):
             payload.get("quantity") == target.get("quantity"),
             payload.get("trigger_price") == target.get("trigger_price"),
         ))
-    if not valid:
-        _invalid()
+    if not valid: _invalid()
     updates = {name: payload[name] for name in copied}
     if "timestamp_ms" in updates:
         updates["request_timestamp_ms"] = updates.pop("timestamp_ms")
@@ -419,8 +415,7 @@ def _apply_stop_transition(private, event_type, payload, event):
               or payload["client_algo_id"] != cleanup["client_algo_id"]):
             _invalid()
         elif event_type == "BINANCE_STOP_CLEANUP_REQUEST_PREPARED":
-            if cleanup["stage"] != "BINANCE_STOP_CLEANUP_AUTHORIZED":
-                _invalid()
+            if cleanup["stage"] != "BINANCE_STOP_CLEANUP_AUTHORIZED": _invalid()
             cleanup.update(
                 stage=event_type, request_id=payload["request_id"],
                 request_sha256=payload["request_sha256"],
@@ -491,12 +486,29 @@ def _apply_stop_transition(private, event_type, payload, event):
             "old_client_algo_id": payload["old_client_algo_id"],
             "new_client_algo_id": payload["new_client_algo_id"],
         }
+    elif event_type == "BINANCE_STOP_REPLACEMENT_CANCEL_SEND_STARTED":
+        replacement = stop.get("replacement") if isinstance(stop, dict) else None
+        candidate = replacement.get("candidate") if isinstance(replacement, dict) else None
+        valid = (isinstance(candidate, dict)
+                 and candidate.get("stage") == "BINANCE_STOP_RECONCILED"
+                 and replacement.get("stage") == "BINANCE_STOP_REPLACEMENT_STARTED"
+                 and payload["protected_intent_id"] == private["intent_id"])
+        if (not valid or any(payload[name] != source[key]
+                for name, source, key in (
+                    ("old_client_algo_id", stop, "client_algo_id"),
+                    ("new_client_algo_id", candidate, "client_algo_id"),
+                    ("old_client_algo_id", replacement, "old_client_algo_id"),
+                    ("new_client_algo_id", replacement, "new_client_algo_id")))):
+            _invalid()
+        replacement.update(stage=event_type, request_id=payload["request_id"],
+            request_sha256=payload["request_sha256"], request_timestamp_ms=payload["timestamp_ms"])
     elif event_type == "BINANCE_STOP_REPLACEMENT_SUCCEEDED":
         replacement = stop.get("replacement") if isinstance(stop, dict) else None
-        candidate = (replacement.get("candidate")
-                     if isinstance(replacement, dict) else None)
+        candidate = replacement.get("candidate") if isinstance(replacement, dict) else None
         if (not isinstance(candidate, dict)
                 or candidate.get("stage") != "BINANCE_STOP_RECONCILED"
+                or replacement.get("stage")
+                != "BINANCE_STOP_REPLACEMENT_CANCEL_SEND_STARTED"
                 or payload["protected_intent_id"] != private["intent_id"]
                 or payload["old_client_algo_id"] != stop["client_algo_id"]
                 or payload["old_client_algo_id"] != replacement.get(
@@ -508,10 +520,8 @@ def _apply_stop_transition(private, event_type, payload, event):
                 )
                 or payload["reason_code_or_null"] is not None):
             _invalid()
-        replacement.pop("candidate")
-        replacement["stage"] = event_type
-        candidate["replacement"] = replacement
-        private["stop"] = candidate
+        replacement.pop("candidate"); replacement["stage"] = event_type
+        candidate["replacement"] = replacement; private["stop"] = candidate
     elif event_type == "BINANCE_STOP_REPLACEMENT_FAILED":
         replacement = stop.get("replacement") if isinstance(stop, dict) else None
         reason = payload.get("reason_code_or_null")
@@ -588,8 +598,7 @@ def _apply_private_transition(private, event_type, payload, event):
             or not _private_payload_valid(event_type, payload, private)):
         _invalid()
     if event_type == "BINANCE_FILL_OBSERVED":
-        if payload["trade_id"] in private["fill_ids"]:
-            _invalid()
+        if payload["trade_id"] in private["fill_ids"]: _invalid()
         private["fill_ids"].append(payload["trade_id"])
     elif event_type == "BINANCE_ABSENCE_CHECKED":
         private["absence_proven"] = True

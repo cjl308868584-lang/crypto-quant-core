@@ -676,6 +676,17 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "new_risk_blocked": False, "client_algo_id": new_client,
             "algo_id": 902, "quantity": "0.02", "trigger_price": "2029",
         })
+        cancel_request_id = "binance_private_request_" + "2" * 64
+        self._append_private(
+            "BINANCE_STOP_REPLACEMENT_CANCEL_SEND_STARTED", {
+                "protected_intent_id": intent["intent_id"],
+                "old_client_algo_id": old_client,
+                "new_client_algo_id": new_client,
+                "request_id": cancel_request_id,
+                "request_sha256": "3" * 64,
+                "timestamp_ms": 1787832000000,
+            },
+        )
         self._append_private("BINANCE_STOP_REPLACEMENT_SUCCEEDED", {
             "protected_intent_id": intent["intent_id"],
             "old_client_algo_id": old_client,
