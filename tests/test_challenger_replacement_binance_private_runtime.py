@@ -39,6 +39,7 @@ from crypto_quant.challenger_replacement_binance_reconciliation import (
     load_binance_reconciliation_bytes,
     reconcile_binance_private_state,
 )
+from crypto_quant.challenger_replacement_public_http import PublicHttpResponse
 from crypto_quant.challenger_replacement_events import (
     open_challenger_replacement_event_root,
 )
@@ -265,6 +266,12 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
     def setUp(self):
         self.workspace = PrivateRuntimeWorkspace()
         self.addCleanup(self.workspace.close)
+        self.public_time_patch = patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "open_fixed_public_request", side_effect=self._public_time_response,
+        )
+        self.public_time_patch.start()
+        self.addCleanup(self.public_time_patch.stop)
         self.state = self.workspace.state()
         self._observe_opportunity()
         self.block_id = "e0-block-" + "2" * 64
@@ -318,15 +325,25 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             configuration_sha256=receipt_document["configuration_sha256"],
             account_approval_sha256=receipt_document["account_approval_sha256"],
         )
+        self.preflight = load_binance_account_preflight_capability_bytes(
+            receipt, build_identity=self.workspace.build,
+        )
+        self.credential = SimpleNamespace(identity=credential_identity)
         self.intent = build_binance_order_intent_from_opportunity(
             slot=self.state.replay()["opportunities"][self.workspace.opportunity_id],
             activation=self.activation, attempt_ordinal=1,
         )
         self.client_id = self._client_id()
-        self.preflight = load_binance_account_preflight_capability_bytes(
-            receipt, build_identity=self.workspace.build,
+
+    @staticmethod
+    def _public_time_response(request, *, max_body_bytes):
+        return PublicHttpResponse(
+            status=200, final_url=request.full_url,
+            headers={"Content-Type": "application/json"},
+            body=b'{"serverTime":1787832000000}', monotonic_rtt_ms=0,
+            request_started_at="2026-08-27T12:00:00.000Z",
+            response_received_at="2026-08-27T12:00:00.000Z",
         )
-        self.credential = SimpleNamespace(identity=credential_identity)
 
     def test_raw_preflight_mapping_cannot_authorize_runtime(self):
         before = self.state.replay()["last_event_hash"]
@@ -346,6 +363,47 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             )
         self.assertEqual(self.state.replay()["last_event_hash"], before)
         transport.assert_not_called()
+
+    def test_server_time_is_durable_before_any_private_request(self):
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode("utf-8")
+        public = PublicHttpResponse(
+            status=200, final_url="https://api.binance.com/api/v3/time",
+            headers={"Content-Type": "application/json"},
+            body=b'{"serverTime":1787832000000}', monotonic_rtt_ms=0,
+            request_started_at="2026-08-27T12:00:00.000Z",
+            response_received_at="2026-08-27T12:00:00.000Z",
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "open_fixed_public_request", create=True, return_value=public,
+        ) as public_request, patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+            side_effect=(self._result("RESPONSE_INVALID", absent),
+                         self._result("UNKNOWN", b"")),
+        ):
+            run_challenger_replacement_binance_private_intent(
+                state=self.state, event_root=self.workspace.root,
+                intent=self.intent, preflight=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(private["server_time_evidence"], {
+            "product": "SPOT", "local_before_ms": 1787832000000,
+            "server_time_ms": 1787832000000,
+            "local_after_ms": 1787832000000,
+            "midpoint_ms": 1787832000000, "skew_ms": 0,
+            "response_sha256": hashlib.sha256(public.body).hexdigest(),
+        })
+        public_request.assert_called_once()
 
     def _observe_opportunity(self):
         self.workspace.observe(self.state)
@@ -1560,6 +1618,68 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN")
 
+    def test_expired_prepared_request_is_rejected_after_fresh_time_observation(self):
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode("utf-8")
+
+        class SimulatedCrash(BaseException):
+            pass
+
+        original_append = self.state.append
+
+        def append_then_crash(**kwargs):
+            result = original_append(**kwargs)
+            if kwargs["event_type"] == "BINANCE_SIGNED_REQUEST_PREPARED":
+                raise SimulatedCrash()
+            return result
+
+        with patch.object(self.state, "append", side_effect=append_then_crash), \
+                patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "_wall_now", return_value=self.NOW,
+                ), patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "execute_binance_private_request",
+                    return_value=self._result("RESPONSE_INVALID", absent),
+                ):
+            with self.assertRaises(SimulatedCrash):
+                run_challenger_replacement_binance_private_intent(
+                    state=self.state, event_root=self.workspace.root,
+                    intent=self.intent, preflight=self.preflight,
+                    activation=self.activation, credential=self.credential,
+                    build_identity=self.workspace.build,
+                )
+        fresh_time = PublicHttpResponse(
+            status=200, final_url="https://api.binance.com/api/v3/time",
+            headers={}, body=b'{"serverTime":1787832006001}',
+            monotonic_rtt_ms=0,
+            request_started_at="2026-08-27T12:00:06.001Z",
+            response_received_at="2026-08-27T12:00:06.001Z",
+        )
+        fresh = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW + timedelta(milliseconds=6001),
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "open_fixed_public_request", return_value=fresh_time,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+            side_effect=AssertionError("expired request must not be signed"),
+        ) as private_transport, self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_SERVER_TIME_INVALID",
+        ):
+            run_challenger_replacement_binance_private_intent(
+                state=fresh, event_root=self.workspace.root,
+                intent=self.intent, preflight=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        private_transport.assert_not_called()
+
     def test_crash_after_exact_reconciliation_resumes_without_network(self):
         absent = canonical_json({
             "code": -2013, "msg": "Order does not exist.",
@@ -1723,6 +1843,9 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
 
         with patch.object(fresh, "append", side_effect=replay_then_crash), patch(
             "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
             "execute_binance_private_request", side_effect=second,
         ) as transport:
             with self.assertRaises(SimulatedCrash):
@@ -1742,6 +1865,9 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
         terminal = self.workspace.state()
         with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW,
+        ), patch(
             "crypto_quant.challenger_replacement_binance_private_runtime."
             "execute_binance_private_request", side_effect=(
                 result("QUERY_SUCCEEDED", 200, filled),

@@ -6,6 +6,7 @@ from decimal import Decimal
 import hashlib
 import json
 from typing import Mapping
+from urllib.request import Request
 from .canonical import canonical_decimal, canonical_json, utc_datetime
 from .challenger_replacement_binance_private_lifecycle import (
     _document, apply_binance_order_observation,
@@ -13,10 +14,11 @@ from .challenger_replacement_binance_private_lifecycle import (
     prepare_binance_protective_stop, reconcile_binance_protective_stop,
 )
 from .challenger_replacement_binance_private_protocol import (
-    build_binance_private_request,
+    build_binance_private_request, observe_binance_server_time,
+    validate_binance_request_time,
 )
 from .challenger_replacement_binance_private_transport import (
-    execute_binance_private_request,
+    BinancePrivateTransportResult, execute_binance_private_request,
 )
 from .challenger_replacement_binance_preflight import (
     BinanceAccountPreflightCapability,
@@ -28,6 +30,7 @@ from .challenger_replacement_events import ChallengerReplacementEventRoot
 from .challenger_replacement_opportunities import (
     ChallengerReplacementOpportunityState,
 )
+from .challenger_replacement_public_http import open_fixed_public_request
 _TERMINAL_ORDERS = frozenset({
     "BINANCE_ORDER_FILLED", "BINANCE_ORDER_CANCELED",
     "BINANCE_ORDER_EXPIRED", "BINANCE_ORDER_REJECTED",
@@ -76,6 +79,30 @@ def _require_decision_intent(state, intent, activation):
         _fail("BINANCE_PRIVATE_RUNTIME_INTENT_DECISION_MISMATCH", error)
 def _wall_now():
     return datetime.now(timezone.utc)
+def _public_time_transport(request):
+    url = "https://%s%s" % (request.host, request.path)
+    response = open_fixed_public_request(Request(url, method="GET"),
+                                         max_body_bytes=128)
+    if response.final_url != url:
+        _fail("BINANCE_PRIVATE_RUNTIME_SERVER_TIME_INVALID")
+    return BinancePrivateTransportResult(
+        "QUERY_SUCCEEDED" if response.status == 200 else "TRANSIENT_QUERY_FAILURE",
+        response.status, response.body, hashlib.sha256(response.body).hexdigest(), (),
+    )
+def _fresh_context(state, attempt, credential, activation, build_identity,
+                   recorded_at):
+    try:
+        evidence = observe_binance_server_time(
+            product=attempt["product"], transport=_public_time_transport,
+            local_clock=lambda: int(_wall_now().timestamp() * 1000),
+        )
+        payload = {key: getattr(evidence, key) for key in evidence.__dataclass_fields__}
+        _append_intent(state, attempt, "BINANCE_SERVER_TIME_OBSERVED",
+                       recorded_at, **payload)
+        return _Context(credential, activation, build_identity, recorded_at,
+                        evidence.server_time_ms)
+    except (AttributeError, TypeError, ValueError) as error:
+        _fail("BINANCE_PRIVATE_RUNTIME_SERVER_TIME_INVALID", error)
 def _runtime_projection(state):
     projection = state._replay()
     active = None
@@ -262,6 +289,11 @@ def _existing_private(state, attempt):
         _fail("BINANCE_PRIVATE_RUNTIME_INTENT_CONFLICT")
     return private
 def _execute(request, context):
+    try:
+        validate_binance_request_time(timestamp_ms=request.timestamp_ms,
+                                      server_time_ms=context.timestamp_ms)
+    except (AttributeError, TypeError, ValueError) as error:
+        _fail("BINANCE_PRIVATE_RUNTIME_SERVER_TIME_INVALID", error)
     return execute_binance_private_request(
         request, credential=context.credential, activation=context.activation,
         expected_build_identity=context.build_identity,
@@ -915,7 +947,6 @@ def run_challenger_replacement_binance_private_intent(
     build_identity
 ):
     """Run one query-first intent through the fixed private transport."""
-
     _require_identity(state, event_root, build_identity)
     _require_decision_intent(state, intent, activation)
     if not isinstance(preflight, BinanceAccountPreflightCapability):
@@ -923,7 +954,6 @@ def run_challenger_replacement_binance_private_intent(
     now = _wall_now()
     try:
         recorded_at = utc_datetime(now)
-        timestamp_ms = int(now.timestamp() * 1000)
         preflight = preflight.load(
             activation=activation, credential_identity=credential.identity,
             now=recorded_at,
@@ -940,9 +970,6 @@ def run_challenger_replacement_binance_private_intent(
     except (AttributeError, KeyError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_INTENT_INVALID", error)
     existing = _existing_private(state, attempt)
-    context = _Context(
-        credential, activation, build_identity, recorded_at, timestamp_ms
-    )
     if existing is not None:
         if existing["stage"] == "BINANCE_RECONCILIATION_SUCCEEDED":
             loaded = _reconciliation(existing)
@@ -957,6 +984,22 @@ def run_challenger_replacement_binance_private_intent(
             return _resume_reconciliation(
                 state, attempt, existing, recorded_at,
             )
+        if existing["stage"] == "BINANCE_ORDER_UNKNOWN":
+            return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
+    else:
+        _append_intent(state, attempt, "BINANCE_INTENT_AUTHORIZED", recorded_at,
+            opportunity_id=attempt["opportunity_id"], block_id=attempt["block_id"],
+            product=attempt["product"], action=attempt["action"],
+            quantity=attempt["quantity"],
+            venue_client_order_id=attempt["venue_client_order_id"],
+            activation_id=attempt["activation_id"], preflight_sha256=preflight_hash,
+            unsigned_intent_sha256=attempt["unsigned_intent_sha256"],
+        )
+    context = _fresh_context(
+        state, attempt, credential, activation, build_identity, recorded_at,
+    )
+    timestamp_ms = context.timestamp_ms
+    if existing is not None:
         if (existing["stage"] in _TERMINAL_ORDERS | {
                 "BINANCE_FILLS_FEES_REPLAYED",
             }
@@ -999,8 +1042,6 @@ def run_challenger_replacement_binance_private_intent(
                 request_id=request.request_id,
             )
             return _send_request(state, attempt, request, context)
-        if existing["stage"] == "BINANCE_ORDER_UNKNOWN":
-            return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
         if existing["stage"] in {
             "BINANCE_ORDER_ACKNOWLEDGED", "BINANCE_FILL_OBSERVED",
             "BINANCE_ORDER_PARTIALLY_FILLED",
@@ -1011,16 +1052,6 @@ def run_challenger_replacement_binance_private_intent(
                 context=context,
             )
         _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_STAGE_UNSUPPORTED")
-    _append_intent(state, attempt, "BINANCE_INTENT_AUTHORIZED", recorded_at,
-        opportunity_id=attempt["opportunity_id"],
-        block_id=attempt["block_id"],
-        product=attempt["product"], action=attempt["action"],
-        quantity=attempt["quantity"],
-        venue_client_order_id=attempt["venue_client_order_id"],
-        activation_id=attempt["activation_id"],
-        preflight_sha256=preflight_hash,
-        unsigned_intent_sha256=attempt["unsigned_intent_sha256"],
-    )
     query = _request(attempt["required_first_endpoint"], attempt, timestamp_ms)
     query_result = _execute(query, context)
     if not _proven_absent(query_result):

@@ -92,6 +92,7 @@ class BinancePrivateProtocolTests(unittest.TestCase):
                 "price", "recvWindow", "timestamp",
             ),
             mutating=True,
+            timestamp_ms=1499827319559,
         )
         signature = compute_binance_hmac_sha256(
             request.encoded_parameters,

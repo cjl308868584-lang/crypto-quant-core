@@ -66,6 +66,7 @@ class BinancePrivateRequest:
     encoded_parameters: bytes
     parameter_names: tuple
     mutating: bool
+    timestamp_ms: int
 @dataclass(frozen=True)
 class BinanceServerTimeEvidence:
     product: str
@@ -129,8 +130,6 @@ def _positive_decimal(value):
     except (CanonicalizationError, TypeError, ValueError):
         return False
     return normalized == value and normalized != "0" and not normalized.startswith("-")
-
-
 def _values_valid(endpoint_id, parameters):
     if "symbol" in parameters and parameters["symbol"] != "ETHUSDT":
         return False
@@ -186,11 +185,8 @@ def _values_valid(endpoint_id, parameters):
             and str(end) == parameters["endTime"]
         )
     return True
-
-
 def build_binance_private_request(endpoint_id, parameters, *, timestamp_ms):
     """Build one deterministic request from a closed endpoint identifier."""
-
     host, method, path, mutating = require_binance_private_endpoint(endpoint_id)
     allowed = _PARAMETER_SETS.get(endpoint_id)
     if (
@@ -233,12 +229,10 @@ def build_binance_private_request(endpoint_id, parameters, *, timestamp_ms):
         encoded_parameters=encoded,
         parameter_names=tuple(name for name, _value in pairs),
         mutating=mutating,
+        timestamp_ms=timestamp_ms,
     )
-
-
 def compute_binance_hmac_sha256(payload, hmac_key):
     """Compute the pure official HMAC-SHA256 known-answer primitive."""
-
     if (
         not isinstance(payload, bytes)
         or not 1 <= len(payload) <= 4096
@@ -247,8 +241,6 @@ def compute_binance_hmac_sha256(payload, hmac_key):
     ):
         _invalid()
     return hmac.new(hmac_key, payload, hashlib.sha256).hexdigest()
-
-
 def _validated_request(request):
     if (
         not isinstance(request, BinancePrivateRequest)
@@ -292,20 +284,14 @@ def _validated_request(request):
     if rebuilt != request:
         _invalid()
     return request
-
-
 def sign_binance_private_request(request, hmac_secret):
     """Validate one frozen request, then return its lowercase HMAC."""
-
     request = _validated_request(request)
     return compute_binance_hmac_sha256(
         request.encoded_parameters, hmac_secret
     )
-
-
 def validate_binance_request_time(*, timestamp_ms, server_time_ms):
     """Validate the fixed 5000 ms window and strict future-time boundary."""
-
     if any(
         isinstance(value, bool)
         or not isinstance(value, int)
@@ -319,8 +305,6 @@ def validate_binance_request_time(*, timestamp_ms, server_time_ms):
     ):
         raise ValueError("CHALLENGER_REPLACEMENT_BINANCE_TIMESTAMP_INVALID")
     return timestamp_ms - server_time_ms
-
-
 def _strict_pairs(pairs):
     result = {}
     for key, value in pairs:
@@ -328,8 +312,6 @@ def _strict_pairs(pairs):
             raise ValueError("duplicate response key")
         result[key] = value
     return result
-
-
 def _require_bounded_json_depth(value):
     stack = [(value, 1)]
     while stack:
@@ -339,11 +321,8 @@ def _require_bounded_json_depth(value):
                 raise _ResponseDepthError
             children = current.values() if isinstance(current, dict) else current
             stack.extend((child, depth + 1) for child in children)
-
-
 def classify_binance_private_response(request, *, status, body, headers):
     """Classify bounded HTTP bytes without ever authorizing a retry."""
-
     request = _validated_request(request)
     if (
         isinstance(status, bool)

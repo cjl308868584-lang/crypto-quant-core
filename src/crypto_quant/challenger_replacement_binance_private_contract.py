@@ -79,17 +79,12 @@ _ACTIVATION_AUTHORITY_TOKEN = object()
 def _is_loaded_binance_private_activation(value):
     return (isinstance(value, BinancePrivateActivation)
             and value._authority_token is _ACTIVATION_AUTHORITY_TOKEN)
-
 class ChallengerReplacementBinancePrivateContractError(ValueError):
     """A Binance-private event violated the closed projection contract."""
-
     reason_code = "CHALLENGER_REPLACEMENT_BINANCE_PRIVATE_EVENT_INVALID"
-
     def __init__(self):
         super().__init__(self.reason_code)
-
 _LOWER_HEX = frozenset("0123456789abcdef")
-
 @lru_cache(maxsize=3)
 def _validator(filename):
     schema = json.loads(resources.files("crypto_quant").joinpath(
@@ -97,17 +92,14 @@ def _validator(filename):
     ).read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
-
 PRIVATE_EVENT_TYPES = frozenset(
     _validator("challenger-replacement-binance-private-event-v1.schema.json")
     .schema["properties"]["event_type"]["enum"]
 )
-
 def _invalid(error=None):
     if error is None:
         raise ChallengerReplacementBinancePrivateContractError()
     raise ChallengerReplacementBinancePrivateContractError() from error
-
 def _payload(header):
     try:
         data = base64.b64decode(header["payload_bytes_base64"], validate=True)
@@ -122,17 +114,14 @@ def _payload(header):
     if not isinstance(value, dict):
         _invalid()
     return value
-
 def _lower_hash(value, length=64):
     return (
         isinstance(value, str)
         and len(value) == length
         and not set(value) - _LOWER_HEX
     )
-
 def _bounded_identity(value):
     return isinstance(value, str) and 1 <= len(value) <= 256
-
 def _canonical_time(value):
     if not isinstance(value, str):
         raise ValueError("CHALLENGER_REPLACEMENT_BINANCE_ACTIVATION_INVALID")
@@ -146,10 +135,8 @@ def _canonical_time(value):
     if utc_datetime(parsed) != value:
         raise ValueError("CHALLENGER_REPLACEMENT_BINANCE_ACTIVATION_INVALID")
     return parsed
-
 def load_binance_private_activation_bytes(data, *, build_identity, now):
     """Load one exact, time-bounded stage activation document."""
-
     reason = "CHALLENGER_REPLACEMENT_BINANCE_ACTIVATION_INVALID"
     try:
         if not isinstance(data, bytes) or not data.endswith(b"\n"):
@@ -193,10 +180,8 @@ def load_binance_private_activation_bytes(data, *, build_identity, now):
         if isinstance(error, ValueError) and str(error) == reason:
             raise
         raise ValueError(reason) from error
-
 def load_binance_account_approval_bytes(data, *, now):
     """Load the owner's bounded account/IP/key-fingerprint attestation."""
-
     reason = "CHALLENGER_REPLACEMENT_BINANCE_ACCOUNT_APPROVAL_INVALID"
     try:
         if not isinstance(data, bytes) or not data.endswith(b"\n"):
@@ -237,10 +222,8 @@ def load_binance_account_approval_bytes(data, *, now):
         if isinstance(error, ValueError) and str(error) == reason:
             raise
         raise ValueError(reason) from error
-
 def apply_challenger_replacement_private_event(projection, event):
     """Apply one private event only after its opportunity is observed."""
-
     try:
         header = json.loads(event.final_bytes.decode("utf-8"))
         event_type = header["event_type"]
@@ -267,6 +250,21 @@ def apply_challenger_replacement_private_event(projection, event):
                 or not isinstance(private, dict)
                 or private.get("terminal") is not False):
             _invalid()
+        if event_type == "BINANCE_SERVER_TIME_OBSERVED":
+            before, after = payload["local_before_ms"], payload["local_after_ms"]
+            midpoint = before + (after - before) // 2
+            if (payload["intent_id"] != private["intent_id"]
+                    or payload["product"] != private["product"]
+                    or before > after or after - before > 1000
+                    or payload["midpoint_ms"] != midpoint
+                    or payload["skew_ms"] != payload["server_time_ms"] - midpoint):
+                _invalid()
+            private["server_time_evidence"] = {
+                key: payload[key] for key in payload if key != "intent_id"
+            }
+            private["last_private_event_hash"] = event.event_hash
+            private["last_private_event_sequence"] = event.sequence
+            return
         if event_type.startswith("BINANCE_STOP_"):
             _apply_stop_transition(private, event_type, payload, event)
             return
@@ -305,7 +303,6 @@ def apply_challenger_replacement_private_event(projection, event):
         "unresolved_unknown": False,
         "terminal": False,
     }
-
 _PRIVATE_TRANSITIONS = {
     "BINANCE_ABSENCE_CHECKED": {"BINANCE_INTENT_AUTHORIZED"},
     "BINANCE_SIGNED_REQUEST_PREPARED": {"BINANCE_ABSENCE_CHECKED"},
@@ -353,7 +350,6 @@ _PRIVATE_TRANSITIONS = {
         "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED",
     },
 }
-
 def _stop_target(stop, stage):
     if isinstance(stop, dict) and stop.get("stage") == stage:
         return stop
@@ -363,7 +359,6 @@ def _stop_target(stop, stage):
     if isinstance(candidate, dict) and candidate.get("stage") == stage:
         return candidate
     return None
-
 _STOP_CHAIN = {
     "BINANCE_STOP_ABSENCE_CHECKED": (
         "BINANCE_STOP_INTENT_AUTHORIZED", ("query_response_sha256",),
@@ -380,7 +375,6 @@ _STOP_CHAIN = {
     ),
     "BINANCE_STOP_RECONCILED": ("BINANCE_STOP_ACKNOWLEDGED", ()),
 }
-
 def _advance_stop(stop, private, event_type, payload):
     previous, copied = _STOP_CHAIN[event_type]
     target = _stop_target(stop, previous)
@@ -404,7 +398,6 @@ def _advance_stop(stop, private, event_type, payload):
     if "timestamp_ms" in updates:
         updates["request_timestamp_ms"] = updates.pop("timestamp_ms")
     target.update(stage=event_type, **updates)
-
 def _apply_stop_transition(private, event_type, payload, event):
     stop = private.get("stop")
     if event_type.startswith("BINANCE_STOP_CLEANUP_"):
@@ -544,7 +537,6 @@ def _apply_stop_transition(private, event_type, payload, event):
         _invalid()
     private["last_private_event_hash"] = event.event_hash
     private["last_private_event_sequence"] = event.sequence
-
 def _private_payload_valid(event_type, payload, private):
     if event_type == "BINANCE_ABSENCE_CHECKED":
         return payload["venue_client_order_id"] == private["venue_client_order_id"]
@@ -587,7 +579,6 @@ def _private_payload_valid(event_type, payload, private):
     if event_type == "BINANCE_PROTECTION_RECONCILED_IF_EXPOSED":
         return True
     return event_type == "BINANCE_RECONCILIATION_FAILED"
-
 def _apply_private_transition(private, event_type, payload, event):
     if (event_type not in _PRIVATE_TRANSITIONS
             or private["stage"] not in _PRIVATE_TRANSITIONS[event_type]
@@ -620,10 +611,8 @@ def _apply_private_transition(private, event_type, payload, event):
         "BINANCE_RECONCILIATION_SUCCEEDED", "BINANCE_RECONCILIATION_FAILED",
     }:
         private["terminal"] = True
-
 def require_binance_private_endpoint(endpoint_id):
     """Return one frozen endpoint tuple or fail before request construction."""
-
     try:
         return BINANCE_PRIVATE_ENDPOINTS[endpoint_id]
     except (KeyError, TypeError) as error:
