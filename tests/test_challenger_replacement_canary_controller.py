@@ -308,6 +308,20 @@ class ChallengerReplacementCanaryControllerTests(unittest.TestCase):
                         candidate, plan=plan,
                     )
 
+    def test_post_limit_risk_hard_stop_requires_an_actual_post_limit_attempt(self):
+        invalid = self.ceremony_events() + (
+            self.start(),
+            self.mark(
+                "2026-09-02T04:00:00.000Z", "100", new_risk=False,
+                hard_stop="RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT",
+            ),
+        )
+        with self.assertRaisesRegex(
+            ChallengerReplacementCanaryControllerError,
+            "CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID",
+        ):
+            self.project(invalid)
+
 
 if __name__ == "__main__":
     unittest.main()

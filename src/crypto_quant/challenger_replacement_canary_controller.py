@@ -210,8 +210,14 @@ def _apply_equity(block, event, policy):
                       if policy["drawdown_limit_kind"] == "ABSOLUTE_USDT"
                       else high * Decimal(policy["drawdown_limit"]))
     hard_stop = event["hard_stop_or_null"]
-    if (event["new_risk_attempted"]
-            and (block["new_risk_blocked"] or daily >= daily_limit)):
+    post_limit_attempt = (
+        event["new_risk_attempted"]
+        and (block["new_risk_blocked"] or daily >= daily_limit)
+    )
+    if hard_stop == "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT":
+        if not post_limit_attempt:
+            _fail()
+    elif post_limit_attempt:
         if hard_stop != "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT":
             _fail()
     block.update(
