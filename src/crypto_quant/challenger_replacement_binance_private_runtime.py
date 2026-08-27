@@ -64,15 +64,12 @@ def _require_identity(state, event_root, build_identity):
 def _require_decision_intent(state, intent, activation):
     try:
         slot = state.replay()["opportunities"][intent["opportunity_id"]]
-        evidence = slot.get("result_evidence")
-        if (isinstance(evidence, Mapping) and evidence.get("$schema")
-                == "./challenger-replacement-public-simulation-result-v1.schema.json"):
-            expected = build_binance_order_intent_from_opportunity(
-                slot=slot, activation=activation,
-                attempt_ordinal=intent["attempt_ordinal"],
-            )
-            if dict(intent) != expected:
-                _fail("BINANCE_PRIVATE_RUNTIME_INTENT_DECISION_MISMATCH")
+        expected = build_binance_order_intent_from_opportunity(
+            slot=slot, activation=activation,
+            attempt_ordinal=intent["attempt_ordinal"],
+        )
+        if dict(intent) != expected:
+            _fail("BINANCE_PRIVATE_RUNTIME_INTENT_DECISION_MISMATCH")
     except BinancePrivateRuntimeError:
         raise
     except (AttributeError, KeyError, TypeError, ValueError) as error:

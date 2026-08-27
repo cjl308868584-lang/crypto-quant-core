@@ -1,5 +1,6 @@
 import base64
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import hashlib
 from importlib import resources
 import json
@@ -7,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import canonical_decimal, canonical_json
 from crypto_quant.challenger_replacement_binance_private_contract import (
     BinanceAccountApproval, BinancePrivateActivation,
 )
@@ -20,6 +21,7 @@ from crypto_quant.challenger_replacement_binance_preflight import (
 )
 from crypto_quant.challenger_replacement_binance_private_lifecycle import (
     build_binance_order_intent_from_opportunity,
+    derive_binance_client_order_id, prepare_binance_protective_stop,
 )
 from crypto_quant.challenger_replacement_binance_private_runtime import (
     BinancePrivateRuntimeError,
@@ -66,11 +68,58 @@ from tests.challenger_replacement_v3_fixtures import (
     DEFAULT_OBSERVED_AT, fixture_v3_plan,
 )
 from tests.challenger_replacement_v077_private_fixtures import (
-    loaded_private_activation,
+    loaded_private_activation, observe_fixture_opportunity,
 )
 from tests.test_challenger_replacement_public_market_capture import (
-    COMMITTED_CAPTURE, V076_BUILD,
+    COMMITTED_CAPTURE, V076_BUILD, _canonical_capture, _outer_document,
 )
+
+
+class PrivateRuntimeWorkspace:
+    def __init__(self, *, latest="3310"):
+        self.files = EventWorkspace()
+        self.root = open_challenger_replacement_event_root(self.files.identity())
+        self.plan = fixture_v3_plan()
+        self.build = V076_BUILD
+        self.latest = latest
+        self.opportunity_id = "ETHUSDT@2026-08-26T04:00:00.000Z"
+
+    def close(self):
+        self.root.close()
+        self.files.close()
+
+    def state(self):
+        return ChallengerReplacementOpportunityState(
+            event_root=self.root, plan=self.plan, build_identity=self.build,
+        )
+
+    def observe(self, state):
+        economic = build_challenger_replacement_economic_plan()
+        predecessor = build_challenger_replacement_simulation_contract(
+            plan=self.plan
+        )
+        public_contract = build_challenger_replacement_public_simulation_contract(
+            plan=self.plan, economic_plan=economic,
+            predecessor_contract=predecessor,
+        )
+        capture_bytes = (COMMITTED_CAPTURE.read_bytes() if self.latest == "3310"
+                         else _canonical_capture(_outer_document(latest=self.latest)))
+        capture = load_challenger_replacement_public_market_capture_bytes(
+            capture_bytes, plan=self.plan,
+            build_identity=self.build, previous_source_bundle=None,
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_v3_runtime._acquire",
+            return_value=capture,
+        ), patch(
+            "crypto_quant.challenger_replacement_v3_runtime._wall_now",
+            return_value=datetime(2026, 8, 26, 4, 5, tzinfo=timezone.utc),
+        ):
+            run_challenger_replacement_v3_opportunity(
+                state=state, event_root=self.root, plan=self.plan,
+                economic_plan=economic, predecessor_contract=predecessor,
+                public_contract=public_contract, build_identity=self.build,
+            )
 
 
 class BinancePrivateRuntimeIdentityTests(unittest.TestCase):
@@ -105,6 +154,41 @@ class BinancePrivateRuntimeIdentityTests(unittest.TestCase):
 
 
 class BinancePrivateRuntimeDecisionBindingTests(unittest.TestCase):
+    def test_nonstandard_evidence_schema_cannot_bypass_intent_reconstruction(self):
+        workspace = OpportunityStateWorkspace()
+        self.addCleanup(workspace.close)
+        state = workspace.state()
+        observe_fixture_opportunity(
+            state=state, workspace=workspace, recorded_at=DEFAULT_OBSERVED_AT,
+        )
+        activation = loaded_private_activation(
+            build_identity=workspace.build, now="2026-08-27T12:00:00.000Z",
+            block_id="e0-block-" + "a" * 64,
+        )
+        intent = {
+            "opportunity_id": workspace.opportunity_id,
+            "intent_id": "replacement_intent_" + "b" * 64,
+            "block_id": activation.block_id, "product": "SPOT",
+            "action": "OPEN_LONG", "quantity": "0.001",
+            "attempt_ordinal": 1, "unsigned_intent_sha256": "c" * 64,
+        }
+        before = state.replay()["last_event_hash"]
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+            side_effect=AssertionError("transport must not run"),
+        ) as transport, self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_INTENT_DECISION_MISMATCH",
+        ):
+            run_challenger_replacement_binance_private_intent(
+                state=state, event_root=workspace.root, intent=intent,
+                preflight={}, activation=activation, credential=object(),
+                build_identity=workspace.build,
+            )
+        self.assertEqual(state.replay()["last_event_hash"], before)
+        transport.assert_not_called()
+
     def test_caller_cannot_change_verified_v076_quantity_before_transport(self):
         workspace = EventWorkspace()
         self.addCleanup(workspace.close)
@@ -179,21 +263,11 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
     NOW = datetime(2026, 8, 27, 12, 0, tzinfo=timezone.utc)
 
     def setUp(self):
-        self.workspace = OpportunityStateWorkspace()
+        self.workspace = PrivateRuntimeWorkspace()
         self.addCleanup(self.workspace.close)
         self.state = self.workspace.state()
         self._observe_opportunity()
         self.block_id = "e0-block-" + "2" * 64
-        self.intent = {
-            "opportunity_id": self.workspace.opportunity_id,
-            "intent_id": "intent-" + "1" * 64,
-            "block_id": self.block_id,
-            "product": "SPOT",
-            "action": "OPEN_LONG",
-            "quantity": "0.001",
-            "attempt_ordinal": 1,
-            "unsigned_intent_sha256": "8" * 64,
-        }
         self.preflight = {
             "status": "BINANCE_ACCOUNT_PREFLIGHT_VERIFIED_FLAT",
             "preflight_id": "binance_account_preflight_" + "4" * 64,
@@ -244,6 +318,11 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             configuration_sha256=receipt_document["configuration_sha256"],
             account_approval_sha256=receipt_document["account_approval_sha256"],
         )
+        self.intent = build_binance_order_intent_from_opportunity(
+            slot=self.state.replay()["opportunities"][self.workspace.opportunity_id],
+            activation=self.activation, attempt_ordinal=1,
+        )
+        self.client_id = self._client_id()
         self.preflight = load_binance_account_preflight_capability_bytes(
             receipt, build_identity=self.workspace.build,
         )
@@ -269,58 +348,29 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         transport.assert_not_called()
 
     def _observe_opportunity(self):
-        projection = self.state.replay()
-        input_event = self.state.append(
-            event_type="INPUT_PREPARED",
-            opportunity_id=self.workspace.opportunity_id,
-            worker_id="fixture-private-worker",
-            recorded_at=DEFAULT_OBSERVED_AT,
-            payload=self.workspace.input_payload(),
-            expected_last_event_hash=projection["last_event_hash"],
+        self.workspace.observe(self.state)
+
+    def _client_id(self):
+        return derive_binance_client_order_id(
+            plan_hash=self.workspace.plan["plan_hash"],
+            block_id=self.intent["block_id"], intent_id=self.intent["intent_id"],
+            attempt_ordinal=self.intent["attempt_ordinal"],
+            product=self.intent["product"],
         )
-        projection = self.state.replay()
-        result_event = self.state.append(
-            event_type="RESULT_PREPARED",
-            opportunity_id=self.workspace.opportunity_id,
-            worker_id="fixture-private-worker",
-            recorded_at=DEFAULT_OBSERVED_AT,
-            payload={
-                "opportunity_id": self.workspace.opportunity_id,
-                "scheduled_for": "2026-08-24T00:00:00.000Z",
-                "input_event_hash": input_event.event_hash,
-                "input_event_sequence": input_event.sequence,
-                "source_bundle_sha256": self.workspace.source_hash,
-                "decision_bytes_base64": base64.b64encode(
-                    self.workspace.decision_bytes
-                ).decode("ascii"),
-                "decision_sha256": self.workspace.decision_hash,
-                "result_evidence_bytes_base64": base64.b64encode(
-                    self.workspace.evidence_bytes
-                ).decode("ascii"),
-                "result_evidence_sha256": self.workspace.evidence_hash,
-                "previous_observed_decision_hash_or_null": None,
-            },
-            expected_last_event_hash=projection["last_event_hash"],
+
+    def _use_perpetual_decision(self):
+        self.workspace = PrivateRuntimeWorkspace(latest="50")
+        self.addCleanup(self.workspace.close)
+        self.state = self.workspace.state()
+        self._observe_opportunity()
+        self.intent = build_binance_order_intent_from_opportunity(
+            slot=self.state.replay()["opportunities"][self.workspace.opportunity_id],
+            activation=self.activation, attempt_ordinal=1,
         )
-        projection = self.state.replay()
-        self.state.append(
-            event_type="OPPORTUNITY_OBSERVED",
-            opportunity_id=self.workspace.opportunity_id,
-            worker_id="fixture-private-worker",
-            recorded_at=DEFAULT_OBSERVED_AT,
-            payload={
-                "opportunity_id": self.workspace.opportunity_id,
-                "scheduled_for": "2026-08-24T00:00:00.000Z",
-                "input_event_hash": input_event.event_hash,
-                "input_event_sequence": input_event.sequence,
-                "result_event_hash": result_event.event_hash,
-                "result_event_sequence": result_event.sequence,
-                "source_bundle_sha256": self.workspace.source_hash,
-                "decision_sha256": self.workspace.decision_hash,
-                "result_evidence_sha256": self.workspace.evidence_hash,
-                "observed_at": DEFAULT_OBSERVED_AT,
-            },
-            expected_last_event_hash=projection["last_event_hash"],
+        self.client_id = self._client_id()
+        self.assertEqual(
+            (self.intent["product"], self.intent["action"]),
+            ("PERPETUAL", "OPEN_SHORT"),
         )
 
     def _append_private(self, event_type, payload):
@@ -415,54 +465,75 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "fixtures", "challenger-replacement-v077",
             "account-preflight-flat.json",
         ).read_text(encoding="utf-8"))["FUTURES_POSITION"]
+        amount, price = Decimal(quantity), Decimal(entry)
+        mark = Decimal("0") if amount == 0 else Decimal("1960")
+        initial = canonical_decimal(abs(amount) * price / Decimal("2"))
+        unrealized = canonical_decimal(abs(amount) * (price - mark))
         document[0].update(
-            positionAmt=quantity, entryPrice=entry, markPrice="1960",
-            unRealizedProfit="1", notional="-49", isolatedMargin="25",
-            isolatedWallet="25", initialMargin="25", maintMargin="1",
-            positionInitialMargin="25",
+            positionAmt=quantity, entryPrice=entry, markPrice=canonical_decimal(mark),
+            unRealizedProfit=unrealized,
+            notional=canonical_decimal(amount * mark),
+            isolatedMargin=initial, isolatedWallet=initial,
+            initialMargin=initial, maintMargin="1",
+            positionInitialMargin=initial,
         )
         return canonical_json(document).encode("utf-8")
 
     @staticmethod
-    def _futures_account(wallet="99.975", available="74.975"):
+    def _futures_account(wallet="99.975", available="74.975",
+                         unrealized="1", initial="25"):
         document = json.loads(resources.files("crypto_quant").joinpath(
             "fixtures", "challenger-replacement-v077",
             "account-preflight-flat.json",
         ).read_text(encoding="utf-8"))["FUTURES_ACCOUNT"]
         document.update(
-            totalInitialMargin="25", totalMaintMargin="1",
-            totalWalletBalance=wallet, totalUnrealizedProfit="1",
-            totalMarginBalance="100.975", totalPositionInitialMargin="25",
+            totalInitialMargin=initial, totalMaintMargin="1",
+            totalWalletBalance=wallet, totalUnrealizedProfit=unrealized,
+            totalMarginBalance=canonical_decimal(
+                Decimal(wallet) + Decimal(unrealized)
+            ), totalPositionInitialMargin=initial,
             availableBalance=available, maxWithdrawAmount=available,
         )
         document["assets"][0].update(
-            walletBalance=wallet, unrealizedProfit="1",
-            marginBalance="100.975", maintMargin="1", initialMargin="25",
-            positionInitialMargin="25", availableBalance=available,
+            walletBalance=wallet, unrealizedProfit=unrealized,
+            marginBalance=canonical_decimal(Decimal(wallet) + Decimal(unrealized)),
+            maintMargin="1", initialMargin=initial,
+            positionInitialMargin=initial, availableBalance=available,
             maxWithdrawAmount=available,
         )
         return canonical_json(document).encode("utf-8")
 
-    def _futures_filled_documents(self):
+    def _futures_account_for(self, quantity):
+        amount = Decimal(quantity)
+        initial = amount * Decimal("2000") / Decimal("2")
+        fee = amount * Decimal("2000") * Decimal("0.0004")
+        wallet = Decimal("100") - fee - Decimal("0.005")
+        return self._futures_account(
+            canonical_decimal(wallet), canonical_decimal(wallet - initial),
+            canonical_decimal(amount * Decimal("40")), canonical_decimal(initial),
+        )
+
+    def _futures_filled_documents(self, quantity="0.025"):
+        quote = canonical_decimal(Decimal(quantity) * Decimal("2000"))
+        fee = canonical_decimal(Decimal(quote) * Decimal("0.0004"))
         absent = canonical_json({
             "code": -2013, "msg": "Order does not exist.",
         }).encode("utf-8")
-        client_id = "cq779ea3df4bf5c5433f51227c2de39bffa2"
         filled = canonical_json({
             "symbol": "ETHUSDT", "orderId": 202,
-            "clientOrderId": client_id, "avgPrice": "2000",
-            "origQty": "0.025", "executedQty": "0.025",
-            "cumQuote": "50", "status": "FILLED", "type": "MARKET",
+            "clientOrderId": self.client_id, "avgPrice": "2000",
+            "origQty": quantity, "executedQty": quantity,
+            "cumQuote": quote, "status": "FILLED", "type": "MARKET",
             "side": "SELL", "positionSide": "BOTH", "reduceOnly": False,
             "updateTime": 1787832000000,
         }).encode("utf-8")
         trades = canonical_json([{
             "symbol": "ETHUSDT", "id": 401, "orderId": 202,
-            "qty": "0.025", "price": "2000", "quoteQty": "50",
-            "commission": "0.02", "commissionAsset": "USDT",
+            "qty": quantity, "price": "2000", "quoteQty": quote,
+            "commission": fee, "commissionAsset": "USDT",
             "realizedPnl": "0", "time": 1787832000002, "buyer": False,
         }]).encode("utf-8")
-        return absent, filled, trades, self._futures_position()
+        return absent, filled, trades, self._futures_position("-" + quantity)
 
     def _spot_reconciliation(self, trade_id=301):
         facts = {
@@ -565,18 +636,15 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         }
         self.assertEqual(facts, {**expected, "ledger_projection": expected})
 
-    def _futures_stop(self):
-        return {
-            "protected_intent_id": self.intent["intent_id"],
-            "symbol": "ETHUSDT", "algo_type": "CONDITIONAL",
-            "order_type": "STOP_MARKET", "side": "BUY",
-            "position_side": "BOTH", "working_type": "MARK_PRICE",
-            "quantity": "0.025", "trigger_price": "2036.43",
-            "reduce_only": True, "close_position": False,
-            "client_algo_id": "cq77448ee29997158c21338874ba819059f5",
-            "required_first_endpoint": "FUTURES_ALGO_QUERY",
-            "send_permitted": False,
-        }
+    def _futures_stop(self, quantity="0.025"):
+        return prepare_binance_protective_stop(
+            short_quantity=quantity, trigger_price="2036.43",
+            intent_identity={
+                "plan_hash": self.workspace.plan["plan_hash"],
+                "block_id": self.intent["block_id"],
+                "intent_id": self.intent["intent_id"],
+            },
+        )
 
     def _perpetual_reconciliation(self):
         stop = self._futures_stop()
@@ -652,7 +720,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
 
     def test_perpetual_close_queries_then_cancels_orphan_stop_once(self):
         attempt = self._prime_perpetual_close_fills()
-        stop = self._futures_stop()
+        stop = self._futures_stop(self.intent["quantity"])
         active = self._active_algo(stop)
         absent = canonical_json({
             "code": -2013, "msg": "Order does not exist.",
@@ -695,7 +763,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
 
     def test_perpetual_cleanup_rejects_inactive_status_for_different_algo(self):
         attempt = self._prime_perpetual_close_fills()
-        stop = self._futures_stop()
+        stop = self._futures_stop(self.intent["quantity"])
         active = self._active_algo(stop)
         wrong = json.loads(active)
         wrong.update(algoId=902, algoStatus="CANCELED")
@@ -789,16 +857,16 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "algoId": 901, "clientAlgoId": stop["client_algo_id"],
             "algoType": "CONDITIONAL", "orderType": "STOP_MARKET",
             "symbol": "ETHUSDT", "side": "BUY", "positionSide": "BOTH",
-            "quantity": "0.025", "triggerPrice": "2036.43",
+            "quantity": stop["quantity"], "triggerPrice": stop["trigger_price"],
             "workingType": "MARK_PRICE", "reduceOnly": True,
             "closePosition": False, "algoStatus": "NEW",
         }).encode("utf-8")
 
     def test_futures_fixture_without_v076_stop_evidence_fails_closed(self):
-        self.intent.update(
-            product="PERPETUAL", action="OPEN_SHORT", quantity="0.025",
+        self._use_perpetual_decision()
+        absent, filled, trades, position = self._futures_filled_documents(
+            self.intent["quantity"]
         )
-        absent, filled, trades, position = self._futures_filled_documents()
         responses = tuple(
             BinancePrivateTransportResult(
                 kind, status, body, hashlib.sha256(body).hexdigest(), (),
@@ -839,26 +907,16 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         self.assertNotIn("stop", private)
 
     def test_futures_fill_creates_query_first_stop_before_pending_reconciliation(self):
-        self.intent.update(
-            product="PERPETUAL", action="OPEN_SHORT", quantity="0.025",
+        self._use_perpetual_decision()
+        absent, filled, trades, position = self._futures_filled_documents(
+            self.intent["quantity"]
         )
-        absent, filled, trades, position = self._futures_filled_documents()
-        stop = {
-            "protected_intent_id": self.intent["intent_id"],
-            "symbol": "ETHUSDT", "algo_type": "CONDITIONAL",
-            "order_type": "STOP_MARKET", "side": "BUY",
-            "position_side": "BOTH", "working_type": "MARK_PRICE",
-            "quantity": "0.025", "trigger_price": "2036.43",
-            "reduce_only": True, "close_position": False,
-            "client_algo_id": "cq77448ee29997158c21338874ba819059f5",
-            "required_first_endpoint": "FUTURES_ALGO_QUERY",
-            "send_permitted": False,
-        }
+        stop = self._futures_stop(self.intent["quantity"])
         algo = canonical_json({
             "algoId": 901, "clientAlgoId": stop["client_algo_id"],
             "algoType": "CONDITIONAL", "orderType": "STOP_MARKET",
             "symbol": "ETHUSDT", "side": "BUY", "positionSide": "BOTH",
-            "quantity": "0.025", "triggerPrice": "2036.43",
+            "quantity": stop["quantity"], "triggerPrice": stop["trigger_price"],
             "workingType": "MARK_PRICE", "reduceOnly": True,
             "closePosition": False, "algoStatus": "NEW",
         }).encode("utf-8")
@@ -907,7 +965,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         self.assertEqual(private["stop"]["stage"], "BINANCE_STOP_RECONCILED")
         self.assertEqual(private["stop"]["algo_id"], 901)
 
-        account = self._futures_account()
+        account = self._futures_account_for(self.intent["quantity"])
         funding = canonical_json([{
             "tranId": 501, "symbol": "ETHUSDT",
             "incomeType": "FUNDING_FEE", "income": "-0.005",
@@ -987,26 +1045,16 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
 
     def test_fresh_retry_after_stop_send_started_queries_without_recreate(self):
-        self.intent.update(
-            product="PERPETUAL", action="OPEN_SHORT", quantity="0.025",
+        self._use_perpetual_decision()
+        absent, filled, trades, position = self._futures_filled_documents(
+            self.intent["quantity"]
         )
-        absent, filled, trades, position = self._futures_filled_documents()
-        stop = {
-            "protected_intent_id": self.intent["intent_id"],
-            "symbol": "ETHUSDT", "algo_type": "CONDITIONAL",
-            "order_type": "STOP_MARKET", "side": "BUY",
-            "position_side": "BOTH", "working_type": "MARK_PRICE",
-            "quantity": "0.025", "trigger_price": "2036.43",
-            "reduce_only": True, "close_position": False,
-            "client_algo_id": "cq77448ee29997158c21338874ba819059f5",
-            "required_first_endpoint": "FUTURES_ALGO_QUERY",
-            "send_permitted": False,
-        }
+        stop = self._futures_stop(self.intent["quantity"])
         algo = canonical_json({
             "algoId": 901, "clientAlgoId": stop["client_algo_id"],
             "algoType": "CONDITIONAL", "orderType": "STOP_MARKET",
             "symbol": "ETHUSDT", "side": "BUY", "positionSide": "BOTH",
-            "quantity": "0.025", "triggerPrice": "2036.43",
+            "quantity": stop["quantity"], "triggerPrice": stop["trigger_price"],
             "workingType": "MARK_PRICE", "reduceOnly": True,
             "closePosition": False, "algoStatus": "NEW",
         }).encode("utf-8")
@@ -1081,11 +1129,12 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
 
     def test_fresh_retry_from_prepared_stop_sends_exact_request_once(self):
-        self.intent.update(
-            product="PERPETUAL", action="OPEN_SHORT", quantity="0.025",
+        self._use_perpetual_decision()
+        absent, filled, trades, position = self._futures_filled_documents(
+            self.intent["quantity"]
         )
-        absent, filled, trades, position = self._futures_filled_documents()
-        stop, algo = self._futures_stop(), self._active_algo(self._futures_stop())
+        stop = self._futures_stop(self.intent["quantity"])
+        algo = self._active_algo(stop)
         initial = tuple(BinancePrivateTransportResult(
             kind, status, body, hashlib.sha256(body).hexdigest(), (),
         ) for kind, status, body in (
@@ -1217,11 +1266,11 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         absent = canonical_json({
             "code": -2013, "msg": "Order does not exist.",
         }).encode("utf-8")
-        client_id = "cq7773f849fd1e2d457895f97675d4f7b776"
+        client_id = self.client_id
         order = canonical_json({
             "symbol": "ETHUSDT", "orderId": 101,
             "clientOrderId": client_id, "price": "0",
-            "origQty": "0.001", "executedQty": "0",
+            "origQty": "0.015", "executedQty": "0",
             "cummulativeQuoteQty": "0", "status": "NEW",
             "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
             "transactTime": 1787832000000,
@@ -1270,16 +1319,16 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         self.assertEqual(private["stage"], "BINANCE_ORDER_ACKNOWLEDGED")
 
         filled = canonical_json({
-            **json.loads(order), "executedQty": "0.001",
-            "cummulativeQuoteQty": "2", "status": "FILLED",
+            **json.loads(order), "executedQty": "0.015",
+            "cummulativeQuoteQty": "30", "status": "FILLED",
         }).encode("utf-8")
         trade = canonical_json([{
             "symbol": "ETHUSDT", "id": 301, "orderId": 101,
-            "qty": "0.001", "price": "2000", "quoteQty": "2",
-            "commission": "0.002", "commissionAsset": "USDT",
+            "qty": "0.015", "price": "2000", "quoteQty": "30",
+            "commission": "0.03", "commissionAsset": "USDT",
             "time": 1787832000001, "isBuyer": True,
         }]).encode("utf-8")
-        account = self._spot_account("0.001", "97.998")
+        account = self._spot_account("0.015", "69.97")
         followup = tuple(
             BinancePrivateTransportResult(
                 "QUERY_SUCCEEDED", 200, body,
@@ -1373,7 +1422,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             "orderId": 101,
             "clientOrderId": private["venue_client_order_id"],
             "price": "0",
-            "origQty": "0.001",
+            "origQty": "0.015",
             "executedQty": "0",
             "cummulativeQuoteQty": "0",
             "status": "NEW",
@@ -1515,22 +1564,22 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         absent = canonical_json({
             "code": -2013, "msg": "Order does not exist.",
         }).encode("utf-8")
-        client_id = "cq7773f849fd1e2d457895f97675d4f7b776"
+        client_id = self.client_id
         filled = canonical_json({
             "symbol": "ETHUSDT", "orderId": 101,
             "clientOrderId": client_id, "price": "0",
-            "origQty": "0.001", "executedQty": "0.001",
-            "cummulativeQuoteQty": "2", "status": "FILLED",
+            "origQty": "0.015", "executedQty": "0.015",
+            "cummulativeQuoteQty": "30", "status": "FILLED",
             "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
             "transactTime": 1787832000000,
         }).encode("utf-8")
         trades = canonical_json([{
             "symbol": "ETHUSDT", "id": 301, "orderId": 101,
-            "qty": "0.001", "price": "2000", "quoteQty": "2",
-            "commission": "0.002", "commissionAsset": "USDT",
+            "qty": "0.015", "price": "2000", "quoteQty": "30",
+            "commission": "0.03", "commissionAsset": "USDT",
             "time": 1787832000001, "isBuyer": True,
         }]).encode("utf-8")
-        account = self._spot_account("0.001", "97.998")
+        account = self._spot_account("0.015", "69.97")
         responses = tuple(
             BinancePrivateTransportResult(
                 response_class, status, body,
@@ -1600,22 +1649,22 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         absent = canonical_json({
             "code": -2013, "msg": "Order does not exist.",
         }).encode("utf-8")
-        client_id = "cq7773f849fd1e2d457895f97675d4f7b776"
+        client_id = self.client_id
         filled = canonical_json({
             "symbol": "ETHUSDT", "orderId": 101,
             "clientOrderId": client_id, "price": "0",
-            "origQty": "0.001", "executedQty": "0.001",
-            "cummulativeQuoteQty": "2", "status": "FILLED",
+            "origQty": "0.015", "executedQty": "0.015",
+            "cummulativeQuoteQty": "30", "status": "FILLED",
             "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
             "transactTime": 1787832000000,
         }).encode("utf-8")
         trades = canonical_json([{
             "symbol": "ETHUSDT", "id": 301, "orderId": 101,
-            "qty": "0.001", "price": "2000", "quoteQty": "2",
-            "commission": "0.002", "commissionAsset": "USDT",
+            "qty": "0.015", "price": "2000", "quoteQty": "30",
+            "commission": "0.03", "commissionAsset": "USDT",
             "time": 1787832000001, "isBuyer": True,
         }]).encode("utf-8")
-        account = self._spot_account("0.001", "97.998")
+        account = self._spot_account("0.015", "69.97")
         result = lambda kind, status, body: BinancePrivateTransportResult(
             kind, status, body, hashlib.sha256(body).hexdigest(), (),
         )
