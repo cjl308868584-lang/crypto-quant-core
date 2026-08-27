@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+import crypto_quant.challenger_replacement_binance_private_runtime as private_runtime
 from crypto_quant.canonical import canonical_decimal, canonical_json
 from crypto_quant.challenger_replacement_binance_private_contract import (
     BinanceAccountApproval, BinancePrivateActivation,
@@ -460,7 +461,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             expected_last_event_hash=projection["last_event_hash"],
         )
 
-    def _prime_perpetual_close_fills(self):
+    def _prime_perpetual_close_attempt(self):
         self.intent.update(
             product="PERPETUAL", action="CLOSE_SHORT", quantity="0.025",
         )
@@ -491,6 +492,18 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         self._append_private("BINANCE_ORDER_ACKNOWLEDGED", {
             **common, "order_id": 203, "venue_client_order_id": client,
         })
+        return {
+            **self.intent, "venue_client_order_id": client,
+            "activation_id": self.activation.activation_id,
+            "side": "BUY", "reduce_only": True, "symbol": "ETHUSDT",
+            "preflight_id": self.preflight_document["preflight_id"],
+            "required_first_endpoint": "FUTURES_ORDER_QUERY",
+            "send_permitted": False,
+        }
+
+    def _prime_perpetual_close_fills(self):
+        attempt = self._prime_perpetual_close_attempt()
+        common = {"intent_id": self.intent["intent_id"]}
         self._append_private("BINANCE_FILL_OBSERVED", {
             **common, "trade_id": 402, "order_id": 203,
             "quantity": "0.025", "price": "1900",
@@ -505,14 +518,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         self._append_private("BINANCE_FILLS_FEES_REPLAYED", {
             **common, "fill_ids": [402], "cumulative_fee": "0.019",
         })
-        return {
-            **self.intent, "venue_client_order_id": client,
-            "activation_id": self.activation.activation_id,
-            "side": "BUY", "reduce_only": True, "symbol": "ETHUSDT",
-            "preflight_id": self.preflight_document["preflight_id"],
-            "required_first_endpoint": "FUTURES_ORDER_QUERY",
-            "send_permitted": False,
-        }
+        return attempt
 
     @staticmethod
     def _result(response_class, body):
@@ -750,6 +756,40 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             algo_documents=(self._active_algo(stop),),
         )
 
+    def _partial_close_case(self):
+        attempt = self._prime_perpetual_close_attempt()
+        previous = self._perpetual_reconciliation()
+        old = self._futures_stop("0.025")
+        order = canonical_json({
+            "symbol": "ETHUSDT", "orderId": 203,
+            "clientOrderId": attempt["venue_client_order_id"],
+            "avgPrice": "1900", "origQty": "0.025",
+            "executedQty": "0.01", "cumQuote": "19",
+            "status": "PARTIALLY_FILLED", "type": "MARKET", "side": "BUY",
+            "positionSide": "BOTH", "reduceOnly": True,
+            "updateTime": 1787832000000,
+        }).encode()
+        trades = canonical_json([{
+            "symbol": "ETHUSDT", "id": 402, "orderId": 203,
+            "qty": "0.01", "price": "1900", "quoteQty": "19",
+            "commission": "0.0076", "commissionAsset": "USDT",
+            "realizedPnl": "1", "time": 1787832000001, "buyer": True,
+        }]).encode()
+        position = self._futures_position("-0.015")
+        result = BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, order, hashlib.sha256(order).hexdigest(), (),
+        )
+        context = SimpleNamespace(
+            credential=self.credential, activation=self.activation,
+            build_identity=self.workspace.build,
+            recorded_at="2026-08-27T12:00:00.000Z",
+            timestamp_ms=1787832000000,
+        )
+        return SimpleNamespace(
+            attempt=attempt, previous=previous, old=old, order=result,
+            trades=trades, position=position, context=context,
+        )
+
     def test_perpetual_close_facts_flatten_parent_and_drop_protection(self):
         opportunity_id = "ETHUSDT@2026-08-27T12:00:00.000Z"
         fill = {
@@ -926,6 +966,323 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
                 order_result=result, context=context,
             ), {"status": "CLEANED"})
         cleanup.assert_called_once()
+
+    def test_partial_perpetual_close_inherits_verified_stop_before_replacement(self):
+        attempt = self._prime_perpetual_close_attempt()
+        previous = self._perpetual_reconciliation()
+        loaded = load_binance_reconciliation_bytes(previous)
+        old = self._futures_stop("0.025")
+        order = canonical_json({
+            "symbol": "ETHUSDT", "orderId": 203,
+            "clientOrderId": attempt["venue_client_order_id"],
+            "avgPrice": "1900", "origQty": "0.025",
+            "executedQty": "0.01", "cumQuote": "19",
+            "status": "PARTIALLY_FILLED", "type": "MARKET", "side": "BUY",
+            "positionSide": "BOTH", "reduceOnly": True,
+            "updateTime": 1787832000000,
+        }).encode()
+        trades = canonical_json([{
+            "symbol": "ETHUSDT", "id": 402, "orderId": 203,
+            "qty": "0.01", "price": "1900", "quoteQty": "19",
+            "commission": "0.0076", "commissionAsset": "USDT",
+            "realizedPnl": "1", "time": 1787832000001, "buyer": True,
+        }]).encode()
+        position = self._futures_position("-0.015")
+        active = self._active_algo(old)
+        result = BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, order, hashlib.sha256(order).hexdigest(), (),
+        )
+        context = SimpleNamespace(
+            credential=self.credential, activation=self.activation,
+            build_identity=self.workspace.build,
+            recorded_at="2026-08-27T12:00:00.000Z",
+            timestamp_ms=1787832000000,
+        )
+        query_results = tuple(BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, body, hashlib.sha256(body).hexdigest(), (),
+        ) for body in (trades, position))
+        old_result = BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, active,
+            hashlib.sha256(active).hexdigest(), (),
+        )
+        original_append = self.state.append
+
+        class InheritanceBoundary(BaseException):
+            pass
+
+        def append_then_crash(**kwargs):
+            event = original_append(**kwargs)
+            if kwargs["event_type"] == "BINANCE_STOP_INHERITED":
+                raise InheritanceBoundary()
+            return event
+
+        with patch.object(self.state, "append", side_effect=append_then_crash), \
+                patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "_query", side_effect=query_results,
+                ), patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "_previous_reconciliation_bytes", return_value=previous,
+                ), patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "execute_binance_private_request", return_value=old_result,
+                ) as transport, self.assertRaises(InheritanceBoundary):
+            _observe_order(
+                state=self.state, attempt=attempt,
+                order_result=result, context=context,
+            )
+        inherited = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]["stop"]
+        self.assertEqual(inherited["stage"], "BINANCE_STOP_RECONCILED")
+        self.assertEqual(inherited["client_algo_id"], old["client_algo_id"])
+        self.assertEqual(inherited["quantity"], "0.025")
+        self.assertEqual(inherited["prior_reconciliation_id"],
+                         loaded["reconciliation_id"])
+        self.assertEqual([call.args[0].endpoint_id for call in
+                          transport.call_args_list], ["FUTURES_ALGO_QUERY"])
+
+    def test_partial_perpetual_close_replaces_stop_for_remaining_exposure(self):
+        case = self._partial_close_case()
+        candidate = prepare_binance_protective_stop(
+            short_quantity="0.015", trigger_price=case.old["trigger_price"],
+            intent_identity={
+                "plan_hash": self.workspace.plan["plan_hash"],
+                "block_id": case.attempt["block_id"],
+                "intent_id": case.attempt["intent_id"],
+            },
+        )
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode()
+        active_old = self._active_algo(case.old)
+        active_candidate = self._active_algo(candidate)
+        canceled_old = canonical_json({
+            **json.loads(active_old), "algoStatus": "CANCELED",
+        }).encode()
+        query_results = tuple(BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, body, hashlib.sha256(body).hexdigest(), (),
+        ) for body in (case.trades, case.position))
+        documents = (
+            ("QUERY_SUCCEEDED", 200, active_old),
+            ("RESPONSE_INVALID", 400, absent),
+            ("ACKNOWLEDGED", 200, active_candidate),
+            ("QUERY_SUCCEEDED", 200, active_candidate),
+            ("QUERY_SUCCEEDED", 200, active_candidate),
+            ("ACKNOWLEDGED", 200, canceled_old),
+            ("QUERY_SUCCEEDED", 200, canceled_old),
+        )
+        responses = tuple(BinancePrivateTransportResult(
+            kind, status, body, hashlib.sha256(body).hexdigest(), (),
+        ) for kind, status, body in documents)
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_query", side_effect=query_results,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_previous_reconciliation_bytes", return_value=case.previous,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=responses,
+        ) as transport:
+            result = _observe_order(
+                state=self.state, attempt=case.attempt,
+                order_result=case.order, context=case.context,
+            )
+        self.assertEqual(result["status"],
+                         "PROTECTION_VERIFIED_RECONCILIATION_PENDING")
+        stop = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]["stop"]
+        self.assertEqual(stop["quantity"], "0.015")
+        self.assertEqual(stop["client_algo_id"], candidate["client_algo_id"])
+        self.assertEqual(stop["replacement"]["stage"],
+                         "BINANCE_STOP_REPLACEMENT_SUCCEEDED")
+        self.assertEqual([call.args[0].endpoint_id for call in
+                          transport.call_args_list], [
+            "FUTURES_ALGO_QUERY", "FUTURES_ALGO_QUERY",
+            "FUTURES_ALGO_CREATE", "FUTURES_ALGO_QUERY",
+            "FUTURES_ALGO_QUERY", "FUTURES_ALGO_CANCEL",
+            "FUTURES_ALGO_QUERY",
+        ])
+        fresh = self.workspace.state()
+        fresh_queries = tuple(BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, body, hashlib.sha256(body).hexdigest(), (),
+        ) for body in (case.trades, case.position))
+        verified = BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, active_candidate,
+            hashlib.sha256(active_candidate).hexdigest(), (),
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_query", side_effect=fresh_queries,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", return_value=verified,
+        ) as fresh_transport:
+            replayed = _observe_order(
+                state=fresh, attempt=case.attempt,
+                order_result=case.order, context=case.context,
+            )
+        self.assertEqual(replayed["status"],
+                         "PROTECTION_VERIFIED_RECONCILIATION_PENDING")
+        self.assertEqual([call.args[0].endpoint_id for call in
+                          fresh_transport.call_args_list], [
+            "FUTURES_ALGO_QUERY",
+        ])
+        dispatched = self.workspace.state()
+        existing = dispatched.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        dispatched_queries = tuple(BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, body, hashlib.sha256(body).hexdigest(), (),
+        ) for body in (case.trades, case.position))
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_query_order", return_value=case.order,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_query", side_effect=dispatched_queries,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", return_value=verified,
+        ):
+            resumed = private_runtime._resume_perpetual_fills(
+                dispatched, case.attempt, existing, case.context,
+            )
+        self.assertEqual(resumed["status"],
+                         "PROTECTION_VERIFIED_RECONCILIATION_PENDING")
+        cleanup_state = self.workspace.state()
+        absent_after_cancel = BinancePrivateTransportResult(
+            "RESPONSE_INVALID", 400, absent,
+            hashlib.sha256(absent).hexdigest(), (),
+        )
+        cleanup_responses = (
+            BinancePrivateTransportResult(
+                "QUERY_SUCCEEDED", 200, active_candidate,
+                hashlib.sha256(active_candidate).hexdigest(), (),
+            ),
+            BinancePrivateTransportResult(
+                "ACKNOWLEDGED", 200, active_candidate,
+                hashlib.sha256(active_candidate).hexdigest(), (),
+            ),
+            absent_after_cancel,
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=cleanup_responses,
+        ) as cleanup_transport, patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_finish_perpetual", return_value={"status": "CLEANED"},
+        ):
+            cleaned = _cleanup_perpetual_stop(
+                cleanup_state, case.attempt, case.previous, case.context,
+            )
+        self.assertEqual(cleaned, {"status": "CLEANED"})
+        self.assertEqual([call.args[0].encoded_parameters for call in
+                          cleanup_transport.call_args_list][0].count(
+            candidate["client_algo_id"].encode("ascii")
+        ), 1)
+
+    def test_partial_close_candidate_prepared_crash_resumes_one_create(self):
+        case = self._partial_close_case()
+        candidate = prepare_binance_protective_stop(
+            short_quantity="0.015", trigger_price=case.old["trigger_price"],
+            intent_identity={
+                "plan_hash": self.workspace.plan["plan_hash"],
+                "block_id": case.attempt["block_id"],
+                "intent_id": case.attempt["intent_id"],
+            },
+        )
+        active_old = self._active_algo(case.old)
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode()
+        initial_queries = tuple(BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, body, hashlib.sha256(body).hexdigest(), (),
+        ) for body in (case.trades, case.position))
+        initial_transport = (
+            BinancePrivateTransportResult(
+                "QUERY_SUCCEEDED", 200, active_old,
+                hashlib.sha256(active_old).hexdigest(), (),
+            ),
+            BinancePrivateTransportResult(
+                "RESPONSE_INVALID", 400, absent,
+                hashlib.sha256(absent).hexdigest(), (),
+            ),
+        )
+        original_append = self.state.append
+
+        class PreparedBoundary(BaseException):
+            pass
+
+        def append_then_crash(**kwargs):
+            event = original_append(**kwargs)
+            if (kwargs["event_type"] == "BINANCE_STOP_SIGNED_REQUEST_PREPARED"
+                    and kwargs["payload"]["client_algo_id"]
+                    == candidate["client_algo_id"]):
+                raise PreparedBoundary()
+            return event
+
+        with patch.object(self.state, "append", side_effect=append_then_crash), \
+                patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "_query", side_effect=initial_queries,
+                ), patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "_previous_reconciliation_bytes", return_value=case.previous,
+                ), patch(
+                    "crypto_quant.challenger_replacement_binance_private_runtime."
+                    "execute_binance_private_request",
+                    side_effect=initial_transport,
+                ), self.assertRaises(PreparedBoundary):
+            _observe_order(
+                state=self.state, attempt=case.attempt,
+                order_result=case.order, context=case.context,
+            )
+        prepared = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]["stop"]["replacement"]["candidate"]
+        self.assertEqual(prepared["stage"],
+                         "BINANCE_STOP_SIGNED_REQUEST_PREPARED")
+
+        active_candidate = self._active_algo(candidate)
+        canceled_old = canonical_json({
+            **json.loads(active_old), "algoStatus": "CANCELED",
+        }).encode()
+        fresh_queries = tuple(BinancePrivateTransportResult(
+            "QUERY_SUCCEEDED", 200, body, hashlib.sha256(body).hexdigest(), (),
+        ) for body in (case.trades, case.position))
+        documents = (
+            ("ACKNOWLEDGED", active_candidate),
+            ("QUERY_SUCCEEDED", active_candidate),
+            ("QUERY_SUCCEEDED", active_candidate),
+            ("ACKNOWLEDGED", canceled_old),
+            ("QUERY_SUCCEEDED", canceled_old),
+        )
+        responses = tuple(BinancePrivateTransportResult(
+            kind, 200, body, hashlib.sha256(body).hexdigest(), (),
+        ) for kind, body in documents)
+        fresh = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_query", side_effect=fresh_queries,
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=responses,
+        ) as transport:
+            result = _observe_order(
+                state=fresh, attempt=case.attempt,
+                order_result=case.order, context=case.context,
+            )
+        self.assertEqual(result["status"],
+                         "PROTECTION_VERIFIED_RECONCILIATION_PENDING")
+        self.assertEqual([call.args[0].endpoint_id for call in
+                          transport.call_args_list], [
+            "FUTURES_ALGO_CREATE", "FUTURES_ALGO_QUERY",
+            "FUTURES_ALGO_QUERY", "FUTURES_ALGO_CANCEL",
+            "FUTURES_ALGO_QUERY",
+        ])
 
     @staticmethod
     def _active_algo(stop):

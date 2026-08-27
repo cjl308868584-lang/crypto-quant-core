@@ -11,10 +11,7 @@ from types import MappingProxyType
 from typing import Mapping
 from jsonschema import Draft202012Validator
 from .canonical import canonical_decimal, canonical_json, utc_datetime
-from .challenger_replacement_plan import (
-    ChallengerReplacementPlanError,
-    _strict_json_bytes,
-)
+from .challenger_replacement_plan import ChallengerReplacementPlanError, _strict_json_bytes
 _SPOT, _FUTURES = "api.binance.com", "fapi.binance.com"
 _ENDPOINT_ROWS = (
     ("SPOT_SERVER_TIME", _SPOT, "GET", "/api/v3/time", False),
@@ -48,32 +45,20 @@ _ENDPOINT_ROWS = (
     ("FUTURES_SET_LEVERAGE", _FUTURES, "POST", "/fapi/v1/leverage", True),
     ("FUTURES_SET_MARGIN_TYPE", _FUTURES, "POST", "/fapi/v1/marginType", True),
 )
-BINANCE_PRIVATE_ENDPOINTS = MappingProxyType({
-    key: tuple(values) for key, *values in _ENDPOINT_ROWS
-})
+BINANCE_PRIVATE_ENDPOINTS = MappingProxyType({key: tuple(values) for key, *values in _ENDPOINT_ROWS})
 @dataclass(frozen=True)
 class BinanceAccountApproval:
-    account_identity_sha256: str
-    key_fingerprint: str
-    reviewed_egress_ip: str
-    reviewer_uid: int
-    reviewed_at: str
-    expires_at: str
-    spot_trading_approved: bool
-    futures_trading_approved: bool
+    account_identity_sha256: str; key_fingerprint: str
+    reviewed_egress_ip: str; reviewer_uid: int
+    reviewed_at: str; expires_at: str
+    spot_trading_approved: bool; futures_trading_approved: bool
 @dataclass(frozen=True)
 class BinancePrivateActivation:
-    activation_id: str
-    build_identity: Mapping[str, str]
-    configuration_sha256: str
-    account_approval_sha256: str
-    block_id: str
-    stage: str
-    capital_usdt: str
-    max_gross_exposure_usdt: str
-    max_leverage: str
-    expires_at: str
-    production_activation: bool
+    activation_id: str; build_identity: Mapping[str, str]
+    configuration_sha256: str; account_approval_sha256: str
+    block_id: str; stage: str; capital_usdt: str
+    max_gross_exposure_usdt: str; max_leverage: str
+    expires_at: str; production_activation: bool
     _authority_token: object = field(default=None, repr=False, compare=False)
 _ACTIVATION_AUTHORITY_TOKEN = object()
 def _is_loaded_binance_private_activation(value):
@@ -88,14 +73,12 @@ _LOWER_HEX = frozenset("0123456789abcdef")
 @lru_cache(maxsize=3)
 def _validator(filename):
     schema = json.loads(resources.files("crypto_quant").joinpath(
-        "schemas", filename,
-    ).read_text(encoding="utf-8"))
+        "schemas", filename).read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
-PRIVATE_EVENT_TYPES = frozenset(
-    _validator("challenger-replacement-binance-private-event-v1.schema.json")
-    .schema["properties"]["event_type"]["enum"]
-)
+PRIVATE_EVENT_TYPES = frozenset(_validator(
+    "challenger-replacement-binance-private-event-v1.schema.json"
+).schema["properties"]["event_type"]["enum"])
 def _invalid(error=None):
     if error is None:
         raise ChallengerReplacementBinancePrivateContractError()
@@ -397,7 +380,24 @@ def _advance_stop(stop, private, event_type, payload):
     target.update(stage=event_type, **updates)
 def _apply_stop_transition(private, event_type, payload, event):
     stop = private.get("stop")
-    if event_type.startswith("BINANCE_STOP_CLEANUP_"):
+    if event_type == "BINANCE_STOP_INHERITED":
+        try:
+            quantity = canonical_decimal(payload["quantity"]); trigger = canonical_decimal(payload["trigger_price"])
+        except (KeyError, TypeError, ValueError) as error:
+            _invalid(error)
+        if (stop is not None or private["product"] != "PERPETUAL"
+                or private["action"] != "CLOSE_SHORT"
+                or private["stage"] != "BINANCE_FILLS_FEES_REPLAYED"
+                or payload["protected_intent_id"] != private["intent_id"]
+                or quantity != payload["quantity"]
+                or trigger != payload["trigger_price"]):
+            _invalid()
+        private["stop"] = {"stage": "BINANCE_STOP_RECONCILED",
+            "client_algo_id": payload["client_algo_id"], "algo_id": payload["algo_id"],
+            "quantity": quantity, "trigger_price": trigger,
+            "prior_reconciliation_id": payload["prior_reconciliation_id"],
+            "query_response_sha256": payload["query_response_sha256"]}
+    elif event_type.startswith("BINANCE_STOP_CLEANUP_"):
         cleanup = private.get("stop_cleanup")
         if event_type == "BINANCE_STOP_CLEANUP_AUTHORIZED":
             if (cleanup is not None or private["product"] != "PERPETUAL"
