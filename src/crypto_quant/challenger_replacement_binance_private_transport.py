@@ -1,6 +1,6 @@
 """Disabled-by-default fixed-host Binance private HTTPS transport."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import http.client
 import ssl
@@ -32,7 +32,7 @@ class BinancePrivateTransportError(RuntimeError):
 class BinancePrivateTransportResult:
     response_class: str
     status_or_null: Optional[int]
-    body: bytes
+    body: bytes = field(repr=False)
     response_sha256: str
     rate_limit_headers: Tuple[Tuple[str, str], ...]
 

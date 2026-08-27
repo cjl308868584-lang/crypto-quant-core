@@ -15,6 +15,7 @@ from .challenger_replacement_binance_private_contract import (
 
 
 _MAX_SAFE_INTEGER = (1 << 53) - 1
+_MAX_JSON_DEPTH = 64
 _RECV_WINDOW_MS = "5000"
 _UNSIGNED_ENDPOINTS = frozenset({
     "SPOT_SERVER_TIME",
@@ -55,6 +56,10 @@ _PARAMETER_NAMES = {
 }
 _PARAMETER_SETS = {key: frozenset(value.split())
                    for key, value in _PARAMETER_NAMES.items()}
+
+
+class _ResponseDepthError(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -289,6 +294,17 @@ def _strict_pairs(pairs):
     return result
 
 
+def _require_bounded_json_depth(value):
+    stack = [(value, 1)]
+    while stack:
+        current, depth = stack.pop()
+        if isinstance(current, (dict, list)):
+            if depth > _MAX_JSON_DEPTH:
+                raise _ResponseDepthError
+            children = current.values() if isinstance(current, dict) else current
+            stack.extend((child, depth + 1) for child in children)
+
+
 def classify_binance_private_response(request, *, status, body, headers):
     """Classify bounded HTTP bytes without ever authorizing a retry."""
 
@@ -310,7 +326,12 @@ def classify_binance_private_response(request, *, status, body, headers):
         document = json.loads(
             body.decode("utf-8"), object_pairs_hook=_strict_pairs
         )
+        _require_bounded_json_depth(document)
         parsed = isinstance(document, (dict, list))
+    except (_ResponseDepthError, RecursionError) as error:
+        raise ValueError(
+            "CHALLENGER_REPLACEMENT_BINANCE_RESPONSE_INVALID"
+        ) from error
     except (UnicodeDecodeError, ValueError):
         document = None
         parsed = False

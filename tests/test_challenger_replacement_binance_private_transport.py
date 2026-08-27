@@ -193,6 +193,12 @@ class BinancePrivateTransportTests(unittest.TestCase):
         self.assertNotIn(self.secret, repr(result))
         self.assertEqual(connection.close_count, 1)
 
+    def test_transport_result_repr_redacts_raw_response_body(self):
+        sentinel = b"SENTINEL_PRIVATE_RESPONSE_BODY"
+        result = self._execute(_Connection(_Response(body=sentinel)))
+        self.assertEqual(result.body, sentinel)
+        self.assertNotIn(sentinel.decode("ascii"), repr(result))
+
     def test_mutating_request_is_sent_once_and_timeout_becomes_unknown(self):
         connection = _Connection(request_error=TimeoutError("after send"))
         result = self._execute(connection, request=self._request(mutating=True))

@@ -291,6 +291,33 @@ class BinanceCredentialCapabilityTests(unittest.TestCase):
         finally:
             capability.close()
 
+    def test_same_inode_same_size_credential_rewrite_is_rejected(self):
+        capability = open_binance_credential_capability(
+            reference=self.reference, expected_owner_uid=os.getuid()
+        )
+        before = self.path.stat()
+        replacement = (canonical_json({
+            "api_key": "C" * 32,
+            "hmac_secret": "D" * 32,
+        }) + "\n").encode("utf-8")
+        self.assertEqual(len(replacement), before.st_size)
+        with self.path.open("r+b", buffering=0) as stream:
+            stream.write(replacement)
+            stream.flush()
+            os.fsync(stream.fileno())
+        after = self.path.stat()
+        self.assertEqual((after.st_dev, after.st_ino, after.st_size),
+                         (before.st_dev, before.st_ino, before.st_size))
+        self.assertNotEqual((after.st_mtime_ns, after.st_ctime_ns),
+                            (before.st_mtime_ns, before.st_ctime_ns))
+        try:
+            with self.assertRaises(BinanceCredentialError) as caught:
+                capability.authorize(self._request())
+            self.assertEqual(caught.exception.reason_code,
+                             "BINANCE_CREDENTIAL_ATTACHMENT_CHANGED")
+        finally:
+            capability.close()
+
     def test_replacement_during_read_is_rejected_and_opened_fds_close_once(self):
         import crypto_quant.challenger_replacement_binance_credential as module
 

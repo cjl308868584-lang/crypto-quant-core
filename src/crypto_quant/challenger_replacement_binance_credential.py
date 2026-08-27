@@ -13,7 +13,7 @@ class BinanceCredentialError(ValueError):
         self.close_failure_reason_code = None
 @dataclass(frozen=True)
 class BinanceCredentialIdentity:
-    device: int; inode: int; owner_uid: int; file_sha256: str; key_fingerprint: str
+    device: int; inode: int; owner_uid: int; mtime_ns: int; ctime_ns: int; file_sha256: str; key_fingerprint: str
 def _fail(reason, error=None):
     failure = BinanceCredentialError(reason)
     if error is None:
@@ -33,7 +33,7 @@ def _close(descriptor, primary=None):
         except (AttributeError, TypeError):
             pass
 def _identity(entry):
-    return (entry.st_dev, entry.st_ino, entry.st_uid, entry.st_mode, entry.st_nlink, entry.st_size)
+    return (entry.st_dev, entry.st_ino, entry.st_uid, entry.st_mode, entry.st_nlink, entry.st_size, entry.st_mtime_ns, entry.st_ctime_ns)
 def _valid_reference(reference):
     if not isinstance(reference, Mapping) or frozenset(reference) != _KEYS:
         return False
@@ -204,7 +204,7 @@ def open_binance_credential_capability(*, reference, expected_owner_uid):
                 or hashlib.sha256(body).hexdigest() != reference["file_sha256"]):
             _fail("BINANCE_CREDENTIAL_FILE_UNTRUSTED")
         api_key, secret = _decode(body)
-        identity = BinanceCredentialIdentity(opened.st_dev, opened.st_ino, opened.st_uid, reference["file_sha256"], hashlib.sha256(api_key).hexdigest())
+        identity = BinanceCredentialIdentity(opened.st_dev, opened.st_ino, opened.st_uid, opened.st_mtime_ns, opened.st_ctime_ns, reference["file_sha256"], hashlib.sha256(api_key).hexdigest())
         result = BinanceCredentialCapability((identity, path, parent_fd, file_fd, parent, opened, api_key, secret))
         parent_fd = file_fd = -1; api_key = secret = None
         return result

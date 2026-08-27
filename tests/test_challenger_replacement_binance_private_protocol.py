@@ -276,6 +276,19 @@ class BinancePrivateProtocolTests(unittest.TestCase):
         self.assertEqual(malformed_rejection["response_class"], "UNKNOWN")
         self.assertEqual(rejected["response_class"], "REJECTED_PROVEN_NO_ACK")
 
+    def test_response_above_fixed_json_depth_is_a_domain_failure(self):
+        body = (b"[" * 65) + b"0" + (b"]" * 65)
+        request = build_binance_private_request(
+            "SPOT_SERVER_TIME", {}, timestamp_ms=0
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "CHALLENGER_REPLACEMENT_BINANCE_RESPONSE_INVALID",
+        ):
+            classify_binance_private_response(
+                request, status=200, body=body, headers={}
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
