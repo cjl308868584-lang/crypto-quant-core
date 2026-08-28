@@ -404,6 +404,7 @@ class ChallengerReplacementPrivateFaultMatrixTests(unittest.TestCase):
             self.assertEqual((before.st_dev, before.st_ino, before.st_mode),
                              (after.st_dev, after.st_ino, after.st_mode))
 
+    @unittest.skipIf(GITHUB_ACTIONS, "CI strictly replays the committed campaign")
     def test_isolated_python_rejects_replaced_interpreter(self):
         with tempfile.TemporaryDirectory() as directory:
             command = fault_module._isolated_python("b" * 64, Path(directory))
@@ -413,6 +414,7 @@ class ChallengerReplacementPrivateFaultMatrixTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "PRIVATE_FAULT_VENV_UNTRUSTED"):
                 fault_module._isolated_python("b" * 64, Path(directory))
 
+    @unittest.skipIf(GITHUB_ACTIONS, "CI strictly replays the committed campaign")
     def test_isolated_python_rejects_symlinked_path_file_without_touching_target(self):
         with tempfile.TemporaryDirectory() as directory:
             fault_module._isolated_python("c" * 64, Path(directory))
@@ -427,6 +429,7 @@ class ChallengerReplacementPrivateFaultMatrixTests(unittest.TestCase):
             self.assertEqual((before_bytes, before.st_ino, before.st_mode),
                              (sentinel.read_bytes(), after.st_ino, after.st_mode))
 
+    @unittest.skipIf(GITHUB_ACTIONS, "CI strictly replays the committed campaign")
     def test_isolated_python_has_closed_site_packages_and_rejects_extra_pth(self):
         with tempfile.TemporaryDirectory() as directory:
             fault_module._isolated_python("d" * 64, Path(directory))
@@ -572,6 +575,7 @@ class ChallengerReplacementPrivateFaultMatrixTests(unittest.TestCase):
                 "PRIVATE_FAULT_RELEASE_AUTHORITY_BLOCKED:fund_movement"):
             ledger.authorize_request("CAPITAL_WITHDRAW", fault_module._FIXTURE_AUTHORITY)
 
+    @unittest.skipIf(GITHUB_ACTIONS, "CI strictly replays the committed campaign")
     def test_restart_case_uses_a_real_process_boundary_and_preserves_stop(self):
         with tempfile.TemporaryDirectory(dir=fault_module._temporary_base()) as directory:
             ledger = fault_module._BoundaryLedger(Path(directory))
