@@ -720,7 +720,7 @@
     "tests/test_challenger_replacement_plan_v3.py": "e389c13731bc95c41520f873bbcd8030b79e1d54a9125f588f9a320e5dcb49e2",
     "tests/test_challenger_replacement_plan_v3_supersession.py": "22ab803cd0f6dd2228b2eada2419b551f0638209cde4118fefe74cc093194963",
     "tests/test_challenger_replacement_preflight.py": "8134fe2937f859235c8e1aed73b0073b4944b82120db8bfc8abc61a29bbde579",
-    "tests/test_challenger_replacement_private_fault_matrix.py": "2762f6ab8cc5977c3588987ee3d02c4fbb2d0f144b9f88bb9841cce4b7b8c413",
+    "tests/test_challenger_replacement_private_fault_matrix.py": "5e9812d5a127974a81e0c41b2b5b752e8b600e59aad5784ed7ca2834b12cc929",
     "tests/test_challenger_replacement_public_http.py": "2baba6f89a2f1412fe65a5717799a50979b0caafa36cf94a0b2c2c0d79212085",
     "tests/test_challenger_replacement_public_market_capture.py": "0212f2102deb7cce50d7f301f094822b67b895239003dabd64c5d7951de6001b",
     "tests/test_challenger_replacement_public_simulation.py": "ad6832d8dfdf9f033b5faf31db8f472f85d929ec63f6b5d9ee2cf8955092c5f9",
@@ -789,7 +789,7 @@
     "tests/test_v064_public_ci_witness.py": "95d1b18176ebd4aa9a02b3492749ef02116717e64930eeb067c88c971ac5ffdd",
     "tests/test_v073_authority_boundaries.py": "4643df6690e5e530cdbfc3edb1d9576a789d1246ca629d57744feb35beaee795"
   },
-  "build_input_tree_hash": "5c757633f1085b05ea9d91be75f46744d9a213d5c3ea4479e868452434d736aa",
+  "build_input_tree_hash": "01853cbf25b5eb65ce0a4f1c17e12d509a02030b4f0839db8b31e980bf2d45aa",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -797,5 +797,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "3c42fe420f5e5430b1c6661033ff499b0f3b13fef26c6c38f6a141713c2382ec"
+  "manifest_hash": "32abd3717818f9acabe3dadf0dd19721f6ceb0aa7ce62a213c399c3a573b1227"
 }
