@@ -21,7 +21,9 @@ setup(
     entry_points={
         "console_scripts": [
             "crypto-quant-operations-dashboard="
-            "crypto_quant.operations_dashboard:main"
+            "crypto_quant.operations_dashboard:main",
+            "challenger-replacement-binance-e0="
+            "crypto_quant.challenger_replacement_binance_e0_cli:main",
         ]
     },
     install_requires=["jsonschema>=4.25,<5"],
