@@ -43,6 +43,8 @@ _THIN_FILES = (
     "src/crypto_quant/challenger_replacement_v3_installed_runtime.py",
     "src/crypto_quant/challenger_replacement_v3_activation_preflight.py",
     "src/crypto_quant/challenger_replacement_v3_activation_preflight_cli.py",
+    "src/crypto_quant/challenger_replacement_v3_activation_install.py",
+    "src/crypto_quant/challenger_replacement_v3_activation_install_cli.py",
     "src/crypto_quant/schemas/challenger-replacement-v3-install-contract-v1.schema.json",
     "src/crypto_quant/schemas/challenger-replacement-v3-activation-preflight-v1.schema.json",
     "src/crypto_quant/schemas/challenger-replacement-v3-activation-install-receipt-v1.schema.json",
@@ -158,6 +160,7 @@ def _contract(candidate, release, snapshot, event, python):
             "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1",
             "PYTHONPATH": snapshot["root"] + "/src",
         },
+        "working_directory": snapshot["root"],
     }
     value = {
         "$schema": "./challenger-replacement-v3-install-contract-v1.schema.json",
@@ -242,6 +245,7 @@ def load_fixed_v3_install_contract_bytes(data):
                 value["python"]["path"], "-m",
                 "crypto_quant.challenger_replacement_v3_installed_runtime",
             ]
+            or value["runtime"]["working_directory"] != value["snapshot"]["root"]
             or value["service"] != {
                 "label": "local.crypto-quant.challenger-replacement-v1",
                 "identity": "gui/501/local.crypto-quant.challenger-replacement-v1",
@@ -355,6 +359,7 @@ def build_fixed_v3_activation_candidate():
                 "file_sha256": hashlib.sha256(raw).hexdigest(),
                 "deployment_id": deployment["deployment_id"],
                 "deployment_hash": deployment["deployment_hash"],
+                "build_identity": copy.deepcopy(deployment["candidate_build"]),
             },
             "runtime_module": (
                 "crypto_quant.challenger_replacement_v3_installed_runtime"

@@ -95,9 +95,38 @@
         "file",
         "file_sha256",
         "deployment_id",
-        "deployment_hash"
+        "deployment_hash",
+        "build_identity"
       ],
       "properties": {
+        "build_identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["executable_core_hash", "package_version", "predecessor_manifest_identity", "reviewed_code_checkpoint"],
+          "properties": {
+            "executable_core_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "package_version": {"const": "0.76.0"},
+            "reviewed_code_checkpoint": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "predecessor_manifest_identity": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["build_input_tree_hash","main_ci_run","manifest_file_sha256","manifest_hash","manifest_version","package_version","peeled_commit","release_tag","repository","tag_object","visibility"],
+              "properties": {
+                "build_input_tree_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "main_ci_run": {"type": "integer", "minimum": 1},
+                "manifest_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "manifest_version": {"const": "1.69.0"},
+                "package_version": {"const": "0.75.0"},
+                "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "release_tag": {"const": "v0.75.0"},
+                "repository": {"const": "cjl308868584-lang/crypto-quant-core"},
+                "tag_object": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "visibility": {"const": "PUBLIC"}
+              }
+            }
+          }
+        },
         "release_tag": {
           "const": "v0.76.0"
         },
@@ -343,7 +372,8 @@
       "required": [
         "module",
         "program_arguments",
-        "environment"
+        "environment",
+        "working_directory"
       ],
       "properties": {
         "module": {
@@ -356,6 +386,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "working_directory": {
+          "type": "string",
+          "minLength": 1
         },
         "environment": {
           "type": "object",

@@ -1,10 +1,356 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "status"],
+  "required": [
+    "$schema",
+    "schema_version",
+    "receipt_id",
+    "receipt_hash",
+    "status",
+    "installed_at",
+    "contract_binding",
+    "preflight_binding",
+    "snapshot_binding",
+    "event_root_binding",
+    "adapter_binding",
+    "first_eligible_scheduled_for",
+    "plist",
+    "commands",
+    "authority",
+    "reason_codes"
+  ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "status": {"type": "string", "minLength": 1}
-  }
+    "$schema": {
+      "const": "./challenger-replacement-v3-activation-install-receipt-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^challenger_replacement_v3_activation_install_[0-9a-f]{64}$"
+    },
+    "receipt_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "INSTALLED_WAITING_FOR_FIRST_NATURAL_OPPORTUNITY",
+        "INSTALL_STATE_UNKNOWN_FAILED_CLOSED"
+      ]
+    },
+    "installed_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.000Z$"
+    },
+    "contract_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_id",
+        "contract_hash",
+        "file_sha256"
+      ],
+      "properties": {
+        "contract_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contract_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "file_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "preflight_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "receipt_hash",
+        "file_sha256"
+      ],
+      "properties": {
+        "receipt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "receipt_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "file_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "snapshot_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "tree_hash",
+        "file_count",
+        "total_size_bytes",
+        "root_device",
+        "root_inode"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tree_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "total_size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "root_device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "root_inode": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "event_root_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "device",
+        "inode",
+        "owner_uid",
+        "mode",
+        "initial_event_count",
+        "initial_orphan_staging_count"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "owner_uid": {
+          "const": 501
+        },
+        "mode": {
+          "const": 448
+        },
+        "initial_event_count": {
+          "const": 0
+        },
+        "initial_orphan_staging_count": {
+          "const": 0
+        }
+      }
+    },
+    "adapter_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_tag",
+        "peeled_commit",
+        "manifest_version",
+        "manifest_hash",
+        "snapshot_tree_hash",
+        "module"
+      ],
+      "properties": {
+        "release_tag": {
+          "const": "v0.78.0"
+        },
+        "peeled_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifest_version": {
+          "const": "1.72.0"
+        },
+        "manifest_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "snapshot_tree_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "module": {
+          "const": "crypto_quant.challenger_replacement_v3_installed_runtime"
+        }
+      }
+    },
+    "first_eligible_scheduled_for": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.000Z$"
+    },
+    "plist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "device",
+        "inode",
+        "owner_uid",
+        "mode",
+        "link_count",
+        "size_bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "owner_uid": {
+          "const": 501
+        },
+        "mode": {
+          "const": 384
+        },
+        "link_count": {
+          "const": 1
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "argv",
+          "exit_code",
+          "stdout_sha256",
+          "stderr_sha256"
+        ],
+        "properties": {
+          "argv": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 4,
+            "items": {
+              "type": "string"
+            }
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "stdout_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "stderr_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "market_request_count",
+        "launchctl_read_count",
+        "launchctl_mutation_count",
+        "runtime_invocation_count",
+        "state_write_count",
+        "credential_count",
+        "account_request_count",
+        "broker_request_count",
+        "order_count",
+        "fund_movement_count"
+      ],
+      "properties": {
+        "market_request_count": {
+          "const": 0
+        },
+        "launchctl_read_count": {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "launchctl_mutation_count": {
+          "const": 1
+        },
+        "runtime_invocation_count": {
+          "const": 0
+        },
+        "state_write_count": {
+          "const": 0
+        },
+        "credential_count": {
+          "const": 0
+        },
+        "account_request_count": {
+          "const": 0
+        },
+        "broker_request_count": {
+          "const": 0
+        },
+        "order_count": {
+          "const": 0
+        },
+        "fund_movement_count": {
+          "const": 0
+        }
+      }
+    },
+    "reason_codes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "INSTALL_BOOTSTRAP_STATE_UNKNOWN",
+          "INSTALL_POST_PRINT_INVALID"
+        ]
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
 }
