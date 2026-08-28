@@ -14,6 +14,7 @@ from crypto_quant.challenger_replacement_binance_private_lifecycle import (
     apply_binance_order_observation,
     build_binance_order_intent_from_opportunity,
     derive_binance_client_order_id,
+    prepare_binance_emergency_flatten,
     prepare_binance_order_attempt,
 )
 from tests.challenger_replacement_v077_private_fixtures import (
@@ -521,6 +522,50 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
                 attempt=attempt, order=order, trades=(),
                 account=self.spot_account(),
             )
+
+    def test_emergency_flatten_is_fixed_reduce_only_and_deterministic(self):
+        identity = {
+            "plan_hash": self.PLAN_HASH,
+            "block_id": self.BLOCK_ID,
+            "intent_id": self.INTENT_ID,
+        }
+        first = prepare_binance_emergency_flatten(
+            signed_position="-0.025", intent_identity=identity,
+            reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+        )
+        second = prepare_binance_emergency_flatten(
+            signed_position="-0.025", intent_identity=identity,
+            reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(first["product"], "PERPETUAL")
+        self.assertEqual(first["action"], "CLOSE_SHORT")
+        self.assertEqual(first["side"], "BUY")
+        self.assertEqual(first["quantity"], "0.025")
+        self.assertIs(first["reduce_only"], True)
+        self.assertIs(first["send_permitted"], False)
+        self.assertRegex(first["venue_client_order_id"], r"^cq77[0-9a-f]{32}$")
+
+    def test_emergency_flatten_rejects_flat_long_or_arbitrary_reason(self):
+        identity = {
+            "plan_hash": self.PLAN_HASH,
+            "block_id": self.BLOCK_ID,
+            "intent_id": self.INTENT_ID,
+        }
+        for position, reason in (
+            ("0", "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP"),
+            ("0.025", "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP"),
+            ("-0.025", "ARBITRARY"),
+        ):
+            with self.subTest(position=position, reason=reason), \
+                    self.assertRaisesRegex(
+                        BinancePrivateLifecycleError,
+                        "BINANCE_EMERGENCY_FLATTEN_INTENT_INVALID",
+                    ):
+                prepare_binance_emergency_flatten(
+                    signed_position=position, intent_identity=identity,
+                    reason_code=reason,
+                )
 
 
 if __name__ == "__main__":

@@ -10,7 +10,8 @@ from urllib.request import Request
 from .canonical import canonical_decimal, canonical_json, utc_datetime
 from .challenger_replacement_binance_private_lifecycle import (_ALGO_KEYS, _document,
     apply_binance_order_observation, build_binance_order_intent_from_opportunity,
-    prepare_binance_order_attempt, prepare_binance_protective_stop,
+    prepare_binance_emergency_flatten, prepare_binance_order_attempt,
+    prepare_binance_protective_stop,
     reconcile_binance_protective_stop)
 from .challenger_replacement_binance_private_protocol import (build_binance_private_request,
     observe_binance_server_time, validate_binance_request_time)
@@ -696,6 +697,133 @@ def _ensure_stop(state, attempt, position, context):
         return _resume_stop(state, attempt, private, context,
                             stop=desired, position_bytes=position)
     return _finish_stop_replacement(state, attempt, position, context)
+def _emergency_flatten(state, attempt, position, context):
+    try:
+        positions = _document(position, list)
+        if len(positions) != 1:
+            raise ValueError
+        signed = canonical_decimal(positions[0]["positionAmt"])
+        emergency = prepare_binance_emergency_flatten(
+            signed_position=signed,
+            intent_identity={
+                "plan_hash": state.plan["plan_hash"],
+                "block_id": attempt["block_id"],
+                "intent_id": attempt["intent_id"],
+            },
+            reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP", error)
+    private = state.replay()["opportunities"][
+        attempt["opportunity_id"]
+    ]["private"]
+    current = private.get("emergency_flatten")
+    if current is None:
+        _append_intent(
+            state, attempt, "BINANCE_EMERGENCY_FLATTEN_AUTHORIZED",
+            context.recorded_at,
+            emergency_intent_id=emergency["emergency_intent_id"],
+            reason_code=emergency["reason_code"],
+            quantity=emergency["quantity"],
+            venue_client_order_id=emergency["venue_client_order_id"],
+            reduce_only=True,
+        )
+        current = state.replay()["opportunities"][
+            attempt["opportunity_id"]
+        ]["private"]["emergency_flatten"]
+    if any(current.get(key) != emergency[value] for key, value in (
+            ("emergency_intent_id", "emergency_intent_id"),
+            ("quantity", "quantity"),
+            ("venue_client_order_id", "venue_client_order_id"),
+    )):
+        _fail("BINANCE_PRIVATE_RUNTIME_EMERGENCY_FLATTEN_REPLAY_INVALID")
+    if current["stage"] == "BINANCE_EMERGENCY_FLATTEN_RECONCILED":
+        return _status("EMERGENCY_FLATTEN_RECONCILED", attempt)
+    if current["stage"] in {
+            "BINANCE_EMERGENCY_FLATTEN_AUTHORIZED",
+            "BINANCE_EMERGENCY_FLATTEN_SIGNED_REQUEST_PREPARED",
+    }:
+        context = _renew(context)
+        observed = _execute(_request(
+            "FUTURES_ORDER_QUERY", emergency, context.timestamp_ms,
+        ), context)
+        if _proven_absent(observed):
+            _append_intent(
+                state, attempt,
+                "BINANCE_EMERGENCY_FLATTEN_ABSENCE_CHECKED",
+                context.recorded_at,
+                venue_client_order_id=emergency["venue_client_order_id"],
+                query_response_sha256=observed.response_sha256,
+                proven_absent=True,
+            )
+            current = state.replay()["opportunities"][
+                attempt["opportunity_id"]
+            ]["private"]["emergency_flatten"]
+        elif observed.response_class != "QUERY_SUCCEEDED":
+            return _status("EMERGENCY_FLATTEN_QUERY_UNRESOLVED", attempt)
+    if current["stage"] == "BINANCE_EMERGENCY_FLATTEN_ABSENCE_CHECKED":
+        context = _renew(context)
+        request = _request(
+            "FUTURES_ORDER_CREATE", emergency, context.timestamp_ms,
+        )
+        _append_intent(
+            state, attempt,
+            "BINANCE_EMERGENCY_FLATTEN_SIGNED_REQUEST_PREPARED",
+            context.recorded_at, request_id=request.request_id,
+            request_sha256=hashlib.sha256(
+                request.encoded_parameters
+            ).hexdigest(), timestamp_ms=context.timestamp_ms,
+        )
+        _append_intent(
+            state, attempt, "BINANCE_EMERGENCY_FLATTEN_SEND_STARTED",
+            context.recorded_at, request_id=request.request_id,
+        )
+        sent = _execute(request, context)
+        if sent.response_class == "UNKNOWN":
+            try:
+                venue_code = json.loads(sent.body).get("code", -1000)
+            except (AttributeError, UnicodeDecodeError, ValueError):
+                venue_code = -1000
+            _append_intent(
+                state, attempt, "BINANCE_EMERGENCY_FLATTEN_UNKNOWN",
+                context.recorded_at,
+                venue_client_order_id=emergency["venue_client_order_id"],
+                venue_code=venue_code if isinstance(venue_code, int) else -1000,
+            )
+            return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
+        if sent.response_class != "ACKNOWLEDGED":
+            _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
+    order = _query_result(
+        "FUTURES_ORDER_QUERY", {
+            "symbol": "ETHUSDT",
+            "origClientOrderId": emergency["venue_client_order_id"],
+        }, context,
+    )
+    if order.response_class != "QUERY_SUCCEEDED":
+        return _status("EMERGENCY_FLATTEN_QUERY_UNRESOLVED", attempt)
+    position_result = _query(
+        "FUTURES_POSITION", {"symbol": "ETHUSDT"}, context,
+    )
+    positions = _document(position_result.body, list)
+    if (len(positions) != 1
+            or Decimal(canonical_decimal(positions[0]["positionAmt"])) != 0):
+        return _status("EMERGENCY_FLATTEN_PENDING", attempt)
+    _append_intent(
+        state, attempt, "BINANCE_EMERGENCY_FLATTEN_RECONCILED",
+        context.recorded_at,
+        venue_client_order_id=emergency["venue_client_order_id"],
+        order_response_sha256=order.response_sha256,
+        position_response_sha256=position_result.response_sha256,
+        flat=True,
+    )
+    return _status("EMERGENCY_FLATTEN_RECONCILED", attempt)
+def _ensure_stop_or_flatten(state, attempt, position, context):
+    try:
+        return _ensure_stop(state, attempt, position, context)
+    except BinancePrivateRuntimeError as error:
+        if error.reason_code != "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP":
+            raise
+        return _emergency_flatten(state, attempt, position, context)
 def _perpetual_facts(state, attempt, activation, position, incomes, stop, previous_reconciliation_bytes_or_null=None, fills=None):
     fills = ([payload for event_type, payload in _private_payloads(state,
         attempt["opportunity_id"]) if event_type == "BINANCE_FILL_OBSERVED"]
@@ -1058,7 +1186,9 @@ def _observe_order(*, state, attempt, order_result, context):
     if (initial_stage == "BINANCE_FILLS_FEES_REPLAYED" and not new_fill
             and attempt["product"] == "PERPETUAL"
             and attempt["action"] == "OPEN_SHORT"):
-        return _ensure_stop(state, attempt, account_result.body, context)
+        return _ensure_stop_or_flatten(
+            state, attempt, account_result.body, context,
+        )
     if terminal in _TERMINAL_ORDERS:
         if spot: return _finish_spot(
                 state, attempt, context.activation, order_result.body,
@@ -1075,11 +1205,14 @@ def _observe_order(*, state, attempt, order_result, context):
             return _cleanup_perpetual_stop(
                 state, attempt, previous, context,
             )
-        return _ensure_stop(
+        return _ensure_stop_or_flatten(
             state, attempt, account_result.body, context,
         )
     if terminal == "BINANCE_ORDER_PARTIALLY_FILLED" and not spot:
-        _append_fills_fees(state, attempt, context.recorded_at); return _ensure_stop(state, attempt, account_result.body, context)
+        _append_fills_fees(state, attempt, context.recorded_at)
+        return _ensure_stop_or_flatten(
+            state, attempt, account_result.body, context,
+        )
     return _status(
         (
             "ORDER_IN_PROGRESS"

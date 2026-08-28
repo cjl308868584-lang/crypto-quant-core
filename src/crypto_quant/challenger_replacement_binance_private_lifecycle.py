@@ -503,6 +503,49 @@ def prepare_binance_protective_stop(*, short_quantity, trigger_price,
         "required_first_endpoint": "FUTURES_ALGO_QUERY",
         "send_permitted": False,
     }
+def prepare_binance_emergency_flatten(*, signed_position, intent_identity,
+                                      reason_code):
+    """Derive the sole reduce-only close for unprotected short exposure."""
+    keys = frozenset({"plan_hash", "block_id", "intent_id"})
+    try:
+        if (not isinstance(intent_identity, Mapping)
+                or frozenset(intent_identity) != keys
+                or not _hash(intent_identity["plan_hash"])
+                or not _identity(intent_identity["block_id"])
+                or not _identity(intent_identity["intent_id"])
+                or reason_code
+                != "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP"):
+            raise ValueError
+        position = Decimal(canonical_decimal(signed_position))
+        if position >= 0:
+            raise ValueError
+        quantity = canonical_decimal(-position)
+    except (InvalidOperation, KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_EMERGENCY_FLATTEN_INTENT_INVALID", error)
+    emergency_intent_id = "replacement_emergency_flatten_" + hashlib.sha256(
+        canonical_json({
+            "protected_intent_id": intent_identity["intent_id"],
+            "quantity": quantity, "reason_code": reason_code,
+        }).encode()
+    ).hexdigest()
+    client_id = derive_binance_client_order_id(
+        plan_hash=intent_identity["plan_hash"],
+        block_id=intent_identity["block_id"],
+        intent_id=emergency_intent_id, attempt_ordinal=1,
+        product="PERPETUAL",
+    )
+    return {
+        "protected_intent_id": intent_identity["intent_id"],
+        "emergency_intent_id": emergency_intent_id,
+        "reason_code": reason_code,
+        "product": "PERPETUAL", "action": "CLOSE_SHORT",
+        "symbol": "ETHUSDT", "side": "BUY",
+        "position_side": "BOTH", "quantity": quantity,
+        "reduce_only": True,
+        "venue_client_order_id": client_id,
+        "required_first_endpoint": "FUTURES_ORDER_QUERY",
+        "send_permitted": False,
+    }
 def _valid_stop_expected(expected):
     envelope = {
         "$schema": "./challenger-replacement-binance-private-event-v1.schema.json",

@@ -31,6 +31,7 @@ from crypto_quant.challenger_replacement_binance_private_lifecycle import (
 from crypto_quant.challenger_replacement_binance_private_runtime import (
     BinancePrivateRuntimeError,
     _cleanup_perpetual_stop,
+    _emergency_flatten,
     _observe_order,
     _perpetual_facts,
     _previous_reconciliation_bytes,
@@ -983,6 +984,118 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ]["private"]["stop_cleanup"]
         self.assertEqual(cleanup["stage"], "BINANCE_STOP_CLEANUP_RECONCILED")
         self.assertEqual(cleanup["client_algo_id"], stop["client_algo_id"])
+
+    def test_unprotected_short_uses_query_first_reduce_only_emergency_flatten(self):
+        attempt = self._prime_perpetual_close_fills()
+        position = self._futures_position("-0.025")
+        flat = self._futures_position("0", "0")
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode()
+        filled = canonical_json({"status": "FILLED"}).encode()
+        responses = (
+            BinancePrivateTransportResult(
+                "RESPONSE_INVALID", 400, absent,
+                hashlib.sha256(absent).hexdigest(), (),
+            ),
+            BinancePrivateTransportResult(
+                "ACKNOWLEDGED", 200, filled,
+                hashlib.sha256(filled).hexdigest(), (),
+            ),
+            BinancePrivateTransportResult(
+                "QUERY_SUCCEEDED", 200, filled,
+                hashlib.sha256(filled).hexdigest(), (),
+            ),
+            BinancePrivateTransportResult(
+                "QUERY_SUCCEEDED", 200, flat,
+                hashlib.sha256(flat).hexdigest(), (),
+            ),
+        )
+        context = SimpleNamespace(
+            credential=self.credential, activation=self.activation,
+            build_identity=self.workspace.build,
+            recorded_at="2026-08-27T12:00:00.000Z",
+            timestamp_ms=1787832000000,
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=responses,
+        ) as transport:
+            result = _emergency_flatten(
+                self.state, attempt, position, context,
+            )
+        self.assertEqual(result["status"], "EMERGENCY_FLATTEN_RECONCILED")
+        requests = [call.args[0] for call in transport.call_args_list]
+        self.assertEqual([item.endpoint_id for item in requests], [
+            "FUTURES_ORDER_QUERY", "FUTURES_ORDER_CREATE",
+            "FUTURES_ORDER_QUERY", "FUTURES_POSITION",
+        ])
+        self.assertIn(b"reduceOnly=true", requests[1].encoded_parameters)
+        self.assertIn(b"side=BUY", requests[1].encoded_parameters)
+        private = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]
+        self.assertEqual(
+            private["emergency_flatten"]["stage"],
+            "BINANCE_EMERGENCY_FLATTEN_RECONCILED",
+        )
+
+    def test_emergency_flatten_unknown_never_resends_and_restart_queries_flat(self):
+        attempt = self._prime_perpetual_close_fills()
+        position = self._futures_position("-0.025")
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode()
+        unknown = b'{"code":-1007,"msg":"Timeout"}'
+        first = (
+            BinancePrivateTransportResult(
+                "RESPONSE_INVALID", 400, absent,
+                hashlib.sha256(absent).hexdigest(), (),
+            ),
+            BinancePrivateTransportResult(
+                "UNKNOWN", None, unknown,
+                hashlib.sha256(unknown).hexdigest(), (),
+            ),
+        )
+        context = SimpleNamespace(
+            credential=self.credential, activation=self.activation,
+            build_identity=self.workspace.build,
+            recorded_at="2026-08-27T12:00:00.000Z",
+            timestamp_ms=1787832000000,
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=first,
+        ):
+            result = _emergency_flatten(
+                self.state, attempt, position, context,
+            )
+        self.assertEqual(result["status"], "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN")
+        flat = self._futures_position("0", "0")
+        observed = canonical_json({"status": "FILLED"}).encode()
+        second = (
+            BinancePrivateTransportResult(
+                "QUERY_SUCCEEDED", 200, observed,
+                hashlib.sha256(observed).hexdigest(), (),
+            ),
+            BinancePrivateTransportResult(
+                "QUERY_SUCCEEDED", 200, flat,
+                hashlib.sha256(flat).hexdigest(), (),
+            ),
+        )
+        fresh = self.workspace.state()
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request", side_effect=second,
+        ) as transport:
+            resumed = _emergency_flatten(
+                fresh, attempt, position, context,
+            )
+        self.assertEqual(resumed["status"], "EMERGENCY_FLATTEN_RECONCILED")
+        self.assertEqual([call.args[0].endpoint_id for call in
+                          transport.call_args_list], [
+            "FUTURES_ORDER_QUERY", "FUTURES_POSITION",
+        ])
 
     def test_perpetual_cleanup_rejects_inactive_status_for_different_algo(self):
         attempt = self._prime_perpetual_close_fills()

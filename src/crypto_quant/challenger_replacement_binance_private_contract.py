@@ -237,6 +237,9 @@ def apply_challenger_replacement_private_event(projection, event):
             private["last_private_event_hash"] = event.event_hash
             private["last_private_event_sequence"] = event.sequence
             return
+        if event_type.startswith("BINANCE_EMERGENCY_FLATTEN_"):
+            _apply_emergency_flatten(private, event_type, payload, event)
+            return
         if event_type.startswith("BINANCE_STOP_"):
             _apply_stop_transition(private, event_type, payload, event)
             return
@@ -273,6 +276,65 @@ def apply_challenger_replacement_private_event(projection, event):
         "unresolved_unknown": False,
         "terminal": False,
     }
+def _apply_emergency_flatten(private, event_type, payload, event):
+    emergency = private.get("emergency_flatten")
+    if payload.get("intent_id") != private.get("intent_id"):
+        _invalid()
+    if event_type == "BINANCE_EMERGENCY_FLATTEN_AUTHORIZED":
+        if (emergency is not None or private.get("product") != "PERPETUAL"
+                or payload.get("reduce_only") is not True):
+            _invalid()
+        emergency = {
+            "stage": event_type,
+            "emergency_intent_id": payload["emergency_intent_id"],
+            "reason_code": payload["reason_code"],
+            "quantity": payload["quantity"],
+            "venue_client_order_id": payload["venue_client_order_id"],
+        }
+        private["emergency_flatten"] = emergency
+    else:
+        stages = {
+            "BINANCE_EMERGENCY_FLATTEN_ABSENCE_CHECKED": {
+                "BINANCE_EMERGENCY_FLATTEN_AUTHORIZED",
+                "BINANCE_EMERGENCY_FLATTEN_SIGNED_REQUEST_PREPARED",
+            },
+            "BINANCE_EMERGENCY_FLATTEN_SIGNED_REQUEST_PREPARED": {
+                "BINANCE_EMERGENCY_FLATTEN_ABSENCE_CHECKED",
+            },
+            "BINANCE_EMERGENCY_FLATTEN_SEND_STARTED": {
+                "BINANCE_EMERGENCY_FLATTEN_SIGNED_REQUEST_PREPARED",
+            },
+            "BINANCE_EMERGENCY_FLATTEN_UNKNOWN": {
+                "BINANCE_EMERGENCY_FLATTEN_SEND_STARTED",
+            },
+            "BINANCE_EMERGENCY_FLATTEN_RECONCILED": {
+                "BINANCE_EMERGENCY_FLATTEN_SEND_STARTED",
+                "BINANCE_EMERGENCY_FLATTEN_UNKNOWN",
+            },
+        }
+        if (not isinstance(emergency, dict)
+                or emergency.get("stage") not in stages.get(event_type, set())
+                or payload.get("venue_client_order_id",
+                               emergency["venue_client_order_id"])
+                != emergency["venue_client_order_id"]):
+            _invalid()
+        if event_type == "BINANCE_EMERGENCY_FLATTEN_SIGNED_REQUEST_PREPARED":
+            emergency.update(
+                request_id=payload["request_id"],
+                request_sha256=payload["request_sha256"],
+                request_timestamp_ms=payload["timestamp_ms"],
+            )
+        elif event_type == "BINANCE_EMERGENCY_FLATTEN_SEND_STARTED":
+            if payload["request_id"] != emergency.get("request_id"):
+                _invalid()
+        elif event_type == "BINANCE_EMERGENCY_FLATTEN_UNKNOWN":
+            emergency["venue_code"] = payload["venue_code"]
+        elif event_type == "BINANCE_EMERGENCY_FLATTEN_RECONCILED":
+            if payload["flat"] is not True:
+                _invalid()
+        emergency["stage"] = event_type
+    private["last_private_event_hash"] = event.event_hash
+    private["last_private_event_sequence"] = event.sequence
 _PRIVATE_TRANSITIONS = {
     "BINANCE_ABSENCE_CHECKED": {
         "BINANCE_INTENT_AUTHORIZED", "BINANCE_SIGNED_REQUEST_PREPARED",
