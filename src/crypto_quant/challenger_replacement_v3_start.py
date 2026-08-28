@@ -91,7 +91,10 @@ def _first_observed(projection, identity):
     return observed
 
 
-def _document(*, deployment, event_projection, event_root_identity):
+def _document(
+    *, deployment, event_projection, event_root_identity,
+    install_receipt_binding=None,
+):
     _validated_deployment(deployment)
     if (
         not isinstance(event_root_identity, ChallengerReplacementEventRootIdentity)
@@ -132,6 +135,26 @@ def _document(*, deployment, event_projection, event_root_identity):
         },
         "status": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED",
     }
+    if install_receipt_binding is not None:
+        hashes = set("0123456789abcdef")
+        if (
+            not isinstance(install_receipt_binding, Mapping)
+            or set(install_receipt_binding)
+            != {"receipt_id", "receipt_hash", "file_sha256"}
+            or not install_receipt_binding["receipt_id"].startswith(
+                "challenger_replacement_v3_activation_install_"
+            )
+            or any(
+                not isinstance(install_receipt_binding[key], str)
+                or len(install_receipt_binding[key]) != 64
+                or set(install_receipt_binding[key]) - hashes
+                for key in ("receipt_hash", "file_sha256")
+            )
+        ):
+            _invalid()
+        document["install_receipt_binding"] = copy.deepcopy(
+            dict(install_receipt_binding)
+        )
     identity = {key: value for key, value in document.items() if key not in {
         "$schema", "schema_version", "receipt_id", "receipt_hash"
     }}
@@ -145,17 +168,20 @@ def _document(*, deployment, event_projection, event_root_identity):
 
 
 def build_challenger_replacement_v3_start_receipt(
-    *, deployment, event_projection, event_root_identity
+    *, deployment, event_projection, event_root_identity,
+    install_receipt_binding=None,
 ):
     return copy.deepcopy(_document(
         deployment=deployment,
         event_projection=event_projection,
         event_root_identity=event_root_identity,
+        install_receipt_binding=install_receipt_binding,
     ))
 
 
 def load_challenger_replacement_v3_start_receipt_bytes(
-    data, *, deployment, event_projection, event_root_identity
+    data, *, deployment, event_projection, event_root_identity,
+    install_receipt_binding=None,
 ):
     if not isinstance(data, bytes) or not 0 < len(data) <= 262_144:
         _invalid("CHALLENGER_REPLACEMENT_V3_START_BYTES_INVALID")
@@ -164,6 +190,7 @@ def load_challenger_replacement_v3_start_receipt_bytes(
         expected = _document(
             deployment=deployment, event_projection=event_projection,
             event_root_identity=event_root_identity,
+            install_receipt_binding=install_receipt_binding,
         )
         if data != canonical_json(value).encode("utf-8") or value != expected:
             _invalid()

@@ -45,6 +45,8 @@ _THIN_FILES = (
     "src/crypto_quant/challenger_replacement_v3_activation_preflight_cli.py",
     "src/crypto_quant/challenger_replacement_v3_activation_install.py",
     "src/crypto_quant/challenger_replacement_v3_activation_install_cli.py",
+    "src/crypto_quant/challenger_replacement_v3_activation_start.py",
+    "src/crypto_quant/challenger_replacement_v3_activation_start_cli.py",
     "src/crypto_quant/schemas/challenger-replacement-v3-install-contract-v1.schema.json",
     "src/crypto_quant/schemas/challenger-replacement-v3-activation-preflight-v1.schema.json",
     "src/crypto_quant/schemas/challenger-replacement-v3-activation-install-receipt-v1.schema.json",

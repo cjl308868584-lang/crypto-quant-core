@@ -171,10 +171,35 @@ def _open_sources(root):
     with _open_state(deployment) as (identity, state):
         projection = state._replay()
         data = _read_fixed(root, _START)
+        install_binding = None
+        try:
+            start_header = {} if data is None else _strict_json_bytes(data)
+        except Exception:
+            start_header = {}
+        if "install_receipt_binding" in start_header:
+            from .challenger_replacement_v3_activation_install import (
+                _load_fixed_successful_install_receipt,
+            )
+            inputs, installed, installed_bytes = (
+                _load_fixed_successful_install_receipt()
+            )
+            if (
+                inputs["contract"]["deployment"]["deployment_id"]
+                != deployment["deployment_id"]
+                or inputs["contract"]["deployment"]["deployment_hash"]
+                != deployment["deployment_hash"]
+            ):
+                raise OSError("installed deployment mismatch")
+            install_binding = {
+                "receipt_id": installed["receipt_id"],
+                "receipt_hash": installed["receipt_hash"],
+                "file_sha256": hashlib.sha256(installed_bytes).hexdigest(),
+            }
         receipt = None if data is None else (
             load_challenger_replacement_v3_start_receipt_bytes(
                 data, deployment=deployment, event_projection=projection,
                 event_root_identity=identity,
+                install_receipt_binding=install_binding,
             )
         )
         yield deployment, state, projection, receipt
