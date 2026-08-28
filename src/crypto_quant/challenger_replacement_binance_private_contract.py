@@ -274,7 +274,9 @@ def apply_challenger_replacement_private_event(projection, event):
         "terminal": False,
     }
 _PRIVATE_TRANSITIONS = {
-    "BINANCE_ABSENCE_CHECKED": {"BINANCE_INTENT_AUTHORIZED"},
+    "BINANCE_ABSENCE_CHECKED": {
+        "BINANCE_INTENT_AUTHORIZED", "BINANCE_SIGNED_REQUEST_PREPARED",
+    },
     "BINANCE_SIGNED_REQUEST_PREPARED": {"BINANCE_ABSENCE_CHECKED"},
     "BINANCE_REQUEST_SEND_STARTED": {"BINANCE_SIGNED_REQUEST_PREPARED"},
     "BINANCE_ORDER_ACKNOWLEDGED": {"BINANCE_REQUEST_SEND_STARTED", "BINANCE_UNKNOWN_QUERY_OBSERVED"},
@@ -328,7 +330,9 @@ def _stop_target(stop, stage):
     return None
 _STOP_CHAIN = {
     "BINANCE_STOP_ABSENCE_CHECKED": (
-        "BINANCE_STOP_INTENT_AUTHORIZED", ("query_response_sha256",),
+        ("BINANCE_STOP_INTENT_AUTHORIZED",
+         "BINANCE_STOP_SIGNED_REQUEST_PREPARED"),
+        ("query_response_sha256",),
     ),
     "BINANCE_STOP_SIGNED_REQUEST_PREPARED": (
         "BINANCE_STOP_ABSENCE_CHECKED",
@@ -344,7 +348,13 @@ _STOP_CHAIN = {
 }
 def _advance_stop(stop, private, event_type, payload):
     previous, copied = _STOP_CHAIN[event_type]
-    target = _stop_target(stop, previous)
+    stages = previous if isinstance(previous, tuple) else (previous,)
+    target = next(
+        (candidate for stage in stages
+         for candidate in (_stop_target(stop, stage),)
+         if candidate is not None),
+        None,
+    )
     valid = (target is not None
              and payload.get("client_algo_id") == target.get("client_algo_id")
              and (event_type == "BINANCE_STOP_RECONCILED"
@@ -401,7 +411,11 @@ def _apply_stop_transition(private, event_type, payload, event):
               or payload["client_algo_id"] != cleanup["client_algo_id"]):
             _invalid()
         elif event_type == "BINANCE_STOP_CLEANUP_REQUEST_PREPARED":
-            if cleanup["stage"] != "BINANCE_STOP_CLEANUP_AUTHORIZED": _invalid()
+            if cleanup["stage"] not in {
+                    "BINANCE_STOP_CLEANUP_AUTHORIZED",
+                    "BINANCE_STOP_CLEANUP_REQUEST_PREPARED",
+            }:
+                _invalid()
             cleanup.update(
                 stage=event_type, request_id=payload["request_id"],
                 request_sha256=payload["request_sha256"],
@@ -417,6 +431,7 @@ def _apply_stop_transition(private, event_type, payload, event):
         elif event_type == "BINANCE_STOP_CLEANUP_RECONCILED":
             if cleanup["stage"] not in {
                     "BINANCE_STOP_CLEANUP_AUTHORIZED",
+                    "BINANCE_STOP_CLEANUP_REQUEST_PREPARED",
                     "BINANCE_STOP_CLEANUP_SEND_STARTED",
                 }:
                 _invalid()

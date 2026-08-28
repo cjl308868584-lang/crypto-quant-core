@@ -29,7 +29,8 @@ class BinancePrivateRuntimeError(RuntimeError):
     def __init__(self, reason_code): super().__init__(reason_code); self.reason_code = reason_code
 @dataclass(frozen=True)
 class _Context:
-    credential: object; activation: object; build_identity: Mapping; recorded_at: str; timestamp_ms: int
+    state: object; attempt: Mapping; credential: object; activation: object
+    build_identity: Mapping; recorded_at: str; timestamp_ms: int
 def _fail(reason, error=None):
     failure = BinancePrivateRuntimeError(reason)
     if error is None: raise failure
@@ -76,8 +77,8 @@ def _fresh_context(state, attempt, credential, activation, build_identity,
         payload = {key: getattr(evidence, key) for key in evidence.__dataclass_fields__}
         _append_intent(state, attempt, "BINANCE_SERVER_TIME_OBSERVED",
                        recorded_at, **payload)
-        return _Context(credential, activation, build_identity, recorded_at,
-                        evidence.server_time_ms)
+        return _Context(state, attempt, credential, activation, build_identity,
+                        recorded_at, evidence.server_time_ms)
     except (AttributeError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_SERVER_TIME_INVALID", error)
 def _runtime_projection(state):
@@ -250,16 +251,30 @@ def _execute(request, context):
     return execute_binance_private_request(request, credential=context.credential,
         activation=context.activation, expected_build_identity=context.build_identity,
         now=context.recorded_at)
+def _renew(context):
+    if not isinstance(context, _Context):
+        return context
+    return _fresh_context(
+        context.state, context.attempt, context.credential,
+        context.activation, context.build_identity, context.recorded_at,
+    )
 def _recover_after_send(*, state, attempt, context):
-    query = _request(attempt["required_first_endpoint"], attempt, context.timestamp_ms)
-    result = _execute(query, context)
+    result = _query(
+        attempt["required_first_endpoint"], {
+            "symbol": "ETHUSDT",
+            "origClientOrderId": attempt["venue_client_order_id"],
+        }, context,
+    )
     if _proven_absent(result): _fail("BINANCE_PRIVATE_RUNTIME_ABSENT_AFTER_SEND_STARTED")
     if result.response_class != "QUERY_SUCCEEDED": _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_QUERY_UNRESOLVED")
     return _observe_order(state=state, attempt=attempt, order_result=result, context=context)
-def _query(endpoint_id, parameters, context):
+def _query_result(endpoint_id, parameters, context):
+    context = _renew(context)
     request = build_binance_private_request(endpoint_id, parameters,
                                             timestamp_ms=context.timestamp_ms)
-    result = _execute(request, context)
+    return _execute(request, context)
+def _query(endpoint_id, parameters, context):
+    result = _query_result(endpoint_id, parameters, context)
     if result.response_class != "QUERY_SUCCEEDED": _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_QUERY_UNRESOLVED")
     return result
 def _tuple_documents(data):
@@ -524,7 +539,11 @@ def _complete_stop_observation(state, attempt, stop, position, observed, context
 def _create_stop(state, attempt, position, context, stop):
     _append(state, "BINANCE_STOP_INTENT_AUTHORIZED",
             attempt["opportunity_id"], stop, context.recorded_at)
-    query = _execute(_stop_request("FUTURES_ALGO_QUERY", stop, context.timestamp_ms), context)
+    context = _renew(context)
+    query = _execute(
+        _stop_request("FUTURES_ALGO_QUERY", stop, context.timestamp_ms),
+        context,
+    )
     if not _proven_absent(query): _fail("BINANCE_PRIVATE_RUNTIME_STOP_ABSENCE_NOT_PROVEN")
     _append(state, "BINANCE_STOP_ABSENCE_CHECKED", attempt["opportunity_id"], {
         "protected_intent_id": attempt["intent_id"],
@@ -532,6 +551,7 @@ def _create_stop(state, attempt, position, context, stop):
         "query_response_sha256": query.response_sha256,
         "proven_absent": True,
     }, context.recorded_at)
+    context = _renew(context)
     request = _stop_request("FUTURES_ALGO_CREATE", stop, context.timestamp_ms)
     _append(state, "BINANCE_STOP_SIGNED_REQUEST_PREPARED",
             attempt["opportunity_id"], {
@@ -549,14 +569,22 @@ def _create_stop(state, attempt, position, context, stop):
     }, context.recorded_at)
     created = _execute(request, context)
     if created.response_class not in {"ACKNOWLEDGED", "UNKNOWN"}: _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
-    observed = _execute(_stop_request("FUTURES_ALGO_QUERY", stop, context.timestamp_ms), context)
+    context = _renew(context)
+    observed = _execute(
+        _stop_request("FUTURES_ALGO_QUERY", stop, context.timestamp_ms),
+        context,
+    )
     return _complete_stop_observation(state, attempt, stop, position, observed, context)
 def _finish_stop_replacement(state, attempt, position, context):
     private = state.replay()["opportunities"][attempt["opportunity_id"]]["private"]
     old = private.get("stop"); replacement = old.get("replacement") if isinstance(old, dict) else None
     candidate = replacement.get("candidate") if isinstance(replacement, dict) else None
     if not isinstance(candidate, dict) or candidate.get("stage") != "BINANCE_STOP_RECONCILED": _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
-    observed_candidate = _execute(_stop_request("FUTURES_ALGO_QUERY", candidate, context.timestamp_ms), context)
+    context = _renew(context)
+    observed_candidate = _execute(
+        _stop_request("FUTURES_ALGO_QUERY", candidate, context.timestamp_ms),
+        context,
+    )
     if observed_candidate.response_class != "QUERY_SUCCEEDED": _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
     identity = {"plan_hash": state.plan["plan_hash"], "block_id": attempt["block_id"],
                 "intent_id": attempt["intent_id"]}
@@ -566,6 +594,7 @@ def _finish_stop_replacement(state, attempt, position, context):
     reconcile_binance_protective_stop(position=_stop_position(position),
         algo_order=observed_candidate.body, expected=expected)
     if replacement["stage"] == "BINANCE_STOP_REPLACEMENT_STARTED":
+        context = _renew(context)
         request = _stop_request("FUTURES_ALGO_CANCEL", old, context.timestamp_ms)
         cancel = {"protected_intent_id": attempt["intent_id"],
             "old_client_algo_id": old["client_algo_id"], "new_client_algo_id": candidate["client_algo_id"],
@@ -578,7 +607,11 @@ def _finish_stop_replacement(state, attempt, position, context):
         if result.response_class not in {"ACKNOWLEDGED", "UNKNOWN"}: _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
     elif replacement["stage"] != "BINANCE_STOP_REPLACEMENT_CANCEL_SEND_STARTED":
         _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
-    observed_old = _execute(_stop_request("FUTURES_ALGO_QUERY", old, context.timestamp_ms), context)
+    context = _renew(context)
+    observed_old = _execute(
+        _stop_request("FUTURES_ALGO_QUERY", old, context.timestamp_ms),
+        context,
+    )
     active, algo_id = _cleanup_query_observation(observed_old, old["client_algo_id"])
     if active or algo_id is not None and algo_id != old.get("algo_id"): _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
     success = {"protected_intent_id": attempt["intent_id"],
@@ -592,8 +625,13 @@ def _inherit_stop(state, attempt, position, context):
     if previous is None: _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
     loaded = load_binance_reconciliation_bytes(previous); prior = loaded["event_projection"]
     client = prior["protective_stop_client_id_or_null"]
-    observed = _execute(_stop_request("FUTURES_ALGO_QUERY",
-        {"client_algo_id": client}, context.timestamp_ms), context)
+    context = _renew(context)
+    observed = _execute(
+        _stop_request(
+            "FUTURES_ALGO_QUERY", {"client_algo_id": client},
+            context.timestamp_ms,
+        ), context,
+    )
     if observed.response_class != "QUERY_SUCCEEDED": _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
     algo = _document(observed.body); current = _document(_stop_position(position))
     try:
@@ -627,7 +665,11 @@ def _desired_stop(state, attempt, position, current):
     except (KeyError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_STOP_EVIDENCE_REQUIRED", error)
 def _verify_current_stop(attempt, position, stop, context):
-    observed = _execute(_stop_request("FUTURES_ALGO_QUERY", stop, context.timestamp_ms), context)
+    context = _renew(context)
+    observed = _execute(
+        _stop_request("FUTURES_ALGO_QUERY", stop, context.timestamp_ms),
+        context,
+    )
     if observed.response_class != "QUERY_SUCCEEDED": _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
     reconcile_binance_protective_stop(position=_stop_position(position), algo_order=observed.body, expected=stop)
     return _status("PROTECTION_VERIFIED_RECONCILIATION_PENDING", attempt,
@@ -722,10 +764,15 @@ def _finish_perpetual(state, attempt, activation, stop, context,
         start_ms = int(scheduled.timestamp() * 1000)
     except (IndexError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID", error)
-    income = _query("FUTURES_INCOME", {
+    income_context = _renew(context)
+    income_request = build_binance_private_request("FUTURES_INCOME", {
         "symbol": "ETHUSDT", "incomeType": "FUNDING_FEE",
-        "startTime": str(start_ms), "endTime": str(context.timestamp_ms),
-    }, context)
+        "startTime": str(start_ms),
+        "endTime": str(income_context.timestamp_ms),
+    }, timestamp_ms=income_context.timestamp_ms)
+    income = _execute(income_request, income_context)
+    if income.response_class != "QUERY_SUCCEEDED":
+        _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_QUERY_UNRESOLVED")
     algos = _query("FUTURES_OPEN_ALGO_ORDERS", {"symbol": "ETHUSDT"}, context)
     income_documents = _tuple_documents(income.body)
     algo_documents = _tuple_documents(algos.body)
@@ -782,13 +829,16 @@ def _cleanup_perpetual_stop(state, attempt, previous, context):
             attempt["opportunity_id"]
         ]["private"]["stop_cleanup"]
     if cleanup["client_algo_id"] != client: _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
+    prepared_now = False
     if cleanup["stage"] == "BINANCE_STOP_CLEANUP_AUTHORIZED":
+        context = _renew(context)
         observed = _execute(_stop_request(
             "FUTURES_ALGO_QUERY", {"client_algo_id": client},
             context.timestamp_ms,
         ), context)
         active, algo_id = _cleanup_query_observation(observed, client)
         if active:
+            context = _renew(context)
             request = _stop_request(
                 "FUTURES_ALGO_CANCEL", {"client_algo_id": client},
                 context.timestamp_ms,
@@ -802,6 +852,7 @@ def _cleanup_perpetual_stop(state, attempt, previous, context):
                     request.encoded_parameters
                 ).hexdigest(), timestamp_ms=context.timestamp_ms,
             )
+            prepared_now = True
         else:
             _append_intent(
                 state, attempt, "BINANCE_STOP_CLEANUP_RECONCILED",
@@ -813,14 +864,50 @@ def _cleanup_perpetual_stop(state, attempt, previous, context):
             attempt["opportunity_id"]
         ]["private"]["stop_cleanup"]
     if cleanup["stage"] == "BINANCE_STOP_CLEANUP_REQUEST_PREPARED":
-        request = _stop_request(
+        old_request = _stop_request(
             "FUTURES_ALGO_CANCEL", {"client_algo_id": client},
             cleanup["request_timestamp_ms"],
         )
-        if (request.request_id != cleanup["request_id"]
-                or hashlib.sha256(request.encoded_parameters).hexdigest()
+        if (old_request.request_id != cleanup["request_id"]
+                or hashlib.sha256(old_request.encoded_parameters).hexdigest()
                 != cleanup["request_sha256"]):
             _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
+        if prepared_now:
+            request = old_request
+        else:
+            context = _renew(context)
+            observed = _execute(_stop_request(
+                "FUTURES_ALGO_QUERY", {"client_algo_id": client},
+                context.timestamp_ms,
+            ), context)
+            active, algo_id = _cleanup_query_observation(observed, client)
+            if not active:
+                _append_intent(
+                    state, attempt, "BINANCE_STOP_CLEANUP_RECONCILED",
+                    context.recorded_at, client_algo_id=client,
+                    query_response_sha256=observed.response_sha256,
+                    status="BINANCE_FLAT_STOP_CLEANED",
+                )
+                return _finish_perpetual(
+                    state, attempt, context.activation, None, context,
+                    previous_reconciliation_bytes_or_null=previous,
+                )
+            if algo_id != cleanup["algo_id"]:
+                _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
+            context = _renew(context)
+            request = _stop_request(
+                "FUTURES_ALGO_CANCEL", {"client_algo_id": client},
+                context.timestamp_ms,
+            )
+            _append_intent(
+                state, attempt, "BINANCE_STOP_CLEANUP_REQUEST_PREPARED",
+                context.recorded_at, client_algo_id=client,
+                query_response_sha256=observed.response_sha256,
+                algo_id=algo_id, request_id=request.request_id,
+                request_sha256=hashlib.sha256(
+                    request.encoded_parameters
+                ).hexdigest(), timestamp_ms=context.timestamp_ms,
+            )
         _append_intent(
             state, attempt, "BINANCE_STOP_CLEANUP_SEND_STARTED",
             context.recorded_at, client_algo_id=client,
@@ -832,6 +919,7 @@ def _cleanup_perpetual_stop(state, attempt, previous, context):
             attempt["opportunity_id"]
         ]["private"]["stop_cleanup"]
     if cleanup["stage"] == "BINANCE_STOP_CLEANUP_SEND_STARTED":
+        context = _renew(context)
         observed = _execute(_stop_request(
             "FUTURES_ALGO_QUERY", {"client_algo_id": client},
             context.timestamp_ms,
@@ -882,13 +970,40 @@ def _resume_stop(state, attempt, private, context, *, stop=None,
     if position_bytes is None:
         position_bytes = _query("FUTURES_POSITION", {"symbol": "ETHUSDT"}, context).body
     if current["stage"] == "BINANCE_STOP_SIGNED_REQUEST_PREPARED":
-        request = _stop_request(
+        old_request = _stop_request(
             "FUTURES_ALGO_CREATE", stop, current["request_timestamp_ms"],
         )
-        if (request.request_id != current["request_id"]
-                or hashlib.sha256(request.encoded_parameters).hexdigest()
+        if (old_request.request_id != current["request_id"]
+                or hashlib.sha256(old_request.encoded_parameters).hexdigest()
                 != current["request_sha256"]):
             _fail("BINANCE_PRIVATE_RUNTIME_STOP_REPLAY_INVALID")
+        context = _renew(context)
+        absence = _execute(_stop_request(
+            "FUTURES_ALGO_QUERY", stop, context.timestamp_ms,
+        ), context)
+        if not _proven_absent(absence):
+            _fail("BINANCE_PRIVATE_RUNTIME_STOP_ABSENCE_NOT_PROVEN")
+        _append(state, "BINANCE_STOP_ABSENCE_CHECKED",
+                attempt["opportunity_id"], {
+            "protected_intent_id": attempt["intent_id"],
+            "client_algo_id": stop["client_algo_id"],
+            "query_response_sha256": absence.response_sha256,
+            "proven_absent": True,
+        }, context.recorded_at)
+        context = _renew(context)
+        request = _stop_request(
+            "FUTURES_ALGO_CREATE", stop, context.timestamp_ms,
+        )
+        _append(state, "BINANCE_STOP_SIGNED_REQUEST_PREPARED",
+                attempt["opportunity_id"], {
+            "protected_intent_id": attempt["intent_id"],
+            "client_algo_id": stop["client_algo_id"],
+            "request_id": request.request_id,
+            "request_sha256": hashlib.sha256(
+                request.encoded_parameters
+            ).hexdigest(),
+            "timestamp_ms": context.timestamp_ms,
+        }, context.recorded_at)
         _append(state, "BINANCE_STOP_REQUEST_SEND_STARTED",
                 attempt["opportunity_id"], {
             "protected_intent_id": attempt["intent_id"],
@@ -897,6 +1012,7 @@ def _resume_stop(state, attempt, private, context, *, stop=None,
         }, context.recorded_at)
         created = _execute(request, context)
         if created.response_class not in {"ACKNOWLEDGED", "UNKNOWN"}: _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
+    context = _renew(context)
     observed = _execute(_stop_request(
         "FUTURES_ALGO_QUERY", stop, context.timestamp_ms,
     ), context)
@@ -984,7 +1100,7 @@ def _record_unknown(state, attempt, result, recorded_at):
     _append_intent(state, attempt, "BINANCE_ORDER_UNKNOWN", recorded_at,
                    venue_code=venue_code, blocks_new_risk=True)
     return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
-def _query_order(attempt, context): return _query(
+def _query_order(attempt, context): return _query_result(
         attempt["required_first_endpoint"], {
             "symbol": "ETHUSDT",
             "origClientOrderId": attempt["venue_client_order_id"],
@@ -1072,13 +1188,12 @@ def run_challenger_replacement_binance_private_intent(
             activation_id=attempt["activation_id"], preflight_sha256=preflight_hash,
             unsigned_intent_sha256=attempt["unsigned_intent_sha256"],
         )
-    context = _fresh_context(
-        state, attempt, credential, activation, build_identity, recorded_at,
+    context = _Context(
+        state, attempt, credential, activation, build_identity, recorded_at, 0,
     )
-    timestamp_ms = context.timestamp_ms
     if existing is not None:
         if existing["stage"] == "BINANCE_ORDER_UNKNOWN":
-            observed = _execute(_request(attempt["required_first_endpoint"], attempt, context.timestamp_ms), context)
+            observed = _query_order(attempt, context)
             if observed.response_class != "QUERY_SUCCEEDED": return _status("UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", attempt)
             return _observe_order(state=state, attempt=attempt, order_result=observed, context=context)
         if (existing["stage"] in _TERMINAL_ORDERS | {
@@ -1096,14 +1211,42 @@ def run_challenger_replacement_binance_private_intent(
                 state=state, attempt=attempt, context=context,
             )
         if existing["stage"] == "BINANCE_SIGNED_REQUEST_PREPARED":
-            request = _request(
+            old_request = _request(
                 existing["request_endpoint_id"], attempt,
                 existing["request_timestamp_ms"],
             )
-            if (request.request_id != existing["request_id"]
-                    or hashlib.sha256(request.encoded_parameters).hexdigest()
+            if (old_request.request_id != existing["request_id"]
+                    or hashlib.sha256(old_request.encoded_parameters).hexdigest()
                     != existing["request_sha256"]):
                 _fail("BINANCE_PRIVATE_RUNTIME_REQUEST_REPLAY_INVALID")
+            query_result = _query_order(attempt, context)
+            if not _proven_absent(query_result):
+                return _status(
+                    "PREPARED_SEND_ABSENCE_UNRESOLVED", attempt,
+                )
+            _append_intent(
+                state, attempt, "BINANCE_ABSENCE_CHECKED", recorded_at,
+                venue_client_order_id=attempt["venue_client_order_id"],
+                query_response_sha256=query_result.response_sha256,
+                proven_absent=True,
+            )
+            context = _fresh_context(
+                state, attempt, credential, activation, build_identity,
+                recorded_at,
+            )
+            request = _request(
+                existing["request_endpoint_id"], attempt,
+                context.timestamp_ms,
+            )
+            _append_intent(
+                state, attempt, "BINANCE_SIGNED_REQUEST_PREPARED", recorded_at,
+                request_id=request.request_id,
+                endpoint_id=request.endpoint_id,
+                request_sha256=hashlib.sha256(
+                    request.encoded_parameters
+                ).hexdigest(),
+                timestamp_ms=context.timestamp_ms,
+            )
             _append_intent(
                 state, attempt, "BINANCE_REQUEST_SEND_STARTED", recorded_at,
                 request_id=request.request_id,
@@ -1119,8 +1262,7 @@ def run_challenger_replacement_binance_private_intent(
                 context=context,
             )
         _fail("BINANCE_PRIVATE_RUNTIME_RECOVERY_STAGE_UNSUPPORTED")
-    query = _request(attempt["required_first_endpoint"], attempt, timestamp_ms)
-    query_result = _execute(query, context)
+    query_result = _query_order(attempt, context)
     if not _proven_absent(query_result): _fail("BINANCE_PRIVATE_RUNTIME_ORDER_ABSENCE_NOT_PROVEN")
     _append_intent(
         state, attempt, "BINANCE_ABSENCE_CHECKED", recorded_at,
@@ -1131,6 +1273,10 @@ def run_challenger_replacement_binance_private_intent(
         intent=intent, projection=_runtime_projection(state),
         preflight=preflight, activation=activation,
     )
+    context = _fresh_context(
+        state, attempt, credential, activation, build_identity, recorded_at,
+    )
+    timestamp_ms = context.timestamp_ms
     endpoint = (
         "SPOT_ORDER_CREATE"
         if attempt["product"] == "SPOT"
