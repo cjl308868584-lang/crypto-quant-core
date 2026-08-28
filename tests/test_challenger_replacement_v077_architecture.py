@@ -64,7 +64,7 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
             "order_runtime": (ORDER_RUNTIME, 2100),
             "controllers": (
                 tuple(name for name in CONTROLLERS if (ROOT / name).is_file()),
-                1250,
+                2200,
             ),
         }
         mandatory = (
@@ -102,7 +102,7 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
             physical_lines(*counted)
             + added_lines(*OPPORTUNITY_PROJECTION)
             + delivery_lines,
-            5250,
+            6200,
         )
 
 

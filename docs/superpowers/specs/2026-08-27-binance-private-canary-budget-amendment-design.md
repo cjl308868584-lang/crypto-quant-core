@@ -11,9 +11,17 @@ This amendment supersedes only the numeric production-line budget in
 evidence, safety, testing, review and release requirements in the v0.77 design
 remain unchanged.
 
-The aggregate v0.77 production-code budget is 4,500 physical lines. This is a
+The aggregate v0.77 production-code budget is 6,200 physical lines. This is a
 hard ceiling, not a target. A smaller implementation is preferred whenever it
 preserves the exact safety contract.
+
+The Task 11 amendment is measured rather than prospective. The measured safety
+candidate measures 2,088 controller/fault-runner lines and 6,088 aggregate
+lines after adding real private-runtime recovery, protected-stop, isolated
+fresh-process, secret-surface, actual-boundary-input, seven-class authority and
+truthful semantic-replay evidence. The ceiling retains 112 lines of headroom.
+Only the controller/fault-runner group receives additional
+capacity; all other component ceilings remain unchanged.
 
 ## 2. Why the original 3,000-line ceiling is not executable
 
@@ -69,7 +77,7 @@ final aggregate is:
 ```text
 full lines of the listed new Python files
 + added production lines in the fixed pre-existing-file allowlist
-<= 4,500
+<= 6,200
 ```
 
 The fixed pre-existing-file allowlist is:
@@ -91,9 +99,9 @@ and release gates.
 - preflight: at most 380 lines;
 - private event contract + opportunity-projection additions: at most 650 lines;
 - lifecycle + reconciliation + runtime: at most 2,100 lines;
-- Canary controller + fixed fault runner: at most 850 lines;
+- Canary controller + fixed fault runner: at most 2,200 lines;
 - operations and dashboard delivery additions: at most 150 lines; and
-- aggregate under section 3: at most 4,500 lines.
+- aggregate under section 3: at most 6,200 lines.
 
 Passing the numeric caps is insufficient. Review must still reject generic
 exchange, Broker, storage, scheduler or UI frameworks, arbitrary endpoints,

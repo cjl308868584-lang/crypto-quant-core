@@ -1,4 +1,5 @@
 import base64
+import copy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
@@ -1393,6 +1394,14 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
 
     def test_futures_fixture_without_v076_stop_evidence_fails_closed(self):
         self._use_perpetual_decision()
+        replay = self.state.replay
+        def without_stop_evidence():
+            projection = copy.deepcopy(replay())
+            slot = projection["opportunities"][self.workspace.opportunity_id]
+            if slot.get("private", {}).get("stage") == "BINANCE_FILLS_FEES_REPLAYED":
+                slot["result_evidence"]["next_snapshot"][
+                    "protective_stop_or_null"] = None
+            return projection
         absent, filled, trades, position = self._futures_filled_documents(
             self.intent["quantity"]
         )
@@ -1411,6 +1420,8 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         with patch(
             "crypto_quant.challenger_replacement_binance_private_runtime."
             "_wall_now", return_value=self.NOW,
+        ), patch.object(
+            self.state, "replay", side_effect=without_stop_evidence,
         ), patch(
             "crypto_quant.challenger_replacement_binance_private_runtime."
             "execute_binance_private_request", side_effect=responses,
@@ -1550,6 +1561,9 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         recovered = self.workspace.state()
         with patch(
             "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW + timedelta(seconds=1),
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
             "execute_binance_private_request",
         ) as recovery_transport:
             terminal = run_challenger_replacement_binance_private_intent(
@@ -1582,6 +1596,9 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         before = (displaced.read_bytes(), displaced.lstat().st_ino,
                   displaced.lstat().st_mode, displaced.lstat().st_nlink)
         with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW + timedelta(seconds=1),
+        ), patch(
             "crypto_quant.challenger_replacement_binance_private_runtime."
             "execute_binance_private_request",
             side_effect=AssertionError("transport must not run"),
@@ -2198,6 +2215,9 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         terminal = self.workspace.state()
         with patch(
             "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW + timedelta(seconds=1),
+        ), patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
             "execute_binance_private_request",
         ) as transport:
             replayed = run_challenger_replacement_binance_private_intent(
@@ -2518,6 +2538,9 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
 
         fresh = self.workspace.state()
         with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "_wall_now", return_value=self.NOW + timedelta(seconds=1),
+        ), patch(
             "crypto_quant.challenger_replacement_binance_private_runtime."
             "execute_binance_private_request",
         ) as transport:

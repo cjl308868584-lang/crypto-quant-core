@@ -444,7 +444,7 @@ def _expected_stop(state, attempt):
         if (evidence["$schema"]
                 != "./challenger-replacement-public-simulation-result-v1.schema.json"
                 or decision["action"] != "OPEN_PERP_SHORT"
-                or snapshot["position_state"] != "PERPETUAL_SHORT"
+                or snapshot["position_state"] != "PERP_SHORT"
                 or not 0 < filled <= Decimal(attempt["quantity"])
                 or protection["status"] != "CONFIRMED_SIMULATED"):
             raise ValueError

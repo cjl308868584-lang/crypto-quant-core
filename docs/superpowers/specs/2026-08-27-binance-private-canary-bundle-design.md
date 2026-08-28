@@ -796,6 +796,15 @@ All tests use deterministic fixtures, mocks or fixed official examples. Their
 authority counters must remain zero. No test result is a real account or market
 qualification.
 
+Zero authority is measured through seven installed fail-closed boundaries, not
+through initialized constants. Controlled fixture credential, public-time,
+private-transport and scratch-state operations require one internal
+non-serializable fixture capability; a missing or substituted capability
+increments the corresponding release-authority counter and aborts. Mutating
+order fixture calls additionally cross both mutating-request and economic-order
+guards. Any withdrawal, transfer or capital endpoint is rejected as fund
+movement even with the fixture capability. Unmocked sockets remain blocked.
+
 The matrix is an executable campaign, not a catalogue of test names. Every
 listed condition has a unique atomic case ID and a dedicated probe that invokes
 the relevant production boundary. A combined case is permitted only when the
@@ -807,7 +816,67 @@ observed return/failure code and stdout/stderr hashes; measured credential,
 private-network, mutating-request, order, fund and production-state boundary
 counts; subprocess executable, argv, exit status and output hashes where a
 fresh interpreter is required; and exact canonical event/artifact identities
-before and after the probe.
+before and after the probe when those authorities exist. Runtime probes that
+publish only canonical events record distinct exact before/after event hashes
+as `PUBLISHED_EVENT_ONLY` and retain null artifact identities; a digest of an
+in-memory result is never represented as a published artifact identity.
+
+Those exact OS attachment identities are observations, not reproducible test
+inputs. In particular, an independently created immutable event file may have
+the same trusted bytes, owner, mode, link count and size but a different inode;
+the resulting publication record and downstream event hash must remain exact
+and therefore also differ. Task 11 consequently does not require two complete
+receipts to be byte-identical and the strict loader does not re-execute the
+campaign in order to compare whole receipt bytes.
+
+The runner instead performs exactly two isolated executions before sealing one
+receipt:
+
+1. the primary execution retains every exact fixture, result, subprocess and
+   state identity described above; and
+2. an independent execution produces a closed per-case semantic projection.
+
+Each execution owns a newly created owner-only `0700` campaign scratch root.
+Its isolated Python environment, fresh-process event roots and secret-surface
+probe live only below that root; the root is never a predictable persistent
+path and is removed when the execution exits. A second execution therefore
+cannot reuse the first execution's environment or state.
+
+The semantic projection retains case/probe/status, observed return or failure,
+measured boundary and activity deltas, normalized fixture inputs, normalized
+business result, subprocess outcome/count/status fields, and state-identity
+applicability. It may normalize only OS attachment coordinates and values
+cryptographically derived from those coordinates: publication `device` and
+`inode`; canonical event/publication hashes derived from them; and case-level
+stdout, artifact or result hashes whose bytes contain those exact identities.
+It must retain content SHA-256, decoded bytes, size, owner, mode, link count,
+business identifiers, quantities, prices, fees, funding, positions, balances,
+outcome/reason codes and every authority counter. Normalization is implemented
+by closed structural rules and fixed top-level runtime-transition/result
+locations, never by recursively deleting an arbitrary field with a matching
+name.
+
+The receipt stores the primary per-case semantic hashes plus the independently
+observed per-case semantic hashes, both aggregate hashes, the second execution's
+measured authority/activity totals and `semantic_match=true`. Any case-order,
+case-count or semantic mismatch fails before receipt publication. Both
+executions must have zero release authority. The strict loader recomputes the
+primary semantic projection and all receipt/self/inventory/foundation hashes,
+requires exact equality to the sealed independent hashes and validates the
+closed schema; it performs no network, state write, subprocess or campaign
+re-execution. The loader additionally requires the exact externally supplied
+SHA-256 of the complete receipt bytes. Before Task 12 that digest is supplied
+only by the just-completed local ceremony for replay validation; Task 12 then
+binds the same digest in the immutable build manifest, ADR and release tests.
+The receipt's self-hash detects accidental inconsistency but is not an
+authenticity proof against coordinated rehashing. Without the external digest,
+strict load is forbidden. Git/release identity binds the one observed receipt
+ceremony.
+
+Forcing inode reuse, reopening an immutable final for mutation or replacing
+exact identities with semantic-only evidence is forbidden. This correction
+changes only Task 11 evidence comparison; it does not weaken publication
+identity checks in the private runtime, observer, controller or evaluator.
 
 The campaign binds a sorted per-file inventory of every v0.77 executable
 runtime module, schema and fixture plus an aggregate executable-core hash. It
@@ -843,12 +912,15 @@ transport, broker or order platform is rejected even if under the numeric cap.
 
 The pre-Task-11 4,500-line aggregate cap left exactly 116 physical lines after
 the rejected 116-line label runner was deleted: the retained components measure
-4,384 lines. That is less than the already released v0.76 fault runner's 654
+4,384 lines. That is less than the exact v0.76 build-input fault runner's 641
 lines for 36 cases and cannot contain 59 direct probes, observed boundary
 accounting, fresh-process evidence and a strict self-hashing loader. The
-measured amendment therefore raises only the controller component to 1,250 and
-the aggregate to 5,250, leaving at most 866 lines for the private fault runner.
-All other component and delivery caps remain unchanged. This allowance is
+measured amendment ultimately raises only the controller component to 2,200 and
+the aggregate to 6,200. The reviewed safety candidate measures 2,088 controller
+lines and 6,088 aggregate lines after runtime, fresh-process, isolation,
+secret-surface, actual-boundary-input, seven-class authority and truthful
+semantic-replay evidence, leaving 112 lines of headroom. All other component
+and delivery caps remain unchanged. This allowance is
 exclusive to the fixed offline evidence runner; it does not authorize runtime,
 transport, broker, scheduler or UI growth. The final implementation must report
 its actual line count and remain below both amended limits. Receipt authority,

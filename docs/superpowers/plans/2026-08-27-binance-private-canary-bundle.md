@@ -54,8 +54,8 @@ and
   `4d8e9acf8e68c037c8ad274d970bfe67c71d4766`.
 - New production code budget: protocol+transport ≤600 lines, credential ≤220,
   preflight ≤380, private event contract+opportunity-projection additions ≤650,
-  lifecycle+reconciliation+runtime ≤2,100, Canary controller+fault runner ≤850,
-  delivery additions ≤150, controllers ≤1,250, and exact aggregate ≤5,250
+  lifecycle+reconciliation+runtime ≤2,100, Canary controller+fault runner ≤2,200,
+  delivery additions ≤150, controllers ≤2,200, and exact aggregate ≤6,200
   physical lines under the measured Task 11-only amendment. Count
   files and delivery additions exactly as defined by the budget amendment.
 - One final local full suite per final code state; no repeated unchanged full run.
@@ -163,11 +163,13 @@ file must exist. Use `git diff --numstat` against exact v0.76 build-input tree
 delta to the private-projection component and to measure the fixed delivery
 allowlist. Reject binary or unparseable entries and give no credit for deleted
 lines. Assert each flattened new-file name is unique and enforce caps
-`600/220/380/650/2100/1250/150`, then enforce the sum at `5250`. The
-controller/aggregate amendment is measured: deleting the rejected 116-line
-label runner leaves 4,384 retained lines, while the released v0.76 direct fault
-runner alone is 654 lines for only 36 cases. The resulting maximum for the new
-59-case private runner is 866 lines. No other component receives headroom.
+`600/220/380/650/2100/2200/150`, then enforce the sum at `6200`. The
+controller/aggregate amendment is measured: the reviewed safety candidate
+contains 2,088 controller/fault-runner lines and 6,088 aggregate lines after
+independent review required actual runtime, fresh-process, isolation,
+secret-surface, boundary-input, seven-class authority and truthful semantic
+replay evidence. The ceilings leave 112 lines of headroom. No other
+component receives headroom.
 
 - [ ] **Step 3: Run the amended GREEN gate and behavior adjacency**
 
@@ -1400,7 +1402,8 @@ def run_challenger_replacement_private_fault_matrix(*,
 def load_challenger_replacement_private_fault_matrix_bytes(data: bytes, *,
     v076_fault_receipt_bytes: bytes,
     expected_executable_checkpoint: str,
-    expected_executable_tree: str) -> Mapping[str, object]: ...
+    expected_executable_tree: str,
+    expected_receipt_sha256: str) -> Mapping[str, object]: ...
 ```
 
 - [ ] **Step 1: Remove the rejected uncommitted label runner**
@@ -1480,7 +1483,18 @@ Tests require exact order/uniqueness and prove every case invokes a dedicated
 probe. They alter one case result, fixture hash, observed counter, subprocess
 record, per-file hash and aggregate hash in turn and require strict-loader
 rejection. They assert the schema has no open `additionalProperties` for build,
-case or authority objects.
+case, independent replay or authority objects. Add focused RED tests proving
+that primary exact state identities may contain different trusted inode/device
+coordinates across independent executions while their closed semantic
+projections match; a change to any retained business value, content hash,
+owner, mode, link count, size, reason code or authority counter must not be
+normalized and must fail. The loader test patches the campaign executor to
+raise and proves strict load performs no re-execution.
+Construct one coordinated tamper that changes a retained business quantity and
+then correctly recomputes fixture/result/case/aggregate, both semantic lists,
+receipt ID and self-hash. Strict load must still reject it because the caller's
+exact expected receipt SHA-256 is the immutable external trust input. Missing,
+malformed or changed expected digest fails before semantic acceptance.
 
 - [ ] **Step 3: Run the structural RED**
 
@@ -1500,9 +1514,34 @@ private-network, mutating-request, economic-order, fund-movement and
 production-state boundaries. The receipt uses measured ledger snapshots before
 and after each probe; it never accepts caller-provided counts.
 
+Install all seven boundaries through a non-serializable internal fixture
+capability. Credential reads, fixed public-time responses, private transport,
+mutating/economic order calls and scratch event writes must cross their exact
+guard before their fixture operation. Withdrawal/transfer/capital endpoint
+names always enter the fund-movement failure path and never receive a fixture
+exception. Tests exercise every missing/substituted capability and the
+fund-movement rejection, then require both campaign executions to retain zero
+release authority.
+
+The runner performs one primary and one independent isolated campaign. The
+primary cases keep exact observed inputs, outputs and attachment identities.
+Both executions are transformed through a closed `_semantic_case_projection`
+that removes only structurally recognized OS attachment coordinates and hashes
+derived from them while retaining every business, content-integrity and
+authority field enumerated by the spec. Seal the ordered primary semantic
+hashes, ordered independent semantic hashes, both aggregate hashes, independent
+authority/activity totals and an exact match flag. Do not attempt to stabilize
+inode allocation, reuse a prior immutable event file or compare complete
+receipts byte-for-byte.
+
 Fresh-process cases use `sys.executable -I -m` with a fixed internal campaign
-entry point, fixed argv and controlled temporary root. Record executable path,
-argv, exit status, stdout/stderr bytes hashes and final event/artifact identities.
+entry point, fixed argv and a new owner-only campaign temporary root. The
+isolated environment and all fresh-process state remain below that root, are
+not shared by the independent execution and are removed at campaign exit.
+Record executable path, argv, exit status, stdout/stderr bytes hashes and final
+event/artifact identities. Runtime-only publication records exact event hashes
+before and after with null artifact fields; never substitute a result digest
+for a nonexistent published artifact.
 No shell, environment-selected module, arbitrary command/path or production
 fault-injection seam is added.
 
@@ -1541,7 +1580,7 @@ git diff --check
 
 Review exact base `3fdf26347c3983cb528732fe083a04d05a7273b7`, the
 revised spec/plan (including the measured 4,384-line baseline and exclusive
-1,250/5,250 controller/aggregate amendment), all commits after it and the
+2,200/6,200 controller/aggregate amendment), all commits after it and the
 uncommitted fault campaign.
 Require explicit closure of the four Critical and four Important findings.
 Fix valid findings with targeted RED/GREEN and request only targeted re-review.
@@ -1549,12 +1588,21 @@ Fix valid findings with targeted RED/GREEN and request only targeted re-review.
 - [ ] **Step 7: Commit executable checkpoint, then run campaign once**
 
 First commit the reviewed runner/schema/tests without a receipt. Record that
-commit as the executable checkpoint. Build the campaign twice in memory for
-byte equality, then execute the cases once. Serialize canonical JSON with one
-trailing LF, strict-load it, and confirm every case status is `PASS`, all
-release authority counters are zero, all fresh-process records are observed,
-and aggregate identity equals the executable checkpoint. Any runtime, schema,
-fixture or test change invalidates the campaign and returns to this step.
+commit as the executable checkpoint. Execute one primary campaign and one
+independent semantic replay inside the fixed runner, then seal a single
+canonical JSON receipt with one trailing LF. Strict-load it without executing
+any probe and confirm every primary case status is `PASS`, both executions'
+release authority counters are zero, all required primary fresh-process records
+are observed, ordered semantic hashes match, and aggregate identity equals the
+executable checkpoint. The receipt is canonical but is not required to equal a
+new ceremony's bytes because its primary exact OS identities are facts. Any
+runtime, schema, fixture or test change invalidates the campaign and returns to
+this step.
+For this pre-manifest validation, compute the expected receipt SHA-256 directly
+from the just-produced exact bytes and pass it explicitly to the strict loader.
+Task 12 must then copy that exact digest into the immutable build manifest and
+release regression; no caller-derived digest is accepted by production
+consumers after release freeze.
 
 ```bash
 git add src/crypto_quant/challenger_replacement_private_fault_matrix.py \
@@ -1584,7 +1632,7 @@ git commit -m "test: freeze v0.77 private fault evidence"
 
 Require every v0.75-v0.77 requirement to map to exact code/test/artifact; exact
 v0.76 released identity; package/manifest versions; fault receipt binding; all
-amended component caps and the ≤5,250 exact aggregate; secret/endpoint/static
+amended component caps and the ≤6,200 exact aggregate; secret/endpoint/static
 authority scans; and the exact non-activation conclusion.
 
 - [ ] **Step 2: Write ADR/status/dossier and refresh manifest once**
