@@ -50,6 +50,13 @@ must be positive and bound to ETHUSDT and the opportunity. This is exact
 replay evidence, not a claim that a public response is cryptographically
 authenticated beyond the fixed TLS endpoint and released query boundary.
 
+The only permitted ancillary balance is an unlocked BNB fee reserve from zero
+through `0.001 BNB`; locked BNB, a larger BNB balance, or any nonzero unlisted
+asset fails preflight and the final capital snapshot. The reserve is not
+strategy gross exposure, but its captured mark and full balance are included
+in wallet/equity accounting. A BNB commission consumes that pre-existing
+reserve and is converted to USDT exactly once.
+
 ## 4. Time and crash recovery
 
 Each signed request gets a distinct durable server-time observation. A
@@ -63,6 +70,13 @@ evidence. Only a proven-absent result permits superseding the unsent prepared
 request with a new timestamp. SENT_STARTED or UNKNOWN is never superseded and
 remains query-first. The old prepared record stays immutable and the
 supersession event binds both identities.
+
+This binding applies independently to the main economic order, protective-stop
+create, emergency flatten and flat-position stop cleanup. Every prepared record
+binds its own server-time response hash; a prepared-unsent replacement also
+binds the old request id/hash/timestamp/time hash and the query that proved the
+old deterministic venue identity absent. Stop-replacement cancellation binds
+the fresh server-time evidence used for that one mutating request.
 
 ## 5. Protective stop and emergency flatten
 

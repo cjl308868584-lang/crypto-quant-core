@@ -7,10 +7,9 @@ import os
 from pathlib import Path
 
 from .challenger_replacement_binance_private_lifecycle import (
-    build_binance_order_intent_from_opportunity, prepare_binance_order_attempt,
+    build_binance_order_intent_from_opportunity,
 )
 from .challenger_replacement_binance_private_runtime import (
-    _Context, _emergency_flatten, _query, _runtime_projection,
     run_challenger_replacement_binance_private_intent,
 )
 from .challenger_replacement_binance_credential import (
@@ -284,47 +283,18 @@ def run_fixed_binance_emergency_stop(opportunity_id):
             state = installed["state"]
             try:
                 slot = state.replay()["opportunities"][opportunity_id]
+                private = slot["private"]
+                if (private.get("product") != "PERPETUAL"
+                        or private.get("action") != "OPEN_SHORT"):
+                    raise ValueError
                 intent = build_binance_order_intent_from_opportunity(
                     slot=slot, activation=activation, attempt_ordinal=1,
                 )
-                observed_at = _now()
-                preflight_document = preflight.load(
-                    activation=activation,
-                    credential_identity=credential.identity, now=observed_at,
-                )
-                projection = _runtime_projection(state)
-                private = state.replay()["opportunities"][
-                    opportunity_id
-                ]["private"]
-                if isinstance(private.get("emergency_flatten"), dict):
-                    projection = {
-                        **projection,
-                        "unresolved_client_order_ids": [
-                            private["venue_client_order_id"]
-                        ],
-                    }
-                attempt = prepare_binance_order_attempt(
-                    intent=intent, projection=projection,
-                    preflight=preflight_document, activation=activation,
-                )
-                if (private.get("product") != "PERPETUAL"
-                        or private.get("action") != "OPEN_SHORT"
-                        or (private.get("stage") in {
-                            "BINANCE_INTENT_AUTHORIZED",
-                            "BINANCE_ABSENCE_CHECKED",
-                            "BINANCE_SIGNED_REQUEST_PREPARED",
-                        } and not isinstance(
-                            private.get("emergency_flatten"), dict))):
-                    raise ValueError
-                context = _Context(
-                    state, attempt, credential, activation,
-                    installed["build_identity"], observed_at, 0,
-                )
-                position = _query(
-                    "FUTURES_POSITION", {"symbol": "ETHUSDT"}, context,
-                ).body
-                return _emergency_flatten(
-                    state, attempt, position, context,
+                return run_challenger_replacement_binance_private_intent(
+                    state=state, event_root=installed["event_root"],
+                    intent=intent, preflight_capability=preflight,
+                    activation=activation, credential=credential,
+                    build_identity=installed["build_identity"],
                 )
             except BinanceE0OrchestrationError:
                 raise

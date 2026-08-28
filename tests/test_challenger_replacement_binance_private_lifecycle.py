@@ -545,6 +545,18 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
         self.assertIs(first["reduce_only"], True)
         self.assertIs(first["send_permitted"], False)
         self.assertRegex(first["venue_client_order_id"], r"^cq77[0-9a-f]{32}$")
+        remainder = prepare_binance_emergency_flatten(
+            signed_position="-0.025", intent_identity=identity,
+            reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+            generation=2,
+        )
+        self.assertNotEqual(
+            remainder["emergency_intent_id"], first["emergency_intent_id"],
+        )
+        self.assertNotEqual(
+            remainder["venue_client_order_id"],
+            first["venue_client_order_id"],
+        )
 
     def test_emergency_flatten_rejects_flat_long_or_arbitrary_reason(self):
         identity = {

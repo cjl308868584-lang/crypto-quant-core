@@ -504,7 +504,7 @@ def prepare_binance_protective_stop(*, short_quantity, trigger_price,
         "send_permitted": False,
     }
 def prepare_binance_emergency_flatten(*, signed_position, intent_identity,
-                                      reason_code):
+                                      reason_code, generation=1):
     """Derive the sole reduce-only close for unprotected short exposure."""
     keys = frozenset({"plan_hash", "block_id", "intent_id"})
     try:
@@ -513,6 +513,9 @@ def prepare_binance_emergency_flatten(*, signed_position, intent_identity,
                 or not _hash(intent_identity["plan_hash"])
                 or not _identity(intent_identity["block_id"])
                 or not _identity(intent_identity["intent_id"])
+                or isinstance(generation, bool)
+                or not isinstance(generation, int)
+                or not 1 <= generation <= 100
                 or reason_code
                 != "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP"):
             raise ValueError
@@ -526,6 +529,7 @@ def prepare_binance_emergency_flatten(*, signed_position, intent_identity,
         canonical_json({
             "protected_intent_id": intent_identity["intent_id"],
             "quantity": quantity, "reason_code": reason_code,
+            "generation": generation,
         }).encode()
     ).hexdigest()
     client_id = derive_binance_client_order_id(

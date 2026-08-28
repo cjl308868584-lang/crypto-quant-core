@@ -311,7 +311,7 @@ class BinanceReconciliationTests(unittest.TestCase):
             "product": "SPOT", "signed_quantity": "0.025",
             "average_entry_price_or_null": "2000", "realized_pnl": "0",
             "unrealized_pnl": "0", "cumulative_fee": "0.0108",
-            "funding": "0", "wallet_balance": "159.9892",
+            "funding": "0", "wallet_balance": "100.5892",
             "available_balance": "50", "open_order_count": 0,
             "protective_stop_client_id_or_null": None, "fill_ids": [301],
         }
@@ -322,7 +322,7 @@ class BinanceReconciliationTests(unittest.TestCase):
         balances = {item["asset"]: item for item in account["balances"]}
         balances["ETH"]["free"] = "0.025"
         balances["USDT"]["free"] = "50"
-        account["balances"].append({"asset": "BNB", "free": "0.099982", "locked": "0"})
+        account["balances"].append({"asset": "BNB", "free": "0.000982", "locked": "0"})
         order = self.body({
             "symbol": "ETHUSDT", "orderId": 101,
             "clientOrderId": "cq77" + "6" * 32, "price": "0",
@@ -343,7 +343,14 @@ class BinanceReconciliationTests(unittest.TestCase):
                               "client_order_id": "cq77" + "6" * 32},
             authorized_stop_or_null=None, order_documents=(order,),
             trade_documents=(trade,), account_document=self.body(account),
-            position_document=self.spot_market(BNB="600"),
+            position_document=self.body({
+                "symbol": "ETHUSDT", "mark_price": "2000",
+                "ask_price": "2001",
+                "asset_marks_usdt": {
+                    "ETH": "2000", "USDT": "1", "BNB": "600",
+                },
+                "fee_asset_balances": {"BNB": "0.000982"},
+            }),
             income_documents=(), algo_documents=(),
             capture_publications=self.publications,
         )

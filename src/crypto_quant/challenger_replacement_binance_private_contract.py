@@ -353,11 +353,28 @@ def _apply_emergency_flatten(private, event_type, payload, event):
                 != emergency["venue_client_order_id"]):
             _invalid()
         if event_type == "BINANCE_EMERGENCY_FLATTEN_SIGNED_REQUEST_PREPARED":
+            if not _nested_prepared_binding_valid(
+                    private, emergency, payload,
+                    emergency.get("query_response_sha256")):
+                _invalid()
             emergency.update(
                 request_id=payload["request_id"],
                 request_sha256=payload["request_sha256"],
                 request_timestamp_ms=payload["timestamp_ms"],
+                request_server_time_response_sha256=payload[
+                    "server_time_response_sha256"
+                ],
+                absence_response_sha256=payload[
+                    "absence_response_sha256"
+                ],
+                superseded_request_id=payload[
+                    "superseded_request_id_or_null"
+                ],
             )
+        elif event_type == "BINANCE_EMERGENCY_FLATTEN_ABSENCE_CHECKED":
+            emergency["query_response_sha256"] = payload[
+                "query_response_sha256"
+            ]
         elif event_type == "BINANCE_EMERGENCY_FLATTEN_SEND_STARTED":
             if payload["request_id"] != emergency.get("request_id"):
                 _invalid()
@@ -427,6 +444,30 @@ def _stop_target(stop, stage):
     if isinstance(candidate, dict) and candidate.get("stage") == stage:
         return candidate
     return None
+def _nested_prepared_binding_valid(private, target, payload,
+                                   absence_response_sha256):
+    time_evidence = private.get("server_time_evidence")
+    prior = (
+        target.get("request_id"), target.get("request_sha256"),
+        target.get("request_timestamp_ms"),
+        target.get("request_server_time_response_sha256"),
+    )
+    claimed = tuple(payload.get(name) for name in (
+        "superseded_request_id_or_null",
+        "superseded_request_sha256_or_null",
+        "superseded_timestamp_ms_or_null",
+        "superseded_server_time_response_sha256_or_null",
+    ))
+    return all((
+        isinstance(time_evidence, dict),
+        payload.get("server_time_response_sha256")
+        == time_evidence.get("response_sha256"),
+        (absence_response_sha256 is None
+         or payload.get("absence_response_sha256")
+         == absence_response_sha256),
+        claimed == prior,
+        prior[0] is None or payload.get("request_id") != prior[0],
+    ))
 _STOP_CHAIN = {
     "BINANCE_STOP_ABSENCE_CHECKED": (
         ("BINANCE_STOP_INTENT_AUTHORIZED",
@@ -460,6 +501,10 @@ def _advance_stop(stop, private, event_type, payload):
                   or payload.get("protected_intent_id") == private["intent_id"]))
     if event_type == "BINANCE_STOP_REQUEST_SEND_STARTED":
         valid = valid and payload.get("request_id") == target.get("request_id")
+    elif event_type == "BINANCE_STOP_SIGNED_REQUEST_PREPARED":
+        valid = valid and _nested_prepared_binding_valid(
+            private, target, payload, target.get("query_response_sha256"),
+        )
     elif event_type == "BINANCE_STOP_RECONCILED":
         valid = valid and all((
             payload.get("status") == "BINANCE_PROTECTIVE_STOP_VERIFIED",
@@ -472,6 +517,16 @@ def _advance_stop(stop, private, event_type, payload):
     updates = {name: payload[name] for name in copied}
     if "timestamp_ms" in updates:
         updates["request_timestamp_ms"] = updates.pop("timestamp_ms")
+    if event_type == "BINANCE_STOP_SIGNED_REQUEST_PREPARED":
+        updates.update(
+            request_server_time_response_sha256=payload[
+                "server_time_response_sha256"
+            ],
+            absence_response_sha256=payload["absence_response_sha256"],
+            superseded_request_id=payload[
+                "superseded_request_id_or_null"
+            ],
+        )
     target.update(stage=event_type, **updates)
 def _apply_stop_transition(private, event_type, payload, event):
     stop = private.get("stop")
@@ -513,12 +568,19 @@ def _apply_stop_transition(private, event_type, payload, event):
             if cleanup["stage"] not in {
                     "BINANCE_STOP_CLEANUP_AUTHORIZED",
                     "BINANCE_STOP_CLEANUP_REQUEST_PREPARED",
-            }:
+            } or not _nested_prepared_binding_valid(
+                    private, cleanup, payload, None):
                 _invalid()
             cleanup.update(
                 stage=event_type, request_id=payload["request_id"],
                 request_sha256=payload["request_sha256"],
                 request_timestamp_ms=payload["timestamp_ms"],
+                request_server_time_response_sha256=payload[
+                    "server_time_response_sha256"
+                ],
+                superseded_request_id=payload[
+                    "superseded_request_id_or_null"
+                ],
                 query_response_sha256=payload["query_response_sha256"],
                 algo_id=payload["algo_id"],
             )
@@ -592,7 +654,11 @@ def _apply_stop_transition(private, event_type, payload, event):
         valid = (isinstance(candidate, dict)
                  and candidate.get("stage") == "BINANCE_STOP_RECONCILED"
                  and replacement.get("stage") == "BINANCE_STOP_REPLACEMENT_STARTED"
-                 and payload["protected_intent_id"] == private["intent_id"])
+                 and payload["protected_intent_id"] == private["intent_id"]
+                 and payload["server_time_response_sha256"]
+                 == private.get("server_time_evidence", {}).get(
+                     "response_sha256"
+                 ))
         if (not valid or any(payload[name] != source[key]
                 for name, source, key in (
                     ("old_client_algo_id", stop, "client_algo_id"),
@@ -601,7 +667,11 @@ def _apply_stop_transition(private, event_type, payload, event):
                     ("new_client_algo_id", replacement, "new_client_algo_id")))):
             _invalid()
         replacement.update(stage=event_type, request_id=payload["request_id"],
-            request_sha256=payload["request_sha256"], request_timestamp_ms=payload["timestamp_ms"])
+            request_sha256=payload["request_sha256"],
+            request_timestamp_ms=payload["timestamp_ms"],
+            request_server_time_response_sha256=payload[
+                "server_time_response_sha256"
+            ])
     elif event_type == "BINANCE_STOP_REPLACEMENT_SUCCEEDED":
         replacement = stop.get("replacement") if isinstance(stop, dict) else None
         candidate = replacement.get("candidate") if isinstance(replacement, dict) else None

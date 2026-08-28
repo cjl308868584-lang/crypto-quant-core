@@ -22,7 +22,9 @@ Files: reconciliation, runtime capture builder, fixtures and tests.
 1. RED: BNB/base/quote commissions, missing conversion mark, nonzero Spot
    unrealized PnL and same-bytes replay.
 2. Add closed captured mark map and exact fee conversion.
-3. Derive wallet/equity/unrealized values from trusted balances and mark.
+3. Permit only a bounded unlocked `0..0.001 BNB` fee reserve; capture its
+   balance/mark and derive wallet/equity/unrealized values from trusted balances
+   without treating the reserve as strategy exposure.
 4. Run reconciliation/runtime adjacent tests and commit.
 
 ## Task 3 — Per-action server time and prepared supersession
@@ -32,8 +34,8 @@ Files: private protocol/runtime/event contract and tests.
 1. RED: two signed actions currently share one timestamp; prepared-unsent retry
    cannot safely refresh; UNKNOWN must remain no-resend.
 2. Persist one time observation per signed action and add the minimal closed
-   unsent supersession transition binding the old request id after proven
-   absence.
+   unsent supersession binding for main, stop, emergency and cleanup requests:
+   old request id/hash/timestamp/time hash plus the exact absence query.
 3. Preserve all existing SENT_STARTED/UNKNOWN idempotency.
 4. Run protocol/runtime/event/fault focused tests and commit.
 

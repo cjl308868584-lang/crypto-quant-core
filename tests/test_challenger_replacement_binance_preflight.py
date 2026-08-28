@@ -217,6 +217,26 @@ class BinanceAccountPreflightTests(unittest.TestCase):
                 self.assertEqual(self._reason(fixture),
                                  "BINANCE_ACCOUNT_PREFLIGHT_NOT_FLAT")
 
+    def test_only_bounded_unlocked_bnb_fee_reserve_is_flat(self):
+        allowed = deepcopy(self.fixture)
+        allowed["SPOT_ACCOUNT"]["balances"].append({
+            "asset": "BNB", "free": "0.001", "locked": "0",
+        })
+        self.assertEqual(
+            json.loads(self._evaluate(allowed))["status"],
+            "BINANCE_ACCOUNT_PREFLIGHT_VERIFIED_FLAT",
+        )
+        for free, locked in (("0.00100001", "0"), ("0.001", "0.0001")):
+            blocked = deepcopy(self.fixture)
+            blocked["SPOT_ACCOUNT"]["balances"].append({
+                "asset": "BNB", "free": free, "locked": locked,
+            })
+            with self.subTest(free=free, locked=locked):
+                self.assertEqual(
+                    self._reason(blocked),
+                    "BINANCE_ACCOUNT_PREFLIGHT_NOT_FLAT",
+                )
+
     def test_missing_extra_duplicate_or_nonbytes_input_is_invalid(self):
         missing = self._responses(); missing.pop("SPOT_ACCOUNT")
         extra = self._responses(); extra["UNKNOWN"] = b"{}"

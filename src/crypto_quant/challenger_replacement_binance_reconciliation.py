@@ -146,17 +146,29 @@ def _array_document(data):
 def _spot_market(data):
     try:
         value = _document(data)
-        if frozenset(value) != {"symbol", "mark_price", "ask_price", "asset_marks_usdt"} or value["symbol"] != "ETHUSDT" or not isinstance(value["asset_marks_usdt"], dict): raise ValueError
+        keys = {"symbol", "mark_price", "ask_price", "asset_marks_usdt"}
+        if (frozenset(value) not in {frozenset(keys),
+                                    frozenset(keys | {"fee_asset_balances"})}
+                or value["symbol"] != "ETHUSDT"
+                or not isinstance(value["asset_marks_usdt"], dict)
+                or not isinstance(value.get("fee_asset_balances", {}), dict)):
+            raise ValueError
         mark, ask = _number(value["mark_price"], positive=True), _number(value["ask_price"], positive=True)
         marks = {asset: _number(price, positive=True) for asset, price in value["asset_marks_usdt"].items()
                  if isinstance(asset, str) and asset}
         if len(marks) != len(value["asset_marks_usdt"]) or marks.get("USDT") != 1 or marks.get("ETH") != mark: raise ValueError
-        return mark, ask, marks
+        balances = {asset: _number(amount) for asset, amount in
+                    value.get("fee_asset_balances", {}).items()
+                    if asset == "BNB"}
+        if (len(balances) != len(value.get("fee_asset_balances", {}))
+                or balances.get("BNB", Decimal(0)) > Decimal("0.001")):
+            raise ValueError
+        return mark, ask, marks, balances
     except (KeyError, TypeError, ValueError) as error:
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)
 def _spot_venue(event, orders, trades, account, position, incomes, algos, previous, order_auth):
     if incomes or algos: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
-    mark, _ask, marks = _spot_market(position)
+    mark, _ask, marks, _fee_balances = _spot_market(position)
     order_values = [_normalize_spot_order(value) for value in
                     _unique(orders, "orderId", "BINANCE_RECONCILIATION_CONFLICTING_ORDER")]
     if len(order_values) != 1: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")

@@ -198,10 +198,22 @@ def _load_capital_snapshot(data):
                 raise ValueError
         account = _document(raw["spot_account"])
         balances = account["balances"]
-        eth = [item for item in balances if item.get("asset") == "ETH"]
-        if len(eth) != 1:
+        parsed_balances = {}
+        for item in balances:
+            asset = item.get("asset")
+            if (not isinstance(asset, str) or asset in parsed_balances):
+                raise ValueError
+            free, locked = Decimal(item["free"]), Decimal(item["locked"])
+            if free < 0 or locked < 0:
+                raise ValueError
+            if (asset == "BNB" and (free > Decimal("0.001") or locked != 0)
+                    or asset not in {"ETH", "USDT", "BNB"}
+                    and (free != 0 or locked != 0)):
+                raise ValueError
+            parsed_balances[asset] = free + locked
+        if not {"ETH", "USDT"}.issubset(parsed_balances):
             raise ValueError
-        spot_quantity = Decimal(eth[0]["free"]) + Decimal(eth[0]["locked"])
+        spot_quantity = parsed_balances["ETH"]
         positions = _document(raw["futures_position"], list)
         matching = [item for item in positions
                     if item.get("symbol") == "ETHUSDT"
@@ -242,6 +254,20 @@ def _fresh_context(state, attempt, credential, activation, build_identity,
         )
     except (AttributeError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_SERVER_TIME_INVALID", error)
+def _nested_request_binding(context, previous, absence_response_sha256):
+    prior = previous if isinstance(previous, Mapping) else {}
+    payload = {
+        "server_time_response_sha256": context.server_time_response_sha256,
+        "superseded_request_id_or_null": prior.get("request_id"),
+        "superseded_request_sha256_or_null": prior.get("request_sha256"),
+        "superseded_timestamp_ms_or_null": prior.get("request_timestamp_ms"),
+        "superseded_server_time_response_sha256_or_null": prior.get(
+            "request_server_time_response_sha256"
+        ),
+    }
+    if absence_response_sha256 is not None:
+        payload["absence_response_sha256"] = absence_response_sha256
+    return payload
 def _runtime_projection(state):
     projection = state._replay()
     active = None
@@ -642,7 +668,7 @@ def _spot_facts(state, attempt, activation, *, market, previous_reconciliation_b
               if event_type == "BINANCE_FILL_OBSERVED"] if fills is None else fills)
     quantity = sum((Decimal(item["quantity"]) for item in fills), Decimal(0))
     quote = sum((Decimal(item["quote_quantity"]) for item in fills), Decimal(0))
-    mark, _ask, marks = _spot_market(market)
+    mark, _ask, marks, fee_balances = _spot_market(market)
     try:
         fee = sum((Decimal(item["fee"]) * marks[item["fee_asset"]]
                    for item in fills), Decimal(0))
@@ -656,6 +682,15 @@ def _spot_facts(state, attempt, activation, *, market, previous_reconciliation_b
     prior_realized = Decimal("0" if previous is None else previous["realized_pnl"])
     prior_fee = Decimal("0" if previous is None else previous["cumulative_fee"])
     prior_wallet = Decimal(activation.capital_usdt if previous is None else previous["wallet_balance"])
+    if previous is None:
+        prior_wallet += sum(
+            ((amount + sum((Decimal(item["fee"])
+                            for item in fills
+                            if item["fee_asset"] == asset), Decimal(0)))
+             * marks[asset]
+             for asset, amount in fee_balances.items()),
+            Decimal(0),
+        )
     prior_available = Decimal(activation.capital_usdt if previous is None else previous["available_balance"])
     prior_fills = [] if previous is None else list(previous["fill_ids"])
     if attempt["action"] == "OPEN_LONG":
@@ -707,13 +742,14 @@ def _finish_spot(state, attempt, activation, order, trades, account,
         state, attempt, activation, order_documents=(order,),
         trade_documents=trades, account_document=account,
         position_document=_spot_market_document(
-            state, attempt, fee_assets=fee_assets,
+            state, attempt, fee_assets=fee_assets, account=account,
         ), income_documents=(), algo_documents=(),
         previous=previous, stop=None,
     ), recorded_at)
     data, required, client = _reconcile_captured(state, attempt, activation, recorded_at)
     return _publish_reconciliation(state, attempt, data, required, client, recorded_at)
-def _spot_market_document(state, attempt, *, fee_assets=frozenset()):
+def _spot_market_document(state, attempt, *, fee_assets=frozenset(),
+                          account=None):
     try:
         if attempt["opportunity_id"] not in state.replay()["opportunities"]:
             raise ValueError
@@ -729,6 +765,7 @@ def _spot_market_document(state, attempt, *, fee_assets=frozenset()):
                 or not fee_assets.issubset({"ETH", "USDT", "BNB"})):
             raise ValueError
         marks = {"ETH": mark, "USDT": "1"}
+        fee_balances = {}
         if "BNB" in fee_assets:
             ticker = _document(_public_market_query(
                 "SPOT_BOOK_TICKER", {"symbol": "BNBUSDT"},
@@ -739,8 +776,18 @@ def _spot_market_document(state, attempt, *, fee_assets=frozenset()):
             if Decimal(bnb_ask) <= 0:
                 raise ValueError
             marks["BNB"] = bnb_ask
+            account_value = _document(account)
+            matches = [value for value in account_value["balances"]
+                       if value.get("asset") == "BNB"]
+            if len(matches) != 1 or Decimal(matches[0]["locked"]) != 0:
+                raise ValueError
+            balance = canonical_decimal(Decimal(matches[0]["free"]))
+            if not 0 <= Decimal(balance) <= Decimal("0.001"):
+                raise ValueError
+            fee_balances["BNB"] = balance
         return canonical_json({"symbol": "ETHUSDT", "mark_price": mark,
-            "ask_price": ask, "asset_marks_usdt": marks}).encode()
+            "ask_price": ask, "asset_marks_usdt": marks,
+            "fee_asset_balances": fee_balances}).encode()
     except (KeyError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID", error)
 def _expected_stop(state, attempt):
@@ -838,6 +885,7 @@ def _create_stop(state, attempt, position, context, stop):
         "request_id": request.request_id,
         "request_sha256": hashlib.sha256(request.encoded_parameters).hexdigest(),
         "timestamp_ms": context.timestamp_ms,
+        **_nested_request_binding(context, None, query.response_sha256),
     }, context.recorded_at)
     _enforce_send_capital(
         request, context, reduce_only_limit=stop["quantity"],
@@ -883,7 +931,8 @@ def _finish_stop_replacement(state, attempt, position, context):
             "old_client_algo_id": old["client_algo_id"], "new_client_algo_id": candidate["client_algo_id"],
             "request_id": request.request_id,
             "request_sha256": hashlib.sha256(request.encoded_parameters).hexdigest(),
-            "timestamp_ms": context.timestamp_ms}
+            "timestamp_ms": context.timestamp_ms,
+            "server_time_response_sha256": context.server_time_response_sha256}
         _append(state, "BINANCE_STOP_REPLACEMENT_CANCEL_SEND_STARTED",
                 attempt["opportunity_id"], cancel, context.recorded_at)
         result = _execute(request, context)
@@ -999,6 +1048,7 @@ def _emergency_flatten(state, attempt, position, context):
                 "intent_id": attempt["intent_id"],
             },
             reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+            generation=(1 if current is None else current["generation"]),
         )
     except (KeyError, TypeError, ValueError) as error:
         _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP", error)
@@ -1027,6 +1077,9 @@ def _emergency_flatten(state, attempt, position, context):
             "BINANCE_EMERGENCY_FLATTEN_AUTHORIZED",
             "BINANCE_EMERGENCY_FLATTEN_SIGNED_REQUEST_PREPARED",
     }:
+        superseded = (dict(current) if current["stage"]
+                      == "BINANCE_EMERGENCY_FLATTEN_SIGNED_REQUEST_PREPARED"
+                      else None)
         context = _renew(context)
         observed = _execute(_request(
             "FUTURES_ORDER_QUERY", emergency, context.timestamp_ms,
@@ -1057,6 +1110,9 @@ def _emergency_flatten(state, attempt, position, context):
             request_sha256=hashlib.sha256(
                 request.encoded_parameters
             ).hexdigest(), timestamp_ms=context.timestamp_ms,
+            **_nested_request_binding(
+                context, superseded, current["query_response_sha256"],
+            ),
         )
         _enforce_send_capital(
             request, context, reduce_only_limit=emergency["quantity"],
@@ -1111,6 +1167,7 @@ def _emergency_flatten(state, attempt, position, context):
                 "intent_id": attempt["intent_id"],
             },
             reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+            generation=current["generation"] + 1,
         )
         _append_intent(
             state, attempt,
@@ -1303,6 +1360,9 @@ def _cleanup_perpetual_stop(state, attempt, previous, context):
                 request_sha256=hashlib.sha256(
                     request.encoded_parameters
                 ).hexdigest(), timestamp_ms=context.timestamp_ms,
+                **_nested_request_binding(
+                    context, None, None,
+                ),
             )
             prepared_now = True
         else:
@@ -1316,6 +1376,7 @@ def _cleanup_perpetual_stop(state, attempt, previous, context):
             attempt["opportunity_id"]
         ]["private"]["stop_cleanup"]
     if cleanup["stage"] == "BINANCE_STOP_CLEANUP_REQUEST_PREPARED":
+        superseded_cleanup = dict(cleanup)
         old_request = _stop_request(
             "FUTURES_ALGO_CANCEL", {"client_algo_id": client},
             cleanup["request_timestamp_ms"],
@@ -1359,6 +1420,9 @@ def _cleanup_perpetual_stop(state, attempt, previous, context):
                 request_sha256=hashlib.sha256(
                     request.encoded_parameters
                 ).hexdigest(), timestamp_ms=context.timestamp_ms,
+                **_nested_request_binding(
+                    context, superseded_cleanup, None,
+                ),
             )
         _append_intent(
             state, attempt, "BINANCE_STOP_CLEANUP_SEND_STARTED",
@@ -1422,6 +1486,7 @@ def _resume_stop(state, attempt, private, context, *, stop=None,
     if position_bytes is None:
         position_bytes = _query("FUTURES_POSITION", {"symbol": "ETHUSDT"}, context).body
     if current["stage"] == "BINANCE_STOP_SIGNED_REQUEST_PREPARED":
+        superseded_stop = dict(current)
         old_request = _stop_request(
             "FUTURES_ALGO_CREATE", stop, current["request_timestamp_ms"],
         )
@@ -1455,6 +1520,9 @@ def _resume_stop(state, attempt, private, context, *, stop=None,
                 request.encoded_parameters
             ).hexdigest(),
             "timestamp_ms": context.timestamp_ms,
+            **_nested_request_binding(
+                context, superseded_stop, absence.response_sha256,
+            ),
         }, context.recorded_at)
         _enforce_send_capital(
             request, context, reduce_only_limit=stop["quantity"],
