@@ -766,7 +766,20 @@ def _spot_market_document(state, attempt, *, fee_assets=frozenset(),
             raise ValueError
         marks = {"ETH": mark, "USDT": "1"}
         fee_balances = {}
-        if "BNB" in fee_assets:
+        account_value = ({"balances": []} if account is None
+                         else _document(account))
+        matches = [value for value in account_value["balances"]
+                   if value.get("asset") == "BNB"]
+        if len(matches) > 1 or "BNB" in fee_assets and len(matches) != 1:
+            raise ValueError
+        balance = "0"
+        if matches:
+            if Decimal(matches[0]["locked"]) != 0:
+                raise ValueError
+            balance = canonical_decimal(Decimal(matches[0]["free"]))
+            if not 0 <= Decimal(balance) <= Decimal("0.001"):
+                raise ValueError
+        if "BNB" in fee_assets or Decimal(balance) != 0:
             ticker = _document(_public_market_query(
                 "SPOT_BOOK_TICKER", {"symbol": "BNBUSDT"},
             ))
@@ -776,14 +789,6 @@ def _spot_market_document(state, attempt, *, fee_assets=frozenset(),
             if Decimal(bnb_ask) <= 0:
                 raise ValueError
             marks["BNB"] = bnb_ask
-            account_value = _document(account)
-            matches = [value for value in account_value["balances"]
-                       if value.get("asset") == "BNB"]
-            if len(matches) != 1 or Decimal(matches[0]["locked"]) != 0:
-                raise ValueError
-            balance = canonical_decimal(Decimal(matches[0]["free"]))
-            if not 0 <= Decimal(balance) <= Decimal("0.001"):
-                raise ValueError
             fee_balances["BNB"] = balance
         return canonical_json({"symbol": "ETHUSDT", "mark_price": mark,
             "ask_price": ask, "asset_marks_usdt": marks,

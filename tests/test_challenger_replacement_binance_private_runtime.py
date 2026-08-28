@@ -624,6 +624,32 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         self.assertEqual(market["asset_marks_usdt"]["BNB"], "601")
         self.assertEqual(market["fee_asset_balances"]["BNB"], "0.000982")
 
+    def test_bnb_reserve_is_captured_when_current_fee_asset_is_usdt(self):
+        eth = b'{"symbol":"ETHUSDT","bidPrice":"2499","askPrice":"2501"}'
+        bnb = b'{"symbol":"BNBUSDT","bidPrice":"600","askPrice":"601"}'
+        account = canonical_json({
+            "balances": [
+                {"asset": "ETH", "free": "0.025", "locked": "0"},
+                {"asset": "USDT", "free": "50", "locked": "0"},
+                {"asset": "BNB", "free": "0.001", "locked": "0"},
+            ],
+        }).encode()
+        with patch.object(
+            private_runtime, "_public_market_query", side_effect=(eth, bnb),
+        ) as query:
+            market = json.loads(private_runtime._spot_market_document(
+                self.state,
+                {"opportunity_id": self.workspace.opportunity_id},
+                fee_assets={"USDT"}, account=account,
+            ))
+        self.assertEqual(
+            [call.args for call in query.call_args_list],
+            [("SPOT_BOOK_TICKER", {"symbol": "ETHUSDT"}),
+             ("SPOT_BOOK_TICKER", {"symbol": "BNBUSDT"})],
+        )
+        self.assertEqual(market["asset_marks_usdt"]["BNB"], "601")
+        self.assertEqual(market["fee_asset_balances"]["BNB"], "0.001")
+
     def _observe_opportunity(self):
         self.workspace.observe(self.state)
 
@@ -969,6 +995,43 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
         self.assertEqual(facts["wallet_balance"], "100.5892")
         self.assertEqual(facts["cumulative_fee"], "0.0108")
+
+    def test_first_spot_usdt_fee_still_includes_bnb_reserve_equity(self):
+        opportunity_id = self.workspace.opportunity_id
+        fill = {
+            "trade_id": 301, "order_id": 401, "quantity": "0.025",
+            "price": "2000", "quote_quantity": "50",
+            "fee": "0.02", "fee_asset": "USDT",
+        }
+
+        class Event:
+            final_bytes = canonical_json({
+                "slot_id": opportunity_id,
+                "event_type": "BINANCE_FILL_OBSERVED",
+                "payload_bytes_base64": base64.b64encode(
+                    canonical_json(fill).encode()
+                ).decode(),
+            }).encode()
+
+        class State:
+            def _replay(self_nonlocal):
+                return {"events": [Event()]}
+
+        facts = _spot_facts(
+            State(), {"opportunity_id": opportunity_id,
+                      "action": "OPEN_LONG"},
+            self.activation,
+            market=canonical_json({
+                "symbol": "ETHUSDT", "mark_price": "2000",
+                "ask_price": "2001",
+                "asset_marks_usdt": {
+                    "ETH": "2000", "USDT": "1", "BNB": "600",
+                },
+                "fee_asset_balances": {"BNB": "0.001"},
+            }).encode(),
+        )
+        self.assertEqual(facts["wallet_balance"], "100.58")
+        self.assertEqual(facts["cumulative_fee"], "0.02")
 
     def _futures_stop(self, quantity="0.025"):
         return prepare_binance_protective_stop(
