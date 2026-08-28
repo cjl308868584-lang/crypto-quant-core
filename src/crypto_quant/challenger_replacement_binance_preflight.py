@@ -113,8 +113,13 @@ def _require_spot_flat(document):
         seen.add(balance["asset"])
         free, locked = _number(balance["free"]), _number(balance["locked"])
         if free < 0 or locked < 0: _fail("BINANCE_ACCOUNT_PREFLIGHT_INPUT_INVALID")
-        if ((balance["asset"] != "USDT" and (free != 0 or locked != 0))
-                or (balance["asset"] == "USDT" and locked != 0)):
+        fee_reserve = (balance["asset"] == "BNB"
+                       and 0 <= free <= Decimal("0.001")
+                       and locked == 0)
+        if ((balance["asset"] not in {"USDT", "BNB"}
+             and (free != 0 or locked != 0))
+                or (balance["asset"] == "USDT" and locked != 0)
+                or (balance["asset"] == "BNB" and not fee_reserve)):
             _fail("BINANCE_ACCOUNT_PREFLIGHT_NOT_FLAT")
     if not {"ETH", "USDT"}.issubset(seen) or document["SPOT_OPEN_ORDERS"] != []:
         _fail("BINANCE_ACCOUNT_PREFLIGHT_NOT_FLAT")

@@ -255,7 +255,7 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.78.0`。从早期研究、Paper 调度与证据治理，到 replacement Challenger 的 DecisionOpportunity、公开模拟、Binance 私有适配、对账和分级 Canary 控制，均以版本化合同、严格 loader 与失败关闭测试绑定。当前里程碑仅为 `V3_SIMULATION_ACTIVATION_TRUST_CHAIN_CODE_RELEASED_NOT_INSTALLED`；完整验证仍必须提供 Artifact 之外的 trusted attestation hash，self-hash 不能自证来源可信。
+Git中的设计基线已冻结，当前代码版本为 `0.78.1`。从早期研究、Paper 调度与证据治理，到 replacement Challenger 的 DecisionOpportunity、公开模拟、Binance 私有适配、对账和分级 Canary 控制，均以版本化合同、严格 loader 与失败关闭测试绑定。当前里程碑仅为 `BINANCE_E0_CODE_COMPLETE_NOT_ACTIVATED`；完整验证仍必须提供 Artifact 之外的 trusted attestation hash，self-hash 不能自证来源可信。
 
 当前58个Catalog算法中有26个Estimator可执行，其余32个明确Fail-Closed。公开历史归档的结构化请求只能访问ETHUSDT/BTCUSDT的allowlisted数据族；生产transport只执行无凭据GET，必须在解压前通过官方checksum，并将来源、质量和快照绑定到哈希。真实smoke已验证2026-07-25 ETHUSDT Spot daily 4h归档，但全部事后归档固定为`ARCHIVE_REPLAY_ONLY`：URL不是Artifact身份，也不能证明历史决策时点的数据可用性。Fee Schedule因产品、账户层级、折扣和生效期而独立冻结，不能从行情或当前网页费率反填历史。
 
@@ -446,7 +446,7 @@ receipt 纵向闭环。它仅是
 `V3_SIMULATION_ACTIVATION_TRUST_CHAIN_CODE_RELEASED_NOT_INSTALLED`：System Paper is
 non-blocking，no v0.79 activation-code split；本版本未执行 renderer、preflight
 网络请求、安装、bootstrap、runtime 或 start receipt。详细完成度见
-[实施追踪 v0.78.0](docs/implementation-status-v0.78.0.md)，启动步骤见
+[实施追踪 v0.78.1](docs/implementation-status-v0.78.1.md)，启动步骤见
 [replacement v3 simulation activation runbook](docs/runbooks/challenger-replacement-v3-simulation-activation.md)，
 工程裁决见[ADR-0078](docs/adr/0078-v3-simulation-activation-trust-chain.md)。
 

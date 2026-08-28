@@ -39,11 +39,25 @@ def fixture_capture_publications():
 
 
 class BinanceReconciliationTests(unittest.TestCase):
+    def test_natural_order_venue_array_is_accepted(self):
+        self.assertEqual(
+            reconciliation_module._array_document(
+                b'[ {"positionAmt":"-0.1", "symbol":"ETHUSDT"} ]'
+            ),
+            [{"positionAmt": "-0.1", "symbol": "ETHUSDT"}],
+        )
+
     CLIENT = "cq77" + "1" * 32
 
     @staticmethod
     def body(value):
         return canonical_json(value).encode("utf-8")
+
+    def spot_market(self, *, mark="2000", ask="2001", **asset_marks):
+        return self.body({
+            "symbol": "ETHUSDT", "mark_price": mark, "ask_price": ask,
+            "asset_marks_usdt": {"ETH": mark, "USDT": "1", **asset_marks},
+        })
 
     def setUp(self):
         self.publications = fixture_capture_publications()
@@ -156,8 +170,8 @@ class BinanceReconciliationTests(unittest.TestCase):
         facts = {
             "product": "SPOT", "signed_quantity": "0.001",
             "average_entry_price_or_null": "2000", "realized_pnl": "0",
-            "unrealized_pnl": "0", "cumulative_fee": "0.002",
-            "funding": "0", "wallet_balance": "99.998",
+            "unrealized_pnl": "0.1", "cumulative_fee": "0.002",
+            "funding": "0", "wallet_balance": "100.098",
             "available_balance": "97.998", "open_order_count": 0,
             "protective_stop_client_id_or_null": None, "fill_ids": [301],
         }
@@ -168,27 +182,34 @@ class BinanceReconciliationTests(unittest.TestCase):
         balances = {item["asset"]: item for item in account["balances"]}
         balances["ETH"]["free"] = "0.001"
         balances["USDT"]["free"] = "97.998"
-        order = self.body({
+        order = json.dumps({
             "symbol": "ETHUSDT", "orderId": 101,
+            "orderListId": -1,
             "clientOrderId": "cq77" + "6" * 32, "price": "0",
             "origQty": "0.001", "executedQty": "0.001",
             "cummulativeQuoteQty": "2", "status": "FILLED",
             "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
-            "transactTime": 1787832000000,
-        })
-        trade = self.body({
+            "time": 1787832000000, "updateTime": 1787832000001,
+            "workingTime": 1787832000000, "isWorking": True,
+            "stopPrice": "0", "icebergQty": "0", "origQuoteOrderQty": "0",
+            "selfTradePreventionMode": "EXPIRE_MAKER",
+        }, indent=2).encode()
+        trade = json.dumps({
             "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+            "orderListId": -1,
             "qty": "0.001", "price": "2000", "quoteQty": "2",
             "commission": "0.002", "commissionAsset": "USDT",
             "time": 1787832000001, "isBuyer": True,
-        })
+            "isMaker": False, "isBestMatch": True,
+        }, indent=2).encode()
         data = reconcile_binance_private_state(
             event_projection=facts, ledger_projection=facts,
             authorized_order={"order_id": 101,
                               "client_order_id": "cq77" + "6" * 32},
             authorized_stop_or_null=None,
             order_documents=(order,), trade_documents=(trade,),
-            account_document=self.body(account), position_document=b"[]",
+            account_document=self.body(account),
+            position_document=self.spot_market(mark="2100", ask="2101"),
             income_documents=(), algo_documents=(),
             capture_publications=self.publications,
         )
@@ -203,8 +224,8 @@ class BinanceReconciliationTests(unittest.TestCase):
         previous_facts = {
             "product": "SPOT", "signed_quantity": "0.001",
             "average_entry_price_or_null": "2000", "realized_pnl": "0",
-            "unrealized_pnl": "0", "cumulative_fee": "0.002",
-            "funding": "0", "wallet_balance": "99.998",
+            "unrealized_pnl": "0.1", "cumulative_fee": "0.002",
+            "funding": "0", "wallet_balance": "100.098",
             "available_balance": "97.998", "open_order_count": 0,
             "protective_stop_client_id_or_null": None, "fill_ids": [301],
         }
@@ -235,7 +256,8 @@ class BinanceReconciliationTests(unittest.TestCase):
                               "client_order_id": "cq77" + "6" * 32},
             authorized_stop_or_null=None,
             order_documents=(open_order,), trade_documents=(open_trade,),
-            account_document=self.body(account), position_document=b"[]",
+            account_document=self.body(account),
+            position_document=self.spot_market(mark="2100", ask="2101"),
             income_documents=(), algo_documents=(),
             capture_publications=self.publications,
         )
@@ -271,7 +293,8 @@ class BinanceReconciliationTests(unittest.TestCase):
                               "client_order_id": "cq77" + "7" * 32},
             authorized_stop_or_null=None,
             order_documents=(close_order,), trade_documents=(close_trade,),
-            account_document=self.body(account), position_document=b"[]",
+            account_document=self.body(account),
+            position_document=self.spot_market(mark="2100", ask="2101"),
             income_documents=(), algo_documents=(),
             previous_reconciliation_bytes_or_null=previous,
             capture_publications=self.publications,
@@ -282,6 +305,69 @@ class BinanceReconciliationTests(unittest.TestCase):
             )),
             final,
         )
+
+    def test_spot_bnb_fee_is_converted_by_captured_mark(self):
+        facts = {
+            "product": "SPOT", "signed_quantity": "0.025",
+            "average_entry_price_or_null": "2000", "realized_pnl": "0",
+            "unrealized_pnl": "0", "cumulative_fee": "0.0108",
+            "funding": "0", "wallet_balance": "100.5892",
+            "available_balance": "50", "open_order_count": 0,
+            "protective_stop_client_id_or_null": None, "fill_ids": [301],
+        }
+        account = json.loads(resources.files("crypto_quant").joinpath(
+            "fixtures", "challenger-replacement-v077",
+            "account-preflight-flat.json",
+        ).read_text(encoding="utf-8"))["SPOT_ACCOUNT"]
+        balances = {item["asset"]: item for item in account["balances"]}
+        balances["ETH"]["free"] = "0.025"
+        balances["USDT"]["free"] = "50"
+        account["balances"].append({"asset": "BNB", "free": "0.000982", "locked": "0"})
+        order = self.body({
+            "symbol": "ETHUSDT", "orderId": 101,
+            "clientOrderId": "cq77" + "6" * 32, "price": "0",
+            "origQty": "0.025", "executedQty": "0.025",
+            "cummulativeQuoteQty": "50", "status": "FILLED",
+            "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
+            "transactTime": 1787832000000,
+        })
+        trade = self.body({
+            "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+            "qty": "0.025", "price": "2000", "quoteQty": "50",
+            "commission": "0.000018", "commissionAsset": "BNB",
+            "time": 1787832000001, "isBuyer": True,
+        })
+        data = reconcile_binance_private_state(
+            event_projection=facts, ledger_projection=facts,
+            authorized_order={"order_id": 101,
+                              "client_order_id": "cq77" + "6" * 32},
+            authorized_stop_or_null=None, order_documents=(order,),
+            trade_documents=(trade,), account_document=self.body(account),
+            position_document=self.body({
+                "symbol": "ETHUSDT", "mark_price": "2000",
+                "ask_price": "2001",
+                "asset_marks_usdt": {
+                    "ETH": "2000", "USDT": "1", "BNB": "600",
+                },
+                "fee_asset_balances": {"BNB": "0.000982"},
+            }),
+            income_documents=(), algo_documents=(),
+            capture_publications=self.publications,
+        )
+        self.assertEqual(load_binance_reconciliation_bytes(data)[
+            "venue_projection"]["cumulative_fee"], "0.0108")
+        with self.assertRaisesRegex(
+            BinanceReconciliationError, "BINANCE_RECONCILIATION_INPUT_INVALID",
+        ):
+            reconcile_binance_private_state(
+                event_projection=facts, ledger_projection=facts,
+                authorized_order={"order_id": 101,
+                                  "client_order_id": "cq77" + "6" * 32},
+                authorized_stop_or_null=None, order_documents=(order,),
+                trade_documents=(trade,), account_document=self.body(account),
+                position_document=self.spot_market(), income_documents=(),
+                algo_documents=(), capture_publications=self.publications,
+            )
 
     def test_perpetual_close_replays_cumulative_fee_funding_pnl_and_fills(self):
         previous = self.reconcile()
@@ -490,9 +576,8 @@ class BinanceReconciliationTests(unittest.TestCase):
             ):
                 self.reconcile(**changes)
 
-    def test_noncanonical_duplicate_key_extra_and_float_fail_before_projection(self):
+    def test_duplicate_key_extra_and_float_fail_before_projection(self):
         bad = (
-            self.account + b"\n",
             b'{"totalWalletBalance":"100","totalWalletBalance":"100"}',
             self.body({**json.loads(self.account), "extra": True}),
             b'{"totalWalletBalance":100.0,"availableBalance":"99"}',

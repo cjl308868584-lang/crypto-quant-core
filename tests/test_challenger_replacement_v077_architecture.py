@@ -20,6 +20,10 @@ ORDER_RUNTIME = (
     "challenger_replacement_binance_reconciliation.py",
     "challenger_replacement_binance_private_runtime.py",
 )
+E0_ORCHESTRATION = (
+    "challenger_replacement_binance_e0_cli.py",
+    "challenger_replacement_binance_e0_orchestration.py",
+)
 CONTROLLERS = (
     "challenger_replacement_canary_controller.py",
     "challenger_replacement_private_fault_matrix.py",
@@ -83,9 +87,12 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
         groups = {
             "protocol_transport": (PROTOCOL_TRANSPORT, 600),
             "credential": (CREDENTIAL, 220),
-            "preflight": (PREFLIGHT, 380),
-            "private_projection": (PRIVATE_PROJECTION, 700),
-            "order_runtime": (ORDER_RUNTIME, 2100),
+            # v0.78.1 preserves the v0.77 component groups while explicitly
+            # budgeting reviewed Binance-only recovery/accounting additions.
+            "preflight": (PREFLIGHT, 390),
+            "private_projection": (PRIVATE_PROJECTION, 950),
+            "order_runtime": (ORDER_RUNTIME, 3000),
+            "e0_orchestration": (E0_ORCHESTRATION, 400),
             "controllers": (
                 tuple(name for name in CONTROLLERS if (ROOT / name).is_file()),
                 2200,
@@ -93,7 +100,7 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
         }
         mandatory = (
             PROTOCOL_TRANSPORT + CREDENTIAL + PREFLIGHT
-            + PRIVATE_PROJECTION + ORDER_RUNTIME
+            + PRIVATE_PROJECTION + ORDER_RUNTIME + E0_ORCHESTRATION
         )
         self.assertTrue(all((ROOT / name).is_file() for name in mandatory))
         self.assertTrue(all((REPOSITORY / name).is_file()
@@ -145,7 +152,7 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
             + added_lines(*OPPORTUNITY_PROJECTION)
             + added_lines(*EVENT_STORAGE)
             + delivery_lines,
-            6200,
+            7700,
         )
 
 

@@ -176,6 +176,7 @@ class BinancePrivateProtocolTests(unittest.TestCase):
         parameters = {
             "SPOT_SERVER_TIME": {},
             "SPOT_EXCHANGE_INFO": {"symbol": "ETHUSDT"},
+            "SPOT_BOOK_TICKER": {"symbol": "ETHUSDT"},
             "FUTURES_SERVER_TIME": {},
             "FUTURES_EXCHANGE_INFO": {},
             "FUTURES_MARK_PRICE": {"symbol": "ETHUSDT"},

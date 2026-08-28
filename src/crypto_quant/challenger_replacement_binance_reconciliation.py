@@ -5,7 +5,7 @@ import hashlib, json, stat
 from types import MappingProxyType
 from typing import Mapping
 from .canonical import canonical_decimal, canonical_json
-from .challenger_replacement_binance_private_lifecycle import _FUTURES_ORDER_KEYS, _SPOT_ORDER_KEYS, _SPOT_TRADE_KEYS, _document, _number, _strict_pairs
+from .challenger_replacement_binance_private_lifecycle import _FUTURES_ORDER_KEYS, _SPOT_ORDER_KEYS, _SPOT_TRADE_KEYS, _document, _normalize_spot_order, _normalize_spot_trade, _number, _strict_pairs
 from .challenger_replacement_binance_preflight import _FUTURES_ACCOUNT_KEYS, _FUTURES_ASSET_KEYS, _POSITION_KEYS, _SPOT_KEYS
 from .challenger_replacement_events import ChallengerReplacementEventRoot, _read_final
 _FACT_KEYS = frozenset({"product", "signed_quantity", "average_entry_price_or_null",
@@ -135,14 +135,42 @@ def _unique(documents, key, conflict):
 def _array_document(data):
     try:
         if not isinstance(data, bytes) or not 1 <= len(data) <= 1_048_576: raise ValueError
-        value = json.loads(data.decode("utf-8"), object_pairs_hook=_strict_pairs)
-        if not isinstance(value, list) or canonical_json(value).encode() != data: raise ValueError
+        value = json.loads(
+            data.decode("utf-8"), object_pairs_hook=_strict_pairs,
+            parse_float=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
+        if not isinstance(value, list): raise ValueError
         return value
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)
+def _spot_market(data):
+    try:
+        value = _document(data)
+        keys = {"symbol", "mark_price", "ask_price", "asset_marks_usdt"}
+        if (frozenset(value) not in {frozenset(keys),
+                                    frozenset(keys | {"fee_asset_balances"})}
+                or value["symbol"] != "ETHUSDT"
+                or not isinstance(value["asset_marks_usdt"], dict)
+                or not isinstance(value.get("fee_asset_balances", {}), dict)):
+            raise ValueError
+        mark, ask = _number(value["mark_price"], positive=True), _number(value["ask_price"], positive=True)
+        marks = {asset: _number(price, positive=True) for asset, price in value["asset_marks_usdt"].items()
+                 if isinstance(asset, str) and asset}
+        if len(marks) != len(value["asset_marks_usdt"]) or marks.get("USDT") != 1 or marks.get("ETH") != mark: raise ValueError
+        balances = {asset: _number(amount) for asset, amount in
+                    value.get("fee_asset_balances", {}).items()
+                    if asset == "BNB"}
+        if (len(balances) != len(value.get("fee_asset_balances", {}))
+                or balances.get("BNB", Decimal(0)) > Decimal("0.001")):
+            raise ValueError
+        return mark, ask, marks, balances
+    except (KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)
 def _spot_venue(event, orders, trades, account, position, incomes, algos, previous, order_auth):
-    if position != b"[]" or incomes or algos: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
-    order_values = _unique(orders, "orderId", "BINANCE_RECONCILIATION_CONFLICTING_ORDER")
+    if incomes or algos: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+    mark, _ask, marks, _fee_balances = _spot_market(position)
+    order_values = [_normalize_spot_order(value) for value in
+                    _unique(orders, "orderId", "BINANCE_RECONCILIATION_CONFLICTING_ORDER")]
     if len(order_values) != 1: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
     order = order_values[0]
     if (frozenset(order) != _SPOT_ORDER_KEYS or order["symbol"] != "ETHUSDT"
@@ -153,18 +181,21 @@ def _spot_venue(event, orders, trades, account, position, incomes, algos, previo
                 "NEW", "PARTIALLY_FILLED", "FILLED", "CANCELED", "EXPIRED",
             }):
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
-    trade_values = _unique(trades, "id", "BINANCE_RECONCILIATION_CONFLICTING_FILL")
-    quantity = quote = fee = Decimal("0")
+    trade_values = [_normalize_spot_trade(value) for value in
+                    _unique(trades, "id", "BINANCE_RECONCILIATION_CONFLICTING_FILL")]
+    quantity = quote = fee = base_fee = Decimal("0")
     for trade in trade_values:
         if (frozenset(trade) != _SPOT_TRADE_KEYS
                 or trade["symbol"] != "ETHUSDT"
                 or trade["orderId"] != order["orderId"]
-                or trade["commissionAsset"] != "USDT"
                 or trade["isBuyer"] is not (order["side"] == "BUY")):
             _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
         item_quantity = _number(trade["qty"], positive=True); item_price = _number(trade["price"], positive=True); item_quote = _number(trade["quoteQty"])
         if item_quote != item_quantity * item_price: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
-        quantity += item_quantity; quote += item_quote; fee += _number(trade["commission"])
+        asset, commission = trade["commissionAsset"], _number(trade["commission"])
+        if not isinstance(asset, str) or asset not in marks: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+        quantity += item_quantity; quote += item_quote; fee += commission * marks[asset]
+        if asset == "ETH": base_fee += commission
     if (_number(order["executedQty"]) != quantity
             or _number(order["cummulativeQuoteQty"]) != quote):
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
@@ -186,21 +217,26 @@ def _spot_venue(event, orders, trades, account, position, incomes, algos, previo
     prior_fee = Decimal("0") if previous is None else Decimal(previous["cumulative_fee"])
     prior_fills = [] if previous is None else previous["fill_ids"]
     if order["side"] == "BUY":
-        expected_signed = prior_signed + quantity
+        expected_signed = prior_signed + quantity - base_fee
         average = None if expected_signed == 0 else (prior_signed * (prior_average or Decimal("0")) + quote) / expected_signed
         realized = prior_realized
     else:
-        if prior_average is None or quantity > prior_signed: _fail("VENUE_LOCAL_POSITION_MISMATCH")
-        expected_signed = prior_signed - quantity
+        if prior_average is None or quantity + base_fee > prior_signed: _fail("VENUE_LOCAL_POSITION_MISMATCH")
+        expected_signed = prior_signed - quantity - base_fee
         average = None if expected_signed == 0 else prior_average
-        realized = prior_realized + quote - quantity * prior_average
+        realized = prior_realized + quote - (quantity + base_fee) * prior_average
     if signed != expected_signed: _fail("VENUE_LOCAL_POSITION_MISMATCH")
     available = balances["USDT"][0]
-    wallet = sum(balances["USDT"]) + signed * (average or Decimal("0"))
+    wallet = Decimal("0")
+    for asset, amounts in balances.items():
+        total = sum(amounts)
+        if total and asset not in marks: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
+        wallet += total * marks.get(asset, Decimal("0"))
+    unrealized = Decimal("0") if average is None else signed * (mark - average)
     return {
         "product": "SPOT", "signed_quantity": canonical_decimal(signed),
         "average_entry_price_or_null": None if average is None else canonical_decimal(average), "realized_pnl": canonical_decimal(realized),
-        "unrealized_pnl": "0",
+        "unrealized_pnl": canonical_decimal(unrealized),
         "cumulative_fee": canonical_decimal(prior_fee + fee), "funding": "0",
         "wallet_balance": canonical_decimal(wallet),
         "available_balance": canonical_decimal(available),

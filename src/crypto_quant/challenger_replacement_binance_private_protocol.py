@@ -18,12 +18,14 @@ _RECV_WINDOW_MS = "5000"
 _UNSIGNED_ENDPOINTS = frozenset({
     "SPOT_SERVER_TIME",
     "SPOT_EXCHANGE_INFO",
+    "SPOT_BOOK_TICKER",
     "FUTURES_SERVER_TIME",
     "FUTURES_EXCHANGE_INFO",
     "FUTURES_MARK_PRICE",
 })
 _PARAMETER_NAMES = {
     "SPOT_SERVER_TIME": "", "SPOT_EXCHANGE_INFO": "symbol",
+    "SPOT_BOOK_TICKER": "symbol",
     "FUTURES_SERVER_TIME": "", "FUTURES_EXCHANGE_INFO": "",
     "FUTURES_MARK_PRICE": "symbol", "API_RESTRICTIONS": "",
     "API_TRADING_STATUS": "", "SPOT_ACCOUNT": "",
@@ -131,7 +133,10 @@ def _positive_decimal(value):
         return False
     return normalized == value and normalized != "0" and not normalized.startswith("-")
 def _values_valid(endpoint_id, parameters):
-    if "symbol" in parameters and parameters["symbol"] != "ETHUSDT":
+    allowed_symbols = ({"ETHUSDT", "BNBUSDT"}
+                       if endpoint_id == "SPOT_BOOK_TICKER"
+                       else {"ETHUSDT"})
+    if "symbol" in parameters and parameters["symbol"] not in allowed_symbols:
         return False
     for name in ("origClientOrderId", "newClientOrderId", "clientAlgoId"):
         if name in parameters and not _venue_id_valid(parameters[name]):

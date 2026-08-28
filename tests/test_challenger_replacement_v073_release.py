@@ -15,10 +15,10 @@ class V073ReleaseTests(unittest.TestCase):
     def test_versions_manifest_and_candidate_inventory_are_exact(self):
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.78\.0"$',
+            r'(?m)^version = "0\.78\.1"$',
         )
         self.assertRegex(
-            (ROOT / "setup.py").read_text(), r'version="0\.78\.0"'
+            (ROOT / "setup.py").read_text(), r'version="0\.78\.1"'
         )
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
@@ -29,7 +29,7 @@ class V073ReleaseTests(unittest.TestCase):
                 manifest["package_version"],
                 manifest["manifest_version"],
             ),
-            ("0.78.0", "0.78.0", "1.72.0"),
+            ("0.78.1", "0.78.1", "1.73.0"),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {
@@ -63,8 +63,8 @@ class V073ReleaseTests(unittest.TestCase):
 
     def test_readme_points_to_current_status_and_keeps_nonclaims(self):
         readme = (ROOT / "README.md").read_text()
-        self.assertIn("当前代码版本为 `0.78.0`", readme)
-        self.assertIn("实施追踪 v0.78.0", readme)
+        self.assertIn("当前代码版本为 `0.78.1`", readme)
+        self.assertIn("实施追踪 v0.78.1", readme)
         self.assertIn("90 天最终经济阈值仍须未来单独预注册", readme)
 
 

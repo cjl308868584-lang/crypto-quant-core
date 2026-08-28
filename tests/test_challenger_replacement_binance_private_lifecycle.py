@@ -14,6 +14,7 @@ from crypto_quant.challenger_replacement_binance_private_lifecycle import (
     apply_binance_order_observation,
     build_binance_order_intent_from_opportunity,
     derive_binance_client_order_id,
+    prepare_binance_emergency_flatten,
     prepare_binance_order_attempt,
 )
 from tests.challenger_replacement_v077_private_fixtures import (
@@ -367,10 +368,10 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
                 account=account,
             )
 
-    def test_noncanonical_duplicate_or_extra_documents_fail_closed(self):
+    def test_duplicate_or_wrong_type_documents_fail_closed(self):
         attempt = self.prepare()
         order = self.spot_order(attempt)
-        for bad in (order + b"\n", b'{"status":"NEW","status":"NEW"}', b"[]"):
+        for bad in (b'{"status":"NEW","status":"NEW"}', b"[]"):
             with self.subTest(bad=bad):
                 with self.assertRaisesRegex(
                     BinancePrivateLifecycleError,
@@ -477,6 +478,106 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
                 "payload": event["payload"],
             }
             self.assertEqual(list(validator.iter_errors(envelope)), [])
+
+    def test_official_natural_spot_query_and_my_trades_are_normalized(self):
+        attempt = self.prepare()
+        order = ('''{
+          "symbol":"ETHUSDT", "orderId":101, "orderListId":-1,
+          "clientOrderId":"%s", "price":"0.00000000",
+          "origQty":"0.02500000", "executedQty":"0.02500000",
+          "cummulativeQuoteQty":"50.00000000", "status":"FILLED",
+          "timeInForce":"GTC", "type":"MARKET", "side":"BUY",
+          "stopPrice":"0.00000000", "icebergQty":"0.00000000",
+          "time":1787832000000, "updateTime":1787832000001,
+          "isWorking":true, "workingTime":1787832000000,
+          "origQuoteOrderQty":"0.00000000",
+          "selfTradePreventionMode":"EXPIRE_MAKER"
+        }''' % attempt["venue_client_order_id"]).encode()
+        trade = b'''{
+          "symbol":"ETHUSDT", "id":301, "orderId":101,
+          "orderListId":-1, "price":"2000.00000000", "qty":"0.02500000",
+          "quoteQty":"50.00000000", "commission":"0.00001800",
+          "commissionAsset":"BNB", "time":1787832000002,
+          "isBuyer":true, "isMaker":false, "isBestMatch":true
+        }'''
+        events = apply_binance_order_observation(
+            attempt=attempt, order=order, trades=(trade,),
+            account=self.spot_account(eth="0.025", usdt="50"),
+        )
+        fill = next(item for item in events
+                    if item["event_type"] == "BINANCE_FILL_OBSERVED")
+        self.assertEqual(fill["payload"]["fee_asset"], "BNB")
+        self.assertEqual(events[-1]["event_type"], "BINANCE_ORDER_FILLED")
+
+    def test_external_json_duplicate_key_remains_rejected(self):
+        attempt = self.prepare()
+        order = self.spot_order(attempt).replace(
+            b'"symbol":"ETHUSDT"',
+            b'"symbol":"ETHUSDT","symbol":"ETHUSDT"',
+        )
+        with self.assertRaisesRegex(
+            BinancePrivateLifecycleError, "BINANCE_ORDER_OBSERVATION_INVALID",
+        ):
+            apply_binance_order_observation(
+                attempt=attempt, order=order, trades=(),
+                account=self.spot_account(),
+            )
+
+    def test_emergency_flatten_is_fixed_reduce_only_and_deterministic(self):
+        identity = {
+            "plan_hash": self.PLAN_HASH,
+            "block_id": self.BLOCK_ID,
+            "intent_id": self.INTENT_ID,
+        }
+        first = prepare_binance_emergency_flatten(
+            signed_position="-0.025", intent_identity=identity,
+            reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+        )
+        second = prepare_binance_emergency_flatten(
+            signed_position="-0.025", intent_identity=identity,
+            reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(first["product"], "PERPETUAL")
+        self.assertEqual(first["action"], "CLOSE_SHORT")
+        self.assertEqual(first["side"], "BUY")
+        self.assertEqual(first["quantity"], "0.025")
+        self.assertIs(first["reduce_only"], True)
+        self.assertIs(first["send_permitted"], False)
+        self.assertRegex(first["venue_client_order_id"], r"^cq77[0-9a-f]{32}$")
+        remainder = prepare_binance_emergency_flatten(
+            signed_position="-0.025", intent_identity=identity,
+            reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+            generation=2,
+        )
+        self.assertNotEqual(
+            remainder["emergency_intent_id"], first["emergency_intent_id"],
+        )
+        self.assertNotEqual(
+            remainder["venue_client_order_id"],
+            first["venue_client_order_id"],
+        )
+
+    def test_emergency_flatten_rejects_flat_long_or_arbitrary_reason(self):
+        identity = {
+            "plan_hash": self.PLAN_HASH,
+            "block_id": self.BLOCK_ID,
+            "intent_id": self.INTENT_ID,
+        }
+        for position, reason in (
+            ("0", "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP"),
+            ("0.025", "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP"),
+            ("-0.025", "ARBITRARY"),
+        ):
+            with self.subTest(position=position, reason=reason), \
+                    self.assertRaisesRegex(
+                        BinancePrivateLifecycleError,
+                        "BINANCE_EMERGENCY_FLATTEN_INTENT_INVALID",
+                    ):
+                prepare_binance_emergency_flatten(
+                    signed_position=position, intent_identity=identity,
+                    reason_code=reason,
+                )
 
 
 if __name__ == "__main__":

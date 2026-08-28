@@ -167,8 +167,14 @@ class BinanceProtectiveStopTests(unittest.TestCase):
 
     def test_noncanonical_duplicate_extra_and_invalid_prepare_fail_closed(self):
         expected = self.prepare()
+        self.assertEqual(
+            reconcile_binance_protective_stop(
+                position=self.position(),
+                algo_order=self.algo(expected) + b"\n", expected=expected,
+            )["status"],
+            "BINANCE_PROTECTIVE_STOP_VERIFIED",
+        )
         bad_documents = (
-            self.algo(expected) + b"\n",
             b'{"algoId":1,"algoId":1}',
             self.body({**json.loads(self.algo(expected)), "extra": True}),
         )

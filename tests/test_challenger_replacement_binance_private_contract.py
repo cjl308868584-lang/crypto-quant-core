@@ -34,6 +34,7 @@ class BinancePrivateEndpointContractTests(unittest.TestCase):
         expected = {
             "SPOT_SERVER_TIME": ("api.binance.com", "GET", "/api/v3/time", False),
             "SPOT_EXCHANGE_INFO": ("api.binance.com", "GET", "/api/v3/exchangeInfo", False),
+            "SPOT_BOOK_TICKER": ("api.binance.com", "GET", "/api/v3/ticker/bookTicker", False),
             "FUTURES_SERVER_TIME": ("fapi.binance.com", "GET", "/fapi/v1/time", False),
             "FUTURES_EXCHANGE_INFO": ("fapi.binance.com", "GET", "/fapi/v1/exchangeInfo", False),
             "FUTURES_MARK_PRICE": ("fapi.binance.com", "GET", "/fapi/v1/premiumIndex", False),
@@ -320,6 +321,27 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             payload=payload,
             expected_last_event_hash=projection["last_event_hash"],
         )
+
+    def _append_server_time(self, intent_id, digest):
+        self._append_private("BINANCE_SERVER_TIME_OBSERVED", {
+            "intent_id": intent_id, "product": "PERPETUAL",
+            "local_before_ms": 1787832000000,
+            "server_time_ms": 1787832000000,
+            "local_after_ms": 1787832000000,
+            "midpoint_ms": 1787832000000, "skew_ms": 0,
+            "response_sha256": digest,
+        })
+
+    @staticmethod
+    def _prepared_binding(time_digest, absence_digest):
+        return {
+            "server_time_response_sha256": time_digest,
+            "absence_response_sha256": absence_digest,
+            "superseded_request_id_or_null": None,
+            "superseded_request_sha256_or_null": None,
+            "superseded_timestamp_ms_or_null": None,
+            "superseded_server_time_response_sha256_or_null": None,
+        }
 
     @staticmethod
     def _reconciliation_bytes():
@@ -659,10 +681,12 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "client_algo_id": client, "query_response_sha256": "d" * 64,
             "proven_absent": True,
         })
+        self._append_server_time(intent["intent_id"], "a" * 64)
         self._append_private("BINANCE_STOP_SIGNED_REQUEST_PREPARED", {
             "protected_intent_id": intent["intent_id"],
             "client_algo_id": client, "request_id": stop_request_id,
             "request_sha256": "e" * 64, "timestamp_ms": 1787832000000,
+            **self._prepared_binding("a" * 64, "d" * 64),
         })
         self._append_private("BINANCE_STOP_REQUEST_SEND_STARTED", {
             "protected_intent_id": intent["intent_id"],
@@ -733,10 +757,12 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "client_algo_id": new_client, "query_response_sha256": "0" * 64,
             "proven_absent": True,
         })
+        self._append_server_time(intent["intent_id"], "4" * 64)
         self._append_private("BINANCE_STOP_SIGNED_REQUEST_PREPARED", {
             "protected_intent_id": intent["intent_id"],
             "client_algo_id": new_client, "request_id": request_id,
             "request_sha256": "1" * 64, "timestamp_ms": 1787832000000,
+            **self._prepared_binding("4" * 64, "0" * 64),
         })
         self._append_private("BINANCE_STOP_REQUEST_SEND_STARTED", {
             "protected_intent_id": intent["intent_id"],
@@ -752,6 +778,7 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "algo_id": 902, "quantity": "0.02", "trigger_price": "2029",
         })
         cancel_request_id = "binance_private_request_" + "2" * 64
+        self._append_server_time(intent["intent_id"], "5" * 64)
         self._append_private(
             "BINANCE_STOP_REPLACEMENT_CANCEL_SEND_STARTED", {
                 "protected_intent_id": intent["intent_id"],
@@ -760,6 +787,7 @@ class BinancePrivateEventContractTests(unittest.TestCase):
                 "request_id": cancel_request_id,
                 "request_sha256": "3" * 64,
                 "timestamp_ms": 1787832000000,
+                "server_time_response_sha256": "5" * 64,
             },
         )
         self._append_private("BINANCE_STOP_REPLACEMENT_SUCCEEDED", {
@@ -823,11 +851,24 @@ class BinancePrivateEventContractTests(unittest.TestCase):
                 "intent_id": intent_id, "client_algo_id": client,
                 "prior_reconciliation_id": "binance_reconciliation_" + "b" * 64,
             }),
+            ("BINANCE_SERVER_TIME_OBSERVED", {
+                "intent_id": intent_id, "product": "PERPETUAL",
+                "local_before_ms": 1787832000000,
+                "server_time_ms": 1787832000000,
+                "local_after_ms": 1787832000000,
+                "midpoint_ms": 1787832000000, "skew_ms": 0,
+                "response_sha256": "a" * 64,
+            }),
             ("BINANCE_STOP_CLEANUP_REQUEST_PREPARED", {
                 "intent_id": intent_id, "client_algo_id": client,
                 "request_id": "binance_private_request_" + "d" * 64,
                 "request_sha256": "e" * 64, "timestamp_ms": 1787832000000,
                 "query_response_sha256": "c" * 64, "algo_id": 901,
+                "server_time_response_sha256": "a" * 64,
+                "superseded_request_id_or_null": None,
+                "superseded_request_sha256_or_null": None,
+                "superseded_timestamp_ms_or_null": None,
+                "superseded_server_time_response_sha256_or_null": None,
             }),
             ("BINANCE_STOP_CLEANUP_SEND_STARTED", {
                 "intent_id": intent_id, "client_algo_id": client,
@@ -864,6 +905,8 @@ class BinancePrivateEventContractTests(unittest.TestCase):
             "request_id": "binance_private_request_" + "d" * 64,
             "request_sha256": "e" * 64,
             "request_timestamp_ms": 1787832000000,
+            "request_server_time_response_sha256": "a" * 64,
+            "superseded_request_id": None,
             "status": "BINANCE_FLAT_STOP_CLEANED",
         })
 
