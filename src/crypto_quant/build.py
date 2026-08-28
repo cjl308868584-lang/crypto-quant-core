@@ -608,6 +608,17 @@ _V078_RELEASE_PATHS = (
     "vendor/challenger-replacement-v3/wheels/typing_extensions-4.16.0-py3-none-any.whl",
 )
 
+_V0781_RELEASE_PATHS = (
+    "docs/adr/0079-binance-e0-release-blocker-hardening.md",
+    "docs/implementation-status-v0.78.1.md",
+    "docs/runbooks/binance-e0-operations-v0.78.1.md",
+    "docs/superpowers/plans/2026-08-28-binance-e0-release-blocker-hardening.md",
+    "docs/superpowers/specs/2026-08-28-binance-e0-release-blocker-hardening-design.md",
+    "tests/test_challenger_replacement_binance_e0_cli.py",
+    "tests/test_challenger_replacement_binance_e0_orchestration.py",
+    "tests/test_challenger_replacement_v0781_release.py",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -654,6 +665,7 @@ class EvaluatorBuild:
                     + list(_V076_RELEASE_PATHS)
                     + list(_V077_RELEASE_PATHS)
                     + list(_V078_RELEASE_PATHS)
+                    + list(_V0781_RELEASE_PATHS)
                 )
             )
         )
