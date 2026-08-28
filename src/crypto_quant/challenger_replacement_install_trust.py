@@ -1386,7 +1386,17 @@ def _fixed_empty_event_root_identity(paths):
         _close_descriptor(descriptor, primary_error)
 
 
-def _fixed_python_identity(snapshot_root: str):
+def _fixed_python_identity(
+    snapshot_root: str,
+    *,
+    package_version="0.68.0",
+    import_modules=(
+        "crypto_quant.challenger_replacement_installed_runtime_cli",
+        "crypto_quant.challenger_replacement_runtime",
+        "crypto_quant.challenger_replacement_decision",
+        "crypto_quant.challenger_replacement_evidence",
+    ),
+):
     python_path = Path("/usr/bin/python3")
     descriptor = -1
     primary_error = None
@@ -1427,13 +1437,10 @@ def _fixed_python_identity(snapshot_root: str):
         "PYTHONNOUSERSITE": "1",
         "PYTHONPATH": snapshot_root + "/src",
     }
+    imports = ",".join(("crypto_quant",) + tuple(import_modules))
     command = (
         "/usr/bin/python3", "-s", "-c",
-        "import crypto_quant,"
-        "crypto_quant.challenger_replacement_installed_runtime_cli,"
-        "crypto_quant.challenger_replacement_runtime,"
-        "crypto_quant.challenger_replacement_decision,"
-        "crypto_quant.challenger_replacement_evidence,json,sys;"
+        "import " + imports + ",json,sys;"
         "print(json.dumps({"
         "'package_version':crypto_quant.__version__,'sys_version':sys.version},"
         "separators=(',',':'),sort_keys=True))",
@@ -1450,7 +1457,7 @@ def _fixed_python_identity(snapshot_root: str):
     if (
         not isinstance(identity_output, dict)
         or set(identity_output) != {"package_version", "sys_version"}
-        or identity_output["package_version"] != "0.68.0"
+        or identity_output["package_version"] != package_version
         or not isinstance(identity_output["sys_version"], str)
         or not identity_output["sys_version"]
     ):
