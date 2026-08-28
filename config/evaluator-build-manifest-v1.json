@@ -295,7 +295,7 @@
     "docs/superpowers/plans/2026-08-25-replacement-v3-readiness-observer.md": "5e8d27309271cc90dcfe308a36166f8d18f9f9aa111e29a713fb4ee2d9d65231",
     "docs/superpowers/plans/2026-08-26-public-simulation-research-bundle.md": "a3dba9ce6c15731ab19019f6fda00cfc068eafa3ca65824dd9548f4af1e65cac",
     "docs/superpowers/plans/2026-08-27-binance-private-canary-bundle.md": "153f16e1a6483afda4237153f9c4601800a05c3efeaa55ee4d4824102c829865",
-    "docs/superpowers/plans/2026-08-28-binance-e0-release-blocker-hardening.md": "51810a59a2576409372380774fcc81630ca61be634cf5c5961052fbb7c2e1b6b",
+    "docs/superpowers/plans/2026-08-28-binance-e0-release-blocker-hardening.md": "3a7cc747245da3f8d1461966d652fc5e96774eb6f574988a1287b98741cd77c6",
     "docs/superpowers/plans/2026-08-28-v3-simulation-activation-trust-chain.md": "5e818b5d896d60b5d25ed566c6d12ab80b338d755172d3a9674e1c7d1fee4ece",
     "docs/superpowers/specs/2026-08-02-system-paper-wal-scheduler-design.md": "ba7a327bb3d243045b9522796135521adba0c38acf708749220be558c473b549",
     "docs/superpowers/specs/2026-08-03-system-paper-deployment-trust-chain-design.md": "acf72abafc844ac98a7c2e11334d31278a5af626c8b54a2c639fe5e93e0372f8",
@@ -327,7 +327,7 @@
     "docs/superpowers/specs/2026-08-26-public-simulation-research-bundle-design.md": "aad38de7e33c45240cf1d248a43832fc742779609cd26d3f3a0bab331da89533",
     "docs/superpowers/specs/2026-08-27-binance-private-canary-budget-amendment-design.md": "f48568e1552954a858d001f88b00f26552e047e48a9581041ba6c58b87bd1734",
     "docs/superpowers/specs/2026-08-27-binance-private-canary-bundle-design.md": "09187ebd22a91e84180d6df575abf85969efaa0cd56521b694962e573b11b7aa",
-    "docs/superpowers/specs/2026-08-28-binance-e0-release-blocker-hardening-design.md": "a932e77bb77af26448c1fd58ef8395179042c2f6f685bfd8d5c0255a3586e1bc",
+    "docs/superpowers/specs/2026-08-28-binance-e0-release-blocker-hardening-design.md": "dadfffa2ac564f0e6f403b47a5cc75d91729a3593ca636fcb4e57b702ea851a4",
     "docs/superpowers/specs/2026-08-28-v3-simulation-activation-trust-chain-design.md": "0752ddc5d722a76a91bc276c41d31183e1d2c328948dddeaaf845323b45d4035",
     "docs/v1-code-complete-not-activated-dossier.md": "2986194cffcacab850dba3de77bf4bdfa11408d077691ba976dca81e955da127",
     "public_ci/v064/.github/workflows/ci.yml": "1c1d982c31eb348f5568464a7db40d9177bba8202b939ebc7e033a843eac5407",
@@ -448,7 +448,7 @@
     "src/crypto_quant/challenger_replacement_plan_v3_supersession.py": "68e19835a2ddec92ddf538eda2b5dc4de375f43444f18c9617ac08d98377b9b6",
     "src/crypto_quant/challenger_replacement_plan_v3_supersession_cli.py": "145390b1821ad397a602cbc2664b59a6cc3077a12996de34060b70c9c86c66c8",
     "src/crypto_quant/challenger_replacement_preflight.py": "1f47286210eb260f0f20208187a72082c6ecb88483fb3f0ba62c6a6ee92aac74",
-    "src/crypto_quant/challenger_replacement_private_fault_matrix.py": "2249664a00b42a859516e9cd3c8d40db18960edef88eaf729e38b2d4dbba38a8",
+    "src/crypto_quant/challenger_replacement_private_fault_matrix.py": "9bd3ead0e3b1ddfac73482aaefe3af300911fb11b106dd86de55cc3a5cc116de",
     "src/crypto_quant/challenger_replacement_public_http.py": "0513151c3a61e6d133a38488554d45b63916f936ba9787a214f640b239185195",
     "src/crypto_quant/challenger_replacement_public_market_capture.py": "3aa72dc19f65caa9cb7cec9aeb8e9ff287cea901928377b8d07d2fb2e5d4dab5",
     "src/crypto_quant/challenger_replacement_public_simulation.py": "d8a2e8a220b55f843cbe413e3d0411ee671b5ca7f69278173f14560dbe913694",
@@ -719,7 +719,7 @@
     "tests/test_challenger_replacement_binance_private_protocol.py": "4d25886eff6f567c2dfc372c90a9fd14e0bc4c32c0bb4ba543c5ce6bd3f47dda",
     "tests/test_challenger_replacement_binance_private_runtime.py": "e72ddcdfee936e0ac34f0f056748ffc677df388709c9bf762824e52a5588418d",
     "tests/test_challenger_replacement_binance_private_transport.py": "6b2efefa74958a3a9c41e6f94425eba0e5c88188d82bf365a14cfc3772fe02d5",
-    "tests/test_challenger_replacement_binance_protective_stop.py": "3ec593898fceee6d3e0b970544ed6dbef32c101dffc8424a9548039c3278a5f6",
+    "tests/test_challenger_replacement_binance_protective_stop.py": "57db9e32e181dad9e0172b522b6dbc2df4a0513cbdc39ffb7a5b6a068d9f56b3",
     "tests/test_challenger_replacement_binance_reconciliation.py": "54a0e6b1c46e7f752e29a0a4ac15c0eb5f1053af3b99dcc6ee0c751d17fb02c2",
     "tests/test_challenger_replacement_binance_simulation_input.py": "1a1846cac3b79bcd9885f9b3f3dd32a8127d708e3690665f1e49ab11fb12588b",
     "tests/test_challenger_replacement_canary_controller.py": "e970229fc9b6927abc6133c840be5311b0155e98d8c48288a9557d0fd059abf0",
@@ -773,7 +773,7 @@
     "tests/test_challenger_replacement_v074_release.py": "170a3a5d6e92df38d1627c4963ae649c4833a6eba4471ba2214ee98357e06043",
     "tests/test_challenger_replacement_v075_release.py": "566f9797488b44718681840dec71b154604dafadedccf3d4719ff65868d6a80b",
     "tests/test_challenger_replacement_v076_release.py": "def37b2e7c9b0b9836291413592d3af51dacd0474cc8bac855212100e1a50994",
-    "tests/test_challenger_replacement_v077_architecture.py": "b1229eb8d06e31c9e5849bddaf0d58bda017793a4e48dd5012cd14cc7d9ca0a4",
+    "tests/test_challenger_replacement_v077_architecture.py": "c1d97e72ac71fed9043ad5db25fa50cd729e2118b17eea46d278e1050d58de6c",
     "tests/test_challenger_replacement_v077_release.py": "4f2d39a173730d9de006f070ff9af8b6797bfa8d3f3db7ac251f3a973742a9a9",
     "tests/test_challenger_replacement_v0781_release.py": "386a5aae6912be56ada6c0c2c368cb0a59bc5b2b73650baa5ffcaf6619bb05ff",
     "tests/test_challenger_replacement_v078_architecture.py": "c2fbd848d04f911e3041619a167224734746193ad030bc2966c9aea42ead4695",
@@ -833,7 +833,7 @@
     "vendor/challenger-replacement-v3/wheels/rpds_py-0.27.1-cp39-cp39-macosx_11_0_arm64.whl": "1fea2b1a922c47c51fd07d656324531adc787e415c8b116530a1d29c0516c62d",
     "vendor/challenger-replacement-v3/wheels/typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
   },
-  "build_input_tree_hash": "102fad801bea5ac79c506f413f510bdae163bb3ee92670d23d53f19fbea18128",
+  "build_input_tree_hash": "147d4fc2ebd6d435e2ec891e0032298c5af147999e9719d9fcba20856ce09436",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -841,5 +841,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "ef0b05a864c6de8315a7efb7045cbb937226ae97228bfb334410b9fb67126160"
+  "manifest_hash": "f3907b4d56eeb325023fae5b100a4edd4cd72786657641f264970517159873b2"
 }

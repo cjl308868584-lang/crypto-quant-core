@@ -77,7 +77,9 @@ packaging/build inventory, runbook and tests.
 
 ## Task 7 — Release candidate gates
 
-1. Update patch version/build manifest/ADR/status/dependency and runbook text.
+1. Update patch version/build manifest/ADR/status/dependency and runbook text;
+   enforce the frozen `390 / 950 / 3000 / 7700` measured component/aggregate
+   ceilings without changing the v0.77 component grouping.
 2. Independent complete review; fix Critical/Important findings with targeted
    RED/GREEN and targeted rereview.
 3. Run the final affected suite, one full suite, compileall, `make validate` and

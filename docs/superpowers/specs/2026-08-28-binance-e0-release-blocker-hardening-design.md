@@ -149,3 +149,16 @@ and credential paths are fixed by the released contract. Logging is redacted.
   order selectors and no network in the test suite.
 - Focused, adjacent and one final full suite, compileall, `make validate`,
   diff-check and independent review pass before any release action.
+
+## 9. Measured architecture budget amendment
+
+The v0.77 component grouping remains unchanged; v0.78.1 does not use moves or
+unrelated deletions as budget credit. The reviewed Binance-only additions make
+the old preflight/private-projection/order-runtime and aggregate physical-line
+ceilings infeasible without removing required response normalization, crash
+recovery, capital guards or reconciliation evidence. The replacement ceilings
+are therefore frozen at `390`, `950`, `3000` and `7700` respectively. The
+measured final candidate must remain below every ceiling; protocol/transport,
+credential, orchestration, controller and delivery ceilings remain unchanged.
+This amendment does not authorize a generic broker, exchange abstraction,
+scheduler, UI or service framework.

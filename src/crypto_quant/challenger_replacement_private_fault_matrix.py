@@ -618,6 +618,29 @@ def _transport_result(response_class, body, status=200):
     return BinancePrivateTransportResult(response_class,
         None if response_class == "UNKNOWN" else status, body, _digest(body), ())
 
+def _fixture_capital_snapshot():
+    fixture = json.loads(resources.files("crypto_quant").joinpath(
+        "fixtures", "challenger-replacement-v077",
+        "account-preflight-flat.json",
+    ).read_text())
+    time = {"product": "SPOT", "local_before_ms": 1787832000000,
+        "server_time_ms": 1787832000000, "local_after_ms": 1787832000000,
+        "midpoint_ms": 1787832000000, "skew_ms": 0,
+        "response_sha256": "a" * 64}
+    with patch.object(
+            private_runtime, "_capital_private_query", side_effect=(
+                (time, _body(fixture["SPOT_ACCOUNT"])),
+                ({**time, "product": "PERPETUAL",
+                  "response_sha256": "b" * 64},
+                 _body(fixture["FUTURES_POSITION"])),
+            )), patch.object(
+            private_runtime, "_public_market_query", side_effect=(
+                _body({"symbol": "ETHUSDT", "bidPrice": "2000",
+                       "askPrice": "2000"}),
+                _body({"symbol": "ETHUSDT", "markPrice": "2000"}),
+            )):
+        return private_runtime._capital_snapshot_bytes(SimpleNamespace())
+
 def _runtime_call(workspace, authority, responses):
     activation, preflight, credential, intent = authority; calls = []
     response_values = tuple(responses)
@@ -650,10 +673,20 @@ def _runtime_call(workspace, authority, responses):
     def fixed_public(*_args, **_kwargs):
         _authorize_fixture("public_network_requests")
         return public
+    def fixed_market(endpoint_id, _parameters):
+        _authorize_fixture("public_network_requests")
+        if endpoint_id == "SPOT_BOOK_TICKER":
+            return _body({"symbol": "ETHUSDT", "bidPrice": "2000",
+                          "askPrice": "2000"})
+        raise AssertionError("unexpected fixture public market endpoint")
     with patch.object(private_runtime, "_wall_now",
             return_value=datetime(2026, 8, 27, 12, 0, tzinfo=timezone.utc)), \
             patch.object(private_runtime, "open_fixed_public_request", side_effect=fixed_public), \
             patch.object(private_runtime, "execute_binance_private_request", side_effect=transport), \
+            patch.object(private_runtime, "_capital_snapshot_bytes",
+                         return_value=_fixture_capital_snapshot()), \
+            patch.object(private_runtime, "_public_market_query",
+                         side_effect=fixed_market), \
             patch.object(private_runtime, "_reconcile_captured",
                          side_effect=observed_reconciliation), \
             patch.object(private_runtime, "reconcile_binance_protective_stop",

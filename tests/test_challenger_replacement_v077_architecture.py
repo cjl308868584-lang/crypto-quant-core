@@ -87,11 +87,11 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
         groups = {
             "protocol_transport": (PROTOCOL_TRANSPORT, 600),
             "credential": (CREDENTIAL, 220),
-            "preflight": (PREFLIGHT, 380),
-            # v0.78.1 preserves the v0.77 groups while explicitly budgeting
-            # the release-blocker normalization, recovery and capital guards.
-            "private_projection": (PRIVATE_PROJECTION, 800),
-            "order_runtime": (ORDER_RUNTIME, 2700),
+            # v0.78.1 preserves the v0.77 component groups while explicitly
+            # budgeting reviewed Binance-only recovery/accounting additions.
+            "preflight": (PREFLIGHT, 390),
+            "private_projection": (PRIVATE_PROJECTION, 950),
+            "order_runtime": (ORDER_RUNTIME, 3000),
             "e0_orchestration": (E0_ORCHESTRATION, 400),
             "controllers": (
                 tuple(name for name in CONTROLLERS if (ROOT / name).is_file()),
@@ -152,7 +152,7 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
             + added_lines(*OPPORTUNITY_PROJECTION)
             + added_lines(*EVENT_STORAGE)
             + delivery_lines,
-            7200,
+            7700,
         )
 
 
