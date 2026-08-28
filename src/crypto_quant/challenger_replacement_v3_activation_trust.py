@@ -37,7 +37,23 @@ _PREDECESSOR = {
     "peeled_commit": "39a973d51bdc8fc957a65052f4bb5f310a1f72c3",
 }
 _RELEASE = {"tag": "v0.78.0", "package_version": "0.78.0"}
+_DEPENDENCIES = ("attrs", "jsonschema", "jsonschema_specifications", "referencing", "rpds", "typing_extensions")
+_DEPENDENCY_VERSIONS = {
+    "attrs": ("attrs", "26.1.0"), "jsonschema": ("jsonschema", "4.25.1"),
+    "jsonschema_specifications": ("jsonschema-specifications", "2025.9.1"), "referencing": ("referencing", "0.36.2"),
+    "rpds": ("rpds-py", "0.27.1"), "typing_extensions": ("typing-extensions", "4.16.0")}
+_VENDOR_ROOT = "vendor/challenger-replacement-v3"
+_VENDOR_WHEELS = (
+    "attrs-26.1.0-py3-none-any.whl", "jsonschema-4.25.1-py3-none-any.whl",
+    "jsonschema_specifications-2025.9.1-py3-none-any.whl", "referencing-0.36.2-py3-none-any.whl",
+    "rpds_py-0.27.1-cp39-cp39-macosx_11_0_arm64.whl", "typing_extensions-4.16.0-py3-none-any.whl")
+_VENDOR_FILES = tuple(_VENDOR_ROOT + "/wheels/" + name for name in _VENDOR_WHEELS) + (
+    _VENDOR_ROOT + "/rpds/__init__.py", _VENDOR_ROOT + "/rpds/rpds.cpython-39-darwin.so")
 _THIN_FILES = (
+    "src/crypto_quant/challenger_replacement_install.py",
+    "src/crypto_quant/challenger_replacement_install_preflight.py",
+    "src/crypto_quant/challenger_replacement_preflight.py",
+    "src/crypto_quant/system_paper_launchctl.py",
     "src/crypto_quant/challenger_replacement_v3_activation_trust.py",
     "src/crypto_quant/challenger_replacement_v3_activation_trust_cli.py",
     "src/crypto_quant/challenger_replacement_v3_installed_runtime.py",
@@ -50,7 +66,7 @@ _THIN_FILES = (
     "src/crypto_quant/schemas/challenger-replacement-v3-install-contract-v1.schema.json",
     "src/crypto_quant/schemas/challenger-replacement-v3-activation-preflight-v1.schema.json",
     "src/crypto_quant/schemas/challenger-replacement-v3-activation-install-receipt-v1.schema.json",
-)
+) + _VENDOR_FILES
 _FORBIDDEN = (
     "binance_private", "private_protocol", "private_runtime",
     "canary_controller", "credential_envelope",
@@ -74,6 +90,10 @@ def _sha(path):
         raise ChallengerReplacementV3ActivationTrustError(
             "CHALLENGER_REPLACEMENT_V3_ACTIVATION_SOURCE_INVALID"
         ) from error
+
+
+def _snapshot_python_paths(root):
+    return (root + "/" + _VENDOR_ROOT,) + tuple(root + "/" + _VENDOR_ROOT + "/wheels/" + name for name in _VENDOR_WHEELS)
 
 
 def activation_paths():
@@ -149,21 +169,23 @@ def _plist(contract):
     return plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=True)
 
 
-def _contract(candidate, release, snapshot, event, python):
-    paths = activation_paths()
-    runtime = {
+def _runtime(snapshot, python):
+    root = snapshot["root"]
+    return {
         "module": "crypto_quant.challenger_replacement_v3_installed_runtime",
-        "program_arguments": [
-            python["path"], "-m",
-            "crypto_quant.challenger_replacement_v3_installed_runtime",
-        ],
+        "program_arguments": [python["path"], "-s", "-m",
+                              "crypto_quant.challenger_replacement_v3_installed_runtime"],
         "environment": {
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1",
-            "PYTHONPATH": snapshot["root"] + "/src",
+            "PYTHONPATH": ":".join(_snapshot_python_paths(root) + (root + "/src",)),
         },
-        "working_directory": snapshot["root"],
+        "working_directory": root,
     }
+
+
+def _contract(candidate, release, snapshot, event, python):
+    paths = activation_paths()
     value = {
         "$schema": "./challenger-replacement-v3-install-contract-v1.schema.json",
         "schema_version": "1.0.0", "contract_id": "", "contract_hash": "0" * 64,
@@ -177,7 +199,7 @@ def _contract(candidate, release, snapshot, event, python):
         "paths": paths,
         "service": {"label": "local.crypto-quant.challenger-replacement-v1",
                     "identity": "gui/501/local.crypto-quant.challenger-replacement-v1"},
-        "runtime": runtime,
+        "runtime": _runtime(snapshot, python),
         "schedule": [{"hour": hour, "minute": 2} for hour in (0, 4, 8, 12, 16, 20)],
         "plist": {"path": paths["candidate_plist"], "file_sha256": "0" * 64},
         "authority": {
@@ -241,13 +263,7 @@ def load_fixed_v3_install_contract_bytes(data):
                     ("manifest_hash", 64), ("manifest_file_sha256", 64),
                 )
             )
-            or value["runtime"]["module"]
-            != "crypto_quant.challenger_replacement_v3_installed_runtime"
-            or value["runtime"]["program_arguments"] != [
-                value["python"]["path"], "-m",
-                "crypto_quant.challenger_replacement_v3_installed_runtime",
-            ]
-            or value["runtime"]["working_directory"] != value["snapshot"]["root"]
+            or value["runtime"] != _runtime(value["snapshot"], value["python"])
             or value["service"] != {
                 "label": "local.crypto-quant.challenger-replacement-v1",
                 "identity": "gui/501/local.crypto-quant.challenger-replacement-v1",
@@ -341,7 +357,9 @@ def build_fixed_v3_activation_candidate():
     try:
         raw = (_REPOSITORY / _DEPLOYMENT_PATH).read_bytes()
         deployment = dict(_strict_json_bytes(raw))
-        inventory = dict(deployment["executable_core_identity"])
+        inventory = {
+            path: _sha(path) for path in deployment["executable_core_identity"]
+        }
         inventory[str(_DEPLOYMENT_PATH)] = hashlib.sha256(raw).hexdigest()
         for path in _THIN_FILES:
             inventory[path] = _sha(path)
@@ -416,6 +434,9 @@ def render_fixed_v3_activation_candidate():
     )
     python = _fixed_python_identity(
         snapshot["root"], package_version="0.78.0",
+        dependency_modules=_DEPENDENCIES,
+        dependency_versions=_DEPENDENCY_VERSIONS,
+        python_paths=_snapshot_python_paths(snapshot["root"]),
         import_modules=(
             "crypto_quant.challenger_replacement_v3_installed_runtime",
             "crypto_quant.challenger_replacement_v3_runtime",

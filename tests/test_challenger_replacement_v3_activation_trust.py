@@ -1,9 +1,15 @@
 import json
+import hashlib
+import os
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import canonical_json, stable_id
+from crypto_quant.evidence import artifact_self_hash
 from jsonschema import Draft202012Validator
 
 
@@ -11,6 +17,56 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
+    def test_snapshot_inventory_uses_current_release_bytes_for_v076_key_set(self):
+        from crypto_quant.challenger_replacement_v3_activation_trust import (
+            build_fixed_v3_activation_candidate,
+        )
+
+        inventory = build_fixed_v3_activation_candidate()["snapshot_inventory"]
+        mismatches = {
+            name for name, digest in inventory.items()
+            if hashlib.sha256((ROOT / name).read_bytes()).hexdigest() != digest
+        }
+        self.assertEqual(mismatches, set())
+
+    def test_snapshot_inventory_is_executable_public_runtime_import_closure(self):
+        from crypto_quant.challenger_replacement_v3_activation_trust import (
+            build_fixed_v3_activation_candidate,
+        )
+
+        inventory = build_fixed_v3_activation_candidate()["snapshot_inventory"]
+        required = {
+            "src/crypto_quant/challenger_replacement_install.py",
+            "src/crypto_quant/challenger_replacement_install_preflight.py",
+            "src/crypto_quant/challenger_replacement_preflight.py",
+            "src/crypto_quant/system_paper_launchctl.py",
+        }
+        self.assertEqual(required - set(inventory), set())
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary)
+            for name in inventory:
+                destination = target / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes((ROOT / name).read_bytes())
+            environment = os.environ.copy()
+            vendor_paths = (
+                str(target / "vendor/challenger-replacement-v3"),
+            ) + tuple(str(target / "vendor/challenger-replacement-v3/wheels" / name)
+                      for name in build_fixed_v3_activation_candidate.__globals__["_VENDOR_WHEELS"])
+            environment.update({
+                "PYTHONPATH": os.pathsep.join(vendor_paths + (str(target / "src"),)),
+                "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1",
+            })
+            result = subprocess.run(
+                [sys.executable, "-s", "-c", (
+                    "import crypto_quant.challenger_replacement_v3_activation_install;"
+                    "import crypto_quant.challenger_replacement_v3_installed_runtime"
+                )],
+                env=environment,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+
     def test_fixed_candidate_binds_releases_and_excludes_private_execution(self):
         from crypto_quant.challenger_replacement_v3_activation_trust import (
             build_fixed_v3_activation_candidate,
@@ -94,7 +150,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             trust, "_fixed_empty_event_root_identity", return_value=event,
         ), patch.object(
             trust, "_fixed_python_identity", return_value=python,
-        ), patch.object(
+        ) as python_identity, patch.object(
             trust, "_publish_contract_exact",
             side_effect=(("PUBLISHED", object()), ("PUBLISHED", object())),
         ) as publish_exact:
@@ -104,6 +160,21 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
         self.assertEqual(rendered["contract"]["snapshot"]["tree_hash"], "a" * 64)
         self.assertEqual(rendered["contract"]["release"]["peeled_commit"], "c" * 40)
         self.assertEqual(rendered["contract_outcome"], "PUBLISHED")
+        self.assertNotIn("allow_user_site", python_identity.call_args.kwargs)
+        self.assertEqual(
+            python_identity.call_args.kwargs["dependency_modules"], trust._DEPENDENCIES
+        )
+        self.assertEqual(
+            python_identity.call_args.kwargs["dependency_versions"],
+            trust._DEPENDENCY_VERSIONS,
+        )
+        self.assertEqual(
+            python_identity.call_args.kwargs["python_paths"],
+            trust._snapshot_python_paths("/fixed/snapshot/tree"),
+        )
+        self.assertEqual(
+            rendered["contract"]["runtime"]["environment"]["PYTHONNOUSERSITE"], "1"
+        )
 
     def test_install_contract_loader_replays_canonical_semantics(self):
         from crypto_quant import challenger_replacement_v3_activation_trust as trust
@@ -138,6 +209,22 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
         ).read_text())
         self.assertEqual(list(Draft202012Validator(schema).iter_errors(contract)), [])
         self.assertEqual(trust.load_fixed_v3_install_contract_bytes(body), contract)
+        self.assertEqual(contract["runtime"]["program_arguments"][1], "-s")
+        mutable = json.loads(body)
+        mutable["runtime"]["environment"]["PYTHONPATH"] = "/tmp/mutable"
+        mutable["plist"]["file_sha256"] = hashlib.sha256(
+            trust._plist(mutable)
+        ).hexdigest()
+        identity = {
+            key: value for key, value in mutable.items()
+            if key not in ("contract_id", "contract_hash")
+        }
+        mutable["contract_id"] = stable_id(
+            "challenger_replacement_v3_install_contract", identity
+        )
+        mutable["contract_hash"] = artifact_self_hash(mutable, "contract_hash")
+        with self.assertRaises(trust.ChallengerReplacementV3ActivationTrustError):
+            trust.load_fixed_v3_install_contract_bytes(canonical_json(mutable).encode())
         altered = json.loads(body)
         altered["runtime"]["module"] = "not.allowed"
         altered["contract_hash"] = "0" * 64

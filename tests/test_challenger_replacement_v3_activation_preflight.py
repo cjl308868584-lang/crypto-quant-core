@@ -2,6 +2,7 @@ import hashlib
 import inspect
 import unittest
 import json
+from types import SimpleNamespace
 from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -53,6 +54,71 @@ def verified_facts():
 
 
 class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
+    def test_root_boundary_uses_retained_descriptors_and_revalidates_attachment(self):
+        from crypto_quant import challenger_replacement_v3_activation_preflight as module
+
+        contract = {
+            "paths": {"runtime_root": "/runtime", "event_root": "/events"},
+            "snapshot": {"root": "/snapshot", "root_device": 2,
+                         "root_inode": 20},
+            "event_root": {"device": 3, "inode": 30},
+        }
+        opened = [
+            SimpleNamespace(st_dev=1, st_ino=10),
+            SimpleNamespace(st_dev=2, st_ino=20),
+            SimpleNamespace(st_dev=3, st_ino=30),
+        ]
+        with patch.object(module, "_open_directory", side_effect=[
+            (11, opened[0]), (12, opened[1]), (13, opened[2]),
+        ]), patch.object(module.os, "listdir", return_value=[]) as listed, \
+             patch.object(module, "_validate_directory_attachment") as validate, \
+             patch.object(module, "_close_descriptor") as close:
+            self.assertTrue(module._fixed_root_boundaries(contract))
+        listed.assert_called_once_with(13)
+        self.assertEqual(validate.call_count, 3)
+        self.assertEqual([call.args[0] for call in close.call_args_list], [13, 12, 11])
+
+        with patch.object(module, "_open_directory", side_effect=[
+            (11, opened[0]), (12, opened[1]), (13, opened[2]),
+        ]), patch.object(module.os, "listdir", return_value=[]), \
+             patch.object(
+                 module, "_validate_directory_attachment",
+                 side_effect=ValueError("replaced"),
+             ), patch.object(module, "_close_descriptor"):
+            self.assertFalse(module._fixed_root_boundaries(contract))
+
+    def test_fixed_checks_require_present_trusted_runtime_snapshot_and_event_roots(self):
+        from crypto_quant import challenger_replacement_v3_activation_preflight as module
+
+        paths = {
+            "runtime_root": "/fixed/runtime", "event_root": "/fixed/events",
+            "target_plist": "/fixed/agent.plist", "stdout": "/fixed/out",
+            "stderr": "/fixed/err",
+        }
+        contract = {
+            "release": {"peeled_commit": "a" * 40}, "paths": paths,
+            "snapshot": {"root": "/fixed/snapshot", "root_device": 7,
+                         "root_inode": 8},
+            "event_root": {"device": 9, "inode": 10},
+        }
+        results = [
+            (0, b"https://github.com/cjl308868584-lang/crypto-quant-core.git\n", b""),
+            (0, ("a" * 40 + "\n").encode(), b""),
+            (0, ("a" * 40 + "\n").encode(), b""),
+            (0, ("a" * 40 + "\n").encode(), b""),
+            (0, b"", b""), (113, b"", b""), (113, b"", b""),
+            (0, b"System-wide power settings:\n sleep 0\n", b""),
+        ]
+        with patch.object(module, "_fixed_root_boundaries", return_value=True), \
+             patch.object(module.os.path, "lexists", return_value=False):
+            self.assertEqual(module._fixed_checks(contract, results),
+                             (True, True, True))
+
+        with patch.object(module, "_fixed_root_boundaries", return_value=False), \
+             patch.object(module.os.path, "lexists", return_value=False):
+            self.assertEqual(module._fixed_checks(contract, results),
+                             (True, False, True))
+
     def test_verified_receipt_is_30_minutes_and_has_zero_private_authority(self):
         from crypto_quant.challenger_replacement_v3_activation_preflight import (
             build_fixed_v3_activation_preflight,

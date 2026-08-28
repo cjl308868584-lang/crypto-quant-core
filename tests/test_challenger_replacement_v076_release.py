@@ -140,18 +140,18 @@ class V076ReleaseMetadataTests(unittest.TestCase):
         )
 
     def test_versions_status_and_formal_files_are_exact(self):
-        self.assertEqual(crypto_quant.__version__, "0.77.0")
+        self.assertEqual(crypto_quant.__version__, "0.78.0")
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.77\.0"$',
+            r'(?m)^version = "0\.78\.0"$',
         )
-        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.77\.0"')
+        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.78\.0"')
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
         )
         self.assertEqual(
             (manifest["package_version"], manifest["manifest_version"]),
-            ("0.77.0", "1.71.0"),
+            ("0.78.0", "1.72.0"),
         )
         self.assertTrue(DEPLOYMENT.is_file())
         self.assertTrue(FAULT_RECEIPT.is_file())

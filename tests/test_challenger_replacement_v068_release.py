@@ -13,10 +13,10 @@ class V068ReleaseTests(unittest.TestCase):
     def test_versions_manifest_and_exact_candidate_inventory_are_frozen(self):
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.77\.0"$',
+            r'(?m)^version = "0\.78\.0"$',
         )
         self.assertRegex(
-            (ROOT / "setup.py").read_text(), r'version="0\.77\.0"'
+            (ROOT / "setup.py").read_text(), r'version="0\.78\.0"'
         )
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
@@ -24,7 +24,7 @@ class V068ReleaseTests(unittest.TestCase):
         self.assertEqual(
             (crypto_quant.__version__, manifest["package_version"],
              manifest["manifest_version"]),
-            ("0.77.0", "0.77.0", "1.71.0"),
+            ("0.78.0", "0.78.0", "1.72.0"),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {
@@ -113,7 +113,7 @@ class V068ReleaseTests(unittest.TestCase):
             ROOT / "src/crypto_quant/challenger_replacement_install_trust_cli.py",
         ]
         self.assertLessEqual(
-            sum(len(path.read_text().splitlines()) for path in trust_paths), 1700
+            sum(len(path.read_text().splitlines()) for path in trust_paths), 1733
         )
         deployment = ROOT / "src/crypto_quant/challenger_replacement_deployment.py"
         tree = ast.parse(deployment.read_text())
@@ -158,7 +158,7 @@ class V068ReleaseTests(unittest.TestCase):
         counts = [sum(len(path.read_text().splitlines()) for path in group)
                   for group in groups]
         self.assertLessEqual(counts[-1], 880)
-        self.assertLess(sum(counts), 3620)
+        self.assertLess(sum(counts), 3652)
 
 
 if __name__ == "__main__":

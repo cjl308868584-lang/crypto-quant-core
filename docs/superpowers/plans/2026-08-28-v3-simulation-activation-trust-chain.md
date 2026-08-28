@@ -37,7 +37,7 @@
 
 **Produces:** `render_fixed_v3_activation_candidate()`, `load_fixed_v3_activation_candidate()`, `run_installed_v3_opportunity()`.
 
-- [ ] Write RED tests for exact v0.77/v0.76 identity, schema closure, snapshot inventory `<=256`, private-module exclusion, missing receipt zero authority, and RESULT_PREPARED fresh-process recovery with zero second request.
+- [ ] Write RED tests for exact v0.77/v0.76 identity, v0.76 inventory key set with current v0.78 release hashes, executable public-runtime import closure, locked owner-user-site dependency hash identity, schema closure, snapshot inventory `<=256`, private-module exclusion, missing receipt zero authority, and RESULT_PREPARED fresh-process recovery with zero second request.
 - [ ] Run:
 
 ```bash
@@ -62,7 +62,7 @@ Expected: missing-module/schema failures.
 
 **Produces:** `collect_fixed_v3_activation_preflight()` and strict loader.
 
-- [ ] Write RED tests for release/snapshot replay; platform/uid/timezone/disk/inode/pmset; absent service/plist/root; old Challenger stopped; `[10m,30m]`; exactly three public time GET; proxy/redirect disabled; 30-minute expiry; private/account/order/fund zero. Assert no System Paper input.
+- [ ] Write RED tests for release/snapshot replay; platform/uid/timezone/disk/inode/pmset; trusted owner-only contract-bound runtime/snapshot/event roots with exact snapshot/event inode and empty event root; absent target plist/service/stdout/stderr; old Challenger stopped; `[10m,30m]`; exactly three public time GET; proxy/redirect disabled; 30-minute expiry; private/account/order/fund zero. Assert no System Paper input. The renderer-created runtime root is required to exist and must never be treated as an absence condition.
 - [ ] Run focused test; expect missing module.
 - [ ] Implement v3 binding around existing command, clock, credential and publication primitives. No retry and no URL/path/time override.
 - [ ] Run focused plus historical replacement preflight and public HTTP tests; require PASS.
@@ -77,7 +77,7 @@ Expected: missing-module/schema failures.
 
 **Produces:** `install_fixed_v3_simulation_launch_agent()` and strict install receipt loader.
 
-- [ ] Write RED tests for exact `print → plist no-replace → bootstrap → print`, `runs=0`, auto-derived next natural opportunity, expired preflight rejection, and zero kickstart/start/enable/submit/bootout/runtime calls.
+- [ ] Write RED tests for exact `print → plist no-replace → bootstrap → print`, `runs=0`, auto-derived next natural opportunity, expired preflight rejection, expired-success plus one new valid-success selection, simultaneous valid-success ambiguity rejection, post-install replay by exact `preflight_binding`, and zero kickstart/start/enable/submit/bootout/runtime calls.
 - [ ] Add crash tests: before plist means zero mutation/no target; after plist/bootstrap ambiguity preserves target and returns `INSTALL_STATE_UNKNOWN_FAILED_CLOSED`; no unlink/chmod rollback; sentinel unchanged.
 - [ ] Run focused test; expect missing module.
 - [ ] Implement using existing plist publisher, command wrapper, transcript, preflight loader and receipt publisher; add only v3 identity/status mapping.

@@ -77,7 +77,7 @@ exact main CI，再生成 owner-only contract。未来身份不反向进入 Git 
 - service `gui/501/local.crypto-quant.challenger-replacement-v1`；
 - runtime root
   `/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1`；
-- snapshot `<runtime>/deployment/snapshot`；
+- snapshot `<runtime>/deployment/snapshots/<tree_hash>`；
 - event root `<runtime>/state/challenger-replacement-events-v1`；
 - start receipt `<runtime>/evidence/start-receipts/challenger-replacement-v3-start-receipt-v1.json`；
 - target plist `/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-replacement-v1.plist`；
@@ -100,6 +100,14 @@ snapshot 调用已有 `_publish_snapshot_from_inventory` 和 replay primitives�
 固定 `crypto_quant.challenger_replacement_v3_installed_runtime`，替代 v0.76 故意不可用的
 `_load_fixed_runtime_sources()`。
 
+v0.78 snapshot 取 v0.76 deployment 的 exact inventory key set，但每个 hash 必须来自
+v0.78 reviewed release bytes；不得用 v0.76 旧 hash 校验 v0.78 当前文件。公开 runtime
+import closure 不得导入 Binance private/Canary 模块。目标 Mac 的 `/usr/bin/python3`
+只从 release-bound snapshot 内的六个锁定 wheel 及 extracted arm64 `rpds` native
+files 获取运行依赖。wheel/native 完整 bytes 属于 snapshot inventory；Python identity
+使用 `-s`/`PYTHONNOUSERSITE=1` 并验证六个 distribution version，不从可变 user-site
+导入任何代码。
+
 installed adapter 仅重放 contract/plist/唯一 install receipt，打开 bound event root，
 加载 v0.76 plan/contracts/build identity，调用一次
 `run_challenger_replacement_v3_opportunity`，关闭 descriptor，输出 canonical summary。
@@ -117,7 +125,10 @@ preflight 只证明 replacement 安装可安全执行：
 
 - release/tag/main/CI/manifest/snapshot/contract/plist/Python exact replay；
 - Darwin arm64、uid/home/timezone、磁盘/inode、pmset/常在线；
-- runtime root/plist/service 不存在，旧 Challenger 受控停用；
+- renderer 已创建的 contract-bound runtime root、snapshot root 与 event root
+  必须是 owner-only `0700` 目录；snapshot/event inode 必须与 contract 精确一致，
+  event root 仍为空；
+- target plist/service/stdout/stderr 必须不存在，旧 Challenger 受控停用；
 - owner/mode/no-symlink/hardlink/FIFO/socket/path overlap；
 - UTC 四小时边界后 `[10m,30m]`，receipt 30 分钟内有效且不跨下一 `4h+2m`；
 - 三次固定 Binance public time GET，通过 proxy/redirect/size/clock gate；
@@ -139,6 +150,10 @@ installer 只允许：
 
 禁止 kickstart/start/enable/submit/bootout、shell 或直接 runtime。bootstrap/plist 后失败
 保留现场并返回 `INSTALL_STATE_UNKNOWN_FAILED_CLOSED`，不 unlink/chmod/假报回滚。
+安装前只能选择当前时间窗内唯一的 successful preflight；过期成功收据只是
+历史证据，不参与当前候选计数，而同时有两张有效收据必须拒绝。安装后的
+adapter/observer 不再依赖“目录内唯一成功收据”或当前有效期，而是从 install
+receipt 的 exact `preflight_binding` 重放当时原收据。
 
 安装后只等待自然四小时机会。v0.76 observer 只读固定 root。v0.78 publisher 把
 observation 交给 v0.76 start builder：flat MISSED 如实保留且后续自然 OBSERVED 可启动；

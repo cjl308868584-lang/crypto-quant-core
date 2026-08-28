@@ -1390,6 +1390,10 @@ def _fixed_python_identity(
     snapshot_root: str,
     *,
     package_version="0.68.0",
+    allow_user_site=False,
+    dependency_modules=(),
+    dependency_versions=None,
+    python_paths=(),
     import_modules=(
         "crypto_quant.challenger_replacement_installed_runtime_cli",
         "crypto_quant.challenger_replacement_runtime",
@@ -1434,16 +1438,35 @@ def _fixed_python_identity(
     environment = {
         "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
         "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONNOUSERSITE": "1",
-        "PYTHONPATH": snapshot_root + "/src",
+        "PYTHONPATH": os.pathsep.join(tuple(python_paths) + (snapshot_root + "/src",)),
     }
-    imports = ",".join(("crypto_quant",) + tuple(import_modules))
+    if not allow_user_site:
+        environment["PYTHONNOUSERSITE"] = "1"
+    imports = ",".join(
+        ("crypto_quant",) + tuple(import_modules) + tuple(dependency_modules)
+    )
+    dependency_versions = dependency_versions or {}
+    if set(dependency_versions) != set(dependency_modules):
+        raise ReplacementInstallTrustError(
+            "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_INVALID"
+        )
+    if dependency_modules:
+        code = (
+            "import " + imports + ",importlib.metadata,json,sys;"
+            "print(json.dumps({'dependency_versions':{name:importlib.metadata.version(value[0]) "
+            "for name,value in " + repr(dict(dependency_versions)) + ".items()},"
+            "'package_version':crypto_quant.__version__,'sys_version':sys.version},"
+            "separators=(',',':'),sort_keys=True))"
+        )
+    else:
+        code = (
+            "import " + imports + ",json,sys;print(json.dumps({"
+            "'package_version':crypto_quant.__version__,'sys_version':sys.version},"
+            "separators=(',',':'),sort_keys=True))"
+        )
     command = (
-        "/usr/bin/python3", "-s", "-c",
-        "import " + imports + ",json,sys;"
-        "print(json.dumps({"
-        "'package_version':crypto_quant.__version__,'sys_version':sys.version},"
-        "separators=(',',':'),sort_keys=True))",
+        ("/usr/bin/python3",) + (() if allow_user_site else ("-s",))
+        + ("-c", code)
     )
     stdout, stderr = _run_fixed_command(
         command, cwd=Path(snapshot_root), environment=environment
@@ -1456,10 +1479,14 @@ def _fixed_python_identity(
         ) from error
     if (
         not isinstance(identity_output, dict)
-        or set(identity_output) != {"package_version", "sys_version"}
+        or set(identity_output) != ({"package_version", "sys_version"}
+                                    | ({"dependency_versions"}
+                                       if dependency_modules else set()))
         or identity_output["package_version"] != package_version
         or not isinstance(identity_output["sys_version"], str)
         or not identity_output["sys_version"]
+        or (dependency_modules and identity_output["dependency_versions"]
+            != {name: value[1] for name, value in dependency_versions.items()})
     ):
         raise ReplacementInstallTrustError(
             "CHALLENGER_REPLACEMENT_PYTHON_IDENTITY_INVALID"

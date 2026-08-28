@@ -24,6 +24,9 @@ from .challenger_replacement_v3_activation_preflight import (
     load_fixed_v3_activation_preflight_bytes,
 )
 from .challenger_replacement_v3_activation_trust import (
+    _DEPENDENCIES,
+    _DEPENDENCY_VERSIONS,
+    _snapshot_python_paths,
     load_fixed_published_v3_install_contract,
 )
 from .challenger_replacement_events import (
@@ -175,8 +178,12 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-def _load_fixed_install_inputs():
+def _load_fixed_contract_inputs():
     contract, contract_bytes, plist_bytes = load_fixed_published_v3_install_contract()
+    return contract, contract_bytes, plist_bytes
+
+
+def _load_fixed_preflight_candidates(contract, contract_bytes):
     binding = {
         "contract_id": contract["contract_id"],
         "contract_hash": contract["contract_hash"],
@@ -201,13 +208,7 @@ def _load_fixed_install_inputs():
             )
             if value["status"] == "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE":
                 candidates.append((value, found[0]))
-        if len(candidates) != 1:
-            raise ValueError("candidate")
-        return {
-            "contract": contract, "contract_bytes": contract_bytes,
-            "preflight": candidates[0][0], "preflight_bytes": candidates[0][1],
-            "plist_bytes": plist_bytes,
-        }
+        return candidates
     except BaseException as error:
         primary = error
         if isinstance(error, ChallengerReplacementV3ActivationInstallError):
@@ -218,6 +219,55 @@ def _load_fixed_install_inputs():
     finally:
         if descriptor >= 0:
             _close_descriptor(descriptor, primary)
+
+
+def _select_current_preflight(candidates, now):
+    try:
+        current = []
+        for value, body in candidates:
+            observed = datetime.fromisoformat(value["observed_at"].replace("Z", "+00:00"))
+            expires = datetime.fromisoformat(value["expires_at"].replace("Z", "+00:00"))
+            if observed <= now < expires:
+                current.append((value, body))
+        if len(current) != 1:
+            raise ValueError("current candidate")
+        return current[0]
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise ChallengerReplacementV3ActivationInstallError(
+            "CHALLENGER_REPLACEMENT_V3_INSTALL_INPUTS_REQUIRED"
+        ) from error
+
+
+def _select_bound_preflight(candidates, binding):
+    try:
+        matched = [
+            (value, body) for value, body in candidates
+            if _binding(value, body, "receipt") == binding
+        ]
+        if len(matched) != 1:
+            raise ValueError("bound candidate")
+        return matched[0]
+    except (KeyError, TypeError, ValueError) as error:
+        raise ChallengerReplacementV3ActivationInstallError(
+            "CHALLENGER_REPLACEMENT_V3_INSTALL_INPUTS_REQUIRED"
+        ) from error
+
+
+def _inputs(contract, contract_bytes, plist_bytes, candidate):
+    return {
+        "contract": contract, "contract_bytes": contract_bytes,
+        "preflight": candidate[0], "preflight_bytes": candidate[1],
+        "plist_bytes": plist_bytes,
+    }
+
+
+def _load_fixed_install_inputs():
+    contract, contract_bytes, plist_bytes = _load_fixed_contract_inputs()
+    candidates = _load_fixed_preflight_candidates(contract, contract_bytes)
+    return _inputs(
+        contract, contract_bytes, plist_bytes,
+        _select_current_preflight(candidates, _now()),
+    )
 
 
 def _target_absent(contract):
@@ -245,6 +295,9 @@ def _revalidate(inputs, record):
         )
     if _fixed_python_identity(
         contract["snapshot"]["root"], package_version="0.78.0",
+        dependency_modules=_DEPENDENCIES,
+        dependency_versions=_DEPENDENCY_VERSIONS,
+        python_paths=_snapshot_python_paths(contract["snapshot"]["root"]),
         import_modules=(
             "crypto_quant.challenger_replacement_v3_installed_runtime",
             "crypto_quant.challenger_replacement_v3_runtime",
@@ -281,12 +334,12 @@ def _finish(inputs, record, *pairs, verified=False):
 
 
 def _load_fixed_successful_install_receipt():
-    inputs = _load_fixed_install_inputs()
+    contract, contract_bytes, plist_bytes = _load_fixed_contract_inputs()
     descriptor = -1
     primary = None
     try:
         descriptor, _ = _open_directory(
-            Path(inputs["contract"]["paths"]["install_receipt_root"]),
+            Path(contract["paths"]["install_receipt_root"]),
             exact_mode=0o700,
         )
         names = os.listdir(descriptor)
@@ -295,15 +348,30 @@ def _load_fixed_successful_install_receipt():
         found = _read_published_exact(descriptor, names[0])
         if found is None:
             raise ValueError("receipt")
+        untrusted = dict(_strict_json_bytes(found[0]))
+        candidate = _select_bound_preflight(
+            _load_fixed_preflight_candidates(contract, contract_bytes),
+            untrusted["preflight_binding"],
+        )
+        inputs = _inputs(contract, contract_bytes, plist_bytes, candidate)
         receipt = load_fixed_v3_activation_install_receipt_bytes(
-            found[0], contract=inputs["contract"],
-            contract_bytes=inputs["contract_bytes"], preflight=inputs["preflight"],
-            preflight_bytes=inputs["preflight_bytes"],
+            found[0], contract=contract, contract_bytes=contract_bytes,
+            preflight=candidate[0], preflight_bytes=candidate[1],
+        )
+        replay_contract, replay_contract_bytes, replay_plist_bytes = (
+            _load_fixed_contract_inputs()
+        )
+        replay_candidate = _select_bound_preflight(
+            _load_fixed_preflight_candidates(replay_contract, replay_contract_bytes),
+            receipt["preflight_binding"],
         )
         if (
             receipt["status"] != "INSTALLED_WAITING_FOR_FIRST_NATURAL_OPPORTUNITY"
             or names[0] != receipt["receipt_id"] + ".json"
-            or _load_fixed_install_inputs() != inputs
+            or _inputs(
+                replay_contract, replay_contract_bytes, replay_plist_bytes,
+                replay_candidate,
+            ) != inputs
         ):
             raise ValueError("receipt semantics")
         return inputs, receipt, found[0]

@@ -13,7 +13,10 @@ from jsonschema import Draft202012Validator
 from .canonical import canonical_json, stable_id, utc_datetime
 from .challenger_replacement_plan import _strict_json_bytes
 from .evidence import artifact_self_hash
-from .challenger_replacement_install_trust import _publish_contract_exact
+from .challenger_replacement_install_trust import (
+    _close_descriptor, _open_directory, _publish_contract_exact,
+    _validate_directory_attachment,
+)
 from .challenger_replacement_preflight import (
     _disk, _machine, _run, _time_probe, _transcript,
 )
@@ -167,6 +170,44 @@ def _run_commands():
     return [_run(argv, _REPOSITORY) for argv in _COMMANDS]
 
 
+def _fixed_root_boundaries(contract):
+    paths = contract["paths"]
+    specifications = (
+        (Path(paths["runtime_root"]), None),
+        (Path(contract["snapshot"]["root"]), contract["snapshot"]),
+        (Path(paths["event_root"]), contract["event_root"]),
+    )
+    opened = []
+    primary = None
+    valid = False
+    try:
+        for path, identity in specifications:
+            descriptor, entry = _open_directory(path, exact_mode=0o700)
+            opened.append((path, descriptor, entry))
+            if identity is not None and (entry.st_dev, entry.st_ino) != (
+                identity.get("root_device", identity.get("device")),
+                identity.get("root_inode", identity.get("inode")),
+            ):
+                raise ValueError("root identity")
+        if os.listdir(opened[-1][1]):
+            raise ValueError("event root not empty")
+        for path, descriptor, entry in opened:
+            _validate_directory_attachment(
+                path, descriptor, entry, "CHALLENGER_REPLACEMENT_V3_PREFLIGHT_PATH_INVALID"
+            )
+        valid = True
+    except BaseException as error:
+        primary = error
+    finally:
+        for _path, descriptor, _entry in reversed(opened):
+            try:
+                _close_descriptor(descriptor, primary)
+            except BaseException as error:
+                if primary is None:
+                    primary = error
+    return valid and primary is None
+
+
 def _fixed_checks(contract, results):
     try:
         text = [item[1].decode("utf-8", "strict").strip() for item in results]
@@ -178,11 +219,8 @@ def _fixed_checks(contract, results):
             and text[4] == ""
         )
         paths = contract["paths"]
-        entry = os.lstat(paths["event_root"])
         boundary = (
-            (entry.st_dev, entry.st_ino, entry.st_uid)
-            == (contract["event_root"]["device"], contract["event_root"]["inode"], 501)
-            and not os.listdir(paths["event_root"])
+            _fixed_root_boundaries(contract)
             and not any(os.path.lexists(paths[key]) for key in (
                 "target_plist", "stdout", "stderr",
             ))

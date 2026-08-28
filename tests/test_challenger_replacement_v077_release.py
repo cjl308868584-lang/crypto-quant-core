@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import crypto_quant
 from crypto_quant.challenger_replacement_private_fault_matrix import (
@@ -122,16 +123,16 @@ class V077ReleaseMetadataTests(unittest.TestCase):
                 self.assertEqual(members - archived, set())
 
     def test_versions_manifest_and_release_inventory_are_exact(self):
-        self.assertEqual(crypto_quant.__version__, "0.77.0")
+        self.assertEqual(crypto_quant.__version__, "0.78.0")
         self.assertRegex((ROOT / "pyproject.toml").read_text(),
-                         r'(?m)^version = "0\.77\.0"$')
-        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.77\.0"')
+                         r'(?m)^version = "0\.78\.0"$')
+        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.78\.0"')
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
         )
         self.assertEqual(
             (manifest["package_version"], manifest["manifest_version"]),
-            ("0.77.0", "1.71.0"),
+            ("0.78.0", "1.72.0"),
         )
         from crypto_quant.build import EvaluatorBuild, _V077_RELEASE_PATHS
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
@@ -141,14 +142,24 @@ class V077ReleaseMetadataTests(unittest.TestCase):
 
     def test_fault_receipt_replays_exact_historical_executable_checkpoint(self):
         receipt = FAULT_RECEIPT.read_bytes()
+        historical = json.loads(receipt)
         self.assertEqual(hashlib.sha256(receipt).hexdigest(), RECEIPT_SHA256)
-        loaded = load_challenger_replacement_private_fault_matrix_bytes(
-            receipt,
-            v076_fault_receipt_bytes=FOUNDATION_RECEIPT.read_bytes(),
-            expected_executable_checkpoint=EXECUTABLE_CHECKPOINT,
-            expected_executable_tree=EXECUTABLE_TREE,
-            expected_receipt_sha256=RECEIPT_SHA256,
-        )
+        with patch(
+            "crypto_quant.challenger_replacement_private_fault_matrix._git_identity",
+            return_value=(EXECUTABLE_CHECKPOINT, EXECUTABLE_TREE),
+        ) as git_identity, patch(
+            "crypto_quant.challenger_replacement_private_fault_matrix._inventory",
+            return_value=(historical["executable_inventory"],
+                          historical["executable_core_hash"]),
+        ):
+            loaded = load_challenger_replacement_private_fault_matrix_bytes(
+                receipt,
+                v076_fault_receipt_bytes=FOUNDATION_RECEIPT.read_bytes(),
+                expected_executable_checkpoint=EXECUTABLE_CHECKPOINT,
+                expected_executable_tree=EXECUTABLE_TREE,
+                expected_receipt_sha256=RECEIPT_SHA256,
+            )
+        git_identity.assert_called_once_with(EXECUTABLE_CHECKPOINT, EXECUTABLE_TREE)
         self.assertEqual(loaded["status"], "PRIVATE_FAULT_MATRIX_PASSED_NOT_ACTIVATED")
         self.assertEqual(len(loaded["cases"]), 59)
         self.assertTrue(loaded["independent_replay"]["semantic_match"])

@@ -17,7 +17,6 @@ from .challenger_replacement_opportunities import (
     ChallengerReplacementOpportunityState,
     catch_up_missed_opportunities,
 )
-from .challenger_replacement_opportunity_projection import canonical_time
 from .challenger_replacement_public_market_capture import (
     ChallengerReplacementPublicMarketCaptureError,
     acquire_challenger_replacement_public_market_capture,
@@ -42,6 +41,24 @@ _FIXED_SOURCE_KEYS = set("state event_root plan economic_plan predecessor_contra
 
 def _invalid(reason="CHALLENGER_REPLACEMENT_OPPORTUNITY_INPUT_INVALID"):
     raise ChallengerReplacementOpportunityError(reason)
+
+
+def _canonical_time(value, *, grid=False):
+    if not isinstance(value, str):
+        _invalid()
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
+            timezone.utc
+        )
+    except ValueError as error:
+        raise ChallengerReplacementOpportunityError(
+            "CHALLENGER_REPLACEMENT_OPPORTUNITY_INPUT_INVALID"
+        ) from error
+    if utc_datetime(parsed) != value or (grid and (
+        parsed.hour % 4 or parsed.minute or parsed.second or parsed.microsecond
+    )):
+        _invalid()
+    return parsed
 
 
 def _acquire(state):
@@ -133,7 +150,7 @@ def _run_locked(
     if terminal is not None and projection["active_opportunity_id"] is None:
         next_required = projection["next_required_opportunity"]
         now = _wall_now().astimezone(timezone.utc)
-        next_scheduled = canonical_time(next_required["scheduled_for"], grid=True)
+        next_scheduled = _canonical_time(next_required["scheduled_for"], grid=True)
         if now < next_scheduled + timedelta(minutes=2):
             return terminal
         caught_up = catch_up_missed_opportunities(
@@ -163,7 +180,7 @@ def _run_locked(
                 error.reason_code
             ) from error
         opportunity = capture.document["opportunity"]
-        scheduled = canonical_time(opportunity["scheduled_for"], grid=True)
+        scheduled = _canonical_time(opportunity["scheduled_for"], grid=True)
         source_bytes = bytes(capture.canonical_bytes)
         _append(state,
             event_type="INPUT_PREPARED",

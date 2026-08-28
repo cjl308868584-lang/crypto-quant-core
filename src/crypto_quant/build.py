@@ -584,6 +584,30 @@ _V077_RELEASE_PATHS = (
     "tests/test_challenger_replacement_v077_release.py",
 )
 
+_V078_RELEASE_PATHS = (
+    "docs/dependencies-v0.78-runtime-wheels.md",
+    "docs/adr/0078-v3-simulation-activation-trust-chain.md",
+    "docs/implementation-status-v0.78.0.md",
+    "docs/runbooks/challenger-replacement-v3-simulation-activation.md",
+    "docs/superpowers/plans/2026-08-28-v3-simulation-activation-trust-chain.md",
+    "docs/superpowers/specs/2026-08-28-v3-simulation-activation-trust-chain-design.md",
+    "tests/test_challenger_replacement_v078_architecture.py",
+    "tests/test_challenger_replacement_v078_release.py",
+    "tests/test_challenger_replacement_v3_activation_install.py",
+    "tests/test_challenger_replacement_v3_activation_preflight.py",
+    "tests/test_challenger_replacement_v3_activation_start.py",
+    "tests/test_challenger_replacement_v3_activation_trust.py",
+    "tests/test_challenger_replacement_v3_installed_runtime.py",
+    "vendor/challenger-replacement-v3/rpds/__init__.py",
+    "vendor/challenger-replacement-v3/rpds/rpds.cpython-39-darwin.so",
+    "vendor/challenger-replacement-v3/wheels/attrs-26.1.0-py3-none-any.whl",
+    "vendor/challenger-replacement-v3/wheels/jsonschema-4.25.1-py3-none-any.whl",
+    "vendor/challenger-replacement-v3/wheels/jsonschema_specifications-2025.9.1-py3-none-any.whl",
+    "vendor/challenger-replacement-v3/wheels/referencing-0.36.2-py3-none-any.whl",
+    "vendor/challenger-replacement-v3/wheels/rpds_py-0.27.1-cp39-cp39-macosx_11_0_arm64.whl",
+    "vendor/challenger-replacement-v3/wheels/typing_extensions-4.16.0-py3-none-any.whl",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -629,6 +653,7 @@ class EvaluatorBuild:
                     + list(_V075_RELEASE_PATHS)
                     + list(_V076_RELEASE_PATHS)
                     + list(_V077_RELEASE_PATHS)
+                    + list(_V078_RELEASE_PATHS)
                 )
             )
         )

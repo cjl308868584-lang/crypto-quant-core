@@ -22,12 +22,12 @@ SIX_MODULES = (
 
 class V071ReleaseTests(unittest.TestCase):
     def test_versions_manifest_and_candidate_status_are_exact(self):
-        self.assertRegex((ROOT / "pyproject.toml").read_text(), r'(?m)^version = "0\.77\.0"$')
-        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.77\.0"')
+        self.assertRegex((ROOT / "pyproject.toml").read_text(), r'(?m)^version = "0\.78\.0"$')
+        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.78\.0"')
         manifest = json.loads((ROOT / "config/evaluator-build-manifest-v1.json").read_text())
         self.assertEqual(
             (crypto_quant.__version__, manifest["package_version"], manifest["manifest_version"]),
-            ("0.77.0", "0.77.0", "1.71.0"),
+            ("0.78.0", "0.78.0", "1.72.0"),
         )
         self.assertIn(
             "状态：`FIXTURE_ACCOUNTING_CORE_VERIFIED_LIFECYCLE_NOT_IMPLEMENTED`",

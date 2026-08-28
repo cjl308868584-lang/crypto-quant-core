@@ -381,11 +381,15 @@
         },
         "program_arguments": {
           "type": "array",
-          "minItems": 3,
-          "maxItems": 3,
-          "items": {
-            "type": "string"
-          }
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {"type": "string", "minLength": 1},
+            {"const": "-s"},
+            {"const": "-m"},
+            {"const": "crypto_quant.challenger_replacement_v3_installed_runtime"}
+          ],
+          "items": false
         },
         "working_directory": {
           "type": "string",

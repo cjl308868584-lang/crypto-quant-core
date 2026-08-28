@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from jsonschema import Draft202012Validator
+from crypto_quant.canonical import canonical_json
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,6 +46,89 @@ def inputs():
 
 
 class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
+    def test_current_preflight_ignores_expired_success_and_selects_new_success(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        expired = inputs()["preflight"]
+        expired_body = b"expired"
+        current = dict(expired)
+        current.update({
+            "receipt_id": "challenger_replacement_v3_activation_preflight_" + "2" * 64,
+            "observed_at": "2026-08-28T08:14:00.000Z",
+            "expires_at": "2026-08-28T08:44:00.000Z",
+        })
+        expired = dict(expired, expires_at="2026-08-28T08:14:00.000Z")
+
+        self.assertEqual(
+            module._select_current_preflight(
+                [(expired, expired_body), (current, b"current")], NOW
+            ),
+            (current, b"current"),
+        )
+
+    def test_two_simultaneously_valid_preflights_fail_closed(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        first = inputs()["preflight"]
+        second = dict(first, receipt_id=(
+            "challenger_replacement_v3_activation_preflight_" + "2" * 64
+        ))
+        with self.assertRaisesRegex(ValueError, "INSTALL_INPUTS_REQUIRED"):
+            module._select_current_preflight(
+                [(first, b"first"), (second, b"second")], NOW
+            )
+
+    def test_installed_preflight_binding_replays_expired_exact_receipt(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        expired = dict(
+            inputs()["preflight"], expires_at="2026-08-28T08:14:00.000Z"
+        )
+        expired_body = b"expired"
+        current = dict(expired, receipt_id=(
+            "challenger_replacement_v3_activation_preflight_" + "2" * 64
+        ), observed_at="2026-08-28T08:14:00.000Z",
+                       expires_at="2026-08-28T08:44:00.000Z")
+        binding = module._binding(expired, expired_body, "receipt")
+
+        self.assertEqual(
+            module._select_bound_preflight(
+                [(expired, expired_body), (current, b"current")], binding
+            ),
+            (expired, expired_body),
+        )
+
+    def test_successful_install_loader_uses_receipt_binding_not_current_window(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        source = inputs()
+        binding = module._binding(source["preflight"], b"preflight", "receipt")
+        receipt = {
+            "receipt_id": "installed", "preflight_binding": binding,
+            "status": "INSTALLED_WAITING_FOR_FIRST_NATURAL_OPPORTUNITY",
+        }
+        body = canonical_json(receipt).encode("utf-8")
+        with patch.object(module, "_load_fixed_contract_inputs", return_value=(
+            source["contract"], b"contract", b"plist"
+        )), patch.object(module, "_open_directory", return_value=(9, object())), \
+             patch.object(module.os, "listdir", return_value=["installed.json"]), \
+             patch.object(module, "_read_published_exact", return_value=(body, {})), \
+             patch.object(module, "_load_fixed_preflight_candidates", return_value=[
+                 (source["preflight"], b"preflight")
+             ]), patch.object(
+                 module, "load_fixed_v3_activation_install_receipt_bytes",
+                 return_value=receipt,
+             ), patch.object(module, "_close_descriptor"), patch.object(
+                 module, "_select_current_preflight",
+                 side_effect=AssertionError("current selector must not run after install"),
+             ):
+            loaded, found_receipt, found_body = (
+                module._load_fixed_successful_install_receipt()
+            )
+        self.assertEqual(loaded, source)
+        self.assertEqual(found_receipt, receipt)
+        self.assertEqual(found_body, body)
+
     def test_success_uses_only_print_bootstrap_print(self):
         from crypto_quant import challenger_replacement_v3_activation_install as module
 
