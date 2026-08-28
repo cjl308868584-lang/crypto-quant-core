@@ -1,0 +1,512 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "contract_id",
+    "contract_hash",
+    "release",
+    "predecessor_release",
+    "deployment",
+    "snapshot",
+    "event_root",
+    "python",
+    "paths",
+    "service",
+    "runtime",
+    "schedule",
+    "plist",
+    "authority",
+    "status"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./challenger-replacement-v3-install-contract-v1.schema.json"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "contract_id": {
+      "type": "string",
+      "pattern": "^challenger_replacement_v3_install_contract_[0-9a-f]{64}$"
+    },
+    "contract_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "peeled_commit",
+        "tag_object",
+        "manifest_version",
+        "manifest_hash",
+        "manifest_file_sha256"
+      ],
+      "properties": {
+        "tag": {
+          "const": "v0.78.0"
+        },
+        "peeled_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "tag_object": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifest_version": {
+          "const": "1.72.0"
+        },
+        "manifest_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest_file_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "predecessor_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "peeled_commit"
+      ],
+      "properties": {
+        "tag": {
+          "const": "v0.77.0"
+        },
+        "peeled_commit": {
+          "const": "39a973d51bdc8fc957a65052f4bb5f310a1f72c3"
+        }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_tag",
+        "file",
+        "file_sha256",
+        "deployment_id",
+        "deployment_hash",
+        "build_identity"
+      ],
+      "properties": {
+        "build_identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["executable_core_hash", "package_version", "predecessor_manifest_identity", "reviewed_code_checkpoint"],
+          "properties": {
+            "executable_core_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "package_version": {"const": "0.76.0"},
+            "reviewed_code_checkpoint": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "predecessor_manifest_identity": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["build_input_tree_hash","main_ci_run","manifest_file_sha256","manifest_hash","manifest_version","package_version","peeled_commit","release_tag","repository","tag_object","visibility"],
+              "properties": {
+                "build_input_tree_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "main_ci_run": {"type": "integer", "minimum": 1},
+                "manifest_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "manifest_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "manifest_version": {"const": "1.69.0"},
+                "package_version": {"const": "0.75.0"},
+                "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "release_tag": {"const": "v0.75.0"},
+                "repository": {"const": "cjl308868584-lang/crypto-quant-core"},
+                "tag_object": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "visibility": {"const": "PUBLIC"}
+              }
+            }
+          }
+        },
+        "release_tag": {
+          "const": "v0.76.0"
+        },
+        "file": {
+          "const": "artifacts/challenger-replacement/challenger-replacement-v3-deployment-v0.76.0.json"
+        },
+        "file_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "deployment_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deployment_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "tree_hash",
+        "file_count",
+        "total_size_bytes",
+        "root_device",
+        "root_inode"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tree_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "total_size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "root_device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "root_inode": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "event_root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "device",
+        "inode",
+        "owner_uid",
+        "mode",
+        "initial_event_count",
+        "initial_orphan_staging_count"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "owner_uid": {
+          "const": 501
+        },
+        "mode": {
+          "const": 448
+        },
+        "initial_event_count": {
+          "const": 0
+        },
+        "initial_orphan_staging_count": {
+          "const": 0
+        }
+      }
+    },
+    "python": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "device",
+        "inode",
+        "owner_uid",
+        "mode",
+        "link_count",
+        "size_bytes",
+        "sha256",
+        "sys_version",
+        "import_stdout_sha256",
+        "import_stderr_sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "/usr/bin/python3"
+        },
+        "device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "owner_uid": {
+          "const": 0
+        },
+        "mode": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "link_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sys_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "import_stdout_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "import_stderr_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_root",
+        "deployment_root",
+        "contract",
+        "candidate_plist",
+        "preflight_root",
+        "install_receipt_root",
+        "start_receipt_root",
+        "event_root",
+        "stdout",
+        "stderr",
+        "target_plist"
+      ],
+      "properties": {
+        "runtime_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deployment_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contract": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_plist": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preflight_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "install_receipt_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start_receipt_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "event_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stdout": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stderr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_plist": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "identity"
+      ],
+      "properties": {
+        "label": {
+          "const": "local.crypto-quant.challenger-replacement-v1"
+        },
+        "identity": {
+          "const": "gui/501/local.crypto-quant.challenger-replacement-v1"
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module",
+        "program_arguments",
+        "environment",
+        "working_directory"
+      ],
+      "properties": {
+        "module": {
+          "const": "crypto_quant.challenger_replacement_v3_installed_runtime"
+        },
+        "program_arguments": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {"type": "string", "minLength": 1},
+            {"const": "-s"},
+            {"const": "-m"},
+            {"const": "crypto_quant.challenger_replacement_v3_installed_runtime"}
+          ],
+          "items": false
+        },
+        "working_directory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "PATH",
+            "PYTHONDONTWRITEBYTECODE",
+            "PYTHONNOUSERSITE",
+            "PYTHONPATH"
+          ],
+          "properties": {
+            "PATH": {
+              "const": "/usr/bin:/bin:/usr/sbin:/sbin"
+            },
+            "PYTHONDONTWRITEBYTECODE": {
+              "const": "1"
+            },
+            "PYTHONNOUSERSITE": {
+              "const": "1"
+            },
+            "PYTHONPATH": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "schedule": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "hour",
+          "minute"
+        ],
+        "properties": {
+          "hour": {
+            "type": "integer",
+            "enum": [
+              0,
+              4,
+              8,
+              12,
+              16,
+              20
+            ]
+          },
+          "minute": {
+            "const": 2
+          }
+        }
+      }
+    },
+    "plist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "file_sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "production_activation",
+        "runtime_install_authorized",
+        "replacement_start_authorized",
+        "credentials_allowed",
+        "account_requests_allowed",
+        "real_orders_allowed",
+        "fund_movement_allowed"
+      ],
+      "properties": {
+        "production_activation": {
+          "const": false
+        },
+        "runtime_install_authorized": {
+          "const": true
+        },
+        "replacement_start_authorized": {
+          "const": false
+        },
+        "credentials_allowed": {
+          "const": false
+        },
+        "account_requests_allowed": {
+          "const": false
+        },
+        "real_orders_allowed": {
+          "const": false
+        },
+        "fund_movement_allowed": {
+          "const": false
+        }
+      }
+    },
+    "status": {
+      "const": "V3_SIMULATION_INSTALL_CONTRACT_VERIFIED_NOT_INSTALLED"
+    }
+  }
+}

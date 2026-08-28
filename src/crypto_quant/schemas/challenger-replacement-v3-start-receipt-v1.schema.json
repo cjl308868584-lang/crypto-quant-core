@@ -9,6 +9,7 @@
     "shared_opportunity_id": {"type": "string", "pattern": "^ETHUSDT@"}, "shared_event_hash": {"$ref": "#/$defs/hash"},
     "operational_start": {"type": "object", "additionalProperties": false, "required": ["observed_at"], "properties": {"observed_at": {"type": "string"}}},
     "economic_start": {"type": "object", "additionalProperties": false, "required": ["scheduled_for"], "properties": {"scheduled_for": {"type": "string"}}},
+    "install_receipt_binding": {"type": "object", "additionalProperties": false, "required": ["receipt_id", "receipt_hash", "file_sha256"], "properties": {"receipt_id": {"type": "string", "pattern": "^challenger_replacement_v3_activation_install_[0-9a-f]{64}$"}, "receipt_hash": {"$ref": "#/$defs/hash"}, "file_sha256": {"$ref": "#/$defs/hash"}}},
     "event_root_identity": {"type": "object"}, "authority": {"type": "object"},
     "status": {"const": "V3_FIRST_NATURAL_OBSERVED_BOUND_NOT_ACTIVATED"}
   },

@@ -159,6 +159,13 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
             "src/crypto_quant/challenger_replacement_binance_private_protocol.py",
             "src/crypto_quant/challenger_replacement_binance_reconciliation.py",
             "src/crypto_quant/challenger_replacement_canary_controller.py",
+            "src/crypto_quant/challenger_replacement_install.py",
+            "src/crypto_quant/challenger_replacement_install_preflight.py",
+            "src/crypto_quant/challenger_replacement_preflight.py",
+            "src/crypto_quant/challenger_replacement_v3_activation_install.py",
+            "src/crypto_quant/challenger_replacement_v3_activation_preflight.py",
+            "src/crypto_quant/challenger_replacement_v3_activation_trust.py",
+            "src/crypto_quant/system_paper_launchctl.py",
         })
         for path in (
             "src/crypto_quant/schemas/challenger-replacement-public-market-capture-v2.schema.json",

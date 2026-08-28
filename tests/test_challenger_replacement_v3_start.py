@@ -128,6 +128,23 @@ class ChallengerReplacementV3StartTests(unittest.TestCase):
             receipt,
         )
 
+        install_binding = {
+            "receipt_id": "challenger_replacement_v3_activation_install_" + "a" * 64,
+            "receipt_hash": "b" * 64,
+            "file_sha256": "c" * 64,
+        }
+        installed = build_challenger_replacement_v3_start_receipt(
+            deployment=deployment, event_projection=projection,
+            event_root_identity=bound_identity,
+            install_receipt_binding=install_binding,
+        )
+        self.assertEqual(installed["install_receipt_binding"], install_binding)
+        self.assertEqual(load_challenger_replacement_v3_start_receipt_bytes(
+            canonical_json(installed).encode(), deployment=deployment,
+            event_projection=projection, event_root_identity=bound_identity,
+            install_receipt_binding=install_binding,
+        ), installed)
+
         changed = deepcopy(receipt)
         changed["$schema"] = "./challenger-replacement-start-receipt-v1.schema.json"
         with self.assertRaises(ChallengerReplacementV3StartError):

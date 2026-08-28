@@ -13,11 +13,6 @@ from .challenger_replacement_opportunity_evidence import (
     load_challenger_replacement_fixture_result_evidence_bytes,
     load_challenger_replacement_simulation_result_evidence_bytes,
 )
-from .challenger_replacement_binance_private_contract import (
-    ChallengerReplacementBinancePrivateContractError,
-    PRIVATE_EVENT_TYPES,
-    apply_challenger_replacement_private_event,
-)
 from .challenger_replacement_plan import (
     ChallengerReplacementPlanError,
     _strict_json_bytes,
@@ -295,7 +290,19 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
                 or header.get("build_identity_hash") != business_hash(build_identity)):
             invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
         return
-    if event_type in PRIVATE_EVENT_TYPES:
+    if isinstance(event_type, str) and event_type.startswith("BINANCE_"):
+        try:
+            from .challenger_replacement_binance_private_contract import (
+                ChallengerReplacementBinancePrivateContractError,
+                PRIVATE_EVENT_TYPES,
+                apply_challenger_replacement_private_event,
+            )
+        except ImportError as error:
+            raise ChallengerReplacementOpportunityError(
+                "CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID"
+            ) from error
+        if event_type not in PRIVATE_EVENT_TYPES:
+            invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
         if (
             header.get("plan_hash") != PLAN_HASH
             or header.get("build_identity_hash") != business_hash(build_identity)
