@@ -1,0 +1,384 @@
+"""Pure operational-ceremony and E0/E1/E2 Canary projection."""
+import base64, hashlib, json
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
+from importlib import resources
+from types import MappingProxyType
+from typing import Mapping
+from jsonschema import Draft202012Validator
+from .canonical import canonical_decimal, canonical_json, utc_datetime
+from .challenger_replacement_accelerated_canary_plan import build_challenger_replacement_accelerated_canary_plan
+from .challenger_replacement_plan import ChallengerReplacementPlanError, _strict_json_bytes
+from .challenger_replacement_events import (ChallengerReplacementEventRoot, replay_challenger_replacement_events,
+    verify_challenger_replacement_event_publication)
+from .challenger_replacement_install_trust import business_hash
+from .challenger_replacement_binance_private_contract import load_binance_private_activation_bytes
+from .challenger_replacement_binance_reconciliation import load_binance_reconciliation_bytes_strict
+from .challenger_replacement_plan_v3 import build_challenger_replacement_plan_v3
+from .challenger_replacement_opportunities import ChallengerReplacementOpportunityState
+_SCHEMA = "challenger-replacement-canary-projection-v1.schema.json"
+_APPROVAL_SCHEMA = "challenger-replacement-canary-authority-approval-v1.schema.json"
+_CEREMONY = (
+    "CEREMONY_READY_FLAT", "SPOT_BUY_SUBMITTED", "SPOT_LONG_RECONCILED",
+    "SPOT_SELL_SUBMITTED", "FLAT_RECONCILED_AFTER_SPOT", "PERP_SHORT_SUBMITTED",
+    "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED", "PERP_CLOSE_REDUCE_ONLY_SUBMITTED",
+    "FLAT_RECONCILED_AFTER_PERP", "CEREMONY_QUALIFIED",
+)
+_LABEL = "OPERATIONAL_CEREMONY_NOT_STRATEGY_EVIDENCE"
+_CANARY_TYPES = frozenset({"CANARY_AUTHORITY_ARTIFACT_PUBLISHED", "CEREMONY_STATE_RECONCILED", "CANARY_STAGE_BLOCK_STARTED", "CANARY_EQUITY_RECONCILED", "CANARY_STRATEGY_CYCLE_RECONCILED"})
+_ARTIFACT_KEYS = frozenset({"event_type", "block_id", "occurred_at", "artifact_kind", "artifact_id", "artifact_bytes_base64", "artifact_sha256"})
+_HARD_STOPS = frozenset({"UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", "VENUE_LOCAL_POSITION_MISMATCH",
+    "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP", "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT"})
+_AUTHORITY = {"network_requests": 0, "orders": 0, "state_writes": 0, "production_activation": False}
+class ChallengerReplacementCanaryControllerError(ValueError):
+    def __init__(self, reason_code):
+        super().__init__(reason_code); self.reason_code = reason_code
+def _fail(reason="CHALLENGER_REPLACEMENT_CANARY_EVENT_INVALID", error=None):
+    failure = ChallengerReplacementCanaryControllerError(reason)
+    if error is None: raise failure
+    raise failure from error
+def _time(value):
+    try:
+        if not isinstance(value, str): raise ValueError
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or utc_datetime(parsed) != value: raise ValueError
+        return parsed.astimezone(timezone.utc)
+    except ValueError as error:
+        _fail(error=error)
+def _decimal(value):
+    try:
+        number = Decimal(value)
+        if (not isinstance(value, str) or not number.is_finite() or number < 0
+                or canonical_decimal(number) != value):
+            raise ValueError
+        return number
+    except (InvalidOperation, TypeError, ValueError) as error:
+        _fail(error=error)
+def _identity(value):
+    return isinstance(value, str) and 1 <= len(value) <= 256
+def _prefixed_hash(value, prefix):
+    suffix = value[len(prefix):] if isinstance(value, str) else ""
+    return (isinstance(value, str) and value.startswith(prefix) and len(suffix) == 64
+            and not set(suffix) - set("0123456789abcdef"))
+def _event(value, previous_time):
+    if not isinstance(value, Mapping): _fail()
+    event_type = value.get("event_type")
+    keys = {
+        "CEREMONY_STATE_RECONCILED": {"event_type", "block_id", "label", "state", "occurred_at", "reconciliation_id", "minimum_amount_satisfied_or_null", "flat_or_null"},
+        "CANARY_STAGE_BLOCK_STARTED": {"event_type", "stage", "block_id", "activation_id", "previous_block_id_or_null", "incident_unlock_id_or_null", "occurred_at", "starting_equity"},
+        "CANARY_EQUITY_RECONCILED": {"event_type", "block_id", "occurred_at", "equity", "flat", "new_risk_attempted", "hard_stop_or_null"},
+        "CANARY_STRATEGY_CYCLE_RECONCILED": {"event_type", "block_id", "occurred_at", "cycle_id", "product", "complete", "evidence_label"},
+    }
+    if event_type not in keys or frozenset(value) != keys[event_type]: _fail()
+    occurred = _time(value["occurred_at"])
+    if previous_time is not None and occurred <= previous_time: _fail()
+    return dict(value), occurred
+def _new_block(event, plan, previous):
+    stage = event["stage"]
+    if stage not in {"E0", "E1", "E2"}: _fail()
+    policy = plan["canary_ladder"][stage]
+    if (not _identity(event["block_id"])
+            or not _prefixed_hash(event["activation_id"], "binance_private_activation_")
+            or _decimal(event["starting_equity"]) != Decimal(policy["capital_limit_usdt"])): _fail()
+    if previous is None:
+        if (stage != "E0" or event["previous_block_id_or_null"] is not None
+                or event["incident_unlock_id_or_null"] is not None): _fail()
+    else:
+        order = {"E0": "E1", "E1": "E2"}
+        promoted = (previous["status"] == "STAGE_ELIGIBLE_AWAITING_APPROVAL"
+                    and order.get(previous["stage"]) == stage and event["incident_unlock_id_or_null"] is None)
+        recovered = (previous["status"] == "STAGE_FAILED_LOCKED" and previous["flat"] is True
+                     and previous["stage"] == stage and _prefixed_hash(event["incident_unlock_id_or_null"], "incident_unlock_"))
+        if (not (promoted or recovered)
+                or event["previous_block_id_or_null"] != previous["block_id"]
+                or event["block_id"] == previous["block_id"]): _fail()
+    equity = event["starting_equity"]
+    return {
+        "stage": stage, "block_id": event["block_id"], "activation_id": event["activation_id"],
+        "previous_block_id_or_null": event["previous_block_id_or_null"], "incident_unlock_id_or_null": event["incident_unlock_id_or_null"],
+        "started_at": event["occurred_at"], "status": "STAGE_ACTIVE", "starting_equity": equity, "current_equity": equity,
+        "high_water_equity": equity, "day_start_date": event["occurred_at"][:10], "day_start_equity": equity, "daily_loss": "0", "drawdown": "0",
+        "new_risk_blocked": False, "hard_stop_or_null": None, "failure_reason_or_null": None,
+        "flat": True, "flatten_required": False, "strategy_cycle_count": 0,
+        "spot_complete_cycles": 0, "perpetual_complete_cycles": 0, "cycle_ids": [],
+    }
+def _apply_equity(block, event, policy):
+    if (event["block_id"] != block["block_id"] or not isinstance(event["flat"], bool)
+            or not isinstance(event["new_risk_attempted"], bool) or (event["hard_stop_or_null"] is not None
+            and event["hard_stop_or_null"] not in _HARD_STOPS)): _fail()
+    equity = _decimal(event["equity"])
+    if block["status"] == "STAGE_FAILED_LOCKED":
+        if event["new_risk_attempted"] or event["hard_stop_or_null"] is not None: _fail()
+        high = max(Decimal(block["high_water_equity"]), equity)
+        block.update(current_equity=canonical_decimal(equity), high_water_equity=canonical_decimal(high),
+            drawdown=canonical_decimal(max(Decimal(0), high - equity)),
+            flat=event["flat"], flatten_required=not event["flat"])
+        return
+    if event["occurred_at"][:10] != block["day_start_date"]:
+        block.update(day_start_date=event["occurred_at"][:10], day_start_equity=event["equity"],
+                     daily_loss="0", new_risk_blocked=False, status="STAGE_ACTIVE")
+    high = max(Decimal(block["high_water_equity"]), equity)
+    daily = max(Decimal(0), Decimal(block["day_start_equity"]) - equity)
+    drawdown = max(Decimal(0), high - equity)
+    daily_limit = (Decimal(policy["daily_loss_limit"]) if policy["daily_loss_limit_kind"] == "ABSOLUTE_USDT"
+                   else Decimal(policy["capital_limit_usdt"]) * Decimal(policy["daily_loss_limit"]))
+    drawdown_limit = (Decimal(policy["drawdown_limit"]) if policy["drawdown_limit_kind"] == "ABSOLUTE_USDT"
+                      else high * Decimal(policy["drawdown_limit"]))
+    hard_stop = event["hard_stop_or_null"]
+    post_limit_attempt = event["new_risk_attempted"] and (block["new_risk_blocked"] or daily >= daily_limit)
+    if hard_stop == "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT":
+        if not post_limit_attempt: _fail()
+    elif post_limit_attempt: _fail()
+    block.update(current_equity=canonical_decimal(equity), high_water_equity=canonical_decimal(high),
+        daily_loss=canonical_decimal(daily), drawdown=canonical_decimal(drawdown),
+        flat=event["flat"])
+    if hard_stop is not None or drawdown >= drawdown_limit:
+        block.update(status="STAGE_FAILED_LOCKED", new_risk_blocked=True, hard_stop_or_null=hard_stop,
+                     failure_reason_or_null=hard_stop or "STAGE_DRAWDOWN_LIMIT_REACHED",
+                     flatten_required=not event["flat"])
+    elif daily >= daily_limit: block.update(status="STAGE_DAILY_STOPPED", new_risk_blocked=True)
+def _apply_cycle(block, event):
+    if (event["block_id"] != block["block_id"] or block["status"] == "STAGE_FAILED_LOCKED"
+            or event["product"] not in {"SPOT", "PERPETUAL"} or event["complete"] is not True
+            or event["evidence_label"] != "NATURAL_STRATEGY_EVIDENCE" or not _identity(event["cycle_id"])
+            or event["cycle_id"] in block["cycle_ids"]): _fail()
+    block["cycle_ids"].append(event["cycle_id"])
+    block["strategy_cycle_count"] += 1
+    block["spot_complete_cycles" if event["product"] == "SPOT"
+          else "perpetual_complete_cycles"] += 1
+def _eligible(block, plan, now):
+    policy = plan["canary_ladder"][block["stage"]]
+    return all((block["status"] == "STAGE_ACTIVE", now >= _time(block["started_at"])
+        + timedelta(days=policy["minimum_calendar_days"]),
+        block["strategy_cycle_count"] >= policy["minimum_strategy_cycles"],
+        block["spot_complete_cycles"] >= 1, block["perpetual_complete_cycles"] >= 1))
+def _projection_id(document):
+    core = dict(document); core.pop("projection_id", None)
+    return "challenger_replacement_canary_projection_" + hashlib.sha256(canonical_json(core).encode()).hexdigest()
+def _approval_id(document):
+    core = dict(document); core.pop("approval_id", None)
+    prefix = "canary_promotion_" if document.get("approval_kind") == "PROMOTION" else "incident_unlock_"
+    return prefix + hashlib.sha256(canonical_json(core).encode()).hexdigest()
+def load_challenger_replacement_canary_approval_bytes(data, *, plan, build_identity, now):
+    """Strictly load one bounded promotion or incident-unlock approval."""
+    reason = "CHALLENGER_REPLACEMENT_CANARY_APPROVAL_INVALID"
+    try:
+        if not isinstance(data, bytes) or not data.endswith(b"\n"): raise ValueError
+        document = _strict_json_bytes(data[:-1])
+        schema = json.loads(resources.files("crypto_quant").joinpath("schemas", _APPROVAL_SCHEMA).read_text(encoding="utf-8"))
+        observed, approved, expires = _time(now), _time(document["approved_at"]), _time(document["expires_at"])
+        if (canonical_json(document).encode() != data[:-1]
+                or tuple(Draft202012Validator(schema).iter_errors(document))
+                or not isinstance(plan, Mapping) or dict(plan) != build_challenger_replacement_accelerated_canary_plan()
+                or document["plan"] != {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]}
+                or not isinstance(build_identity, Mapping) or document["build_identity"] != dict(build_identity)
+                or document["approval_id"] != _approval_id(document)
+                or (document["approval_kind"] == "PROMOTION" and document["stage"] == "E0")
+                or not approved <= observed < expires): raise ValueError
+        return _freeze(document)
+    except (ChallengerReplacementCanaryControllerError, ChallengerReplacementPlanError, KeyError,
+            TypeError, UnicodeDecodeError, ValueError) as error: _fail(reason, error)
+def _artifact_payload(event, *, expected_id=None, expected_kind=None):
+    outer = json.loads(event.final_bytes.decode("utf-8"))
+    payload = _strict_json_bytes(base64.b64decode(outer["payload_bytes_base64"], validate=True))
+    data = base64.b64decode(payload["artifact_bytes_base64"], validate=True)
+    if (outer["event_type"] != "CANARY_AUTHORITY_ARTIFACT_PUBLISHED"
+            or frozenset(payload) != _ARTIFACT_KEYS
+            or payload["event_type"] != outer["event_type"]
+            or payload["block_id"] != outer["slot_id"]
+            or payload["occurred_at"] != outer["recorded_at"]
+            or payload["artifact_kind"] not in {"ACTIVATION", "PROMOTION", "RECONCILIATION", "INCIDENT_UNLOCK"}
+            or not _identity(payload["artifact_id"])
+            or not 1 <= len(data) <= 4_194_304
+            or hashlib.sha256(data).hexdigest() != payload["artifact_sha256"]
+            or (expected_id is not None and payload["artifact_id"] != expected_id)
+            or (expected_kind is not None and payload["artifact_kind"] != expected_kind)):
+        raise ValueError
+    return payload, data
+def _referenced_artifact(root, record, *, before_sequence, artifact_id, kind):
+    if not isinstance(record, Mapping) or record.get("sequence", before_sequence) >= before_sequence: raise ValueError
+    event = verify_challenger_replacement_event_publication(root, record)
+    return _artifact_payload(event, expected_id=artifact_id, expected_kind=kind)[1]
+def _authorize_stage(root, outer, payload, plan, build_identity):
+    activation_data = _referenced_artifact(root, payload["activation_publication"],
+        before_sequence=outer["sequence"], artifact_id=payload["activation_id"], kind="ACTIVATION")
+    activation = load_binance_private_activation_bytes(activation_data, build_identity=build_identity, now=payload["occurred_at"])
+    if (activation.activation_id != payload["activation_id"]
+            or activation.block_id != payload["block_id"] or activation.stage != payload["stage"]
+            or activation.capital_usdt != payload["starting_equity"]
+            or activation.production_activation is not True): raise ValueError
+    previous, unlock = payload["previous_block_id_or_null"], payload["incident_unlock_id_or_null"]
+    promotion = payload["promotion_approval_id_or_null"]
+    record = payload["approval_publication_or_null"]
+    if previous is None:
+        if payload["stage"] != "E0" or unlock is not None or promotion is not None or record is not None: raise ValueError
+    else:
+        kind, approval_id = (("INCIDENT_UNLOCK", unlock) if unlock is not None else ("PROMOTION", promotion))
+        if (not _identity(approval_id) or not isinstance(record, Mapping)): raise ValueError
+        approval_data = _referenced_artifact(root, record, before_sequence=outer["sequence"], artifact_id=approval_id, kind=kind)
+        approval = load_challenger_replacement_canary_approval_bytes(approval_data,
+            plan=plan, build_identity=build_identity, now=payload["occurred_at"])
+        if (approval["approval_kind"] != kind or approval["approval_id"] != approval_id
+                or approval["stage"] != payload["stage"] or approval["block_id"] != payload["block_id"]
+                or approval["previous_block_id"] != previous
+                or (kind == "PROMOTION") is (unlock is not None)): raise ValueError
+    normalized = dict(payload)
+    for key in ("activation_publication", "promotion_approval_id_or_null", "approval_publication_or_null"): normalized.pop(key)
+    return normalized
+def _authorize_reconciliation(root, outer, payload):
+    data = _referenced_artifact(root, payload["reconciliation_publication"], before_sequence=outer["sequence"], artifact_id=payload["reconciliation_id"], kind="RECONCILIATION")
+    loaded = load_binance_reconciliation_bytes_strict(data, event_root=root)
+    facts = loaded["venue_projection"]
+    equity = canonical_decimal(Decimal(facts["wallet_balance"]) + Decimal(facts["unrealized_pnl"]))
+    flat = Decimal(facts["signed_quantity"]) == 0 and facts["open_order_count"] == 0
+    if (loaded["reconciliation_id"] != payload["reconciliation_id"]
+            or (payload["event_type"] == "CEREMONY_STATE_RECONCILED"
+                and payload["flat_or_null"] is not None and payload["flat_or_null"] is not flat)
+            or (payload["event_type"] == "CANARY_EQUITY_RECONCILED"
+                and (payload["equity"] != equity or payload["flat"] is not flat))): raise ValueError
+    normalized = dict(payload); normalized.pop("reconciliation_publication")
+    if payload["event_type"] == "CANARY_EQUITY_RECONCILED": normalized.pop("reconciliation_id")
+    return normalized
+def _private_event(root, record, *, before_sequence, projection):
+    if not isinstance(record, Mapping) or record.get("sequence", before_sequence) >= before_sequence: raise ValueError
+    event = verify_challenger_replacement_event_publication(root, record)
+    outer = json.loads(event.final_bytes.decode("utf-8"))
+    slot = projection["opportunities"].get(outer["slot_id"])
+    if not isinstance(slot, Mapping) or not isinstance(slot.get("private"), Mapping): raise ValueError
+    return event, outer, slot["private"]
+def _authorize_private_claim(root, outer, payload, projection):
+    normalized, kind = dict(payload), payload["event_type"]
+    if kind == "CANARY_EQUITY_RECONCILED":
+        hard_stop, record = payload["hard_stop_or_null"], payload.get("private_event_publication_or_null")
+        if hard_stop is None:
+            if record is not None: raise ValueError
+        else:
+            event, claimed, private = _private_event(root, record, before_sequence=outer["sequence"], projection=projection)
+            if private.get("block_id") != payload["block_id"]: raise ValueError
+            if hard_stop == "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN":
+                if (claimed["event_type"] != "BINANCE_ORDER_UNKNOWN" or private.get("stage") != "BINANCE_ORDER_UNKNOWN" or private.get("unresolved_unknown") is not True): raise ValueError
+            elif hard_stop in {"VENUE_LOCAL_POSITION_MISMATCH", "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP"}:
+                claimed_payload = _strict_json_bytes(base64.b64decode(claimed["payload_bytes_base64"], validate=True))
+                if (claimed["event_type"] != "BINANCE_RECONCILIATION_FAILED"
+                        or claimed_payload.get("reason_code") != hard_stop
+                        or private.get("stage") != "BINANCE_RECONCILIATION_FAILED" or private.get("failure_reason_code") != hard_stop): raise ValueError
+            elif (hard_stop != "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT"
+                    or claimed["event_type"] != "BINANCE_INTENT_AUTHORIZED"
+                    or private.get("intent_event_hash") != event.event_hash): raise ValueError
+        normalized.pop("private_event_publication_or_null", None)
+        return normalized
+    event, claimed, private = _private_event(root, payload.get("private_event_publication"), before_sequence=outer["sequence"], projection=projection)
+    if (claimed["event_type"] != "BINANCE_RECONCILIATION_SUCCEEDED"
+            or private.get("stage") != "BINANCE_RECONCILIATION_SUCCEEDED"
+            or private.get("block_id") != payload["block_id"]
+            or private.get("action") not in {"CLOSE_LONG", "CLOSE_SHORT"}): raise ValueError
+    product = private["product"]
+    opening = next((candidate.get("private") for candidate in projection["opportunities"].values()
+        if isinstance(candidate.get("private"), Mapping) and candidate["private"].get("block_id") == payload["block_id"]
+        and candidate["private"].get("product") == product and candidate["private"].get("action") in {"OPEN_LONG", "OPEN_SHORT"}
+        and candidate["private"].get("stage") == "BINANCE_RECONCILIATION_SUCCEEDED" and candidate["private"].get("last_private_event_sequence", event.sequence) < event.sequence), None)
+    if opening is None: raise ValueError
+    cycle_id = "natural-cycle-" + hashlib.sha256((opening["last_private_event_hash"] + event.event_hash).encode()).hexdigest()
+    return {"event_type": payload["event_type"], "block_id": payload["block_id"],
+        "occurred_at": payload["occurred_at"], "cycle_id": cycle_id, "product": product,
+        "complete": True, "evidence_label": "NATURAL_STRATEGY_EVIDENCE"}
+def _project_challenger_replacement_canary(*, events, plan, now):
+    if (not isinstance(events, tuple) or not isinstance(plan, Mapping)
+            or dict(plan) != build_challenger_replacement_accelerated_canary_plan()):
+        _fail()
+    now_value = _time(now); ceremony = block = previous_time = None
+    ceremony_index = 0
+    for candidate in events:
+        event, occurred = _event(candidate, previous_time)
+        if occurred > now_value: _fail()
+        previous_time = occurred
+        if event["event_type"] == "CEREMONY_STATE_RECONCILED":
+            state = event["state"]
+            amount_required = state in {"SPOT_LONG_RECONCILED", "FLAT_RECONCILED_AFTER_SPOT",
+                "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED", "FLAT_RECONCILED_AFTER_PERP"}
+            expected_flat = (True if state in {
+                "CEREMONY_READY_FLAT", "FLAT_RECONCILED_AFTER_SPOT", "FLAT_RECONCILED_AFTER_PERP",
+                "CEREMONY_QUALIFIED"} else False if state in {"SPOT_LONG_RECONCILED",
+                "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED"} else None)
+            if (block is not None or ceremony_index >= len(_CEREMONY)
+                    or state != _CEREMONY[ceremony_index] or event["label"] != _LABEL or not _identity(event["block_id"])
+                    or not _prefixed_hash(event["reconciliation_id"], "binance_reconciliation_")
+                    or event["minimum_amount_satisfied_or_null"] != (True if amount_required else None)
+                    or event["flat_or_null"] is not expected_flat or (ceremony is not None
+                    and event["block_id"] != ceremony["block_id"])): _fail()
+            ceremony_index += 1
+            ceremony = {"block_id": event["block_id"], "state": event["state"], "qualified": event["state"] == "CEREMONY_QUALIFIED",
+                "strategy_cycle_count": 0, "economic_evidence_count": 0}
+        elif event["event_type"] == "CANARY_STAGE_BLOCK_STARTED":
+            if ceremony is None or ceremony["qualified"] is not True: _fail()
+            if block is not None and _eligible(block, plan, occurred): block["status"] = "STAGE_ELIGIBLE_AWAITING_APPROVAL"
+            block = _new_block(event, plan, block)
+        elif block is None: _fail()
+        elif event["event_type"] == "CANARY_EQUITY_RECONCILED":
+            _apply_equity(block, event, plan["canary_ladder"][block["stage"]])
+        else:
+            _apply_cycle(block, event)
+    if block is not None and _eligible(block, plan, now_value): block["status"] = "STAGE_ELIGIBLE_AWAITING_APPROVAL"
+    if block is not None: block.pop("cycle_ids")
+    document = {
+        "$schema": "./challenger-replacement-canary-projection-v1.schema.json", "schema_version": "1.0.0", "projection_id": "",
+        "plan": {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]},
+        "observed_through": now, "ceremony": ceremony, "stage_block_or_null": block,
+        "authority": dict(_AUTHORITY)}
+    document["projection_id"] = _projection_id(document)
+    return (canonical_json(document) + "\n").encode()
+def project_challenger_replacement_canary(*, event_root, replacement_plan, canary_plan, build_identity, now):
+    """Project only from the retained canonical event-root capability."""
+    try:
+        if (not isinstance(event_root, ChallengerReplacementEventRoot)
+                or not isinstance(build_identity, Mapping) or not isinstance(replacement_plan, Mapping)
+                or dict(replacement_plan) != build_challenger_replacement_plan_v3()
+                or not isinstance(canary_plan, Mapping) or dict(canary_plan) != build_challenger_replacement_accelerated_canary_plan()): raise ValueError
+        replay = replay_challenger_replacement_events(event_root)
+        opportunity_projection = ChallengerReplacementOpportunityState(event_root=event_root,
+            plan=replacement_plan, build_identity=build_identity).replay()
+        expected_build = business_hash(build_identity)
+        events, artifact_ids = [], set()
+        for event in replay.events:
+            outer = json.loads(event.final_bytes.decode("utf-8"))
+            if (outer["plan_hash"] != replacement_plan["plan_hash"]
+                    or outer["build_identity_hash"] != expected_build): raise ValueError
+            if outer["event_type"] not in _CANARY_TYPES: continue
+            payload = _strict_json_bytes(base64.b64decode(outer["payload_bytes_base64"], validate=True))
+            if outer["event_type"] == "CANARY_AUTHORITY_ARTIFACT_PUBLISHED":
+                artifact, _data = _artifact_payload(event)
+                if artifact["artifact_id"] in artifact_ids: raise ValueError
+                artifact_ids.add(artifact["artifact_id"])
+                continue
+            if (payload.get("event_type") != outer["event_type"] or payload.get("occurred_at") != outer["recorded_at"]
+                    or payload.get("block_id") != outer["slot_id"]): raise ValueError
+            if outer["event_type"] == "CANARY_STAGE_BLOCK_STARTED":
+                payload = _authorize_stage(event_root, outer, payload, canary_plan, build_identity)
+            elif outer["event_type"] in {"CEREMONY_STATE_RECONCILED", "CANARY_EQUITY_RECONCILED"}:
+                payload = _authorize_reconciliation(event_root, outer, payload)
+            if outer["event_type"] in {"CANARY_EQUITY_RECONCILED", "CANARY_STRATEGY_CYCLE_RECONCILED"}:
+                payload = _authorize_private_claim(event_root, outer, payload, opportunity_projection)
+            events.append(payload)
+        event_root.validate(); return _project_challenger_replacement_canary(events=tuple(events), plan=canary_plan, now=now)
+    except (KeyError, TypeError, ValueError) as error:
+        if isinstance(error, ChallengerReplacementCanaryControllerError): raise
+        _fail("CHALLENGER_REPLACEMENT_CANARY_CANONICAL_AUTHORITY_INVALID", error)
+def load_challenger_replacement_canary_projection_bytes(data, *, plan):
+    """Strictly replay one canonical Canary projection."""
+    try:
+        if not isinstance(data, bytes) or not data.endswith(b"\n"): raise ValueError
+        document = _strict_json_bytes(data[:-1])
+        schema = json.loads(resources.files("crypto_quant").joinpath("schemas", _SCHEMA).read_text(encoding="utf-8"))
+        if (canonical_json(document).encode() != data[:-1]
+                or tuple(Draft202012Validator(schema).iter_errors(document))
+                or not isinstance(plan, Mapping) or dict(plan) != build_challenger_replacement_accelerated_canary_plan()
+                or document["plan"] != {"plan_id": plan["plan_id"], "plan_hash": plan["plan_hash"]}
+                or document["projection_id"] != _projection_id(document)): raise ValueError
+        return _freeze(document)
+    except (ChallengerReplacementPlanError, KeyError, TypeError,
+            UnicodeDecodeError, ValueError) as error:
+        _fail("CHALLENGER_REPLACEMENT_CANARY_PROJECTION_INVALID", error)
+def _freeze(value):
+    if isinstance(value, dict): return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, list): return tuple(_freeze(item) for item in value)
+    return value

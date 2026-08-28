@@ -141,9 +141,9 @@ def _raw_kline_body(rows):
     return canonical_json(raw).encode("utf-8")
 
 
-def _live_capture_bytes():
+def _live_capture_bytes(latest="3310"):
     plan = fixture_plan()
-    rows = fixture_klines(scheduled_for=SCHEDULED_FOR, latest="3310")
+    rows = fixture_klines(scheduled_for=SCHEDULED_FOR, latest=latest)
     scheduled = datetime.fromisoformat(SCHEDULED_FOR.replace("Z", "+00:00"))
     end_time_ms = int(scheduled.timestamp() * 1000) - 1
     request_identity = {
@@ -221,8 +221,8 @@ def _payloads():
     )
 
 
-def _outer_document():
-    live_bytes, live = _live_capture_bytes()
+def _outer_document(latest="3310"):
+    live_bytes, live = _live_capture_bytes(latest=latest)
     requests = []
     for index, (kind, url, limit, payload) in enumerate(_payloads()):
         body = canonical_json(payload).encode("utf-8")

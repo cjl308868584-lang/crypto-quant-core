@@ -1,1 +1,346 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["$schema","schema_version","status","service_and_evidence_health","operational_qualification","opportunities","next_required_opportunity","fault_matrix","economic_progress","simulation_state","provenance","authority","projection_hash"],"properties":{"$schema":{"const":"./operations-projection-v3.schema.json"},"schema_version":{"const":"3.0.0"},"status":{"enum":["HEALTHY","DEGRADED","FAILED_CLOSED"]},"service_and_evidence_health":{"enum":["HEALTHY","DEGRADED","FAILED_CLOSED","NOT_INSTALLED"]},"operational_qualification":{"type":"object","additionalProperties":false,"required":["status","eligible_continuous_seconds","segment_id_or_null","reason_codes"],"properties":{"status":{"enum":["NOT_STARTED","ACTIVE","INTERRUPTED_RECOVERABLE","BLOCK_FAILED","QUALIFIED"]},"eligible_continuous_seconds":{"type":"integer","minimum":0},"segment_id_or_null":{"type":["string","null"]},"reason_codes":{"type":"array","items":{"type":"string"}}}},"opportunities":{"type":"object","additionalProperties":false,"required":["due","terminal","observed","missed"],"properties":{"due":{"type":"integer","minimum":0},"terminal":{"type":"integer","minimum":0},"observed":{"type":"integer","minimum":0},"missed":{"type":"integer","minimum":0}}},"next_required_opportunity":{"type":["string","null"]},"fault_matrix":{"type":"object","additionalProperties":false,"required":["status","receipt_id_or_null","receipt_hash_or_null"],"properties":{"status":{"const":"VERIFIED"},"receipt_id_or_null":{"type":["string","null"]},"receipt_hash_or_null":{"type":["string","null"]}}},"economic_progress":{"type":"object","additionalProperties":false,"required":["status","elapsed_complete_days","evidence_health"],"properties":{"status":{"const":"TAIL_BLIND"},"elapsed_complete_days":{"type":"integer","minimum":0},"evidence_health":{"type":"string"}}},"simulation_state":{"type":"object","additionalProperties":false,"required":["current_product","reconciliation_status","risk_state","economic_gap_locked","protective_stop_status"],"properties":{"current_product":{"type":"string"},"reconciliation_status":{"type":"string"},"risk_state":{"type":"string"},"economic_gap_locked":{"type":"boolean"},"protective_stop_status":{"type":"string"}}},"provenance":{"type":"object","additionalProperties":false,"required":["deployment_id_or_null","deployment_hash_or_null","build_identity","start_receipt_id_or_null"],"properties":{"deployment_id_or_null":{"type":["string","null"]},"deployment_hash_or_null":{"type":["string","null"]},"build_identity":{"type":"object"},"start_receipt_id_or_null":{"type":["string","null"]}}},"authority":{"type":"object","additionalProperties":false,"required":["production_activation","runtime_install_authorized","replacement_start_authorized","credentials_allowed","account_requests_allowed","broker_requests_allowed","real_orders_allowed","fund_movement_allowed","new_risk_authorized"],"properties":{"production_activation":{"const":false},"runtime_install_authorized":{"const":false},"replacement_start_authorized":{"const":false},"credentials_allowed":{"const":false},"account_requests_allowed":{"const":false},"broker_requests_allowed":{"const":false},"real_orders_allowed":{"const":false},"fund_movement_allowed":{"const":false},"new_risk_authorized":{"const":false}}},"projection_hash":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "status",
+    "service_and_evidence_health",
+    "operational_qualification",
+    "opportunities",
+    "next_required_opportunity",
+    "fault_matrix",
+    "economic_progress",
+    "simulation_state",
+    "binance_private",
+    "provenance",
+    "authority",
+    "projection_hash"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./operations-projection-v3.schema.json"
+    },
+    "schema_version": {
+      "const": "3.0.0"
+    },
+    "status": {
+      "enum": [
+        "HEALTHY",
+        "DEGRADED",
+        "FAILED_CLOSED"
+      ]
+    },
+    "service_and_evidence_health": {
+      "enum": [
+        "HEALTHY",
+        "DEGRADED",
+        "FAILED_CLOSED",
+        "NOT_INSTALLED"
+      ]
+    },
+    "operational_qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "eligible_continuous_seconds",
+        "segment_id_or_null",
+        "reason_codes"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "NOT_STARTED",
+            "ACTIVE",
+            "INTERRUPTED_RECOVERABLE",
+            "BLOCK_FAILED",
+            "QUALIFIED"
+          ]
+        },
+        "eligible_continuous_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "segment_id_or_null": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "opportunities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "due",
+        "terminal",
+        "observed",
+        "missed"
+      ],
+      "properties": {
+        "due": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "terminal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "next_required_opportunity": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fault_matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "receipt_id_or_null",
+        "receipt_hash_or_null"
+      ],
+      "properties": {
+        "status": {
+          "const": "VERIFIED"
+        },
+        "receipt_id_or_null": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "receipt_hash_or_null": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "economic_progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "elapsed_complete_days",
+        "evidence_health"
+      ],
+      "properties": {
+        "status": {
+          "const": "TAIL_BLIND"
+        },
+        "elapsed_complete_days": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence_health": {
+          "type": "string"
+        }
+      }
+    },
+    "simulation_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current_product",
+        "reconciliation_status",
+        "risk_state",
+        "economic_gap_locked",
+        "protective_stop_status"
+      ],
+      "properties": {
+        "current_product": {
+          "type": "string"
+        },
+        "reconciliation_status": {
+          "type": "string"
+        },
+        "risk_state": {
+          "type": "string"
+        },
+        "economic_gap_locked": {
+          "type": "boolean"
+        },
+        "protective_stop_status": {
+          "type": "string"
+        }
+      }
+    },
+    "binance_private": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ceremony_status",
+        "stage",
+        "stage_status",
+        "daily_loss_usdt",
+        "high_water_loss_usdt",
+        "new_risk_blocked",
+        "hard_stop_or_null",
+        "failure_reason_or_null",
+        "flatten_required"
+      ],
+      "properties": {
+        "ceremony_status": {
+          "enum": [
+            "NOT_AVAILABLE", "NOT_STARTED", "CEREMONY_READY_FLAT",
+            "SPOT_BUY_SUBMITTED", "SPOT_LONG_RECONCILED",
+            "SPOT_SELL_SUBMITTED", "FLAT_RECONCILED_AFTER_SPOT",
+            "PERP_SHORT_SUBMITTED",
+            "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED",
+            "PERP_CLOSE_REDUCE_ONLY_SUBMITTED",
+            "FLAT_RECONCILED_AFTER_PERP", "CEREMONY_QUALIFIED"
+          ]
+        },
+        "stage": {
+          "enum": [
+            null, "E0", "E1", "E2"
+          ]
+        },
+        "stage_status": {
+          "enum": [
+            "NOT_AVAILABLE", "NOT_STARTED", "STAGE_ACTIVE",
+            "STAGE_DAILY_STOPPED", "STAGE_FAILED_LOCKED",
+            "STAGE_ELIGIBLE_AWAITING_APPROVAL"
+          ]
+        },
+        "daily_loss_usdt": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "pattern": "^(?:0|0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$"}
+          ]
+        },
+        "high_water_loss_usdt": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "pattern": "^(?:0|0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$"}
+          ]
+        },
+        "new_risk_blocked": {
+          "type": "boolean"
+        },
+        "hard_stop_or_null": {
+          "enum": [
+            null, "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN",
+            "VENUE_LOCAL_POSITION_MISMATCH",
+            "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+            "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT"
+          ]
+        },
+        "failure_reason_or_null": {
+          "enum": [
+            null, "STAGE_DRAWDOWN_LIMIT_REACHED",
+            "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN",
+            "VENUE_LOCAL_POSITION_MISMATCH",
+            "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+            "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT"
+          ]
+        },
+        "flatten_required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deployment_id_or_null",
+        "deployment_hash_or_null",
+        "build_identity",
+        "start_receipt_id_or_null"
+      ],
+      "properties": {
+        "deployment_id_or_null": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deployment_hash_or_null": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "build_identity": {
+          "type": "object"
+        },
+        "start_receipt_id_or_null": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "production_activation",
+        "runtime_install_authorized",
+        "replacement_start_authorized",
+        "credentials_allowed",
+        "account_requests_allowed",
+        "broker_requests_allowed",
+        "real_orders_allowed",
+        "fund_movement_allowed",
+        "new_risk_authorized"
+      ],
+      "properties": {
+        "production_activation": {
+          "const": false
+        },
+        "runtime_install_authorized": {
+          "const": false
+        },
+        "replacement_start_authorized": {
+          "const": false
+        },
+        "credentials_allowed": {
+          "const": false
+        },
+        "account_requests_allowed": {
+          "const": false
+        },
+        "broker_requests_allowed": {
+          "const": false
+        },
+        "real_orders_allowed": {
+          "const": false
+        },
+        "fund_movement_allowed": {
+          "const": false
+        },
+        "new_risk_authorized": {
+          "const": false
+        }
+      }
+    },
+    "projection_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

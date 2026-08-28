@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "challenger-replacement-binance-reconciliation-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "reconciliation_id", "status", "event_projection", "venue_projection", "ledger_projection", "capture_publications", "authority"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-binance-reconciliation-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "reconciliation_id": {"type": "string", "pattern": "^binance_reconciliation_[0-9a-f]{64}$"},
+    "status": {"const": "BINANCE_PRIVATE_RECONCILIATION_MATCHED"},
+    "event_projection": {"$ref": "#/$defs/projection"},
+    "venue_projection": {"$ref": "#/$defs/projection"},
+    "ledger_projection": {"$ref": "#/$defs/projection"},
+    "capture_publications": {
+      "type": "object", "additionalProperties": false,
+      "required": ["event_input", "ledger_input", "venue_input"],
+      "properties": {
+        "event_input": {"$ref": "#/$defs/publication"},
+        "ledger_input": {"$ref": "#/$defs/publication"},
+        "venue_input": {"$ref": "#/$defs/publication"}
+      }
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["network_requests", "orders", "state_writes"],
+      "properties": {"network_requests": {"const": 0}, "orders": {"const": 0}, "state_writes": {"const": 0}}
+    }
+  },
+  "$defs": {
+    "projection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["product", "signed_quantity", "average_entry_price_or_null", "realized_pnl", "unrealized_pnl", "cumulative_fee", "funding", "wallet_balance", "available_balance", "open_order_count", "protective_stop_client_id_or_null", "fill_ids"],
+      "properties": {
+        "product": {"enum": ["SPOT", "PERPETUAL"]},
+        "signed_quantity": {"type": "string"},
+        "average_entry_price_or_null": {"type": ["string", "null"]},
+        "realized_pnl": {"type": "string"}, "unrealized_pnl": {"type": "string"},
+        "cumulative_fee": {"type": "string"}, "funding": {"type": "string"},
+        "wallet_balance": {"type": "string"}, "available_balance": {"type": "string"},
+        "open_order_count": {"type": "integer", "minimum": 0},
+        "protective_stop_client_id_or_null": {"type": ["string", "null"]},
+        "fill_ids": {"type": "array", "items": {"type": "integer", "minimum": 0}, "uniqueItems": true}
+      }
+    },
+    "publication": {
+      "type": "object", "additionalProperties": false,
+      "required": ["capture_event_sequence", "capture_event_hash", "device", "inode", "uid", "mode_octal", "link_count", "event_size", "event_sha256", "payload_selector", "decoded_size", "decoded_sha256"],
+      "properties": {
+        "capture_event_sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "capture_event_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "device": {"type": "integer", "minimum": 0}, "inode": {"type": "integer", "minimum": 1},
+        "uid": {"type": "integer", "minimum": 0}, "mode_octal": {"const": "0600"},
+        "link_count": {"const": 1}, "event_size": {"type": "integer", "minimum": 1, "maximum": 4194304},
+        "event_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "payload_selector": {"enum": ["event_input", "ledger_input", "venue_input"]},
+        "decoded_size": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "decoded_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

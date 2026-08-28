@@ -13,6 +13,11 @@ from .challenger_replacement_opportunity_evidence import (
     load_challenger_replacement_fixture_result_evidence_bytes,
     load_challenger_replacement_simulation_result_evidence_bytes,
 )
+from .challenger_replacement_binance_private_contract import (
+    ChallengerReplacementBinancePrivateContractError,
+    PRIVATE_EVENT_TYPES,
+    apply_challenger_replacement_private_event,
+)
 from .challenger_replacement_plan import (
     ChallengerReplacementPlanError,
     _strict_json_bytes,
@@ -34,6 +39,9 @@ _EVENT_TYPES = {
     "OPPORTUNITY_OBSERVED",
     "OPPORTUNITY_MISSED",
 }
+_CANARY_COMPANION_TYPES = {"CANARY_AUTHORITY_ARTIFACT_PUBLISHED",
+    "CEREMONY_STATE_RECONCILED", "CANARY_STAGE_BLOCK_STARTED",
+    "CANARY_EQUITY_RECONCILED", "CANARY_STRATEGY_CYCLE_RECONCILED"}
 
 
 class ChallengerReplacementOpportunityError(ValueError):
@@ -282,6 +290,27 @@ def apply_opportunity_event(projection, event, *, plan, build_identity):
     header, payload = _payload(event)
     event_type = header.get("event_type")
     opportunity_id = header.get("slot_id")
+    if event_type in _CANARY_COMPANION_TYPES:
+        if (header.get("plan_hash") != PLAN_HASH
+                or header.get("build_identity_hash") != business_hash(build_identity)):
+            invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
+        return
+    if event_type in PRIVATE_EVENT_TYPES:
+        if (
+            header.get("plan_hash") != PLAN_HASH
+            or header.get("build_identity_hash") != business_hash(build_identity)
+        ):
+            invalid("CHALLENGER_REPLACEMENT_OPPORTUNITY_EVENT_INVALID")
+        if (event_type == "BINANCE_RECONCILIATION_INPUTS_CAPTURED"
+                and opportunity_id not in projection["opportunities"]):
+            return
+        try:
+            apply_challenger_replacement_private_event(projection, event)
+        except ChallengerReplacementBinancePrivateContractError as error:
+            raise ChallengerReplacementOpportunityError(
+                error.reason_code
+            ) from error
+        return
     if (
         event_type not in _EVENT_TYPES
         or header.get("plan_hash") != PLAN_HASH

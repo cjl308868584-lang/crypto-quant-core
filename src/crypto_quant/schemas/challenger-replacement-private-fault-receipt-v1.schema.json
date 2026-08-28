@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "executable_checkpoint", "executable_tree", "executable_inventory", "executable_core_hash", "foundation", "cases", "aggregate_case_hash", "authority", "probe_activity", "independent_replay", "status"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-private-fault-receipt-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "receipt_id": {"type": "string", "pattern": "^challenger_replacement_private_fault_matrix_[0-9a-f]{64}$"},
+    "receipt_hash": {"$ref": "#/$defs/hash"},
+    "executable_checkpoint": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "executable_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "executable_inventory": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/inventoryItem"}},
+    "executable_core_hash": {"$ref": "#/$defs/hash"},
+    "foundation": {"$ref": "#/$defs/foundation"},
+    "cases": {"type": "array", "minItems": 59, "maxItems": 59, "items": {"$ref": "#/$defs/case"}},
+    "aggregate_case_hash": {"$ref": "#/$defs/hash"},
+    "authority": {"$ref": "#/$defs/authority"},
+    "probe_activity": {"$ref": "#/$defs/probeActivity"},
+    "independent_replay": {"$ref": "#/$defs/independentReplay"},
+    "status": {"const": "PRIVATE_FAULT_MATRIX_PASSED_NOT_ACTIVATED"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "predecessorManifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["build_input_tree_hash", "main_ci_run", "manifest_file_sha256", "manifest_hash", "manifest_version", "package_version", "peeled_commit", "release_tag", "repository", "tag_object", "visibility"],
+      "properties": {
+        "build_input_tree_hash": {"$ref": "#/$defs/hash"},
+        "main_ci_run": {"type": "integer", "minimum": 1},
+        "manifest_file_sha256": {"$ref": "#/$defs/hash"},
+        "manifest_hash": {"$ref": "#/$defs/hash"},
+        "manifest_version": {"type": "string", "minLength": 1},
+        "package_version": {"type": "string", "minLength": 1},
+        "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "release_tag": {"type": "string", "minLength": 1},
+        "repository": {"type": "string", "minLength": 1},
+        "tag_object": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "visibility": {"const": "PUBLIC"}
+      }
+    },
+    "buildIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["executable_core_hash", "package_version", "predecessor_manifest_identity", "reviewed_code_checkpoint"],
+      "properties": {
+        "executable_core_hash": {"$ref": "#/$defs/hash"},
+        "package_version": {"type": "string", "minLength": 1},
+        "predecessor_manifest_identity": {"$ref": "#/$defs/predecessorManifest"},
+        "reviewed_code_checkpoint": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "foundation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_sha256", "receipt_id", "receipt_hash", "build_identity"],
+      "properties": {
+        "artifact_sha256": {"$ref": "#/$defs/hash"},
+        "receipt_id": {"type": "string", "minLength": 1},
+        "receipt_hash": {"$ref": "#/$defs/hash"},
+        "build_identity": {"$ref": "#/$defs/buildIdentity"}
+      }
+    },
+    "inventoryItem": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/hash"}}
+    },
+    "boundaryLedger": {
+      "type": "object", "additionalProperties": false,
+      "required": ["credential_reads", "public_network_requests", "private_network_requests", "mutating_requests", "economic_orders", "fund_movement", "production_state_writes"],
+      "properties": {
+        "credential_reads": {"type": "integer", "minimum": 0},
+        "public_network_requests": {"type": "integer", "minimum": 0},
+        "private_network_requests": {"type": "integer", "minimum": 0},
+        "mutating_requests": {"type": "integer", "minimum": 0},
+        "economic_orders": {"type": "integer", "minimum": 0},
+        "fund_movement": {"type": "integer", "minimum": 0},
+        "production_state_writes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["credential_reads", "public_network_requests", "private_network_requests", "mutating_requests", "economic_orders", "fund_movement", "production_state_writes"],
+      "properties": {
+        "credential_reads": {"type": "integer", "minimum": 0},
+        "public_network_requests": {"type": "integer", "minimum": 0},
+        "private_network_requests": {"type": "integer", "minimum": 0},
+        "mutating_requests": {"type": "integer", "minimum": 0},
+        "economic_orders": {"type": "integer", "minimum": 0},
+        "fund_movement": {"type": "integer", "minimum": 0},
+        "production_state_writes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "probeActivity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fixture_credential_reads", "fixture_transport_requests", "fixture_mutating_requests", "fixture_order_intents", "fixture_reconciliations", "fresh_processes"],
+      "properties": {
+        "fixture_credential_reads": {"type": "integer", "minimum": 0},
+        "fixture_transport_requests": {"type": "integer", "minimum": 0},
+        "fixture_mutating_requests": {"type": "integer", "minimum": 0},
+        "fixture_order_intents": {"type": "integer", "minimum": 0},
+        "fixture_reconciliations": {"type": "integer", "minimum": 0},
+        "fresh_processes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "semanticHash": {
+      "type": "object", "additionalProperties": false,
+      "required": ["case_id", "semantic_hash"],
+      "properties": {
+        "case_id": {"type": "string", "minLength": 1},
+        "semantic_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "independentReplay": {
+      "type": "object", "additionalProperties": false,
+      "required": ["execution_count", "primary_case_semantic_hashes", "independent_case_semantic_hashes", "primary_aggregate_semantic_hash", "independent_aggregate_semantic_hash", "authority", "probe_activity", "semantic_match"],
+      "properties": {
+        "execution_count": {"const": 2},
+        "primary_case_semantic_hashes": {"type": "array", "minItems": 59, "maxItems": 59, "items": {"$ref": "#/$defs/semanticHash"}},
+        "independent_case_semantic_hashes": {"type": "array", "minItems": 59, "maxItems": 59, "items": {"$ref": "#/$defs/semanticHash"}},
+        "primary_aggregate_semantic_hash": {"$ref": "#/$defs/hash"},
+        "independent_aggregate_semantic_hash": {"$ref": "#/$defs/hash"},
+        "authority": {"$ref": "#/$defs/authority"},
+        "probe_activity": {"$ref": "#/$defs/probeActivity"},
+        "semantic_match": {"const": true}
+      }
+    },
+    "subprocess": {
+      "type": "object", "additionalProperties": false,
+      "required": ["case_id", "executable", "argv", "exit_status", "stdout_sha256", "stderr_sha256", "event_identity_sha256", "artifact_identity_sha256", "result_bytes_utf8", "result_sha256", "authority", "probe_activity", "runtime_status_before", "runtime_status_after", "economic_send_count", "recovery_send_count", "process_boundary_replay", "event_count_before", "event_count_after", "last_event_hash_before", "last_event_hash_after", "event_semantic_sha256_before", "event_semantic_sha256_after"],
+      "properties": {
+        "case_id": {"enum": ["PRIVATE_FRESH_PROCESS_UNKNOWN_REPLAY", "PRIVATE_FRESH_PROCESS_STOP_REPLAY", "RESTART_PRESERVES_STOP"]},
+        "executable": {"type": "string", "minLength": 1},
+        "argv": {"type": "array", "minItems": 4, "items": {"type": "string"}},
+        "exit_status": {"const": 0},
+        "stdout_sha256": {"$ref": "#/$defs/hash"},
+        "stderr_sha256": {"$ref": "#/$defs/hash"},
+        "event_identity_sha256": {"$ref": "#/$defs/hash"},
+        "artifact_identity_sha256": {"$ref": "#/$defs/hash"},
+        "result_bytes_utf8": {"type": "string", "minLength": 2},
+        "result_sha256": {"$ref": "#/$defs/hash"},
+        "authority": {"$ref": "#/$defs/authority"},
+        "probe_activity": {"$ref": "#/$defs/probeActivity"},
+        "runtime_status_before": {"type": "string", "minLength": 1},
+        "runtime_status_after": {"type": "string", "minLength": 1},
+        "economic_send_count": {"type": "integer", "minimum": 0},
+        "recovery_send_count": {"type": "integer", "minimum": 0},
+        "process_boundary_replay": {"const": true},
+        "event_count_before": {"type": "integer", "minimum": 1},
+        "event_count_after": {"type": "integer", "minimum": 2},
+        "last_event_hash_before": {"$ref": "#/$defs/hash"},
+        "last_event_hash_after": {"$ref": "#/$defs/hash"},
+        "event_semantic_sha256_before": {"$ref": "#/$defs/hash"},
+        "event_semantic_sha256_after": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "case": {
+      "type": "object", "additionalProperties": false,
+      "required": ["case_id", "probe_id", "status", "fixture_bytes_utf8", "fixture_sha256", "observed_code", "observed_result_bytes_utf8", "result_sha256", "stdout_sha256", "stderr_sha256", "observed_delta", "observed_activity", "subprocess_or_null", "state_identity", "case_hash"],
+      "properties": {
+        "case_id": {"type": "string", "minLength": 1},
+        "probe_id": {"type": "string", "pattern": "^private_probe_[a-z0-9_]+$"},
+        "status": {"const": "PASS"},
+        "fixture_bytes_utf8": {"type": "string", "minLength": 2},
+        "fixture_sha256": {"$ref": "#/$defs/hash"},
+        "observed_code": {"enum": ["RETURNED", "REJECTED"]},
+        "observed_result_bytes_utf8": {"type": "string", "minLength": 1},
+        "result_sha256": {"$ref": "#/$defs/hash"},
+        "stdout_sha256": {"$ref": "#/$defs/hash"},
+        "stderr_sha256": {"$ref": "#/$defs/hash"},
+        "observed_delta": {"$ref": "#/$defs/boundaryLedger"},
+        "observed_activity": {"$ref": "#/$defs/probeActivity"},
+        "subprocess_or_null": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/subprocess"}]},
+        "state_identity": {"$ref": "#/$defs/stateIdentity"},
+        "case_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "stateIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["applicability", "event_before_or_null", "event_after_or_null", "artifact_before_or_null", "artifact_after_or_null"],
+      "properties": {
+        "applicability": {"enum": ["STATELESS_NOT_APPLICABLE", "PUBLISHED_EVENT_ONLY", "PUBLISHED_EVENT_AND_RESULT", "CANONICAL_RESULT_ARTIFACT"]},
+        "event_before_or_null": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]},
+        "event_after_or_null": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]},
+        "artifact_before_or_null": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]},
+        "artifact_after_or_null": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]}
+      }
+    }
+  }
+}

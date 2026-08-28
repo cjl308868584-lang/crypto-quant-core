@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-binance-account-preflight-v1.schema.json",
+  "title": "Challenger Replacement Binance Account Preflight",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "preflight_id", "status", "observed_at", "expires_at", "build_identity", "account_approval_sha256", "account_approval", "permissions", "configuration", "configuration_sha256", "flatness", "response_sha256", "authority_counts"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-binance-account-preflight-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "preflight_id": {"type": "string", "pattern": "^binance_account_preflight_[0-9a-f]{64}$"},
+    "status": {"const": "BINANCE_ACCOUNT_PREFLIGHT_VERIFIED_FLAT"},
+    "observed_at": {"$ref": "#/$defs/time"},
+    "expires_at": {"$ref": "#/$defs/time"},
+    "build_identity": {"$ref": "#/$defs/buildIdentity"},
+    "account_approval_sha256": {"$ref": "#/$defs/hash"},
+    "account_approval": {
+      "type": "object", "additionalProperties": false,
+      "required": ["account_identity_sha256", "key_fingerprint", "reviewed_egress_ip_attestation", "reviewer_uid"],
+      "properties": {
+        "account_identity_sha256": {"$ref": "#/$defs/hash"},
+        "key_fingerprint": {"$ref": "#/$defs/hash"},
+        "reviewed_egress_ip_attestation": {"type": "string", "format": "ipv4"},
+        "reviewer_uid": {"type": "integer", "minimum": 0}
+      }
+    },
+    "permissions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ip_restricted", "read", "spot_trade", "futures_trade", "withdraw", "transfer", "margin"],
+      "properties": {
+        "ip_restricted": {"const": true}, "read": {"const": true},
+        "spot_trade": {"const": true}, "futures_trade": {"const": true},
+        "withdraw": {"const": false}, "transfer": {"const": false},
+        "margin": {"const": false}
+      }
+    },
+    "configuration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["position_mode", "asset_mode", "symbol", "margin_type", "leverage", "auto_add_margin"],
+      "properties": {
+        "position_mode": {"const": "ONE_WAY"}, "asset_mode": {"const": "SINGLE_ASSET"},
+        "symbol": {"const": "ETHUSDT"}, "margin_type": {"const": "ISOLATED"},
+        "leverage": {"enum": [1, 2]}, "auto_add_margin": {"const": false}
+      }
+    },
+    "configuration_sha256": {"$ref": "#/$defs/hash"},
+    "flatness": {
+      "type": "object", "additionalProperties": false,
+      "required": ["spot_open_orders", "futures_open_orders", "futures_open_algo_orders", "futures_positions", "non_usdt_spot_exposure"],
+      "properties": {
+        "spot_open_orders": {"const": 0}, "futures_open_orders": {"const": 0},
+        "futures_open_algo_orders": {"const": 0}, "futures_positions": {"const": 0},
+        "non_usdt_spot_exposure": {"const": "0"}
+      }
+    },
+    "response_sha256": {
+      "type": "object", "additionalProperties": false,
+      "required": ["API_RESTRICTIONS", "API_TRADING_STATUS", "SPOT_ACCOUNT", "SPOT_OPEN_ORDERS", "FUTURES_POSITION_MODE", "FUTURES_MULTI_ASSET_MODE", "FUTURES_SYMBOL_CONFIG", "FUTURES_ACCOUNT", "FUTURES_POSITION", "FUTURES_OPEN_ORDERS", "FUTURES_OPEN_ALGO_ORDERS"],
+      "properties": {
+        "API_RESTRICTIONS": {"$ref": "#/$defs/hash"},
+        "API_TRADING_STATUS": {"$ref": "#/$defs/hash"},
+        "SPOT_ACCOUNT": {"$ref": "#/$defs/hash"},
+        "SPOT_OPEN_ORDERS": {"$ref": "#/$defs/hash"},
+        "FUTURES_POSITION_MODE": {"$ref": "#/$defs/hash"},
+        "FUTURES_MULTI_ASSET_MODE": {"$ref": "#/$defs/hash"},
+        "FUTURES_SYMBOL_CONFIG": {"$ref": "#/$defs/hash"},
+        "FUTURES_ACCOUNT": {"$ref": "#/$defs/hash"},
+        "FUTURES_POSITION": {"$ref": "#/$defs/hash"},
+        "FUTURES_OPEN_ORDERS": {"$ref": "#/$defs/hash"},
+        "FUTURES_OPEN_ALGO_ORDERS": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "authority_counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["network_requests", "mutating_requests", "orders", "fund_movements", "state_writes"],
+      "properties": {
+        "network_requests": {"const": 0}, "mutating_requests": {"const": 0},
+        "orders": {"const": 0}, "fund_movements": {"const": 0},
+        "state_writes": {"const": 0}
+      }
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "buildIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_tag", "peeled_commit", "package_version", "manifest_version", "build_input_tree_hash", "manifest_hash", "manifest_file_sha256"],
+      "properties": {
+        "release_tag": {"type": "string", "minLength": 1},
+        "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "package_version": {"type": "string", "minLength": 1},
+        "manifest_version": {"type": "string", "minLength": 1},
+        "build_input_tree_hash": {"$ref": "#/$defs/hash"},
+        "manifest_hash": {"$ref": "#/$defs/hash"},
+        "manifest_file_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"}
+  }
+}

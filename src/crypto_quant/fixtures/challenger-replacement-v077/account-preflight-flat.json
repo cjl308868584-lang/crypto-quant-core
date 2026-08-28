@@ -1,0 +1,74 @@
+{
+  "API_RESTRICTIONS": {
+    "ipRestrict": true,
+    "createTime": 1787780000000,
+    "enableReading": true,
+    "enableWithdrawals": false,
+    "enableInternalTransfer": false,
+    "enableMargin": false,
+    "enableFutures": true,
+    "permitsUniversalTransfer": false,
+    "enableVanillaOptions": false,
+    "enableFixApiTrade": false,
+    "enableFixReadOnly": false,
+    "enableSpotAndMarginTrading": true,
+    "enablePortfolioMarginTrading": false
+  },
+  "API_TRADING_STATUS": {
+    "data": {
+      "isLocked": false,
+      "plannedRecoverTime": 0,
+      "triggerCondition": {"GCR": 150, "IFER": 150, "UFR": 300},
+      "updateTime": 1787780000000
+    }
+  },
+  "SPOT_ACCOUNT": {
+    "makerCommission": 10,
+    "takerCommission": 10,
+    "buyerCommission": 0,
+    "sellerCommission": 0,
+    "commissionRates": {"maker": "0.001", "taker": "0.001", "buyer": "0", "seller": "0"},
+    "canTrade": true,
+    "canWithdraw": true,
+    "canDeposit": true,
+    "brokered": false,
+    "requireSelfTradePrevention": false,
+    "preventSor": false,
+    "updateTime": 1787780000000,
+    "accountType": "SPOT",
+    "balances": [
+      {"asset": "ETH", "free": "0", "locked": "0"},
+      {"asset": "USDT", "free": "100", "locked": "0"}
+    ],
+    "permissions": ["SPOT"],
+    "uid": 123456789
+  },
+  "SPOT_OPEN_ORDERS": [],
+  "FUTURES_POSITION_MODE": {"dualSidePosition": false},
+  "FUTURES_MULTI_ASSET_MODE": {"multiAssetsMargin": false},
+  "FUTURES_SYMBOL_CONFIG": [
+    {"symbol": "ETHUSDT", "marginType": "ISOLATED", "isAutoAddMargin": false, "leverage": 1, "maxNotionalValue": "1000000"}
+  ],
+  "FUTURES_ACCOUNT": {
+    "totalInitialMargin": "0",
+    "totalMaintMargin": "0",
+    "totalWalletBalance": "100",
+    "totalUnrealizedProfit": "0",
+    "totalMarginBalance": "100",
+    "totalPositionInitialMargin": "0",
+    "totalOpenOrderInitialMargin": "0",
+    "totalCrossWalletBalance": "0",
+    "totalCrossUnPnl": "0",
+    "availableBalance": "100",
+    "maxWithdrawAmount": "100",
+    "assets": [
+      {"asset": "USDT", "walletBalance": "100", "unrealizedProfit": "0", "marginBalance": "100", "maintMargin": "0", "initialMargin": "0", "positionInitialMargin": "0", "openOrderInitialMargin": "0", "crossWalletBalance": "0", "crossUnPnl": "0", "availableBalance": "100", "maxWithdrawAmount": "100", "updateTime": 1787780000000}
+    ],
+    "positions": []
+  },
+  "FUTURES_POSITION": [
+    {"symbol": "ETHUSDT", "positionSide": "BOTH", "positionAmt": "0", "entryPrice": "0", "breakEvenPrice": "0", "markPrice": "3500", "unRealizedProfit": "0", "liquidationPrice": "0", "isolatedMargin": "0", "notional": "0", "marginAsset": "USDT", "isolatedWallet": "0", "initialMargin": "0", "maintMargin": "0", "positionInitialMargin": "0", "openOrderInitialMargin": "0", "adl": 0, "bidNotional": "0", "askNotional": "0", "updateTime": 0}
+  ],
+  "FUTURES_OPEN_ORDERS": [],
+  "FUTURES_OPEN_ALGO_ORDERS": []
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-quant.local/schemas/challenger-replacement-canary-projection-v1.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["$schema", "schema_version", "projection_id", "plan", "observed_through", "ceremony", "stage_block_or_null", "authority"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-canary-projection-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "projection_id": {"type": "string", "pattern": "^challenger_replacement_canary_projection_[0-9a-f]{64}$"},
+    "plan": {"type": "object", "additionalProperties": false, "required": ["plan_id", "plan_hash"], "properties": {"plan_id": {"type": "string", "minLength": 1}, "plan_hash": {"$ref": "#/$defs/hash"}}},
+    "observed_through": {"$ref": "#/$defs/time"},
+    "ceremony": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/ceremony"}]},
+    "stage_block_or_null": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/block"}]},
+    "authority": {"type": "object", "additionalProperties": false, "required": ["network_requests", "orders", "state_writes", "production_activation"], "properties": {"network_requests": {"const": 0}, "orders": {"const": 0}, "state_writes": {"const": 0}, "production_activation": {"const": false}}}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.000Z$"},
+    "decimal": {"type": "string", "pattern": "^(?:0|0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$"},
+    "ceremony": {"type": "object", "additionalProperties": false, "required": ["block_id", "state", "qualified", "strategy_cycle_count", "economic_evidence_count"], "properties": {"block_id": {"type": "string", "minLength": 1}, "state": {"enum": ["CEREMONY_READY_FLAT", "SPOT_BUY_SUBMITTED", "SPOT_LONG_RECONCILED", "SPOT_SELL_SUBMITTED", "FLAT_RECONCILED_AFTER_SPOT", "PERP_SHORT_SUBMITTED", "PERP_SHORT_AND_PROTECTIVE_STOP_CONFIRMED", "PERP_CLOSE_REDUCE_ONLY_SUBMITTED", "FLAT_RECONCILED_AFTER_PERP", "CEREMONY_QUALIFIED"]}, "qualified": {"type": "boolean"}, "strategy_cycle_count": {"const": 0}, "economic_evidence_count": {"const": 0}}},
+    "block": {
+      "type": "object", "additionalProperties": false,
+      "required": ["stage", "block_id", "activation_id", "previous_block_id_or_null", "incident_unlock_id_or_null", "started_at", "status", "starting_equity", "current_equity", "high_water_equity", "day_start_date", "day_start_equity", "daily_loss", "drawdown", "new_risk_blocked", "hard_stop_or_null", "failure_reason_or_null", "flat", "flatten_required", "strategy_cycle_count", "spot_complete_cycles", "perpetual_complete_cycles"],
+      "properties": {
+        "stage": {"enum": ["E0", "E1", "E2"]}, "block_id": {"type": "string", "minLength": 1}, "activation_id": {"type": "string", "pattern": "^binance_private_activation_[0-9a-f]{64}$"}, "previous_block_id_or_null": {"type": ["string", "null"]}, "incident_unlock_id_or_null": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^incident_unlock_[0-9a-f]{64}$"}]}, "started_at": {"$ref": "#/$defs/time"},
+        "status": {"enum": ["STAGE_ACTIVE", "STAGE_DAILY_STOPPED", "STAGE_FAILED_LOCKED", "STAGE_ELIGIBLE_AWAITING_APPROVAL"]},
+        "starting_equity": {"$ref": "#/$defs/decimal"}, "current_equity": {"$ref": "#/$defs/decimal"}, "high_water_equity": {"$ref": "#/$defs/decimal"}, "day_start_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}, "day_start_equity": {"$ref": "#/$defs/decimal"}, "daily_loss": {"$ref": "#/$defs/decimal"}, "drawdown": {"$ref": "#/$defs/decimal"}, "new_risk_blocked": {"type": "boolean"}, "hard_stop_or_null": {"oneOf": [{"type": "null"}, {"enum": ["UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", "VENUE_LOCAL_POSITION_MISMATCH", "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP", "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT"]}]}, "failure_reason_or_null": {"oneOf": [{"type": "null"}, {"enum": ["STAGE_DRAWDOWN_LIMIT_REACHED", "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN", "VENUE_LOCAL_POSITION_MISMATCH", "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP", "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT"]}]}, "flat": {"type": "boolean"}, "flatten_required": {"type": "boolean"}, "strategy_cycle_count": {"type": "integer", "minimum": 0}, "spot_complete_cycles": {"type": "integer", "minimum": 0}, "perpetual_complete_cycles": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

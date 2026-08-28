@@ -10,6 +10,12 @@ from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_json
 from .challenger_replacement_opportunity_projection import validate_build_identity
+from .challenger_replacement_accelerated_canary_plan import (
+    build_challenger_replacement_accelerated_canary_plan,
+)
+from .challenger_replacement_canary_controller import (
+    load_challenger_replacement_canary_projection_bytes,
+)
 from .challenger_replacement_plan import _strict_json_bytes
 from .challenger_replacement_v3_observer import ChallengerReplacementV3Observation
 
@@ -59,7 +65,35 @@ def _counts(observation):
         _invalid()
 
 
-def _document(observation, build_identity):
+def _private_canary(data):
+    if data is None:
+        return {
+            "ceremony_status": "NOT_AVAILABLE", "stage": None,
+            "stage_status": "NOT_AVAILABLE", "daily_loss_usdt": None,
+            "high_water_loss_usdt": None, "new_risk_blocked": True,
+            "hard_stop_or_null": None, "failure_reason_or_null": None,
+            "flatten_required": False,
+        }
+    projection = load_challenger_replacement_canary_projection_bytes(
+        data, plan=build_challenger_replacement_accelerated_canary_plan(),
+    )
+    ceremony, block = projection["ceremony"], projection["stage_block_or_null"]
+    return {
+        "ceremony_status": "NOT_STARTED" if ceremony is None else ceremony["state"],
+        "stage": None if block is None else block["stage"],
+        "stage_status": "NOT_STARTED" if block is None else block["status"],
+        "daily_loss_usdt": None if block is None else block["daily_loss"],
+        "high_water_loss_usdt": None if block is None else block["drawdown"],
+        "new_risk_blocked": True if block is None else block["new_risk_blocked"],
+        "hard_stop_or_null": None if block is None else block["hard_stop_or_null"],
+        "failure_reason_or_null": (
+            None if block is None else block["failure_reason_or_null"]
+        ),
+        "flatten_required": False if block is None else block["flatten_required"],
+    }
+
+
+def _document(observation, build_identity, canary_projection_bytes=None):
     try:
         validate_build_identity(build_identity)
         if not isinstance(observation, ChallengerReplacementV3Observation):
@@ -97,9 +131,13 @@ def _document(observation, build_identity):
                 ),
             }
         health = observation.evidence_health
-        status = "FAILED_CLOSED" if health == "FAILED_CLOSED" or operational["status"] == "BLOCK_FAILED" else (
+        private = _private_canary(canary_projection_bytes)
+        status = "FAILED_CLOSED" if (health == "FAILED_CLOSED"
+            or operational["status"] == "BLOCK_FAILED"
+            or private["stage_status"] == "STAGE_FAILED_LOCKED") else (
             "DEGRADED" if health != "HEALTHY" or counts["missed"] or
-            operational["status"] == "INTERRUPTED_RECOVERABLE" else "HEALTHY")
+            operational["status"] == "INTERRUPTED_RECOVERABLE" or
+            private["stage_status"] == "STAGE_DAILY_STOPPED" else "HEALTHY")
         value = {
             "$schema": "./operations-projection-v3.schema.json",
             "schema_version": "3.0.0", "status": status,
@@ -122,6 +160,7 @@ def _document(observation, build_identity):
             "economic_progress": {key: copy.deepcopy(observation.economic_progress[key])
                                   for key in ("status", "elapsed_complete_days", "evidence_health")},
             "simulation_state": simulation,
+            "binance_private": private,
             "provenance": {
                 "deployment_id_or_null": deployment.get("deployment_id"),
                 "deployment_hash_or_null": deployment.get("deployment_hash"),
@@ -147,12 +186,17 @@ def _document(observation, build_identity):
         ) from error
 
 
-def build_operations_projection_v3(observation, *, build_identity):
-    return copy.deepcopy(_document(observation, build_identity))
+def build_operations_projection_v3(
+    observation, *, build_identity, canary_projection_bytes=None
+):
+    return copy.deepcopy(_document(
+        observation, build_identity, canary_projection_bytes,
+    ))
 
 
 def load_operations_projection_v3_bytes(
-    data, *, observation=None, build_identity=None
+    data, *, observation=None, build_identity=None,
+    canary_projection_bytes=None,
 ):
     if not isinstance(data, bytes) or not 0 < len(data) <= 1_048_576:
         _invalid("OPERATIONS_PROJECTION_V3_BYTES_INVALID")
@@ -176,7 +220,9 @@ def load_operations_projection_v3_bytes(
                 _invalid()
         elif observation is None or build_identity is None:
             _invalid()
-        elif value != _document(observation, build_identity):
+        elif value != _document(
+            observation, build_identity, canary_projection_bytes,
+        ):
             _invalid()
         return copy.deepcopy(value)
     except OperationsProjectionV3Error:

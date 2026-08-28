@@ -347,6 +347,35 @@ def _derive_verified_v3_alerts(projection: Mapping[str, Any]) -> Dict[str, Any]:
                            "severity": severity, "stream": "REPLACEMENT_V3",
                            "reason_code": "REPLACEMENT_V3_" + reason,
                            "risk_effect": "BLOCK_NEW_RISK" if severity == "CRITICAL" else "NO_CHANGE"})
+    private = projection["binance_private"]
+    hard_stop_alerts = {
+        "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN": "UNKNOWN-ORDER",
+        "VENUE_LOCAL_POSITION_MISMATCH": "POSITION-MISMATCH",
+        "PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP": "STOP-MISSING",
+        "RISK_INCREASE_ATTEMPT_AFTER_STAGE_LOSS_LIMIT": "POST-LIMIT-RISK",
+    }
+    suffix = hard_stop_alerts.get(private["hard_stop_or_null"])
+    if suffix is not None:
+        alerts.append({
+            "alert_id": "OPS-BINANCE-PRIVATE-" + suffix,
+            "severity": "CRITICAL", "stream": "BINANCE_PRIVATE",
+            "reason_code": private["hard_stop_or_null"],
+            "risk_effect": "BLOCK_NEW_RISK_AND_FLATTEN",
+        })
+    if private["stage_status"] == "STAGE_DAILY_STOPPED":
+        alerts.append({
+            "alert_id": "OPS-BINANCE-PRIVATE-DAILY-STOP",
+            "severity": "WARNING", "stream": "BINANCE_PRIVATE",
+            "reason_code": "STAGE_DAILY_LOSS_LIMIT_REACHED",
+            "risk_effect": "BLOCK_NEW_RISK",
+        })
+    if private["failure_reason_or_null"] == "STAGE_DRAWDOWN_LIMIT_REACHED":
+        alerts.append({
+            "alert_id": "OPS-BINANCE-PRIVATE-DRAWDOWN-FAIL",
+            "severity": "CRITICAL", "stream": "BINANCE_PRIVATE",
+            "reason_code": "STAGE_DRAWDOWN_LIMIT_REACHED",
+            "risk_effect": "BLOCK_NEW_RISK_AND_FLATTEN",
+        })
     counts = {name: sum(item["severity"] == name for item in alerts)
               for name in ("INFO", "WARNING", "CRITICAL")}
     return {"schema_version": "3.0.0", "status": projection["status"],

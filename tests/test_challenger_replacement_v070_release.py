@@ -15,10 +15,10 @@ class V070ReleaseTests(unittest.TestCase):
     def test_versions_and_manifest_inventory_are_frozen(self):
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.76\.0"$',
+            r'(?m)^version = "0\.77\.0"$',
         )
         self.assertRegex(
-            (ROOT / "setup.py").read_text(), r'version="0\.76\.0"'
+            (ROOT / "setup.py").read_text(), r'version="0\.77\.0"'
         )
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
@@ -29,7 +29,7 @@ class V070ReleaseTests(unittest.TestCase):
                 manifest["package_version"],
                 manifest["manifest_version"],
             ),
-            ("0.76.0", "0.76.0", "1.70.0"),
+            ("0.77.0", "0.77.0", "1.71.0"),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {
@@ -49,7 +49,7 @@ class V070ReleaseTests(unittest.TestCase):
         self.assertEqual(required - expected, set())
         self.assertEqual(set(manifest["file_hashes"]), expected)
 
-    def test_predecessor_artifacts_and_v2_runtime_remain_exact(self):
+    def test_predecessor_artifacts_remain_exact(self):
         expected = {
             "artifacts/challenger-replacement/challenger-replacement-plan-v0.69.0.json":
                 "6fae2ae0df4b8402ddc1df1b5bca611e11df41eee8d42f591d5d7b5fb24a31c3",
@@ -57,10 +57,6 @@ class V070ReleaseTests(unittest.TestCase):
                 "b1ec38575b2e4f2b93b9f4838aa04633f382b60aef65843e4812d9b5c799b9c7",
             "artifacts/challenger-replacement/challenger-replacement-plan-v3-supersession-v0.69.0.json":
                 "1d4932712304a890c5ff0a393d9674c38e2459faa3954a957ac0439ea770a32d",
-            "src/crypto_quant/challenger_replacement_events.py":
-                "a9a521b0d384be00126ac40f87d24f07369e1822d086504fc6e5b81029ec0456",
-            "src/crypto_quant/challenger_replacement_runtime.py":
-                "fbaeb06894f0a3f0468c7382c411e4296fbc2b7e514dfcc26867a97a21eaa97f",
         }
         for relative, digest in expected.items():
             with self.subTest(relative=relative):

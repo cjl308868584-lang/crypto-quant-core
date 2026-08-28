@@ -1,0 +1,7 @@
+{
+  "ACK": {"clientOrderId": "FIXTURE_REPLACED_BY_TEST", "cummulativeQuoteQty": "0", "executedQty": "0", "orderId": 101, "origQty": "FIXTURE_REPLACED_BY_TEST", "price": "0", "side": "BUY", "status": "NEW", "symbol": "ETHUSDT", "timeInForce": "GTC", "transactTime": 1787832000000, "type": "MARKET"},
+  "CANCEL": {"clientOrderId": "FIXTURE_REPLACED_BY_TEST", "cummulativeQuoteQty": "0", "executedQty": "0", "orderId": 101, "origQty": "FIXTURE_REPLACED_BY_TEST", "price": "0", "side": "BUY", "status": "CANCELED", "symbol": "ETHUSDT", "timeInForce": "GTC", "transactTime": 1787832000000, "type": "MARKET"},
+  "FILL": {"clientOrderId": "FIXTURE_REPLACED_BY_TEST", "cummulativeQuoteQty": "50", "executedQty": "0.025", "orderId": 101, "origQty": "FIXTURE_REPLACED_BY_TEST", "price": "0", "side": "BUY", "status": "FILLED", "symbol": "ETHUSDT", "timeInForce": "GTC", "transactTime": 1787832000000, "type": "MARKET"},
+  "PARTIAL": {"clientOrderId": "FIXTURE_REPLACED_BY_TEST", "cummulativeQuoteQty": "0", "executedQty": "0", "orderId": 101, "origQty": "FIXTURE_REPLACED_BY_TEST", "price": "0", "side": "BUY", "status": "PARTIALLY_FILLED", "symbol": "ETHUSDT", "timeInForce": "GTC", "transactTime": 1787832000000, "type": "MARKET"},
+  "UNKNOWN": {"code": -1007, "msg": "Timeout waiting for response from backend server. Send status unknown; execution status unknown."}
+}

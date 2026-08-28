@@ -537,6 +537,53 @@ _V076_RELEASE_PATHS = (
     "docs/implementation-status-v0.76.0.md",
 )
 
+_V077_RELEASE_PATHS = (
+    "artifacts/challenger-replacement/"
+    "challenger-replacement-private-fault-matrix-v0.77.0.json",
+    "config/challenger-replacement-binance-v1.example.json",
+    "config/local.crypto-quant.challenger-replacement-binance-v1.plist.example",
+    "config/operations-projection-v3.schema.json",
+    "docs/adr/0077-binance-private-canary-bundle.md",
+    "docs/implementation-status-v0.77.0.md",
+    "docs/v1-code-complete-not-activated-dossier.md",
+    "docs/runbooks/binance-order-unknown-v0.77.md",
+    "docs/runbooks/binance-private-preflight-v0.77.md",
+    "docs/runbooks/binance-safe-flatten-v0.77.md",
+    "docs/runbooks/binance-secret-incident-v0.77.md",
+    "docs/superpowers/plans/2026-08-27-binance-private-canary-bundle.md",
+    "docs/superpowers/specs/"
+    "2026-08-27-binance-private-canary-budget-amendment-design.md",
+    "docs/superpowers/specs/2026-08-27-binance-private-canary-bundle-design.md",
+    "src/crypto_quant/fixtures/challenger-replacement-v077/"
+    "account-preflight-flat.json",
+    "src/crypto_quant/fixtures/challenger-replacement-v077/"
+    "futures-request-known-answers.json",
+    "src/crypto_quant/fixtures/challenger-replacement-v077/"
+    "private-order-observations.json",
+    "src/crypto_quant/fixtures/challenger-replacement-v077/"
+    "private-runtime-seeds-v1.json",
+    "src/crypto_quant/fixtures/challenger-replacement-v077/"
+    "spot-hmac-known-answer.json",
+    "tests/challenger_replacement_v077_private_fixtures.py",
+    "tests/test_challenger_replacement_binance_credential.py",
+    "tests/test_challenger_replacement_binance_delivery.py",
+    "tests/test_challenger_replacement_binance_preflight.py",
+    "tests/test_challenger_replacement_binance_private_contract.py",
+    "tests/test_challenger_replacement_binance_private_lifecycle.py",
+    "tests/test_challenger_replacement_binance_private_protocol.py",
+    "tests/test_challenger_replacement_binance_private_runtime.py",
+    "tests/test_challenger_replacement_binance_private_transport.py",
+    "tests/test_challenger_replacement_binance_protective_stop.py",
+    "tests/test_challenger_replacement_binance_reconciliation.py",
+    "tests/test_challenger_replacement_canary_controller.py",
+    "tests/test_challenger_replacement_events.py",
+    "tests/test_challenger_replacement_opportunities.py",
+    "tests/test_challenger_replacement_private_fault_matrix.py",
+    "tests/test_challenger_replacement_public_market_capture.py",
+    "tests/test_challenger_replacement_v077_architecture.py",
+    "tests/test_challenger_replacement_v077_release.py",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -581,6 +628,7 @@ class EvaluatorBuild:
                     + list(_V074_RELEASE_PATHS)
                     + list(_V075_RELEASE_PATHS)
                     + list(_V076_RELEASE_PATHS)
+                    + list(_V077_RELEASE_PATHS)
                 )
             )
         )

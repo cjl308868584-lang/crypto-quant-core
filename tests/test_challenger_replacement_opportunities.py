@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from crypto_quant.canonical import canonical_json
+from crypto_quant.canonical import business_hash, canonical_json
 from crypto_quant import challenger_replacement_opportunities as opportunity_module
 from crypto_quant.challenger_replacement_events import (
     ChallengerReplacementEventRootIdentity,
@@ -449,6 +449,25 @@ class OpportunityStateTests(unittest.TestCase):
             },
             expected_last_event_hash=projection["last_event_hash"],
         )
+
+    def test_canary_companion_event_is_validated_without_mutating_projection(self):
+        before = self.state.replay()
+        payload = {"event_type": "CANARY_AUTHORITY_ARTIFACT_PUBLISHED",
+                   "block_id": "e0-block", "occurred_at": DEFAULT_OBSERVED_AT,
+                   "artifact_kind": "ACTIVATION", "artifact_id": "activation",
+                   "artifact_bytes_base64": "e30=", "artifact_sha256": hashlib.sha256(b"{}").hexdigest()}
+        event = event_module.build_challenger_replacement_event(
+            sequence=1, event_type=payload["event_type"], slot_id=payload["block_id"],
+            worker_id="canary-companion-fixture", recorded_at=payload["occurred_at"],
+            previous_event_hash=before["last_event_hash"],
+            payload_bytes=canonical_json(payload).encode(),
+            plan_hash=self.ws.plan["plan_hash"],
+            build_identity_hash=business_hash(self.ws.build), event_root=self.ws.root,
+        )
+        event_module.publish_challenger_replacement_event(self.ws.root, event)
+        after = self.state.replay()
+        self.assertEqual(after["terminal_opportunity_count"], 0)
+        self.assertEqual(after["last_event_hash"], event.event_hash)
 
     def test_replays_input_result_and_observed(self):
         empty = self.state.replay()
