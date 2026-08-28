@@ -16,10 +16,10 @@ hard ceiling, not a target. A smaller implementation is preferred whenever it
 preserves the exact safety contract.
 
 The Task 11 amendment is measured rather than prospective. The measured safety
-candidate measures 2,088 controller/fault-runner lines and 6,088 aggregate
+candidate measures 2,110 controller/fault-runner lines and 6,110 aggregate
 lines after adding real private-runtime recovery, protected-stop, isolated
 fresh-process, secret-surface, actual-boundary-input, seven-class authority and
-truthful semantic-replay evidence. The ceiling retains 112 lines of headroom.
+truthful semantic-replay evidence. The ceiling retains 90 lines of headroom.
 Only the controller/fault-runner group receives additional
 capacity; all other component ceilings remain unchanged.
 

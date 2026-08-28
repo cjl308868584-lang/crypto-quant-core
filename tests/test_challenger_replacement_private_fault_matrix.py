@@ -781,6 +781,55 @@ class ChallengerReplacementPrivateFaultMatrixTests(unittest.TestCase):
 
 
 class ChallengerReplacementPrivateFaultMatrixFailFastTests(unittest.TestCase):
+    def test_receipt_only_commit_preserves_historical_executable_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.name", "test"],
+                           cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"],
+                           cwd=repository, check=True)
+            executable = repository / "executable.py"
+            executable.write_text("value = 1\n")
+            subprocess.run(["git", "add", "executable.py"], cwd=repository,
+                           check=True)
+            subprocess.run(["git", "commit", "-qm", "executable"],
+                           cwd=repository, check=True)
+            checkpoint = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=repository, check=True,
+                capture_output=True, text=True).stdout.strip()
+            tree = subprocess.run(
+                ["git", "rev-parse", "HEAD^{tree}"], cwd=repository,
+                check=True, capture_output=True, text=True).stdout.strip()
+            (repository / "receipt.json").write_text("{}\n")
+            subprocess.run(["git", "add", "receipt.json"], cwd=repository,
+                           check=True)
+            subprocess.run(["git", "commit", "-qm", "receipt"],
+                           cwd=repository, check=True)
+            with patch.object(fault_module, "_ROOT", repository), \
+                    patch.object(fault_module, "EXECUTABLE_INVENTORY_PATHS",
+                                 ("executable.py",)):
+                self.assertEqual(
+                    fault_module._git_identity(checkpoint, tree),
+                    (checkpoint, tree))
+                executable.write_text("value = 2\n")
+                with self.assertRaisesRegex(
+                        ValueError,
+                        "PRIVATE_FAULT_EXECUTABLE_CHECKPOINT_DIRTY"):
+                    fault_module._git_identity(checkpoint, tree)
+                with self.assertRaisesRegex(
+                        ValueError,
+                        "PRIVATE_FAULT_EXECUTABLE_CHECKPOINT_INVALID"):
+                    fault_module._git_identity("f" * 40, tree)
+
+    def test_git_identity_maps_git_io_failure_to_fixed_error(self):
+        with patch.object(fault_module.subprocess, "run",
+                          side_effect=OSError("git unavailable")), \
+                self.assertRaisesRegex(
+                    ValueError,
+                    "PRIVATE_FAULT_EXECUTABLE_CHECKPOINT_INVALID"):
+            fault_module._git_identity()
+
     def test_oversized_receipt_is_rejected_before_external_digest_work(self):
         oversized = b"{" + b"x" * (4 * 1024 * 1024) + b"}\n"
         with patch.object(fault_module, "_digest",

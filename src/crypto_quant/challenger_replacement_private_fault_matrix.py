@@ -1244,14 +1244,34 @@ def _fixture_bytes(case_id, core_hash, observed_inputs, subprocess_record):
         "observed_boundary_inputs": observed_inputs,
         "runtime_state_transition_or_null": transition}).encode()
 
-def _git_identity():
+def _git_identity(expected_checkpoint=None, expected_tree=None):
     def read(argument):
-        return subprocess.run(["git", "rev-parse", argument], cwd=_ROOT,
-            check=True, capture_output=True, text=True).stdout.strip()
-    checkpoint, tree = read("HEAD"), read("HEAD^{tree}")
+        try:
+            return subprocess.run(["git", "rev-parse", argument], cwd=_ROOT,
+                check=True, capture_output=True, text=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise ValueError(
+                "PRIVATE_FAULT_EXECUTABLE_CHECKPOINT_INVALID") from error
+    if expected_checkpoint is None and expected_tree is None:
+        checkpoint, tree = read("HEAD"), read("HEAD^{tree}")
+    elif (isinstance(expected_checkpoint, str)
+            and len(expected_checkpoint) == 40
+            and not set(expected_checkpoint) - set("0123456789abcdef")
+            and isinstance(expected_tree, str)
+            and len(expected_tree) == 40
+            and not set(expected_tree) - set("0123456789abcdef")
+            and read(expected_checkpoint + "^{commit}") == expected_checkpoint
+            and read(expected_checkpoint + "^{tree}") == expected_tree):
+        checkpoint, tree = expected_checkpoint, expected_tree
+    else:
+        raise ValueError("PRIVATE_FAULT_EXECUTABLE_CHECKPOINT_INVALID")
     for path in EXECUTABLE_INVENTORY_PATHS:
-        result = subprocess.run(["git", "show", checkpoint + ":" + path],
-            cwd=_ROOT, check=False, capture_output=True)
+        try:
+            result = subprocess.run(["git", "show", checkpoint + ":" + path],
+                cwd=_ROOT, check=False, capture_output=True)
+        except OSError as error:
+            raise ValueError(
+                "PRIVATE_FAULT_EXECUTABLE_CHECKPOINT_INVALID") from error
         if result.returncode != 0 or result.stdout != (_ROOT / path).read_bytes():
             raise ValueError("PRIVATE_FAULT_EXECUTABLE_CHECKPOINT_DIRTY")
     return checkpoint, tree
@@ -1589,7 +1609,9 @@ def load_challenger_replacement_private_fault_matrix_bytes(data, *,
         value = _strict_receipt_bytes(data[:-1])
         if ((canonical_json(value) + "\n").encode() != data
                 or tuple(_validator().iter_errors(value))): raise ValueError
-        inventory, core_hash = _inventory(); checkpoint, tree = _git_identity()
+        inventory, core_hash = _inventory()
+        checkpoint, tree = _git_identity(
+            expected_executable_checkpoint, expected_executable_tree)
         if (value["executable_inventory"] != inventory
                 or value["executable_core_hash"] != core_hash
                 or value["executable_checkpoint"] != checkpoint

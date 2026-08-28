@@ -873,6 +873,14 @@ authenticity proof against coordinated rehashing. Without the external digest,
 strict load is forbidden. Git/release identity binds the one observed receipt
 ceremony.
 
+The loader verifies the receipt's recorded executable checkpoint and tree as a
+historical Git object, and verifies every current executable inventory byte
+against that exact checkpoint. A later commit containing only the immutable
+receipt or release metadata therefore remains replayable. Any changed runtime,
+schema or fixture byte still fails closed. Requiring the repository's current
+HEAD itself to equal the executable checkpoint is forbidden because the
+receipt cannot be committed without advancing HEAD.
+
 Forcing inode reuse, reopening an immutable final for mutation or replacing
 exact identities with semantic-only evidence is forbidden. This correction
 changes only Task 11 evidence comparison; it does not weaken publication
@@ -916,10 +924,10 @@ the rejected 116-line label runner was deleted: the retained components measure
 lines for 36 cases and cannot contain 59 direct probes, observed boundary
 accounting, fresh-process evidence and a strict self-hashing loader. The
 measured amendment ultimately raises only the controller component to 2,200 and
-the aggregate to 6,200. The reviewed safety candidate measures 2,088 controller
-lines and 6,088 aggregate lines after runtime, fresh-process, isolation,
+the aggregate to 6,200. The reviewed safety candidate measures 2,110 controller
+lines and 6,110 aggregate lines after runtime, fresh-process, isolation,
 secret-surface, actual-boundary-input, seven-class authority and truthful
-semantic-replay evidence, leaving 112 lines of headroom. All other component
+semantic-replay evidence, leaving 90 lines of headroom. All other component
 and delivery caps remain unchanged. This allowance is
 exclusive to the fixed offline evidence runner; it does not authorize runtime,
 transport, broker, scheduler or UI growth. The final implementation must report

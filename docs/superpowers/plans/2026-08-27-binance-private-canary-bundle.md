@@ -165,10 +165,10 @@ allowlist. Reject binary or unparseable entries and give no credit for deleted
 lines. Assert each flattened new-file name is unique and enforce caps
 `600/220/380/650/2100/2200/150`, then enforce the sum at `6200`. The
 controller/aggregate amendment is measured: the reviewed safety candidate
-contains 2,088 controller/fault-runner lines and 6,088 aggregate lines after
+contains 2,110 controller/fault-runner lines and 6,110 aggregate lines after
 independent review required actual runtime, fresh-process, isolation,
 secret-surface, boundary-input, seven-class authority and truthful semantic
-replay evidence. The ceilings leave 112 lines of headroom. No other
+replay evidence. The ceilings leave 90 lines of headroom. No other
 component receives headroom.
 
 - [ ] **Step 3: Run the amended GREEN gate and behavior adjacency**
@@ -1597,7 +1597,10 @@ are observed, ordered semantic hashes match, and aggregate identity equals the
 executable checkpoint. The receipt is canonical but is not required to equal a
 new ceremony's bytes because its primary exact OS identities are facts. Any
 runtime, schema, fixture or test change invalidates the campaign and returns to
-this step.
+this step. The loader resolves the recorded historical executable commit/tree
+and compares every current executable inventory byte to that checkpoint; it
+must remain valid after receipt-only and release-metadata-only commits without
+accepting any executable byte drift.
 For this pre-manifest validation, compute the expected receipt SHA-256 directly
 from the just-produced exact bytes and pass it explicitly to the strict loader.
 Task 12 must then copy that exact digest into the immutable build manifest and
