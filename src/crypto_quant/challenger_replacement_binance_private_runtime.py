@@ -19,7 +19,7 @@ from .challenger_replacement_binance_private_transport import (BinancePrivateTra
 from .challenger_replacement_binance_preflight import BinanceAccountPreflightCapability
 from .challenger_replacement_binance_reconciliation import (load_binance_reconciliation_bytes,
     load_binance_reconciliation_bytes_strict, load_binance_reconciliation_capture,
-    reconcile_binance_private_state)
+    reconcile_binance_private_state, _spot_market)
 from .challenger_replacement_events import ChallengerReplacementEventRoot
 from .challenger_replacement_opportunities import ChallengerReplacementOpportunityState
 from .challenger_replacement_public_http import open_fixed_public_request
@@ -334,13 +334,13 @@ def _reconcile_captured(state, attempt, activation, recorded_at):
     position = _decoded(ledger_input["position_document_base64"])
     incomes = tuple(_decoded(item) for item in ledger_input["income_documents_base64"])
     stop = ledger_input["stop_or_null"]
-    event_facts = (_spot_facts(state, attempt, activation, previous_reconciliation_bytes_or_null=previous)
+    event_facts = (_spot_facts(state, attempt, activation, market=position, previous_reconciliation_bytes_or_null=previous)
         if attempt["product"] == "SPOT" else _perpetual_facts(state, attempt, activation,
             position, incomes, stop, previous_reconciliation_bytes_or_null=previous))
     try:
         data = _runtime_reconcile(event_projection=event_facts,
             ledger_projection=(
-            _spot_facts(state, attempt, activation, previous_reconciliation_bytes_or_null=previous,
+            _spot_facts(state, attempt, activation, market=position, previous_reconciliation_bytes_or_null=previous,
                 fills=ledger_input["fills"]) if attempt["product"] == "SPOT" else
             _perpetual_facts(state, attempt, activation, position, incomes,
                 stop, previous_reconciliation_bytes_or_null=previous,
@@ -368,12 +368,18 @@ def _stop_authority(stop):
     if stop is None: return None
     return {key: stop[key] for key in ("client_algo_id", "side", "quantity",
                                        "trigger_price", "reduce_only")}
-def _spot_facts(state, attempt, activation, previous_reconciliation_bytes_or_null=None, fills=None):
+def _spot_facts(state, attempt, activation, *, market, previous_reconciliation_bytes_or_null=None, fills=None):
     fills = ([payload for event_type, payload in _private_payloads(state, attempt["opportunity_id"])
               if event_type == "BINANCE_FILL_OBSERVED"] if fills is None else fills)
     quantity = sum((Decimal(item["quantity"]) for item in fills), Decimal(0))
     quote = sum((Decimal(item["quote_quantity"]) for item in fills), Decimal(0))
-    fee = sum((Decimal(item["fee"]) for item in fills), Decimal(0))
+    mark, _ask, marks = _spot_market(market)
+    try:
+        fee = sum((Decimal(item["fee"]) * marks[item["fee_asset"]]
+                   for item in fills), Decimal(0))
+    except KeyError as error: _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID", error)
+    quote_fee = sum((Decimal(item["fee"]) for item in fills if item["fee_asset"] == "USDT"), Decimal(0))
+    base_fee = sum((Decimal(item["fee"]) for item in fills if item["fee_asset"] == "ETH"), Decimal(0))
     previous = (None if previous_reconciliation_bytes_or_null is None else load_binance_reconciliation_bytes(previous_reconciliation_bytes_or_null)["event_projection"])
     prior_signed = Decimal("0" if previous is None else previous["signed_quantity"])
     prior_average = None if previous is None else previous["average_entry_price_or_null"]
@@ -384,19 +390,24 @@ def _spot_facts(state, attempt, activation, previous_reconciliation_bytes_or_nul
     prior_available = Decimal(activation.capital_usdt if previous is None else previous["available_balance"])
     prior_fills = [] if previous is None else list(previous["fill_ids"])
     if attempt["action"] == "OPEN_LONG":
-        signed = prior_signed + quantity
+        signed = prior_signed + quantity - base_fee
         average = None if signed == 0 else (prior_signed * (prior_average or Decimal("0")) + quote) / signed
-        realized = prior_realized; wallet = prior_wallet - fee; available = prior_available - quote - fee
+        realized = prior_realized; available = prior_available - quote - quote_fee
     else:
-        if prior_average is None or quantity > prior_signed: _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
-        signed = prior_signed - quantity
+        if prior_average is None or quantity + base_fee > prior_signed: _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID")
+        signed = prior_signed - quantity - base_fee
         average = None if signed == 0 else prior_average
-        realized_increment = quote - quantity * prior_average
-        realized = prior_realized + realized_increment; wallet = prior_wallet + realized_increment - fee; available = prior_available + quote - fee
+        realized_increment = quote - (quantity + base_fee) * prior_average
+        realized = prior_realized + realized_increment; available = prior_available + quote - quote_fee
+    previous_mark = (mark if not prior_signed or prior_average is None else
+        prior_average + Decimal("0" if previous is None else previous["unrealized_pnl"]) / prior_signed)
+    direction = Decimal(1) if attempt["action"] == "OPEN_LONG" else Decimal(-1)
+    fill_price = quote / quantity if quantity else mark
+    wallet = prior_wallet + prior_signed * (mark - previous_mark) + direction * quantity * (mark - fill_price) - fee
     facts = {
         "product": "SPOT", "signed_quantity": canonical_decimal(signed),
         "average_entry_price_or_null": None if average is None else canonical_decimal(average), "realized_pnl": canonical_decimal(realized),
-        "unrealized_pnl": "0",
+        "unrealized_pnl": canonical_decimal(Decimal(0) if average is None else signed * (mark - average)),
         "cumulative_fee": canonical_decimal(prior_fee + fee), "funding": "0",
         "wallet_balance": canonical_decimal(wallet),
         "available_balance": canonical_decimal(available),
@@ -424,11 +435,21 @@ def _finish_spot(state, attempt, activation, order, trades, account, recorded_at
     _capture(state, attempt, _capture_inputs(
         state, attempt, activation, order_documents=(order,),
         trade_documents=trades, account_document=account,
-        position_document=b"[]", income_documents=(), algo_documents=(),
+        position_document=_spot_market_document(state, attempt), income_documents=(), algo_documents=(),
         previous=previous, stop=None,
     ), recorded_at)
     data, required, client = _reconcile_captured(state, attempt, activation, recorded_at)
     return _publish_reconciliation(state, attempt, data, required, client, recorded_at)
+def _spot_market_document(state, attempt):
+    try:
+        evidence = state.replay()["opportunities"][attempt["opportunity_id"]]["result_evidence"]
+        mark = canonical_decimal(Decimal(evidence["decision"]["indicators"]["latest_close"]))
+        ask = canonical_decimal(Decimal(evidence["accounting"]["fill_price"]))
+        if Decimal(mark) <= 0 or Decimal(ask) <= 0: raise ValueError
+        return canonical_json({"symbol": "ETHUSDT", "mark_price": mark,
+            "ask_price": ask, "asset_marks_usdt": {"ETH": mark, "USDT": "1"}}).encode()
+    except (KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID", error)
 def _expected_stop(state, attempt):
     try:
         evidence = state.replay()["opportunities"][

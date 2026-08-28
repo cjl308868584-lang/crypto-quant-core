@@ -653,7 +653,10 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             authorized_stop_or_null=None,
             order_documents=(order,), trade_documents=(trade,),
             account_document=self._spot_account("0.001", "97.998"),
-            position_document=b"[]", income_documents=(), algo_documents=(),
+            position_document=canonical_json({
+                "symbol": "ETHUSDT", "mark_price": "2000", "ask_price": "2001",
+                "asset_marks_usdt": {"ETH": "2000", "USDT": "1"},
+            }).encode(), income_documents=(), algo_documents=(),
             capture_publications=fixture_capture_publications(),
         )
 
@@ -699,6 +702,7 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         fill = {
             "trade_id": 302, "order_id": 402, "quantity": "0.001",
             "price": "2100", "quote_quantity": "2.1", "fee": "0.0021",
+            "fee_asset": "USDT",
         }
 
         class Event:
@@ -716,7 +720,10 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
 
         facts = _spot_facts(
             State(), {"opportunity_id": opportunity_id, "action": "CLOSE_LONG"},
-            self.activation,
+            self.activation, market=canonical_json({
+                "symbol": "ETHUSDT", "mark_price": "2100", "ask_price": "2101",
+                "asset_marks_usdt": {"ETH": "2100", "USDT": "1"},
+            }).encode(),
             previous_reconciliation_bytes_or_null=self._spot_reconciliation(),
         )
         expected = {
