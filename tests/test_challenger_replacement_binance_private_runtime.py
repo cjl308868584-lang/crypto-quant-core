@@ -38,6 +38,9 @@ from crypto_quant.challenger_replacement_binance_private_runtime import (
     _spot_facts,
     run_challenger_replacement_binance_private_intent,
 )
+from crypto_quant.challenger_replacement_binance_private_protocol import (
+    build_binance_private_request,
+)
 from crypto_quant.challenger_replacement_binance_private_transport import (
     BinancePrivateTransportResult,
 )
@@ -431,6 +434,36 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         events = [json.loads(event.final_bytes)["event_type"]
                   for event in self.state._replay()["events"]]
         self.assertEqual(events.count("BINANCE_SERVER_TIME_OBSERVED"), 2)
+
+    def test_final_send_guard_rejects_quantity_1000_before_transport(self):
+        attempt = private_runtime.prepare_binance_order_attempt(
+            intent=self.intent,
+            projection=private_runtime._runtime_projection(self.state),
+            preflight=self.raw_preflight,
+            activation=self.activation,
+        )
+        request = build_binance_private_request(
+            "SPOT_ORDER_CREATE", {
+                "symbol": "ETHUSDT", "side": "BUY", "type": "MARKET",
+                "quantity": "1000",
+                "newClientOrderId": attempt["venue_client_order_id"],
+                "newOrderRespType": "FULL",
+            }, timestamp_ms=1787832000000,
+        )
+        context = private_runtime._Context(
+            self.state, attempt, self.credential, self.activation,
+            self.workspace.build, DEFAULT_OBSERVED_AT, 1787832000000,
+        )
+        with patch(
+            "crypto_quant.challenger_replacement_binance_private_runtime."
+            "execute_binance_private_request",
+            side_effect=AssertionError("transport must not run"),
+        ) as transport, self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED",
+        ):
+            private_runtime._execute(request, context)
+        transport.assert_not_called()
 
     def _observe_opportunity(self):
         self.workspace.observe(self.state)

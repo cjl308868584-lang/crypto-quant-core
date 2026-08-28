@@ -6,6 +6,7 @@ from decimal import Decimal
 import hashlib
 import json
 from typing import Mapping
+from urllib.parse import parse_qsl
 from urllib.request import Request
 from .canonical import canonical_decimal, canonical_json, utc_datetime
 from .challenger_replacement_binance_private_lifecycle import (_ALGO_KEYS, _document,
@@ -243,7 +244,11 @@ def _existing_private(state, attempt):
     }
     if any(private.get(key) != value for key, value in expected.items()): _fail("BINANCE_PRIVATE_RUNTIME_INTENT_CONFLICT")
     return private
-def _execute(request, context):
+def _execute(request, context, *, reduce_only_limit=None):
+    if request.mutating:
+        _enforce_send_capital(
+            request, context, reduce_only_limit=reduce_only_limit,
+        )
     try:
         validate_binance_request_time(timestamp_ms=request.timestamp_ms,
                                       server_time_ms=context.timestamp_ms)
@@ -252,6 +257,81 @@ def _execute(request, context):
     return execute_binance_private_request(request, credential=context.credential,
         activation=context.activation, expected_build_identity=context.build_identity,
         now=context.recorded_at)
+def _prior_signed(state, attempt, product):
+    data = _previous_reconciliation_bytes(
+        state, product=product,
+        before_opportunity_id=attempt["opportunity_id"],
+    )
+    if data is None:
+        return Decimal(0)
+    return Decimal(load_binance_reconciliation_bytes(data)[
+        "event_projection"
+    ]["signed_quantity"])
+def _enforce_send_capital(request, context, *, reduce_only_limit=None):
+    """Recheck the fixed E0 capital envelope at the final private send."""
+    if request.endpoint_id in {
+            "FUTURES_ALGO_CREATE", "FUTURES_ALGO_CANCEL",
+            "SPOT_ORDER_CANCEL", "FUTURES_ORDER_CANCEL",
+    }:
+        return
+    if request.endpoint_id not in {
+            "SPOT_ORDER_CREATE", "FUTURES_ORDER_CREATE",
+            "FUTURES_SET_LEVERAGE", "FUTURES_SET_MARGIN_TYPE",
+    }:
+        _fail("BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED")
+    if request.endpoint_id in {
+            "FUTURES_SET_LEVERAGE", "FUTURES_SET_MARGIN_TYPE",
+    }:
+        return
+    try:
+        activation = context.activation
+        if (activation.stage != "E0" or activation.capital_usdt != "100"
+                or activation.max_gross_exposure_usdt != "50"
+                or activation.max_leverage != "0.5"):
+            raise ValueError
+        values = dict(parse_qsl(
+            request.encoded_parameters.decode("ascii"),
+            keep_blank_values=True, strict_parsing=True,
+        ))
+        quantity = Decimal(values["quantity"])
+        if (request.endpoint_id == "FUTURES_ORDER_CREATE"
+                and values.get("reduceOnly") == "true"
+                and reduce_only_limit is not None):
+            limit = Decimal(canonical_decimal(reduce_only_limit))
+            if values["side"] != "BUY" or limit <= 0 or quantity > limit:
+                raise ValueError
+            return
+        mark = Decimal(_document(
+            _spot_market_document(context.state, context.attempt)
+        )["mark_price"])
+        spot = _prior_signed(context.state, context.attempt, "SPOT")
+        perpetual = _prior_signed(
+            context.state, context.attempt, "PERPETUAL",
+        )
+        if request.endpoint_id == "SPOT_ORDER_CREATE":
+            if values["side"] == "BUY":
+                if perpetual != 0:
+                    raise ValueError
+                post = spot + quantity
+            else:
+                if quantity > spot:
+                    raise ValueError
+                return
+        elif values.get("reduceOnly") == "true":
+            limit = -perpetual
+            if values["side"] != "BUY" or limit <= 0 or quantity > limit:
+                raise ValueError
+            return
+        else:
+            if values["side"] != "SELL" or spot != 0:
+                raise ValueError
+            post = abs(perpetual - quantity)
+        gross = post * mark
+        if (quantity <= 0 or gross > Decimal("50")
+                or gross / Decimal("100") > Decimal("0.5")):
+            raise ValueError
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED", error)
 def _renew(context):
     if not isinstance(context, _Context):
         return context
@@ -778,7 +858,9 @@ def _emergency_flatten(state, attempt, position, context):
             state, attempt, "BINANCE_EMERGENCY_FLATTEN_SEND_STARTED",
             context.recorded_at, request_id=request.request_id,
         )
-        sent = _execute(request, context)
+        sent = _execute(
+            request, context, reduce_only_limit=emergency["quantity"],
+        )
         if sent.response_class == "UNKNOWN":
             try:
                 venue_code = json.loads(sent.body).get("code", -1000)
