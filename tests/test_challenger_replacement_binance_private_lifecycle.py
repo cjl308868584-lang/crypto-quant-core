@@ -367,10 +367,10 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
                 account=account,
             )
 
-    def test_noncanonical_duplicate_or_extra_documents_fail_closed(self):
+    def test_duplicate_or_wrong_type_documents_fail_closed(self):
         attempt = self.prepare()
         order = self.spot_order(attempt)
-        for bad in (order + b"\n", b'{"status":"NEW","status":"NEW"}', b"[]"):
+        for bad in (b'{"status":"NEW","status":"NEW"}', b"[]"):
             with self.subTest(bad=bad):
                 with self.assertRaisesRegex(
                     BinancePrivateLifecycleError,
@@ -477,6 +477,50 @@ class BinancePrivateLifecycleTests(unittest.TestCase):
                 "payload": event["payload"],
             }
             self.assertEqual(list(validator.iter_errors(envelope)), [])
+
+    def test_official_natural_spot_query_and_my_trades_are_normalized(self):
+        attempt = self.prepare()
+        order = ('''{
+          "symbol":"ETHUSDT", "orderId":101, "orderListId":-1,
+          "clientOrderId":"%s", "price":"0.00000000",
+          "origQty":"0.02500000", "executedQty":"0.02500000",
+          "cummulativeQuoteQty":"50.00000000", "status":"FILLED",
+          "timeInForce":"GTC", "type":"MARKET", "side":"BUY",
+          "stopPrice":"0.00000000", "icebergQty":"0.00000000",
+          "time":1787832000000, "updateTime":1787832000001,
+          "isWorking":true, "workingTime":1787832000000,
+          "origQuoteOrderQty":"0.00000000",
+          "selfTradePreventionMode":"EXPIRE_MAKER"
+        }''' % attempt["venue_client_order_id"]).encode()
+        trade = b'''{
+          "symbol":"ETHUSDT", "id":301, "orderId":101,
+          "orderListId":-1, "price":"2000.00000000", "qty":"0.02500000",
+          "quoteQty":"50.00000000", "commission":"0.00001800",
+          "commissionAsset":"BNB", "time":1787832000002,
+          "isBuyer":true, "isMaker":false, "isBestMatch":true
+        }'''
+        events = apply_binance_order_observation(
+            attempt=attempt, order=order, trades=(trade,),
+            account=self.spot_account(eth="0.025", usdt="50"),
+        )
+        fill = next(item for item in events
+                    if item["event_type"] == "BINANCE_FILL_OBSERVED")
+        self.assertEqual(fill["payload"]["fee_asset"], "BNB")
+        self.assertEqual(events[-1]["event_type"], "BINANCE_ORDER_FILLED")
+
+    def test_external_json_duplicate_key_remains_rejected(self):
+        attempt = self.prepare()
+        order = self.spot_order(attempt).replace(
+            b'"symbol":"ETHUSDT"',
+            b'"symbol":"ETHUSDT","symbol":"ETHUSDT"',
+        )
+        with self.assertRaisesRegex(
+            BinancePrivateLifecycleError, "BINANCE_ORDER_OBSERVATION_INVALID",
+        ):
+            apply_binance_order_observation(
+                attempt=attempt, order=order, trades=(),
+                account=self.spot_account(),
+            )
 
 
 if __name__ == "__main__":

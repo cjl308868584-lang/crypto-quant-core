@@ -168,20 +168,26 @@ class BinanceReconciliationTests(unittest.TestCase):
         balances = {item["asset"]: item for item in account["balances"]}
         balances["ETH"]["free"] = "0.001"
         balances["USDT"]["free"] = "97.998"
-        order = self.body({
+        order = json.dumps({
             "symbol": "ETHUSDT", "orderId": 101,
+            "orderListId": -1,
             "clientOrderId": "cq77" + "6" * 32, "price": "0",
             "origQty": "0.001", "executedQty": "0.001",
             "cummulativeQuoteQty": "2", "status": "FILLED",
             "timeInForce": "GTC", "type": "MARKET", "side": "BUY",
-            "transactTime": 1787832000000,
-        })
-        trade = self.body({
+            "time": 1787832000000, "updateTime": 1787832000001,
+            "workingTime": 1787832000000, "isWorking": True,
+            "stopPrice": "0", "icebergQty": "0", "origQuoteOrderQty": "0",
+            "selfTradePreventionMode": "EXPIRE_MAKER",
+        }, indent=2).encode()
+        trade = json.dumps({
             "symbol": "ETHUSDT", "id": 301, "orderId": 101,
+            "orderListId": -1,
             "qty": "0.001", "price": "2000", "quoteQty": "2",
             "commission": "0.002", "commissionAsset": "USDT",
             "time": 1787832000001, "isBuyer": True,
-        })
+            "isMaker": False, "isBestMatch": True,
+        }, indent=2).encode()
         data = reconcile_binance_private_state(
             event_projection=facts, ledger_projection=facts,
             authorized_order={"order_id": 101,
@@ -490,9 +496,8 @@ class BinanceReconciliationTests(unittest.TestCase):
             ):
                 self.reconcile(**changes)
 
-    def test_noncanonical_duplicate_key_extra_and_float_fail_before_projection(self):
+    def test_duplicate_key_extra_and_float_fail_before_projection(self):
         bad = (
-            self.account + b"\n",
             b'{"totalWalletBalance":"100","totalWalletBalance":"100"}',
             self.body({**json.loads(self.account), "extra": True}),
             b'{"totalWalletBalance":100.0,"availableBalance":"99"}',

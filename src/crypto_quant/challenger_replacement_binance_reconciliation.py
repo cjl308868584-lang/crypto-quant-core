@@ -5,7 +5,7 @@ import hashlib, json, stat
 from types import MappingProxyType
 from typing import Mapping
 from .canonical import canonical_decimal, canonical_json
-from .challenger_replacement_binance_private_lifecycle import _FUTURES_ORDER_KEYS, _SPOT_ORDER_KEYS, _SPOT_TRADE_KEYS, _document, _number, _strict_pairs
+from .challenger_replacement_binance_private_lifecycle import _FUTURES_ORDER_KEYS, _SPOT_ORDER_KEYS, _SPOT_TRADE_KEYS, _document, _normalize_spot_order, _normalize_spot_trade, _number, _strict_pairs
 from .challenger_replacement_binance_preflight import _FUTURES_ACCOUNT_KEYS, _FUTURES_ASSET_KEYS, _POSITION_KEYS, _SPOT_KEYS
 from .challenger_replacement_events import ChallengerReplacementEventRoot, _read_final
 _FACT_KEYS = frozenset({"product", "signed_quantity", "average_entry_price_or_null",
@@ -142,7 +142,8 @@ def _array_document(data):
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)
 def _spot_venue(event, orders, trades, account, position, incomes, algos, previous, order_auth):
     if position != b"[]" or incomes or algos: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
-    order_values = _unique(orders, "orderId", "BINANCE_RECONCILIATION_CONFLICTING_ORDER")
+    order_values = [_normalize_spot_order(value) for value in
+                    _unique(orders, "orderId", "BINANCE_RECONCILIATION_CONFLICTING_ORDER")]
     if len(order_values) != 1: _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
     order = order_values[0]
     if (frozenset(order) != _SPOT_ORDER_KEYS or order["symbol"] != "ETHUSDT"
@@ -153,7 +154,8 @@ def _spot_venue(event, orders, trades, account, position, incomes, algos, previo
                 "NEW", "PARTIALLY_FILLED", "FILLED", "CANCELED", "EXPIRED",
             }):
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID")
-    trade_values = _unique(trades, "id", "BINANCE_RECONCILIATION_CONFLICTING_FILL")
+    trade_values = [_normalize_spot_trade(value) for value in
+                    _unique(trades, "id", "BINANCE_RECONCILIATION_CONFLICTING_FILL")]
     quantity = quote = fee = Decimal("0")
     for trade in trade_values:
         if (frozenset(trade) != _SPOT_TRADE_KEYS
