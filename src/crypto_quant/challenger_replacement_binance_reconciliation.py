@@ -135,8 +135,11 @@ def _unique(documents, key, conflict):
 def _array_document(data):
     try:
         if not isinstance(data, bytes) or not 1 <= len(data) <= 1_048_576: raise ValueError
-        value = json.loads(data.decode("utf-8"), object_pairs_hook=_strict_pairs)
-        if not isinstance(value, list) or canonical_json(value).encode() != data: raise ValueError
+        value = json.loads(
+            data.decode("utf-8"), object_pairs_hook=_strict_pairs,
+            parse_float=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
+        if not isinstance(value, list): raise ValueError
         return value
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
         _fail("BINANCE_RECONCILIATION_INPUT_INVALID", error)

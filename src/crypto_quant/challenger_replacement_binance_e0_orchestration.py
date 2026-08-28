@@ -292,22 +292,29 @@ def run_fixed_binance_emergency_stop(opportunity_id):
                     activation=activation,
                     credential_identity=credential.identity, now=observed_at,
                 )
-                attempt = prepare_binance_order_attempt(
-                    intent=intent, projection=_runtime_projection(state),
-                    preflight=preflight_document, activation=activation,
-                )
+                projection = _runtime_projection(state)
                 private = state.replay()["opportunities"][
                     opportunity_id
                 ]["private"]
+                if isinstance(private.get("emergency_flatten"), dict):
+                    projection = {
+                        **projection,
+                        "unresolved_client_order_ids": [
+                            private["venue_client_order_id"]
+                        ],
+                    }
+                attempt = prepare_binance_order_attempt(
+                    intent=intent, projection=projection,
+                    preflight=preflight_document, activation=activation,
+                )
                 if (private.get("product") != "PERPETUAL"
                         or private.get("action") != "OPEN_SHORT"
-                        or private.get("stage") not in {
-                            "BINANCE_FILLS_FEES_REPLAYED",
-                            "BINANCE_ORDER_PARTIALLY_FILLED",
-                        }
-                        and not isinstance(
-                            private.get("emergency_flatten"), dict
-                        )):
+                        or (private.get("stage") in {
+                            "BINANCE_INTENT_AUTHORIZED",
+                            "BINANCE_ABSENCE_CHECKED",
+                            "BINANCE_SIGNED_REQUEST_PREPARED",
+                        } and not isinstance(
+                            private.get("emergency_flatten"), dict))):
                     raise ValueError
                 context = _Context(
                     state, attempt, credential, activation,

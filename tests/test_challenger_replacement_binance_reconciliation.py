@@ -39,6 +39,14 @@ def fixture_capture_publications():
 
 
 class BinanceReconciliationTests(unittest.TestCase):
+    def test_natural_order_venue_array_is_accepted(self):
+        self.assertEqual(
+            reconciliation_module._array_document(
+                b'[ {"positionAmt":"-0.1", "symbol":"ETHUSDT"} ]'
+            ),
+            [{"positionAmt": "-0.1", "symbol": "ETHUSDT"}],
+        )
+
     CLIENT = "cq77" + "1" * 32
 
     @staticmethod

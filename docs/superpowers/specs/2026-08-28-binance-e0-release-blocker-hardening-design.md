@@ -34,20 +34,21 @@ only the fixed internal fields used by lifecycle and reconciliation.
 
 ## 3. Spot economics
 
-Spot fees may be charged in BNB, ETH (base), USDT (quote), or another asset.
+Spot fees may be charged in BNB, ETH (base), or USDT (quote).
 Every trade retains fee amount and asset. Reconciliation converts fees into
-USDT using a trusted, capture-bound conversion price: USDT=1; ETH uses the
-same trusted ETHUSDT mark; BNB or another asset requires an explicit matching
-asset/USDT mark in the captured venue input. A missing or stale conversion
+USDT using a fixed-query, capture-bound conversion price: USDT=1; ETH uses the
+current ETHUSDT bid; BNB requires the current BNBUSDT ask in the captured venue
+input. Any other asset or a missing conversion
 fails closed; it is never treated as zero.
 
 Spot signed quantity is the trusted ETH account balance. Wallet equity is
 `USDT total + ETH total * trusted mark`; unrealized PnL is
-`ETH position * (trusted mark - average entry)`. Available balance is free
-USDT. A trusted mark/ask pair is captured with the reconciliation inputs and
-must be positive, finite, correctly ordered (`mark <= ask` is not required,
-but spread and age limits are enforced by the existing public market loader),
-and bound to ETHUSDT and the opportunity.
+`ETH position * (current bid - average entry)`. Available balance is free
+USDT. The fixed public `bookTicker` query supplies the current ETHUSDT bid/ask;
+the normalized pair is captured in the immutable reconciliation inputs and
+must be positive and bound to ETHUSDT and the opportunity. This is exact
+replay evidence, not a claim that a public response is cryptographically
+authenticated beyond the fixed TLS endpoint and released query boundary.
 
 ## 4. Time and crash recovery
 
@@ -71,8 +72,11 @@ runtime enters a separate `EMERGENCY_FLATTEN_AUTHORIZED` transition derived
 from the already active activation, exact exposed position and fixed reason.
 It builds a deterministic reduce-only BUY market close, uses a separate client
 order id namespace, obtains fresh server time, queries first, sends at most
-once, and reconciles until flat or UNKNOWN. It cannot open or reverse a
-position. UNKNOWN remains a hard stop.
+once per deterministic generation, and reconciles until flat or UNKNOWN. If a
+terminal emergency order leaves a short remainder, a new durable generation
+binds the previous order response, position response, quantity and client id
+before the remainder can enter its own query-first path. It cannot open or
+reverse a position. UNKNOWN remains a hard stop.
 
 This is not a general manual flatten API: callers cannot provide product,
 side, quantity, price, client id or reason.
@@ -131,4 +135,3 @@ and credential paths are fixed by the released contract. Logging is redacted.
   order selectors and no network in the test suite.
 - Focused, adjacent and one final full suite, compileall, `make validate`,
   diff-check and independent review pass before any release action.
-

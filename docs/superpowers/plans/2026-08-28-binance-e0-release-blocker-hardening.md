@@ -32,7 +32,8 @@ Files: private protocol/runtime/event contract and tests.
 1. RED: two signed actions currently share one timestamp; prepared-unsent retry
    cannot safely refresh; UNKNOWN must remain no-resend.
 2. Persist one time observation per signed action and add the minimal closed
-   unsent supersession transition after proven absence.
+   unsent supersession transition binding the old request id after proven
+   absence.
 3. Preserve all existing SENT_STARTED/UNKNOWN idempotency.
 4. Run protocol/runtime/event/fault focused tests and commit.
 
@@ -43,7 +44,9 @@ Files: lifecycle/runtime/protective-stop contract and tests.
 1. RED each stop failure boundary with existing exposure.
 2. Add the fixed internal authorization and deterministic reduce-only query-first
    close; no public arbitrary flatten API.
-3. Verify flat, partial, UNKNOWN, duplicate response and restart behavior.
+3. Verify flat, partial, UNKNOWN, duplicate response and restart behavior;
+   terminal partial exposure must create a new evidence-bound remainder
+   generation rather than reuse the old client order id.
 4. Run protective-stop/runtime/reconciliation tests and commit.
 
 ## Task 5 — Final send capital guard
@@ -79,4 +82,3 @@ packaging/build inventory, runbook and tests.
    `git diff --check` once for the final code state.
 4. Stop with a local release candidate. Do not merge/tag/install/start or use a
    credential/account/order without the separate external approvals.
-

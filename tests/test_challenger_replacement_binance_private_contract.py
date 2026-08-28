@@ -34,6 +34,7 @@ class BinancePrivateEndpointContractTests(unittest.TestCase):
         expected = {
             "SPOT_SERVER_TIME": ("api.binance.com", "GET", "/api/v3/time", False),
             "SPOT_EXCHANGE_INFO": ("api.binance.com", "GET", "/api/v3/exchangeInfo", False),
+            "SPOT_BOOK_TICKER": ("api.binance.com", "GET", "/api/v3/ticker/bookTicker", False),
             "FUTURES_SERVER_TIME": ("fapi.binance.com", "GET", "/fapi/v1/time", False),
             "FUTURES_EXCHANGE_INFO": ("fapi.binance.com", "GET", "/fapi/v1/exchangeInfo", False),
             "FUTURES_MARK_PRICE": ("fapi.binance.com", "GET", "/fapi/v1/premiumIndex", False),

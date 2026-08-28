@@ -16,6 +16,7 @@ _SPOT, _FUTURES = "api.binance.com", "fapi.binance.com"
 _ENDPOINT_ROWS = (
     ("SPOT_SERVER_TIME", _SPOT, "GET", "/api/v3/time", False),
     ("SPOT_EXCHANGE_INFO", _SPOT, "GET", "/api/v3/exchangeInfo", False),
+    ("SPOT_BOOK_TICKER", _SPOT, "GET", "/api/v3/ticker/bookTicker", False),
     ("FUTURES_SERVER_TIME", _FUTURES, "GET", "/fapi/v1/time", False),
     ("FUTURES_EXCHANGE_INFO", _FUTURES, "GET", "/fapi/v1/exchangeInfo", False),
     ("FUTURES_MARK_PRICE", _FUTURES, "GET", "/fapi/v1/premiumIndex", False),
@@ -286,12 +287,45 @@ def _apply_emergency_flatten(private, event_type, payload, event):
             _invalid()
         emergency = {
             "stage": event_type,
+            "generation": 1,
             "emergency_intent_id": payload["emergency_intent_id"],
             "reason_code": payload["reason_code"],
             "quantity": payload["quantity"],
             "venue_client_order_id": payload["venue_client_order_id"],
+            "previous_attempts": [],
         }
         private["emergency_flatten"] = emergency
+    elif event_type == "BINANCE_EMERGENCY_FLATTEN_REMAINDER_AUTHORIZED":
+        if (not isinstance(emergency, dict)
+                or emergency.get("stage") not in {
+                    "BINANCE_EMERGENCY_FLATTEN_SEND_STARTED",
+                    "BINANCE_EMERGENCY_FLATTEN_UNKNOWN",
+                }
+                or payload.get("reduce_only") is not True
+                or payload.get("generation") != emergency.get("generation") + 1
+                or payload.get("previous_venue_client_order_id")
+                != emergency.get("venue_client_order_id")):
+            _invalid()
+        previous = list(emergency.get("previous_attempts", ()))
+        previous.append({
+            "generation": emergency["generation"],
+            "emergency_intent_id": emergency["emergency_intent_id"],
+            "quantity": emergency["quantity"],
+            "venue_client_order_id": emergency["venue_client_order_id"],
+            "order_response_sha256": payload[
+                "previous_order_response_sha256"
+            ],
+            "position_response_sha256": payload["position_response_sha256"],
+        })
+        private["emergency_flatten"] = emergency = {
+            "stage": "BINANCE_EMERGENCY_FLATTEN_AUTHORIZED",
+            "generation": payload["generation"],
+            "emergency_intent_id": payload["emergency_intent_id"],
+            "reason_code": payload["reason_code"],
+            "quantity": payload["quantity"],
+            "venue_client_order_id": payload["venue_client_order_id"],
+            "previous_attempts": previous,
+        }
     else:
         stages = {
             "BINANCE_EMERGENCY_FLATTEN_ABSENCE_CHECKED": {
@@ -339,7 +373,10 @@ _PRIVATE_TRANSITIONS = {
     "BINANCE_ABSENCE_CHECKED": {
         "BINANCE_INTENT_AUTHORIZED", "BINANCE_SIGNED_REQUEST_PREPARED",
     },
-    "BINANCE_SIGNED_REQUEST_PREPARED": {"BINANCE_ABSENCE_CHECKED"},
+    "BINANCE_SIGNED_REQUEST_SUPERSEDED": {"BINANCE_ABSENCE_CHECKED"},
+    "BINANCE_SIGNED_REQUEST_PREPARED": {
+        "BINANCE_ABSENCE_CHECKED", "BINANCE_SIGNED_REQUEST_SUPERSEDED",
+    },
     "BINANCE_REQUEST_SEND_STARTED": {"BINANCE_SIGNED_REQUEST_PREPARED"},
     "BINANCE_ORDER_ACKNOWLEDGED": {"BINANCE_REQUEST_SEND_STARTED", "BINANCE_UNKNOWN_QUERY_OBSERVED"},
     "BINANCE_FILL_OBSERVED": {
@@ -613,9 +650,37 @@ def _apply_stop_transition(private, event_type, payload, event):
     private["last_private_event_sequence"] = event.sequence
 def _private_payload_valid(event_type, payload, private):
     if event_type == "BINANCE_ABSENCE_CHECKED":
-        return payload["venue_client_order_id"] == private["venue_client_order_id"]
-    if event_type in {"BINANCE_SIGNED_REQUEST_PREPARED",
-                      "BINANCE_REQUEST_SEND_STARTED"}:
+        superseded = payload.get("superseded_request_id")
+        return all((
+            payload["venue_client_order_id"] == private["venue_client_order_id"],
+            (private["stage"] == "BINANCE_SIGNED_REQUEST_PREPARED"
+             and superseded == private.get("request_id"))
+            or (private["stage"] == "BINANCE_INTENT_AUTHORIZED"
+                and superseded is None),
+        ))
+    if event_type == "BINANCE_SIGNED_REQUEST_SUPERSEDED":
+        return all((
+            payload["old_request_id"] == private.get("request_id"),
+            payload["old_request_sha256"] == private.get("request_sha256"),
+            payload["old_timestamp_ms"] == private.get("request_timestamp_ms"),
+            payload["old_server_time_response_sha256"]
+            == private.get("request_server_time_response_sha256"),
+            payload["absence_response_sha256"]
+            == private.get("absence_response_sha256"),
+            payload["new_request_id"] != payload["old_request_id"],
+        ))
+    if event_type == "BINANCE_SIGNED_REQUEST_PREPARED":
+        encoded = payload.get("capital_snapshot_bytes_base64")
+        digest = payload.get("capital_snapshot_sha256")
+        if encoded is None and digest is None:
+            return True
+        try:
+            data = base64.b64decode(encoded, validate=True)
+            return (1 <= len(data) <= 4_194_304
+                    and hashlib.sha256(data).hexdigest() == digest)
+        except (TypeError, ValueError):
+            return False
+    if event_type == "BINANCE_REQUEST_SEND_STARTED":
         return True
     if event_type == "BINANCE_ORDER_ACKNOWLEDGED": return payload["venue_client_order_id"] == private["venue_client_order_id"]
     if event_type == "BINANCE_FILL_OBSERVED":
@@ -665,11 +730,41 @@ def _apply_private_transition(private, event_type, payload, event):
         private["fill_ids"].append(payload["trade_id"])
     elif event_type == "BINANCE_ABSENCE_CHECKED":
         private["absence_proven"] = True
+        private["absence_response_sha256"] = payload[
+            "query_response_sha256"
+        ]
+    elif event_type == "BINANCE_SIGNED_REQUEST_SUPERSEDED":
+        private["request_supersession"] = {
+            key: payload[key] for key in payload if key != "intent_id"
+        }
     elif event_type == "BINANCE_SIGNED_REQUEST_PREPARED":
+        supersession = private.get("request_supersession")
+        if (private["stage"] == "BINANCE_SIGNED_REQUEST_SUPERSEDED"
+                and (not isinstance(supersession, dict)
+                     or supersession["new_request_id"]
+                     != payload["request_id"]
+                     or supersession["new_request_sha256"]
+                     != payload["request_sha256"]
+                     or supersession["new_timestamp_ms"]
+                     != payload["timestamp_ms"]
+                     or supersession["new_server_time_response_sha256"]
+                     != payload.get("server_time_response_sha256"))):
+            _invalid()
         private["request_id"] = payload["request_id"]
         private["request_endpoint_id"] = payload["endpoint_id"]
         private["request_sha256"] = payload["request_sha256"]
         private["request_timestamp_ms"] = payload["timestamp_ms"]
+        if "server_time_response_sha256" in payload:
+            private["request_server_time_response_sha256"] = payload[
+                "server_time_response_sha256"
+            ]
+        if "capital_snapshot_bytes_base64" in payload:
+            private["capital_snapshot_bytes_base64"] = payload[
+                "capital_snapshot_bytes_base64"
+            ]
+            private["capital_snapshot_sha256"] = payload[
+                "capital_snapshot_sha256"
+            ]
     elif event_type == "BINANCE_RECONCILIATION_INPUTS_CAPTURED":
         private.update(capture_event_hash=event.event_hash,
             capture_event_sequence=event.sequence,

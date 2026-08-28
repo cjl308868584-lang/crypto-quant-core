@@ -28,6 +28,7 @@ class V0781ReleaseTests(unittest.TestCase):
             ROOT / "config/evaluator-build-manifest-v1.json"
         ).read_text())
         required = {
+            "config/challenger-replacement-binance-private-event-v1.schema.json",
             "src/crypto_quant/challenger_replacement_binance_e0_cli.py",
             "src/crypto_quant/challenger_replacement_binance_e0_orchestration.py",
             "docs/adr/0079-binance-e0-release-blocker-hardening.md",

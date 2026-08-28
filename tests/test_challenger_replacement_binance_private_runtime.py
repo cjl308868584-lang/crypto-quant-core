@@ -284,6 +284,21 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         )
         self.public_time_patch.start()
         self.addCleanup(self.public_time_patch.stop)
+        self.capital_snapshot_patch = patch.object(
+            private_runtime, "_capital_snapshot_bytes",
+            side_effect=lambda _context: self._capital_snapshot(),
+        )
+        self.capital_snapshot_patch.start()
+        self.addCleanup(self.capital_snapshot_patch.stop)
+        self.spot_market_patch = patch.object(
+            private_runtime, "_public_market_query",
+            return_value=(
+                b'{"symbol":"ETHUSDT","bidPrice":"2499",'
+                b'"askPrice":"2501"}'
+            ),
+        )
+        self.spot_market_patch.start()
+        self.addCleanup(self.spot_market_patch.stop)
         self.state = self.workspace.state()
         self._observe_opportunity()
         self.block_id = "e0-block-" + "2" * 64
@@ -362,6 +377,46 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             activation=self.activation, attempt_ordinal=1,
         )
         self.client_id = self._client_id()
+
+    def _capital_snapshot(self, *, spot="0", perpetual="0",
+                          ask="2000", futures_mark="2000"):
+        raw = {
+            "spot_account": canonical_json({
+                "balances": [{"asset": "ETH", "free": spot,
+                              "locked": "0"}],
+            }).encode(),
+            "futures_position": canonical_json([{
+                "symbol": "ETHUSDT", "positionSide": "BOTH",
+                "positionAmt": perpetual,
+            }]).encode(),
+            "spot_ticker": canonical_json({
+                "symbol": "ETHUSDT", "askPrice": ask,
+            }).encode(),
+            "futures_mark": canonical_json({
+                "symbol": "ETHUSDT", "markPrice": futures_mark,
+            }).encode(),
+        }
+        document = {
+            "schema_version": "1.0.0",
+            "spot_time_evidence": {
+                "product": "SPOT", "local_before_ms": 1,
+                "server_time_ms": 1, "local_after_ms": 1,
+                "midpoint_ms": 1, "skew_ms": 0,
+                "response_sha256": "a" * 64,
+            },
+            "futures_time_evidence": {
+                "product": "PERPETUAL", "local_before_ms": 1,
+                "server_time_ms": 1, "local_after_ms": 1,
+                "midpoint_ms": 1, "skew_ms": 0,
+                "response_sha256": "b" * 64,
+            },
+        }
+        for name, body in raw.items():
+            document[name + "_bytes_base64"] = base64.b64encode(
+                body
+            ).decode("ascii")
+            document[name + "_sha256"] = hashlib.sha256(body).hexdigest()
+        return canonical_json(document).encode()
 
     @staticmethod
     def _public_time_response(request, *, max_body_bytes):
@@ -464,6 +519,89 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         ):
             private_runtime._execute(request, context)
         transport.assert_not_called()
+
+    def test_spot_entry_guard_uses_worst_case_ask_not_mark(self):
+        attempt = private_runtime.prepare_binance_order_attempt(
+            intent=self.intent,
+            projection=private_runtime._runtime_projection(self.state),
+            preflight=self.raw_preflight,
+            activation=self.activation,
+        )
+        request = build_binance_private_request(
+            "SPOT_ORDER_CREATE", {
+                "symbol": "ETHUSDT", "side": "BUY", "type": "MARKET",
+                "quantity": "0.025",
+                "newClientOrderId": attempt["venue_client_order_id"],
+                "newOrderRespType": "FULL",
+            }, timestamp_ms=1787832000000,
+        )
+        context = private_runtime._Context(
+            self.state, attempt, self.credential, self.activation,
+            self.workspace.build, DEFAULT_OBSERVED_AT, 1787832000000,
+        )
+        snapshot = self._capital_snapshot(ask="2001")
+        with patch.object(
+            private_runtime, "execute_binance_private_request",
+            side_effect=AssertionError("transport must not run"),
+        ) as transport, self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED",
+        ):
+            private_runtime._execute(
+                request, context, capital_snapshot_bytes=snapshot,
+            )
+        transport.assert_not_called()
+
+    def test_current_out_of_band_perpetual_blocks_spot_before_send_started(self):
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode()
+        response = BinancePrivateTransportResult(
+            "RESPONSE_INVALID", 400, absent,
+            hashlib.sha256(absent).hexdigest(), (),
+        )
+        with patch.object(
+            private_runtime, "_capital_snapshot_bytes",
+            return_value=self._capital_snapshot(perpetual="-0.01"),
+        ), patch.object(
+            private_runtime, "_wall_now", return_value=self.NOW,
+        ), patch.object(
+            private_runtime, "execute_binance_private_request",
+            return_value=response,
+        ) as transport, self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED",
+        ):
+            run_challenger_replacement_binance_private_intent(
+                state=self.state, event_root=self.workspace.root,
+                intent=self.intent, preflight_capability=self.preflight,
+                activation=self.activation, credential=self.credential,
+                build_identity=self.workspace.build,
+            )
+        self.assertEqual(transport.call_count, 1)
+        events = [json.loads(event.final_bytes)["event_type"]
+                  for event in self.state._replay()["events"]]
+        self.assertNotIn("BINANCE_REQUEST_SEND_STARTED", events)
+
+    def test_bnb_fee_mark_is_captured_from_fixed_public_book_ticker(self):
+        eth = b'{ "askPrice":"2501", "bidPrice":"2499", "symbol":"ETHUSDT" }'
+        bnb = b'{ "askPrice":"601", "bidPrice":"600", "symbol":"BNBUSDT" }'
+        with patch.object(
+            private_runtime, "_public_market_query", side_effect=(eth, bnb),
+        ) as query:
+            market = json.loads(private_runtime._spot_market_document(
+                self.state,
+                {"opportunity_id": self.workspace.opportunity_id},
+                fee_assets={"BNB"},
+            ))
+        self.assertEqual(
+            [call.args for call in query.call_args_list],
+            [("SPOT_BOOK_TICKER", {"symbol": "ETHUSDT"}),
+             ("SPOT_BOOK_TICKER", {"symbol": "BNBUSDT"})],
+        )
+        self.assertEqual(market["mark_price"], "2499")
+        self.assertEqual(market["ask_price"], "2501")
+        self.assertEqual(market["asset_marks_usdt"]["BNB"], "601")
 
     def _observe_opportunity(self):
         self.workspace.observe(self.state)
@@ -1104,6 +1242,12 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
                 self.state, attempt, position, context,
             )
         self.assertEqual(result["status"], "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN")
+        projection = private_runtime._runtime_projection(self.state)
+        emergency_id = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]["emergency_flatten"]["venue_client_order_id"]
+        self.assertIn(emergency_id, projection["unresolved_client_order_ids"])
+        self.assertEqual(projection["active_product_or_null"], "PERPETUAL")
         flat = self._futures_position("0", "0")
         observed = canonical_json({"status": "FILLED"}).encode()
         second = (
@@ -1129,6 +1273,67 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
                           transport.call_args_list], [
             "FUTURES_ORDER_QUERY", "FUTURES_POSITION",
         ])
+
+    def test_partial_emergency_restart_replays_durable_identity(self):
+        attempt = self._prime_perpetual_close_fills()
+        initial = self._futures_position("-0.025")
+        residual = self._futures_position("-0.015")
+        absent = canonical_json({
+            "code": -2013, "msg": "Order does not exist.",
+        }).encode()
+        observed = canonical_json({"status": "FILLED"}).encode()
+        context = SimpleNamespace(
+            credential=self.credential, activation=self.activation,
+            build_identity=self.workspace.build,
+            recorded_at="2026-08-27T12:00:00.000Z",
+            timestamp_ms=1787832000000,
+        )
+        first = tuple(BinancePrivateTransportResult(
+            kind, status, body, hashlib.sha256(body).hexdigest(), (),
+        ) for kind, status, body in (
+            ("RESPONSE_INVALID", 400, absent),
+            ("ACKNOWLEDGED", 200, observed),
+            ("QUERY_SUCCEEDED", 200, observed),
+            ("QUERY_SUCCEEDED", 200, residual),
+        ))
+        with patch.object(private_runtime, "execute_binance_private_request",
+                          side_effect=first):
+            authorized = _emergency_flatten(
+                self.state, attempt, initial, context,
+            )
+        self.assertEqual(
+            authorized["status"], "EMERGENCY_FLATTEN_REMAINDER_AUTHORIZED",
+        )
+        remainder = self.state.replay()["opportunities"][
+            self.workspace.opportunity_id
+        ]["private"]["emergency_flatten"]
+        self.assertEqual(remainder["generation"], 2)
+        self.assertEqual(len(remainder["previous_attempts"]), 1)
+        self.assertEqual(
+            remainder["previous_attempts"][0]["generation"], 1,
+        )
+
+        flat = self._futures_position("0", "0")
+        third = tuple(BinancePrivateTransportResult(
+            kind, status, body, hashlib.sha256(body).hexdigest(), (),
+        ) for kind, status, body in (
+            ("RESPONSE_INVALID", 400, absent),
+            ("ACKNOWLEDGED", 200, observed),
+            ("QUERY_SUCCEEDED", 200, observed),
+            ("QUERY_SUCCEEDED", 200, flat),
+        ))
+        restarted = self.workspace.state()
+        with patch.object(private_runtime, "execute_binance_private_request",
+                          side_effect=third) as transport:
+            completed = _emergency_flatten(
+                restarted, attempt, residual, context,
+            )
+        self.assertEqual(completed["status"], "EMERGENCY_FLATTEN_RECONCILED")
+        self.assertEqual(
+            [call.args[0].endpoint_id for call in transport.call_args_list],
+            ["FUTURES_ORDER_QUERY", "FUTURES_ORDER_CREATE",
+             "FUTURES_ORDER_QUERY", "FUTURES_POSITION"],
+        )
 
     def test_perpetual_cleanup_rejects_inactive_status_for_different_algo(self):
         attempt = self._prime_perpetual_close_fills()
@@ -2603,6 +2808,30 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             sent.encoded_parameters,
         )
         self.assertEqual(result["status"], "UNRESOLVED_ECONOMIC_ORDER_UNKNOWN")
+        event_documents = [
+            json.loads(event.final_bytes)
+            for event in fresh._replay()["events"]
+        ]
+        superseded = [
+            json.loads(base64.b64decode(document["payload_bytes_base64"]))
+            for document in event_documents
+            if document["slot_id"] == self.workspace.opportunity_id
+            and document["event_type"] == "BINANCE_SIGNED_REQUEST_SUPERSEDED"
+        ]
+        self.assertEqual(len(superseded), 1)
+        self.assertEqual(superseded[0]["old_request_id"], durable_request_id)
+        self.assertEqual(superseded[0]["new_request_id"], sent.request_id)
+        self.assertEqual(superseded[0]["old_timestamp_ms"],
+                         durable_timestamp_ms)
+        self.assertEqual(superseded[0]["new_timestamp_ms"], 1787832001000)
+        absence = [
+            json.loads(base64.b64decode(document["payload_bytes_base64"]))
+            for document in event_documents
+            if document["slot_id"] == self.workspace.opportunity_id
+            and document["event_type"] == "BINANCE_ABSENCE_CHECKED"
+        ]
+        self.assertEqual(absence[-1]["superseded_request_id"],
+                         durable_request_id)
 
     def test_prepared_request_is_not_sent_when_fresh_absence_is_unresolved(self):
         absent = canonical_json({
@@ -2880,6 +3109,68 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
             ["SPOT_ORDER_QUERY", "SPOT_TRADES", "SPOT_ACCOUNT"],
         )
         self.assertEqual(completed["status"], "TERMINAL_RECONCILED")
+
+
+class BinancePrivateRuntimeNaturalJsonTests(unittest.TestCase):
+    def test_capital_snapshot_captures_current_spot_perpetual_and_prices(self):
+        spot = b'{"balances":[{"asset":"ETH","free":"0.01","locked":"0"}]}'
+        perpetual = b'[{"positionAmt":"-0.02","positionSide":"BOTH","symbol":"ETHUSDT"}]'
+        time = {
+            "product": "SPOT", "local_before_ms": 1,
+            "server_time_ms": 1, "local_after_ms": 1,
+            "midpoint_ms": 1, "skew_ms": 0,
+            "response_sha256": "a" * 64,
+        }
+        futures_time = {**time, "product": "PERPETUAL",
+                        "response_sha256": "b" * 64}
+        with patch.object(
+            private_runtime, "_capital_private_query",
+            side_effect=((time, spot), (futures_time, perpetual)),
+        ) as private_query, patch.object(
+            private_runtime, "_public_market_query",
+            side_effect=(b'{"symbol":"ETHUSDT","askPrice":"2501"}',
+                         b'{"symbol":"ETHUSDT","markPrice":"2500"}'),
+        ) as public_query:
+            snapshot = private_runtime._capital_snapshot_bytes(
+                SimpleNamespace(),
+            )
+        loaded = private_runtime._load_capital_snapshot(snapshot)
+        self.assertEqual(loaded["spot_quantity"], Decimal("0.01"))
+        self.assertEqual(loaded["perpetual_quantity"], Decimal("-0.02"))
+        self.assertEqual(loaded["spot_ask"], Decimal("2501"))
+        self.assertEqual(loaded["futures_mark"], Decimal("2500"))
+        self.assertEqual(
+            [call.args[:3] for call in private_query.call_args_list],
+            [("SPOT_ACCOUNT", {}, "SPOT"),
+             ("FUTURES_POSITION", {"symbol": "ETHUSDT"}, "PERPETUAL")],
+        )
+        self.assertEqual(
+            [call.args for call in public_query.call_args_list],
+            [("SPOT_BOOK_TICKER", {"symbol": "ETHUSDT"}),
+             ("FUTURES_MARK_PRICE", {"symbol": "ETHUSDT"})],
+        )
+        missing_time_binding = json.loads(snapshot)
+        del missing_time_binding["spot_time_evidence"]["response_sha256"]
+        with self.assertRaisesRegex(
+            BinancePrivateRuntimeError,
+            "BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED",
+        ):
+            private_runtime._load_capital_snapshot(
+                canonical_json(missing_time_binding).encode(),
+            )
+
+    def test_natural_order_trade_array_is_normalized(self):
+        raw = b'[ {"commissionAsset":"BNB", "id":7, "price":"2500"} ]'
+        self.assertEqual(
+            private_runtime._tuple_documents(raw),
+            (b'{"commissionAsset":"BNB","id":7,"price":"2500"}',),
+        )
+
+    def test_trade_array_duplicate_key_is_rejected(self):
+        with self.assertRaisesRegex(
+                BinancePrivateRuntimeError,
+                "BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID"):
+            private_runtime._tuple_documents(b'[{"id":1,"id":2}]')
 
 
 if __name__ == "__main__":

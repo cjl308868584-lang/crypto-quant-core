@@ -609,6 +609,7 @@ _V078_RELEASE_PATHS = (
 )
 
 _V0781_RELEASE_PATHS = (
+    "config/challenger-replacement-binance-private-event-v1.schema.json",
     "docs/adr/0079-binance-e0-release-blocker-hardening.md",
     "docs/implementation-status-v0.78.1.md",
     "docs/runbooks/binance-e0-operations-v0.78.1.md",

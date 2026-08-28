@@ -33,6 +33,7 @@ class BinancePrivateRuntimeError(RuntimeError):
 class _Context:
     state: object; attempt: Mapping; credential: object; activation: object
     build_identity: Mapping; recorded_at: str; timestamp_ms: int
+    server_time_response_sha256: str = None
 def _fail(reason, error=None):
     failure = BinancePrivateRuntimeError(reason)
     if error is None: raise failure
@@ -69,6 +70,162 @@ def _public_time_transport(request):
         "QUERY_SUCCEEDED" if response.status == 200 else "TRANSIENT_QUERY_FAILURE",
         response.status, response.body, hashlib.sha256(response.body).hexdigest(), (),
     )
+def _public_market_query(endpoint_id, parameters):
+    request = build_binance_private_request(
+        endpoint_id, parameters, timestamp_ms=0,
+    )
+    suffix = ("?" + request.encoded_parameters.decode("ascii")
+              if request.encoded_parameters else "")
+    url = "https://%s%s%s" % (request.host, request.path, suffix)
+    response = open_fixed_public_request(
+        Request(url, method="GET"), max_body_bytes=1_048_576,
+    )
+    if response.status != 200 or response.final_url != url:
+        _fail("BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED")
+    return response.body
+def _time_evidence(product):
+    evidence = observe_binance_server_time(
+        product=product, transport=_public_time_transport,
+        local_clock=lambda: int(_wall_now().timestamp() * 1000),
+    )
+    return {key: getattr(evidence, key)
+            for key in evidence.__dataclass_fields__}
+def _capital_private_query(endpoint_id, parameters, product, context):
+    evidence = _time_evidence(product)
+    request = build_binance_private_request(
+        endpoint_id, parameters, timestamp_ms=evidence["server_time_ms"],
+    )
+    result = execute_binance_private_request(
+        request, credential=context.credential,
+        activation=context.activation,
+        expected_build_identity=context.build_identity,
+        now=context.recorded_at,
+    )
+    if result.response_class != "QUERY_SUCCEEDED":
+        _fail("BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED")
+    return evidence, result.body
+def _capital_snapshot_bytes(context):
+    """Capture exact current venue exposure and executable public prices."""
+    try:
+        spot_time, spot_account = _capital_private_query(
+            "SPOT_ACCOUNT", {}, "SPOT", context,
+        )
+        futures_time, futures_position = _capital_private_query(
+            "FUTURES_POSITION", {"symbol": "ETHUSDT"},
+            "PERPETUAL", context,
+        )
+        spot_ticker = _public_market_query(
+            "SPOT_BOOK_TICKER", {"symbol": "ETHUSDT"},
+        )
+        futures_mark = _public_market_query(
+            "FUTURES_MARK_PRICE", {"symbol": "ETHUSDT"},
+        )
+        raw = {
+            "spot_account": spot_account,
+            "futures_position": futures_position,
+            "spot_ticker": spot_ticker,
+            "futures_mark": futures_mark,
+        }
+        document = {
+            "schema_version": "1.0.0",
+            "spot_time_evidence": spot_time,
+            "futures_time_evidence": futures_time,
+        }
+        for name, body in raw.items():
+            if not isinstance(body, bytes) or not 1 <= len(body) <= 1_048_576:
+                raise ValueError
+            document[name + "_bytes_base64"] = base64.b64encode(
+                body
+            ).decode("ascii")
+            document[name + "_sha256"] = hashlib.sha256(body).hexdigest()
+        body = canonical_json(document).encode("utf-8")
+        _load_capital_snapshot(body)
+        return body
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        if isinstance(error, BinancePrivateRuntimeError):
+            raise
+        _fail("BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED", error)
+def _load_capital_snapshot(data):
+    try:
+        document = _document(data)
+        expected = {"schema_version", "spot_time_evidence",
+                    "futures_time_evidence"}
+        names = ("spot_account", "futures_position", "spot_ticker",
+                 "futures_mark")
+        for name in names:
+            expected.update({name + "_bytes_base64", name + "_sha256"})
+        if (frozenset(document) != expected
+                or document["schema_version"] != "1.0.0"):
+            raise ValueError
+        raw = {}
+        for name in names:
+            body = base64.b64decode(
+                document[name + "_bytes_base64"], validate=True,
+            )
+            if (not 1 <= len(body) <= 1_048_576
+                    or hashlib.sha256(body).hexdigest()
+                    != document[name + "_sha256"]):
+                raise ValueError
+            raw[name] = body
+        for product, key in (("SPOT", "spot_time_evidence"),
+                             ("PERPETUAL", "futures_time_evidence")):
+            evidence = document[key]
+            integer_keys = (
+                "local_before_ms", "server_time_ms", "local_after_ms",
+                "midpoint_ms", "skew_ms",
+            )
+            values = [evidence.get(name) for name in integer_keys]
+            digest = evidence.get("response_sha256")
+            if (not isinstance(evidence, dict)
+                    or frozenset(evidence) != {
+                        "product", *integer_keys, "response_sha256",
+                    }
+                    or evidence.get("product") != product
+                    or any(isinstance(value, bool) or not isinstance(value, int)
+                           for value in values)
+                    or not 0 <= evidence["local_before_ms"]
+                    <= evidence["local_after_ms"] <= (1 << 53) - 1
+                    or evidence["local_after_ms"]
+                    - evidence["local_before_ms"] > 1000
+                    or evidence["midpoint_ms"] != evidence["local_before_ms"]
+                    + (evidence["local_after_ms"]
+                       - evidence["local_before_ms"]) // 2
+                    or evidence["server_time_ms"]
+                    != evidence["midpoint_ms"] + evidence["skew_ms"]
+                    or abs(evidence["skew_ms"]) > 1000
+                    or not isinstance(digest, str) or len(digest) != 64
+                    or set(digest) - set("0123456789abcdef")):
+                raise ValueError
+        account = _document(raw["spot_account"])
+        balances = account["balances"]
+        eth = [item for item in balances if item.get("asset") == "ETH"]
+        if len(eth) != 1:
+            raise ValueError
+        spot_quantity = Decimal(eth[0]["free"]) + Decimal(eth[0]["locked"])
+        positions = _document(raw["futures_position"], list)
+        matching = [item for item in positions
+                    if item.get("symbol") == "ETHUSDT"
+                    and item.get("positionSide") == "BOTH"]
+        if len(matching) != 1:
+            raise ValueError
+        perpetual_quantity = Decimal(matching[0]["positionAmt"])
+        ticker = _document(raw["spot_ticker"])
+        mark = _document(raw["futures_mark"])
+        if ticker.get("symbol") != "ETHUSDT" or mark.get("symbol") != "ETHUSDT":
+            raise ValueError
+        ask = Decimal(ticker["askPrice"])
+        futures_price = Decimal(mark["markPrice"])
+        if ask <= 0 or futures_price <= 0:
+            raise ValueError
+        return {
+            "spot_quantity": spot_quantity,
+            "perpetual_quantity": perpetual_quantity,
+            "spot_ask": ask,
+            "futures_mark": futures_price,
+        }
+    except (ArithmeticError, AttributeError, KeyError, TypeError,
+            ValueError) as error:
+        _fail("BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED", error)
 def _fresh_context(state, attempt, credential, activation, build_identity,
                    recorded_at):
     try:
@@ -79,8 +236,10 @@ def _fresh_context(state, attempt, credential, activation, build_identity,
         payload = {key: getattr(evidence, key) for key in evidence.__dataclass_fields__}
         _append_intent(state, attempt, "BINANCE_SERVER_TIME_OBSERVED",
                        recorded_at, **payload)
-        return _Context(state, attempt, credential, activation, build_identity,
-                        recorded_at, evidence.server_time_ms)
+        return _Context(
+            state, attempt, credential, activation, build_identity,
+            recorded_at, evidence.server_time_ms, evidence.response_sha256,
+        )
     except (AttributeError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_SERVER_TIME_INVALID", error)
 def _runtime_projection(state):
@@ -94,6 +253,12 @@ def _runtime_projection(state):
             continue
         if private.get("absence_proven") is True:
             absent.append(private["venue_client_order_id"])
+        emergency = private.get("emergency_flatten")
+        if isinstance(emergency, dict):
+            if emergency.get("stage") == "BINANCE_EMERGENCY_FLATTEN_UNKNOWN":
+                unresolved.append(emergency["venue_client_order_id"])
+            if emergency.get("stage") != "BINANCE_EMERGENCY_FLATTEN_RECONCILED":
+                active = "PERPETUAL"
         if private["stage"] == "BINANCE_ORDER_UNKNOWN":
             unresolved.append(private["venue_client_order_id"])
         elif private["stage"] == "BINANCE_RECONCILIATION_SUCCEEDED":
@@ -102,6 +267,12 @@ def _runtime_projection(state):
                 if private["action"] in {"OPEN_LONG", "OPEN_SHORT"}
                 else None
             )
+        elif (private["action"] in {"OPEN_LONG", "OPEN_SHORT"}
+              and private["stage"] not in {
+                  "BINANCE_INTENT_AUTHORIZED", "BINANCE_ABSENCE_CHECKED",
+                  "BINANCE_SIGNED_REQUEST_PREPARED",
+              }):
+            active = private["product"]
     return {
         "plan_hash": state.plan["plan_hash"],
         "active_product_or_null": active,
@@ -244,10 +415,12 @@ def _existing_private(state, attempt):
     }
     if any(private.get(key) != value for key, value in expected.items()): _fail("BINANCE_PRIVATE_RUNTIME_INTENT_CONFLICT")
     return private
-def _execute(request, context, *, reduce_only_limit=None):
+def _execute(request, context, *, reduce_only_limit=None,
+             capital_snapshot_bytes=None):
     if request.mutating:
         _enforce_send_capital(
             request, context, reduce_only_limit=reduce_only_limit,
+            capital_snapshot_bytes=capital_snapshot_bytes,
         )
     try:
         validate_binance_request_time(timestamp_ms=request.timestamp_ms,
@@ -267,16 +440,18 @@ def _prior_signed(state, attempt, product):
     return Decimal(load_binance_reconciliation_bytes(data)[
         "event_projection"
     ]["signed_quantity"])
-def _enforce_send_capital(request, context, *, reduce_only_limit=None):
+def _enforce_send_capital(request, context, *, reduce_only_limit=None,
+                          capital_snapshot_bytes=None):
     """Recheck the fixed E0 capital envelope at the final private send."""
     if request.endpoint_id in {
-            "FUTURES_ALGO_CREATE", "FUTURES_ALGO_CANCEL",
-            "SPOT_ORDER_CANCEL", "FUTURES_ORDER_CANCEL",
+            "FUTURES_ALGO_CANCEL", "SPOT_ORDER_CANCEL",
+            "FUTURES_ORDER_CANCEL",
     }:
         return
     if request.endpoint_id not in {
             "SPOT_ORDER_CREATE", "FUTURES_ORDER_CREATE",
             "FUTURES_SET_LEVERAGE", "FUTURES_SET_MARGIN_TYPE",
+            "FUTURES_ALGO_CREATE",
     }:
         _fail("BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED")
     if request.endpoint_id in {
@@ -294,25 +469,24 @@ def _enforce_send_capital(request, context, *, reduce_only_limit=None):
             keep_blank_values=True, strict_parsing=True,
         ))
         quantity = Decimal(values["quantity"])
-        if (request.endpoint_id == "FUTURES_ORDER_CREATE"
+        if (request.endpoint_id in {
+                "FUTURES_ORDER_CREATE", "FUTURES_ALGO_CREATE",
+        }
                 and values.get("reduceOnly") == "true"
                 and reduce_only_limit is not None):
             limit = Decimal(canonical_decimal(reduce_only_limit))
             if values["side"] != "BUY" or limit <= 0 or quantity > limit:
                 raise ValueError
             return
-        mark = Decimal(_document(
-            _spot_market_document(context.state, context.attempt)
-        )["mark_price"])
-        spot = _prior_signed(context.state, context.attempt, "SPOT")
-        perpetual = _prior_signed(
-            context.state, context.attempt, "PERPETUAL",
-        )
+        current = _load_capital_snapshot(capital_snapshot_bytes)
+        spot = current["spot_quantity"]
+        perpetual = current["perpetual_quantity"]
         if request.endpoint_id == "SPOT_ORDER_CREATE":
             if values["side"] == "BUY":
                 if perpetual != 0:
                     raise ValueError
                 post = spot + quantity
+                price = current["spot_ask"]
             else:
                 if quantity > spot:
                     raise ValueError
@@ -326,7 +500,8 @@ def _enforce_send_capital(request, context, *, reduce_only_limit=None):
             if values["side"] != "SELL" or spot != 0:
                 raise ValueError
             post = abs(perpetual - quantity)
-        gross = post * mark
+            price = current["futures_mark"]
+        gross = post * price
         if (quantity <= 0 or gross > Decimal("50")
                 or gross / Decimal("100") > Decimal("0.5")):
             raise ValueError
@@ -360,11 +535,9 @@ def _query(endpoint_id, parameters, context):
     return result
 def _tuple_documents(data):
     try:
-        values = json.loads(data.decode("utf-8"))
-        if not isinstance(values, list) or canonical_json(values).encode() != data:
-            raise ValueError
+        values = _document(data, list)
         return tuple(canonical_json(value).encode() for value in values)
-    except (AttributeError, TypeError, UnicodeDecodeError, ValueError) as error:
+    except (AttributeError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_INVALID", error)
 def _private_payloads(state, opportunity_id):
     values = []
@@ -523,27 +696,51 @@ def _append_fills_fees(state, attempt, recorded_at):
              ) if event_type == "BINANCE_FILL_OBSERVED"), Decimal(0),
         )),
     )
-def _finish_spot(state, attempt, activation, order, trades, account, recorded_at):
+def _finish_spot(state, attempt, activation, order, trades, account,
+                 recorded_at):
     _append_fills_fees(state, attempt, recorded_at)
     previous = _previous_reconciliation_bytes(
         state, product="SPOT", before_opportunity_id=attempt["opportunity_id"],
     )
+    fee_assets = {_document(trade)["commissionAsset"] for trade in trades}
     _capture(state, attempt, _capture_inputs(
         state, attempt, activation, order_documents=(order,),
         trade_documents=trades, account_document=account,
-        position_document=_spot_market_document(state, attempt), income_documents=(), algo_documents=(),
+        position_document=_spot_market_document(
+            state, attempt, fee_assets=fee_assets,
+        ), income_documents=(), algo_documents=(),
         previous=previous, stop=None,
     ), recorded_at)
     data, required, client = _reconcile_captured(state, attempt, activation, recorded_at)
     return _publish_reconciliation(state, attempt, data, required, client, recorded_at)
-def _spot_market_document(state, attempt):
+def _spot_market_document(state, attempt, *, fee_assets=frozenset()):
     try:
-        evidence = state.replay()["opportunities"][attempt["opportunity_id"]]["result_evidence"]
-        mark = canonical_decimal(Decimal(evidence["decision"]["indicators"]["latest_close"]))
-        ask = canonical_decimal(Decimal(evidence["accounting"]["fill_price"]))
+        if attempt["opportunity_id"] not in state.replay()["opportunities"]:
+            raise ValueError
+        ticker = _document(_public_market_query(
+            "SPOT_BOOK_TICKER", {"symbol": "ETHUSDT"},
+        ))
+        if ticker.get("symbol") != "ETHUSDT":
+            raise ValueError
+        mark = canonical_decimal(Decimal(ticker["bidPrice"]))
+        ask = canonical_decimal(Decimal(ticker["askPrice"]))
         if Decimal(mark) <= 0 or Decimal(ask) <= 0: raise ValueError
+        if (not isinstance(fee_assets, (set, frozenset))
+                or not fee_assets.issubset({"ETH", "USDT", "BNB"})):
+            raise ValueError
+        marks = {"ETH": mark, "USDT": "1"}
+        if "BNB" in fee_assets:
+            ticker = _document(_public_market_query(
+                "SPOT_BOOK_TICKER", {"symbol": "BNBUSDT"},
+            ))
+            if ticker.get("symbol") != "BNBUSDT":
+                raise ValueError
+            bnb_ask = canonical_decimal(Decimal(ticker["askPrice"]))
+            if Decimal(bnb_ask) <= 0:
+                raise ValueError
+            marks["BNB"] = bnb_ask
         return canonical_json({"symbol": "ETHUSDT", "mark_price": mark,
-            "ask_price": ask, "asset_marks_usdt": {"ETH": mark, "USDT": "1"}}).encode()
+            "ask_price": ask, "asset_marks_usdt": marks}).encode()
     except (KeyError, TypeError, ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID", error)
 def _expected_stop(state, attempt):
@@ -642,13 +839,18 @@ def _create_stop(state, attempt, position, context, stop):
         "request_sha256": hashlib.sha256(request.encoded_parameters).hexdigest(),
         "timestamp_ms": context.timestamp_ms,
     }, context.recorded_at)
+    _enforce_send_capital(
+        request, context, reduce_only_limit=stop["quantity"],
+    )
     _append(state, "BINANCE_STOP_REQUEST_SEND_STARTED",
             attempt["opportunity_id"], {
         "protected_intent_id": attempt["intent_id"],
         "client_algo_id": stop["client_algo_id"],
         "request_id": request.request_id,
     }, context.recorded_at)
-    created = _execute(request, context)
+    created = _execute(
+        request, context, reduce_only_limit=stop["quantity"],
+    )
     if created.response_class not in {"ACKNOWLEDGED", "UNKNOWN"}: _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
     context = _renew(context)
     observed = _execute(
@@ -783,8 +985,14 @@ def _emergency_flatten(state, attempt, position, context):
         if len(positions) != 1:
             raise ValueError
         signed = canonical_decimal(positions[0]["positionAmt"])
+        private = state.replay()["opportunities"][
+            attempt["opportunity_id"]
+        ]["private"]
+        current = private.get("emergency_flatten")
+        identity_position = (signed if current is None else
+                             canonical_decimal(-Decimal(current["quantity"])))
         emergency = prepare_binance_emergency_flatten(
-            signed_position=signed,
+            signed_position=identity_position,
             intent_identity={
                 "plan_hash": state.plan["plan_hash"],
                 "block_id": attempt["block_id"],
@@ -794,10 +1002,6 @@ def _emergency_flatten(state, attempt, position, context):
         )
     except (KeyError, TypeError, ValueError) as error:
         _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP", error)
-    private = state.replay()["opportunities"][
-        attempt["opportunity_id"]
-    ]["private"]
-    current = private.get("emergency_flatten")
     if current is None:
         _append_intent(
             state, attempt, "BINANCE_EMERGENCY_FLATTEN_AUTHORIZED",
@@ -854,6 +1058,9 @@ def _emergency_flatten(state, attempt, position, context):
                 request.encoded_parameters
             ).hexdigest(), timestamp_ms=context.timestamp_ms,
         )
+        _enforce_send_capital(
+            request, context, reduce_only_limit=emergency["quantity"],
+        )
         _append_intent(
             state, attempt, "BINANCE_EMERGENCY_FLATTEN_SEND_STARTED",
             context.recorded_at, request_id=request.request_id,
@@ -887,9 +1094,44 @@ def _emergency_flatten(state, attempt, position, context):
         "FUTURES_POSITION", {"symbol": "ETHUSDT"}, context,
     )
     positions = _document(position_result.body, list)
-    if (len(positions) != 1
-            or Decimal(canonical_decimal(positions[0]["positionAmt"])) != 0):
-        return _status("EMERGENCY_FLATTEN_PENDING", attempt)
+    if len(positions) != 1:
+        _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
+    residual = Decimal(canonical_decimal(positions[0]["positionAmt"]))
+    if residual != 0:
+        observed_order = _document(order.body)
+        if (residual > 0 or observed_order.get("status") not in {
+                "FILLED", "CANCELED", "EXPIRED", "REJECTED",
+        }):
+            return _status("EMERGENCY_FLATTEN_PENDING", attempt)
+        remainder = prepare_binance_emergency_flatten(
+            signed_position=canonical_decimal(residual),
+            intent_identity={
+                "plan_hash": state.plan["plan_hash"],
+                "block_id": attempt["block_id"],
+                "intent_id": attempt["intent_id"],
+            },
+            reason_code="PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP",
+        )
+        _append_intent(
+            state, attempt,
+            "BINANCE_EMERGENCY_FLATTEN_REMAINDER_AUTHORIZED",
+            context.recorded_at,
+            emergency_intent_id=remainder["emergency_intent_id"],
+            reason_code=remainder["reason_code"],
+            quantity=remainder["quantity"],
+            venue_client_order_id=remainder["venue_client_order_id"],
+            reduce_only=True,
+            generation=current["generation"] + 1,
+            previous_venue_client_order_id=current[
+                "venue_client_order_id"
+            ],
+            previous_order_response_sha256=order.response_sha256,
+            position_response_sha256=position_result.response_sha256,
+        )
+        return _status(
+            "EMERGENCY_FLATTEN_REMAINDER_AUTHORIZED", attempt,
+            venue_client_order_id=remainder["venue_client_order_id"],
+        )
     _append_intent(
         state, attempt, "BINANCE_EMERGENCY_FLATTEN_RECONCILED",
         context.recorded_at,
@@ -1214,13 +1456,18 @@ def _resume_stop(state, attempt, private, context, *, stop=None,
             ).hexdigest(),
             "timestamp_ms": context.timestamp_ms,
         }, context.recorded_at)
+        _enforce_send_capital(
+            request, context, reduce_only_limit=stop["quantity"],
+        )
         _append(state, "BINANCE_STOP_REQUEST_SEND_STARTED",
                 attempt["opportunity_id"], {
             "protected_intent_id": attempt["intent_id"],
             "client_algo_id": stop["client_algo_id"],
             "request_id": request.request_id,
         }, context.recorded_at)
-        created = _execute(request, context)
+        created = _execute(
+            request, context, reduce_only_limit=stop["quantity"],
+        )
         if created.response_class not in {"ACKNOWLEDGED", "UNKNOWN"}: _fail("PERPETUAL_EXPOSURE_WITHOUT_VALID_PROTECTIVE_STOP")
     context = _renew(context)
     observed = _execute(_stop_request(
@@ -1322,7 +1569,21 @@ def _query_order(attempt, context): return _query_result(
         }, context,
     )
 def _send_request(state, attempt, request, context):
-    result = _execute(request, context)
+    try:
+        private = state.replay()["opportunities"][
+            attempt["opportunity_id"]
+        ]["private"]
+        snapshot = base64.b64decode(
+            private["capital_snapshot_bytes_base64"], validate=True,
+        )
+        if hashlib.sha256(snapshot).hexdigest() != private[
+                "capital_snapshot_sha256"]:
+            raise ValueError
+    except (KeyError, TypeError, ValueError) as error:
+        _fail("BINANCE_PRIVATE_RUNTIME_CAPITAL_GUARD_FAILED", error)
+    result = _execute(
+        request, context, capital_snapshot_bytes=snapshot,
+    )
     if result.response_class == "UNKNOWN": return _record_unknown(state, attempt, result, context.recorded_at)
     if result.response_class != "ACKNOWLEDGED": _fail("BINANCE_PRIVATE_RUNTIME_OBSERVATION_REQUIRED")
     return _observe_order(
@@ -1443,8 +1704,10 @@ def run_challenger_replacement_binance_private_intent(
                 state, attempt, "BINANCE_ABSENCE_CHECKED", recorded_at,
                 venue_client_order_id=attempt["venue_client_order_id"],
                 query_response_sha256=query_result.response_sha256,
+                superseded_request_id=existing["request_id"],
                 proven_absent=True,
             )
+            snapshot = _capital_snapshot_bytes(context)
             context = _fresh_context(
                 state, attempt, credential, activation, build_identity,
                 recorded_at,
@@ -1453,14 +1716,42 @@ def run_challenger_replacement_binance_private_intent(
                 existing["request_endpoint_id"], attempt,
                 context.timestamp_ms,
             )
+            _enforce_send_capital(
+                request, context, capital_snapshot_bytes=snapshot,
+            )
+            _append_intent(
+                state, attempt, "BINANCE_SIGNED_REQUEST_SUPERSEDED",
+                recorded_at,
+                old_request_id=existing["request_id"],
+                new_request_id=request.request_id,
+                old_request_sha256=existing["request_sha256"],
+                new_request_sha256=hashlib.sha256(
+                    request.encoded_parameters
+                ).hexdigest(),
+                old_timestamp_ms=existing["request_timestamp_ms"],
+                new_timestamp_ms=context.timestamp_ms,
+                old_server_time_response_sha256=existing[
+                    "request_server_time_response_sha256"
+                ],
+                new_server_time_response_sha256=(
+                    context.server_time_response_sha256
+                ),
+                absence_response_sha256=query_result.response_sha256,
+            )
             _append_intent(
                 state, attempt, "BINANCE_SIGNED_REQUEST_PREPARED", recorded_at,
                 request_id=request.request_id,
                 endpoint_id=request.endpoint_id,
                 request_sha256=hashlib.sha256(
                     request.encoded_parameters
-                ).hexdigest(),
-                timestamp_ms=context.timestamp_ms,
+                ).hexdigest(), timestamp_ms=context.timestamp_ms,
+                capital_snapshot_bytes_base64=base64.b64encode(
+                    snapshot
+                ).decode("ascii"),
+                capital_snapshot_sha256=hashlib.sha256(snapshot).hexdigest(),
+                server_time_response_sha256=(
+                    context.server_time_response_sha256
+                ),
             )
             _append_intent(
                 state, attempt, "BINANCE_REQUEST_SEND_STARTED", recorded_at,
@@ -1488,6 +1779,7 @@ def run_challenger_replacement_binance_private_intent(
         intent=intent, projection=_runtime_projection(state),
         preflight=preflight, activation=activation,
     )
+    snapshot = _capital_snapshot_bytes(context)
     context = _fresh_context(
         state, attempt, credential, activation, build_identity, recorded_at,
     )
@@ -1498,11 +1790,17 @@ def run_challenger_replacement_binance_private_intent(
         else "FUTURES_ORDER_CREATE"
     )
     request = _request(endpoint, attempt, timestamp_ms)
+    _enforce_send_capital(
+        request, context, capital_snapshot_bytes=snapshot,
+    )
     _append_intent(
         state, attempt, "BINANCE_SIGNED_REQUEST_PREPARED", recorded_at,
         request_id=request.request_id, endpoint_id=request.endpoint_id,
         request_sha256=hashlib.sha256(request.encoded_parameters).hexdigest(),
         timestamp_ms=timestamp_ms,
+        capital_snapshot_bytes_base64=base64.b64encode(snapshot).decode("ascii"),
+        capital_snapshot_sha256=hashlib.sha256(snapshot).hexdigest(),
+        server_time_response_sha256=context.server_time_response_sha256,
     )
     _append_intent(state, attempt, "BINANCE_REQUEST_SEND_STARTED", recorded_at,
                    request_id=request.request_id)
