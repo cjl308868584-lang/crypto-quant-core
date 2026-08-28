@@ -56,18 +56,37 @@ EXPECTED_CASES = (
 class ChallengerReplacementPrivateFaultMatrixTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._frozen_checkout = None
+        cls.frozen_root = ROOT
         cls.foundation = V076.read_bytes()
         if GITHUB_ACTIONS:
             cls.receipt = COMMITTED_V077.read_bytes()
             header = json.loads(cls.receipt)
             cls.head = header["executable_checkpoint"]
             cls.tree = header["executable_tree"]
-            cls.loaded_receipt = load_challenger_replacement_private_fault_matrix_bytes(
-                cls.receipt, v076_fault_receipt_bytes=cls.foundation,
-                expected_executable_checkpoint=cls.head,
-                expected_executable_tree=cls.tree,
-                expected_receipt_sha256=hashlib.sha256(cls.receipt).hexdigest(),
+            cls._frozen_checkout = tempfile.TemporaryDirectory()
+            cls.frozen_root = Path(
+                cls._frozen_checkout.name) / "frozen-checkpoint"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--no-checkout", "--shared",
+                 str(ROOT), str(cls.frozen_root)],
+                check=True, capture_output=True,
             )
+            subprocess.run(
+                ["git", "checkout", "--quiet", "--detach", cls.head],
+                cwd=cls.frozen_root, check=True, capture_output=True,
+            )
+            with patch.object(fault_module, "_ROOT", cls.frozen_root):
+                cls.loaded_receipt = (
+                    load_challenger_replacement_private_fault_matrix_bytes(
+                        cls.receipt,
+                        v076_fault_receipt_bytes=cls.foundation,
+                        expected_executable_checkpoint=cls.head,
+                        expected_executable_tree=cls.tree,
+                        expected_receipt_sha256=hashlib.sha256(
+                            cls.receipt).hexdigest(),
+                    )
+                )
             return
         cls.head = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
@@ -88,6 +107,11 @@ class ChallengerReplacementPrivateFaultMatrixTests(unittest.TestCase):
                 expected_executable_tree=cls.tree,
                 expected_receipt_sha256=hashlib.sha256(cls.receipt).hexdigest(),
             )
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._frozen_checkout is not None:
+            cls._frozen_checkout.cleanup()
 
     def run_and_load(self):
         return self.receipt, copy.deepcopy(self.loaded_receipt)
@@ -709,7 +733,8 @@ class ChallengerReplacementPrivateFaultMatrixTests(unittest.TestCase):
             )
 
     def test_loader_accepts_valid_receipt_without_campaign_reexecution(self):
-        with patch.object(fault_module, "_git_identity",
+        with patch.object(fault_module, "_ROOT", self.frozen_root), \
+                patch.object(fault_module, "_git_identity",
                           return_value=(self.head, self.tree)), \
                 patch.object(fault_module, "_execute_campaign",
                              side_effect=AssertionError("CAMPAIGN_REEXECUTED")):

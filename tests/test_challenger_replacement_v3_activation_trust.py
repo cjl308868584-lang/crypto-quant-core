@@ -1,6 +1,7 @@
 import json
 import hashlib
 import os
+import platform
 import subprocess
 import sys
 import tempfile
@@ -42,6 +43,15 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             "src/crypto_quant/system_paper_launchctl.py",
         }
         self.assertEqual(required - set(inventory), set())
+        target_identity = (
+            platform.system() == "Darwin"
+            and platform.machine() == "arm64"
+            and sys.version_info[:2] == (3, 9)
+        )
+        if not target_identity:
+            self.skipTest(
+                "release snapshot native import requires Darwin arm64 Python 3.9"
+            )
         with tempfile.TemporaryDirectory() as temporary:
             target = Path(temporary)
             for name in inventory:
