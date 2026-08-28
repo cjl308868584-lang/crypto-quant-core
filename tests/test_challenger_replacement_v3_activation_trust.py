@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from crypto_quant.canonical import canonical_json
+from jsonschema import Draft202012Validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,11 +124,19 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             "tag_object": "f" * 40, "manifest_version": "1.72.0",
             "manifest_hash": "d" * 64, "manifest_file_sha256": "e" * 64,
         }
-        contract = trust._contract(
-            candidate, release, snapshot, event,
-            {"path": "/usr/bin/python3", "sha256": "b" * 64},
-        )
+        contract = trust._contract(candidate, release, snapshot, event, {
+            "path": "/usr/bin/python3", "device": 5, "inode": 6,
+            "owner_uid": 0, "mode": 365, "link_count": 1,
+            "size_bytes": 100, "sha256": "b" * 64,
+            "sys_version": "3.9", "import_stdout_sha256": "1" * 64,
+            "import_stderr_sha256": "2" * 64,
+        })
         body = canonical_json(contract).encode()
+        schema = json.loads((
+            ROOT / "src/crypto_quant/schemas/"
+            "challenger-replacement-v3-install-contract-v1.schema.json"
+        ).read_text())
+        self.assertEqual(list(Draft202012Validator(schema).iter_errors(contract)), [])
         self.assertEqual(trust.load_fixed_v3_install_contract_bytes(body), contract)
         altered = json.loads(body)
         altered["runtime"]["module"] = "not.allowed"

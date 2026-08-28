@@ -4,7 +4,10 @@ import copy
 import hashlib
 import json
 import plistlib
+from importlib import resources
 from pathlib import Path
+
+from jsonschema import Draft202012Validator
 
 from .canonical import business_hash, canonical_json, stable_id
 from .challenger_replacement_plan import _strict_json_bytes
@@ -186,6 +189,9 @@ def load_fixed_v3_install_contract_bytes(data):
 
     try:
         value = dict(_strict_json_bytes(data))
+        schema = json.loads(resources.files("crypto_quant").joinpath(
+            "schemas/challenger-replacement-v3-install-contract-v1.schema.json"
+        ).read_text(encoding="utf-8"))
         if data != canonical_json(value).encode("utf-8"):
             raise ValueError("canonical")
         identity = {
@@ -202,6 +208,7 @@ def load_fixed_v3_install_contract_bytes(data):
                 "event_root", "python", "paths", "service", "runtime",
                 "schedule", "plist", "authority", "status",
             }
+            or tuple(Draft202012Validator(schema).iter_errors(value))
             or value["$schema"]
             != "./challenger-replacement-v3-install-contract-v1.schema.json"
             or value["schema_version"] != "1.0.0"
