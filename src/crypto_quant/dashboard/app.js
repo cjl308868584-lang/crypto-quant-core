@@ -18,10 +18,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const render = (status) => {
     const projection = status.projection;
-    const release = projection.release;
+    const isV3 = projection.schema_version === "3.0.0";
+    const release = isV3 ? projection.provenance.build_identity : projection.release;
     const isV2 = projection.schema_version === "2.0.0";
-    const challenge = isV2 ? projection.replacement_v3 : projection.challenger;
-    const systemPaper = projection.system_paper;
+    const challenge = isV3 ? projection : (isV2 ? projection.replacement_v3 : projection.challenger);
+    const systemPaper = isV3 ? null : projection.system_paper;
     const alertSummary = status.alert_summary;
 
     overall.textContent = projection.status;
@@ -30,14 +31,27 @@ document.addEventListener("DOMContentLoaded", () => {
     summary.replaceChildren();
     addFact(summary, "版本", release.package_version);
     addFact(summary, "标签", release.release_tag);
-    addFact(summary, "Main commit", release.main_commit);
-    addFact(summary, "投影时间", projection.projected_at);
-    addFact(summary, "身份", release.identity_status);
+    addFact(summary, "Main commit", isV3 ? release.peeled_commit : release.main_commit);
+    addFact(summary, "投影时间", isV3 ? "只读观察" : projection.projected_at);
+    addFact(summary, "身份", isV3 ? "证据健康" : release.identity_status);
 
     challenger.replaceChildren();
-    addFact(challenger, "阶段", challenge.phase);
-    addFact(challenger, "服务", challenge.service_health);
-    addFact(challenger, "证据", challenge.evidence_health);
+    if (isV3) {
+      addFact(challenger, "运行资格", challenge.operational_qualification.status);
+      addFact(challenger, "证据健康", challenge.service_and_evidence_health);
+      addFact(challenger, "到期机会", challenge.opportunities.due);
+      addFact(challenger, "终态机会", challenge.opportunities.terminal);
+      addFact(challenger, "观察机会", challenge.opportunities.observed);
+      addFact(challenger, "漏失机会", challenge.opportunities.missed);
+      addFact(challenger, "下一机会", challenge.next_required_opportunity);
+      addFact(challenger, "当前产品", challenge.simulation_state.current_product);
+      addFact(challenger, "对账", challenge.simulation_state.reconciliation_status);
+      addFact(challenger, "风险", challenge.simulation_state.risk_state);
+    } else {
+      addFact(challenger, "阶段", challenge.phase);
+      addFact(challenger, "服务", challenge.service_health);
+      addFact(challenger, "证据", challenge.evidence_health);
+    }
     if (isV2) {
       addFact(challenger, "权限", "NOT OPERATIONAL");
       addFact(challenger, "到期机会", challenge.due_opportunity_count);
@@ -55,7 +69,7 @@ document.addEventListener("DOMContentLoaded", () => {
       addFact(challenger, "回撤边界", challenge.drawdown_boundary_state);
       addFact(challenger, "运行门", challenge.operational_gate_status);
       addFact(challenger, "经济尾部", challenge.economic_tail_status);
-    } else {
+    } else if (!isV3) {
       addFact(challenger, "已验证槽位", challenge.verified_slot_count);
       addFact(challenger, "已完成 Episode", challenge.completed_episode_count);
       addFact(challenger, "下一槽位", challenge.next_required_slot);
@@ -63,6 +77,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     paper.replaceChildren();
+    if (isV3) {
+      addFact(paper, "阶段", "只读观察");
+      addFact(paper, "权限", "NOT OPERATIONAL");
+    } else {
     addFact(paper, "阶段", systemPaper.phase);
     addFact(paper, "服务", systemPaper.service_health);
     addFact(paper, "证据", systemPaper.evidence_health);
@@ -77,6 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
     addFact(paper, "对账", systemPaper.reconciliation_status);
     addFact(paper, "风险", systemPaper.risk_state);
     addFact(paper, "最终门", systemPaper.gate_status);
+    }
 
     riskObservation.textContent = alertSummary.new_risk_allowed
       ? "观察状态：允许 System Paper 继续冻结范围内的模拟风险流程"

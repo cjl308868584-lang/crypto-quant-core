@@ -341,7 +341,7 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
         import crypto_quant.challenger_replacement_installed_runtime as runtime
         import crypto_quant.challenger_replacement_install_trust as trust
         from tests.test_challenger_replacement_install_trust import (
-            ROOT, temporary_workspace, valid_contract,
+            ROOT, released_v067_bytes, temporary_workspace, valid_contract,
         )
 
         with temporary_workspace() as directory:
@@ -359,7 +359,11 @@ class ReplacementInstalledRuntimeTests(unittest.TestCase):
                 contract["plan"]["path"]: contract["plan"]["file_sha256"],
             }
             for name, digest in names.items():
-                body = (ROOT / name).read_bytes()
+                body = (
+                    released_v067_bytes(name)
+                    if name in contract["strategy_core"]["file_hashes"]
+                    else (ROOT / name).read_bytes()
+                )
                 self.assertEqual(hashlib.sha256(body).hexdigest(), digest)
                 target = repository / name
                 target.parent.mkdir(parents=True, exist_ok=True)

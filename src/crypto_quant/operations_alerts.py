@@ -6,6 +6,7 @@ from typing import Any, Dict, Mapping
 from .canonical import canonical_json
 from .operations_projection import load_operations_projection_bytes
 from .operations_projection_v2 import load_operations_projection_v2_bytes
+from .operations_projection_v3 import load_operations_projection_v3_bytes
 
 
 class OperationsAlertsError(ValueError):
@@ -45,6 +46,8 @@ def _load_projection(projection_body: bytes) -> Mapping[str, Any]:
             return load_operations_projection_bytes(projection_body)
         if identity == ("./operations-projection-v2.schema.json", "2.0.0"):
             return load_operations_projection_v2_bytes(projection_body)
+        if identity == ("./operations-projection-v3.schema.json", "3.0.0"):
+            return load_operations_projection_v3_bytes(projection_body)
         raise ValueError("unknown projection identity")
     except Exception as error:
         raise OperationsAlertsError(
@@ -326,12 +329,38 @@ def _derive_verified_v2_alerts(projection: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _derive_verified_v3_alerts(projection: Mapping[str, Any]) -> Dict[str, Any]:
+    alerts = []
+    state = projection["simulation_state"]
+    rules = (
+        (projection["status"] == "FAILED_CLOSED", "FAILED-CLOSED", "CRITICAL", "FAILED_CLOSED"),
+        (projection["operational_qualification"]["status"] == "BLOCK_FAILED", "QUALIFICATION-BLOCKED", "CRITICAL", "QUALIFICATION_BLOCKED"),
+        (projection["opportunities"]["terminal"] < projection["opportunities"]["due"], "TERMINAL-GAP", "CRITICAL", "TERMINAL_GAP"),
+        (bool(projection["opportunities"]["missed"]), "MISSED", "WARNING", "MISSED_OPPORTUNITY"),
+        (state["reconciliation_status"] not in {"MATCHED", "NOT_AVAILABLE"}, "RECONCILIATION", "CRITICAL", "RECONCILIATION_FAILED"),
+        (state["economic_gap_locked"], "ECONOMIC-GAP", "CRITICAL", "ECONOMIC_GAP_LOCKED"),
+        (state["current_product"] != "FLAT" and state["protective_stop_status"] != "CONFIRMED_SIMULATED", "STOP", "CRITICAL", "PROTECTIVE_STOP_FAILED"),
+    )
+    for active, suffix, severity, reason in rules:
+        if active:
+            alerts.append({"alert_id": "OPS-REPLACEMENT-V3-" + suffix,
+                           "severity": severity, "stream": "REPLACEMENT_V3",
+                           "reason_code": "REPLACEMENT_V3_" + reason,
+                           "risk_effect": "BLOCK_NEW_RISK" if severity == "CRITICAL" else "NO_CHANGE"})
+    counts = {name: sum(item["severity"] == name for item in alerts)
+              for name in ("INFO", "WARNING", "CRITICAL")}
+    return {"schema_version": "3.0.0", "status": projection["status"],
+            "new_risk_allowed": False, "counts": counts, "alerts": alerts}
+
+
 def derive_operations_alerts(
     projection_body: bytes,
 ) -> Mapping[str, Any]:
     """Strictly replay projection bytes and derive allowlisted alerts."""
 
     projection = _load_projection(projection_body)
+    if projection["schema_version"] == "3.0.0":
+        return _derive_verified_v3_alerts(projection)
     if projection["schema_version"] == "2.0.0":
         return _derive_verified_v2_alerts(projection)
     return _derive_verified_operations_alerts(projection)
@@ -342,7 +371,9 @@ def build_operations_status_body(projection_body: bytes) -> bytes:
 
     projection = _load_projection(projection_body)
     alert_summary = (
-        _derive_verified_v2_alerts(projection)
+        _derive_verified_v3_alerts(projection)
+        if projection["schema_version"] == "3.0.0"
+        else _derive_verified_v2_alerts(projection)
         if projection["schema_version"] == "2.0.0"
         else _derive_verified_operations_alerts(projection)
     )

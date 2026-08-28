@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "challenger-replacement-public-simulation-result-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "result_id", "result_hash", "evidence_qualification", "plan", "economic_plan", "public_contract", "build_identity", "opportunity", "sequence", "parent_event_hash", "source", "previous_snapshot_hash", "decision", "accounting", "next_snapshot", "lifecycle", "reconciliation", "authority"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-public-simulation-result-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "result_id": {"type": "string", "pattern": "^challenger_replacement_public_simulation_result_[0-9a-f]{64}$"},
+    "result_hash": {"$ref": "#/$defs/hash"},
+    "evidence_qualification": {"const": "PUBLIC_MARKET_DETERMINISTIC_SIMULATION_NO_ACCOUNT_NO_BROKER_NO_REAL_ORDER"},
+    "plan": {"$ref": "#/$defs/id_hash"},
+    "economic_plan": {"$ref": "#/$defs/id_hash"},
+    "public_contract": {"$ref": "#/$defs/contract"},
+    "build_identity": {"type": "object"},
+    "opportunity": {"type": "object"},
+    "sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "parent_event_hash": {"$ref": "#/$defs/hash"},
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["input_id", "input_hash", "capture_hash", "nested_live_capture_hash"],
+      "properties": {
+        "input_id": {"type": "string"}, "input_hash": {"$ref": "#/$defs/hash"},
+        "capture_hash": {"$ref": "#/$defs/hash"}, "nested_live_capture_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "previous_snapshot_hash": {"$ref": "#/$defs/hash"},
+    "decision": {"type": "object"},
+    "accounting": {"type": "object"},
+    "next_snapshot": {"type": "object"},
+    "lifecycle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["events", "unresolved_unknown"],
+      "properties": {
+        "events": {"type": "array", "items": {"enum": ["SIMULATED_ORDER_ACCEPTED", "SIMULATED_FILL_APPLIED"]}, "maxItems": 2, "uniqueItems": true},
+        "unresolved_unknown": {"const": false}
+      }
+    },
+    "reconciliation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "difference_count"],
+      "properties": {"status": {"const": "MATCHED"}, "difference_count": {"const": 0}}
+    },
+    "authority": {"$ref": "#/$defs/authority"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id_hash": {"type": "object", "additionalProperties": false, "required": ["plan_id", "plan_hash"], "properties": {"plan_id": {"type": "string"}, "plan_hash": {"$ref": "#/$defs/hash"}}},
+    "contract": {"type": "object", "additionalProperties": false, "required": ["contract_id", "contract_hash"], "properties": {"contract_id": {"type": "string"}, "contract_hash": {"$ref": "#/$defs/hash"}}},
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["public_network_requests", "account_requests", "broker_requests", "orders_submitted_to_venue", "credentials_used", "production_state_writes"],
+      "properties": {
+        "public_network_requests": {"type": "integer", "minimum": 10, "maximum": 24},
+        "account_requests": {"const": 0}, "broker_requests": {"const": 0},
+        "orders_submitted_to_venue": {"const": 0}, "credentials_used": {"const": false},
+        "production_state_writes": {"const": 0}
+      }
+    }
+  }
+}

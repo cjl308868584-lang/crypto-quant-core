@@ -12,13 +12,7 @@ from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from importlib import resources
 from typing import Any, Mapping
-from urllib.error import HTTPError, URLError
-from urllib.request import (
-    HTTPRedirectHandler,
-    ProxyHandler,
-    Request,
-    build_opener,
-)
+from urllib.request import Request
 
 from jsonschema import Draft202012Validator
 
@@ -33,6 +27,12 @@ from .challenger_replacement_plan_v2 import challenger_replacement_plan_v2_reaso
 from .challenger_replacement_plan import (
     ChallengerReplacementPlanError,
     _strict_json_bytes as _strict_mapping_bytes,
+)
+from .challenger_replacement_public_http import (
+    PublicHttpError,
+    attempt_document as _public_attempt_document,
+    open_fixed_public_request,
+    transport_failure_attempt,
 )
 from .evidence import artifact_self_hash
 from .errors import CanonicalizationError
@@ -65,7 +65,6 @@ _TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504}
 _TIME_URL = "https://data-api.binance.vision/api/v3/time"
 _CAPTURE_OPEN = timedelta(minutes=2)
 _CAPTURE_CLOSE = timedelta(minutes=10)
-_HTTP_TIMEOUT_SECONDS = 15
 _FORBIDDEN_ENVIRONMENT_FRAGMENTS = {
     "proxy",
     "credential",
@@ -85,80 +84,46 @@ class ChallengerReplacementLiveInputError(ValueError):
         super().__init__(reason_code)
         self.reason_code = reason_code
 
-class _RejectRedirects(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise ChallengerReplacementLiveInputError(
-            "CHALLENGER_REPLACEMENT_LIVE_INPUT_REDIRECT_FORBIDDEN"
-        )
-
-@dataclass(frozen=True)
-class _PublicKlineHttpResponse:
-    status: int
-    final_url: str
-    headers: Mapping[str, str]
-    body: bytes
-    request_started_at: str
-    response_received_at: str
-
 def _wall_now():
     return datetime.now(timezone.utc)
-
-def _monotonic():
-    return time.monotonic_ns()
 
 def _sleep(seconds):
     time.sleep(seconds)
 
 def _open_public_request(request):
-    if not isinstance(request, Request) or request.get_method() != "GET":
-        raise ChallengerReplacementLiveInputError(
-            "CHALLENGER_REPLACEMENT_LIVE_INPUT_REQUEST_INVALID"
-        )
-    opener = build_opener(ProxyHandler({}), _RejectRedirects())
-    started = _wall_now()
-    monotonic_started = _monotonic()
     try:
-        with opener.open(request, timeout=_HTTP_TIMEOUT_SECONDS) as response:
-            body = response.read(_MAX_RESPONSE_BYTES + 1)
-            status = response.getcode()
-            final_url = response.geturl()
-            headers = dict(response.headers.items())
-    except HTTPError as error:
-        status = error.code
-        final_url = error.geturl()
-        headers = dict(error.headers.items()) if error.headers else {}
-        body = error.read(_MAX_RESPONSE_BYTES + 1)
-    except ChallengerReplacementLiveInputError:
-        raise
-    except (OSError, TimeoutError, URLError) as error:
-        raise ChallengerReplacementLiveInputError(
-            "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE"
-        ) from error
-    received = _wall_now()
-    monotonic_received = _monotonic()
-    if (
-        len(body) > _MAX_RESPONSE_BYTES
-        or monotonic_received < monotonic_started
-        or received < started
-    ):
-        raise ChallengerReplacementLiveInputError(
-            "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
+        response = open_fixed_public_request(
+            request, max_body_bytes=_MAX_RESPONSE_BYTES
         )
-    common = {
-        "status": status,
-        "final_url": final_url,
-        "headers": headers,
-        "body": body,
-        "request_started_at": utc_datetime(started),
-        "response_received_at": utc_datetime(received),
-    }
+    except PublicHttpError as error:
+        mapping = {
+            "PUBLIC_HTTP_REQUEST_INVALID": (
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_REQUEST_INVALID"
+            ),
+            "PUBLIC_HTTP_REDIRECT_FORBIDDEN": (
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_REDIRECT_FORBIDDEN"
+            ),
+            "PUBLIC_HTTP_TRANSPORT_FAILURE": (
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE"
+            ),
+        }
+        raise ChallengerReplacementLiveInputError(
+            mapping.get(
+                error.reason_code,
+                "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID",
+            )
+        ) from error
     if request.full_url == _TIME_URL:
         return PublicServerTimeHttpResponse(
-            **common,
-            monotonic_rtt_ms=(monotonic_received - monotonic_started + 999_999)
-            // 1_000_000,
+            status=response.status,
+            final_url=response.final_url,
+            headers=response.headers,
+            body=response.body,
+            request_started_at=response.request_started_at,
+            response_received_at=response.response_received_at,
+            monotonic_rtt_ms=response.monotonic_rtt_ms,
         )
-    return _PublicKlineHttpResponse(**common)
+    return response
 
 class _LiveTimeTransport:
     def get(self):
@@ -439,65 +404,25 @@ def acquire_challenger_replacement_live_capture(*, state):
 
 def _attempt_document(response, sequence):
     try:
-        headers = {key.lower(): value for key, value in response.headers.items()}
-        body = bytes(response.body)
-    except (AttributeError, TypeError, ValueError) as error:
+        return _public_attempt_document(response, sequence)
+    except PublicHttpError as error:
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
         ) from error
-    content_type = headers.get("content-type")
-    if response.status == 200 and (
-        not isinstance(content_type, str)
-        or content_type.split(";", 1)[0].strip().lower() != "application/json"
-    ):
-        raise ChallengerReplacementLiveInputError(
-            "CHALLENGER_REPLACEMENT_LIVE_INPUT_RESPONSE_INVALID"
-        )
-    return {
-        "sequence": sequence,
-        "outcome": "HTTP_RESPONSE",
-        "error_reason_or_null": None,
-        "request_started_at": response.request_started_at,
-        "response_received_at": response.response_received_at,
-        "status": response.status,
-        "final_url": response.final_url,
-        "selected_headers": {
-            "http_date_or_null": headers.get("date"),
-            "etag_or_null": headers.get("etag"),
-            "last_modified_or_null": headers.get("last-modified"),
-            "retry_after_or_null": headers.get("retry-after"),
-        },
-        "body_size_bytes": len(body),
-        "body_sha256": hashlib.sha256(body).hexdigest(),
-        "response_body_base64": base64.b64encode(body).decode("ascii"),
-    }
 
 def _transport_attempt_document(sequence, *, started, received):
     try:
-        started_text = utc_datetime(started)
-        received_text = utc_datetime(received)
-    except (AttributeError, TypeError, ValueError) as error:
+        attempt = transport_failure_attempt(
+            sequence, started=started, received=received
+        )
+    except PublicHttpError as error:
         raise ChallengerReplacementLiveInputError(
             "CHALLENGER_REPLACEMENT_LIVE_INPUT_CLOCK_INVALID"
         ) from error
-    return {
-        "sequence": sequence,
-        "outcome": "TRANSPORT_ERROR",
-        "error_reason_or_null": "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE",
-        "request_started_at": started_text,
-        "response_received_at": received_text,
-        "status": None,
-        "final_url": None,
-        "selected_headers": {
-            "http_date_or_null": None,
-            "etag_or_null": None,
-            "last_modified_or_null": None,
-            "retry_after_or_null": None,
-        },
-        "body_size_bytes": 0,
-        "body_sha256": hashlib.sha256(b"").hexdigest(),
-        "response_body_base64": "",
-    }
+    attempt["error_reason_or_null"] = (
+        "CHALLENGER_REPLACEMENT_LIVE_INPUT_TRANSPORT_FAILURE"
+    )
+    return attempt
 
 @lru_cache(maxsize=1)
 def _capture_validator():

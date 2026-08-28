@@ -27,7 +27,7 @@ class NautilusV0651HardeningTests(unittest.TestCase):
     def test_patch_release_identity_is_v0651(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIsNotNone(
-            re.search(r'^version = "0\.75\.0"$', pyproject, re.MULTILINE)
+            re.search(r'^version = "0\.76\.0"$', pyproject, re.MULTILINE)
         )
         setup_tree = ast.parse((ROOT / "setup.py").read_text(encoding="utf-8"))
         setup_version = next(
@@ -39,15 +39,15 @@ class NautilusV0651HardeningTests(unittest.TestCase):
             for keyword in node.keywords
             if keyword.arg == "version"
         )
-        self.assertEqual(setup_version, "0.75.0")
-        self.assertEqual(crypto_quant.__version__, "0.75.0")
+        self.assertEqual(setup_version, "0.76.0")
+        self.assertEqual(crypto_quant.__version__, "0.76.0")
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual(manifest["manifest_version"], "1.69.0")
-        self.assertEqual(manifest["package_version"], "0.75.0")
+        self.assertEqual(manifest["manifest_version"], "1.70.0")
+        self.assertEqual(manifest["package_version"], "0.76.0")
 
     def test_patch_never_rewrites_or_relabels_v065_research_evidence(self):
         exact_hashes = {
