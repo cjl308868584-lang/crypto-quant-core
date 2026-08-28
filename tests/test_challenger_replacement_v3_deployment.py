@@ -128,7 +128,7 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
         )
         _validate_build(deployment["candidate_build"])
 
-    def test_inventory_covers_recursive_local_imports_and_v076_resources(self):
+    def test_inventory_reports_exact_post_v076_private_extensions(self):
         root = __import__("pathlib").Path(__file__).resolve().parents[1]
         pending = [path for path in _CORE_PATHS if path.endswith(".py")]
         closure = set()
@@ -151,7 +151,15 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
                         imported = "src/crypto_quant/" + candidate.replace(".", "/") + ".py"
                         if (root / imported).is_file() and imported not in closure:
                             pending.append(imported)
-        self.assertEqual(closure - _CORE_PATHS, set())
+        self.assertEqual(closure - _CORE_PATHS, {
+            "src/crypto_quant/challenger_replacement_binance_credential.py",
+            "src/crypto_quant/challenger_replacement_binance_preflight.py",
+            "src/crypto_quant/challenger_replacement_binance_private_contract.py",
+            "src/crypto_quant/challenger_replacement_binance_private_lifecycle.py",
+            "src/crypto_quant/challenger_replacement_binance_private_protocol.py",
+            "src/crypto_quant/challenger_replacement_binance_reconciliation.py",
+            "src/crypto_quant/challenger_replacement_canary_controller.py",
+        })
         for path in (
             "src/crypto_quant/schemas/challenger-replacement-public-market-capture-v2.schema.json",
             "src/crypto_quant/schemas/challenger-replacement-public-simulation-contract-v1.schema.json",

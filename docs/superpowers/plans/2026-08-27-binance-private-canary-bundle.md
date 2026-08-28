@@ -53,7 +53,7 @@ and
   but local v0.77 TDD may continue against reviewed tree
   `4d8e9acf8e68c037c8ad274d970bfe67c71d4766`.
 - New production code budget: protocol+transport ≤600 lines, credential ≤220,
-  preflight ≤380, private event contract+opportunity-projection additions ≤650,
+  preflight ≤380, private event contract+event-store/opportunity-projection additions ≤700,
   lifecycle+reconciliation+runtime ≤2,100, Canary controller+fault runner ≤2,200,
   delivery additions ≤150, controllers ≤2,200, and exact aggregate ≤6,200
   physical lines under the measured Task 11-only amendment. Count
@@ -160,16 +160,17 @@ CONTROLLERS = (
 Optional future controller files count as zero only while absent. Every other
 file must exist. Use `git diff --numstat` against exact v0.76 build-input tree
 `4d8e9acf8e68c037c8ad274d970bfe67c71d4766` to add the opportunity-projection
-delta to the private-projection component and to measure the fixed delivery
+and event-store deltas to the private-projection component and measure the fixed delivery
 allowlist. Reject binary or unparseable entries and give no credit for deleted
 lines. Assert each flattened new-file name is unique and enforce caps
-`600/220/380/650/2100/2200/150`, then enforce the sum at `6200`. The
+`600/220/380/700/2100/2200/150`, then enforce the sum at `6200`. The
 controller/aggregate amendment is measured: the reviewed safety candidate
-contains 2,110 controller/fault-runner lines and 6,110 aggregate lines after
+contains 2,110 controller/fault-runner lines and 6,148 aggregate lines after
 independent review required actual runtime, fresh-process, isolation,
 secret-surface, boundary-input, seven-class authority and truthful semantic
-replay evidence. The ceilings leave 90 lines of headroom. No other
-component receives headroom.
+replay evidence. The ceilings leave 52 lines of headroom. No other
+component receives headroom beyond the explicit 700-line private-event
+release-review correction.
 
 - [ ] **Step 3: Run the amended GREEN gate and behavior adjacency**
 

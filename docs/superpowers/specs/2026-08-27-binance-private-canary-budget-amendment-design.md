@@ -16,12 +16,14 @@ hard ceiling, not a target. A smaller implementation is preferred whenever it
 preserves the exact safety contract.
 
 The Task 11 amendment is measured rather than prospective. The measured safety
-candidate measures 2,110 controller/fault-runner lines and 6,110 aggregate
+candidate measures 2,110 controller/fault-runner lines and 6,148 aggregate
 lines after adding real private-runtime recovery, protected-stop, isolated
 fresh-process, secret-surface, actual-boundary-input, seven-class authority and
-truthful semantic-replay evidence. The ceiling retains 90 lines of headroom.
-Only the controller/fault-runner group receives additional
-capacity; all other component ceilings remain unchanged.
+truthful semantic-replay evidence. The ceiling retains 52 lines of headroom.
+The controller/fault-runner group retains its measured amendment. Final release
+review also found 38 required publication-verifier lines in the pre-existing
+event store; those lines are now explicitly counted in the private-event
+component instead of being silently omitted.
 
 ## 2. Why the original 3,000-line ceiling is not executable
 
@@ -67,8 +69,8 @@ Physical lines are `len(path.read_text(encoding="utf-8").splitlines())`.
 Generated files are forbidden in this set. Renaming or moving logic does not
 remove it from the count.
 
-Changes to the pre-existing opportunity projection, operations projection,
-alerts and dashboard are measured as added physical lines relative to the exact
+Changes to the pre-existing event store, opportunity projection, operations
+projection, alerts and dashboard are measured as added physical lines relative to the exact
 v0.76 build-input tree
 `4d8e9acf8e68c037c8ad274d970bfe67c71d4766`. The v0.77 release gate also
 requires the released v0.76 peeled commit to resolve to that tree identity. The
@@ -83,6 +85,7 @@ full lines of the listed new Python files
 The fixed pre-existing-file allowlist is:
 
 - `src/crypto_quant/challenger_replacement_opportunity_projection.py`
+- `src/crypto_quant/challenger_replacement_events.py`
 - `src/crypto_quant/operations_projection_v3.py`
 - `src/crypto_quant/operations_alerts.py`
 - `src/crypto_quant/dashboard/app.js`
@@ -97,7 +100,7 @@ and release gates.
 - protocol + transport: at most 600 lines;
 - credential capability: at most 220 lines;
 - preflight: at most 380 lines;
-- private event contract + opportunity-projection additions: at most 650 lines;
+- private event contract + event-store/opportunity-projection additions: at most 700 lines;
 - lifecycle + reconciliation + runtime: at most 2,100 lines;
 - Canary controller + fixed fault runner: at most 2,200 lines;
 - operations and dashboard delivery additions: at most 150 lines; and

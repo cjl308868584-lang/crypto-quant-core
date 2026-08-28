@@ -923,12 +923,14 @@ the rejected 116-line label runner was deleted: the retained components measure
 4,384 lines. That is less than the exact v0.76 build-input fault runner's 641
 lines for 36 cases and cannot contain 59 direct probes, observed boundary
 accounting, fresh-process evidence and a strict self-hashing loader. The
-measured amendment ultimately raises only the controller component to 2,200 and
-the aggregate to 6,200. The reviewed safety candidate measures 2,110 controller
-lines and 6,110 aggregate lines after runtime, fresh-process, isolation,
+measured amendment raises the controller component to 2,200, the private-event
+component to 700 and the aggregate to 6,200. The reviewed safety candidate measures 2,110 controller
+lines and 6,148 aggregate lines after runtime, fresh-process, isolation,
 secret-surface, actual-boundary-input, seven-class authority and truthful
-semantic-replay evidence, leaving 90 lines of headroom. All other component
-and delivery caps remain unchanged. This allowance is
+semantic-replay evidence, leaving 52 lines of aggregate headroom. Final release
+review additionally counts the 38-line event-store publication verifier in a
+700-line private-event component cap. All other component and delivery caps
+remain unchanged. This allowance is
 exclusive to the fixed offline evidence runner; it does not authorize runtime,
 transport, broker, scheduler or UI growth. The final implementation must report
 its actual line count and remain below both amended limits. Receipt authority,
@@ -956,7 +958,7 @@ CODE_COMPLETE_NOT_ACTIVATED
 production_activation=false
 no service installed or started
 no production root or start receipt created
-no credential created or read
+no real or production Binance credential created or read
 no private Binance request made
 no real order submitted
 no funds moved

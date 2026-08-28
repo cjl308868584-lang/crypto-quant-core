@@ -27,10 +27,17 @@ CONTROLLERS = (
 OPPORTUNITY_PROJECTION = (
     "src/crypto_quant/challenger_replacement_opportunity_projection.py",
 )
+EVENT_STORAGE = (
+    "src/crypto_quant/challenger_replacement_events.py",
+)
 DELIVERY = (
     "src/crypto_quant/operations_projection_v3.py",
     "src/crypto_quant/operations_alerts.py",
     "src/crypto_quant/dashboard/app.js",
+)
+RELEASE_METADATA = (
+    "src/crypto_quant/__init__.py",
+    "src/crypto_quant/build.py",
 )
 
 
@@ -60,7 +67,7 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
             "protocol_transport": (PROTOCOL_TRANSPORT, 600),
             "credential": (CREDENTIAL, 220),
             "preflight": (PREFLIGHT, 380),
-            "private_projection": (PRIVATE_PROJECTION, 650),
+            "private_projection": (PRIVATE_PROJECTION, 700),
             "order_runtime": (ORDER_RUNTIME, 2100),
             "controllers": (
                 tuple(name for name in CONTROLLERS if (ROOT / name).is_file()),
@@ -90,17 +97,35 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
             )
         }
         self.assertEqual(discovered_private, expected_private)
+        expected_modified_code = {
+            *RELEASE_METADATA,
+            *("src/crypto_quant/" + name for name in counted),
+            *EVENT_STORAGE,
+            *OPPORTUNITY_PROJECTION,
+            *DELIVERY,
+        }
+        modified = subprocess.run(
+            ["git", "diff", "--name-only", V076_BUILD_INPUT_TREE, "--",
+             "src/crypto_quant"],
+            cwd=REPOSITORY, check=True, capture_output=True, text=True,
+        ).stdout.splitlines()
+        modified_code = {
+            path for path in modified
+            if path.endswith(".py") or path.endswith(".js")
+        }
+        self.assertEqual(modified_code, expected_modified_code)
         for label, (names, cap) in groups.items():
             with self.subTest(component=label):
                 lines = physical_lines(*names)
                 if label == "private_projection":
-                    lines += added_lines(*OPPORTUNITY_PROJECTION)
+                    lines += added_lines(*OPPORTUNITY_PROJECTION, *EVENT_STORAGE)
                 self.assertLessEqual(lines, cap)
         delivery_lines = added_lines(*DELIVERY)
         self.assertLessEqual(delivery_lines, 150)
         self.assertLessEqual(
             physical_lines(*counted)
             + added_lines(*OPPORTUNITY_PROJECTION)
+            + added_lines(*EVENT_STORAGE)
             + delivery_lines,
             6200,
         )

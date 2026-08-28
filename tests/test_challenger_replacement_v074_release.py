@@ -14,10 +14,10 @@ class V074ReleaseTests(unittest.TestCase):
     def test_versions_manifest_and_candidate_inventory_are_exact(self):
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.76\.0"$',
+            r'(?m)^version = "0\.77\.0"$',
         )
         self.assertRegex(
-            (ROOT / "setup.py").read_text(), r'version="0\.76\.0"'
+            (ROOT / "setup.py").read_text(), r'version="0\.77\.0"'
         )
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
@@ -28,7 +28,7 @@ class V074ReleaseTests(unittest.TestCase):
                 manifest["package_version"],
                 manifest["manifest_version"],
             ),
-            ("0.76.0", "0.76.0", "1.70.0"),
+            ("0.77.0", "0.77.0", "1.71.0"),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = set(_V074_RELEASE_PATHS)
@@ -52,8 +52,8 @@ class V074ReleaseTests(unittest.TestCase):
 
     def test_readme_points_to_current_status_and_keeps_future_milestones(self):
         readme = (ROOT / "README.md").read_text()
-        self.assertIn("\u5f53\u524d\u4ee3\u7801\u7248\u672c\u4e3a `0.76.0`", readme)
-        self.assertIn("\u5b9e\u65bd\u8ffd\u8e2a v0.76.0", readme)
+        self.assertIn("\u5f53\u524d\u4ee3\u7801\u7248\u672c\u4e3a `0.77.0`", readme)
+        self.assertIn("\u5b9e\u65bd\u8ffd\u8e2a v0.77.0", readme)
         self.assertIn("\u6700\u7ec8\u7ecf\u6d4e\u8bc4\u4f30\u5668\u5df2\u53d1\u5e03\u4f46\u672a\u8fd0\u884c", readme)
         self.assertIn("\u5b89\u88c5/\u542f\u52a8\u4ecd\u662f\u672a\u6765\u72ec\u7acb\u91cc\u7a0b\u7891", readme)
 

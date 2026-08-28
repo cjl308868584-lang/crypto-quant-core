@@ -1,6 +1,10 @@
 {
   "schema_version": "1.0.0",
   "production_activation": false,
+  "runtime_install_authorized": false,
+  "replacement_start_authorized": false,
+  "credentials_allowed": false,
+  "account_requests_allowed": false,
   "venue": "BINANCE_ONLY",
   "symbol": "ETHUSDT",
   "credential_file": "",
