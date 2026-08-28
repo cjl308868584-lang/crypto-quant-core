@@ -1,13 +1,28 @@
 import hashlib
 import inspect
 import unittest
+import json
+from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 from crypto_quant.canonical import canonical_json
+from jsonschema import Draft202012Validator
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 NOW = datetime(2026, 8, 28, 8, 10, tzinfo=timezone.utc)
+COMMANDS = (
+    ("git", "remote", "get-url", "origin"),
+    ("git", "rev-parse", "HEAD"),
+    ("git", "rev-parse", "origin/main"),
+    ("git", "rev-parse", "v0.78.0^{}"),
+    ("git", "status", "--porcelain=v1", "--untracked-files=all"),
+    ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
+    ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
+    ("/usr/bin/pmset", "-g", "custom"),
+)
 
 
 def verified_facts():
@@ -29,7 +44,10 @@ def verified_facts():
             "request_count": 3, "trust_hash": "d" * 64,
         },
         "credential_count": 0,
-        "commands_verified": True,
+        "commands": [{
+            "argv": list(argv), "exit_code": 0,
+            "stdout_sha256": "1" * 64, "stderr_sha256": "2" * 64,
+        } for argv in COMMANDS],
         "observed_at": NOW,
     }
 
@@ -51,7 +69,12 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
             "account_request_count": 0, "broker_request_count": 0,
             "order_count": 0, "fund_movement_count": 0,
         })
+        self.assertEqual(tuple(tuple(item["argv"]) for item in receipt["commands"]),
+                         COMMANDS)
         body = canonical_json(receipt).encode()
+        schema = json.loads((ROOT / "src/crypto_quant/schemas/"
+            "challenger-replacement-v3-activation-preflight-v1.schema.json").read_text())
+        self.assertEqual(list(Draft202012Validator(schema).iter_errors(receipt)), [])
         self.assertEqual(
             load_fixed_v3_activation_preflight_bytes(
                 body, contract_binding=verified_facts()["contract_binding"]
@@ -75,6 +98,17 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
             receipt = build_fixed_v3_activation_preflight(**facts)
             self.assertEqual(receipt["status"], "PREFLIGHT_FAILED_CLOSED")
             self.assertIn(reason, receipt["reason_codes"])
+
+    def test_wrong_command_transcript_fails_closed(self):
+        from crypto_quant.challenger_replacement_v3_activation_preflight import (
+            build_fixed_v3_activation_preflight,
+        )
+
+        facts = verified_facts()
+        facts["commands"] = facts["commands"][:-1]
+        receipt = build_fixed_v3_activation_preflight(**facts)
+        self.assertEqual(receipt["status"], "PREFLIGHT_FAILED_CLOSED")
+        self.assertIn("PREFLIGHT_COMMAND_EVIDENCE_INVALID", receipt["reason_codes"])
 
     def test_module_has_no_system_paper_dependency(self):
         from crypto_quant import challenger_replacement_v3_activation_preflight as module

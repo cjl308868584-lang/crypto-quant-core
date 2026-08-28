@@ -2,15 +2,21 @@
 
 import copy
 import hashlib
+import json
 import os
 from datetime import datetime, timedelta, timezone
+from importlib import resources
 from pathlib import Path
+
+from jsonschema import Draft202012Validator
 
 from .canonical import canonical_json, stable_id, utc_datetime
 from .challenger_replacement_plan import _strict_json_bytes
 from .evidence import artifact_self_hash
 from .challenger_replacement_install_trust import _publish_contract_exact
-from .challenger_replacement_preflight import _disk, _machine, _run, _time_probe
+from .challenger_replacement_preflight import (
+    _disk, _machine, _run, _time_probe, _transcript,
+)
 from .challenger_replacement_v3_activation_trust import (
     activation_paths,
     load_fixed_published_v3_install_contract,
@@ -50,16 +56,26 @@ def _window(value):
 
 def build_fixed_v3_activation_preflight(
     *, contract_binding, machine, release_replayed, paths_verified,
-    power_safe, disk, clock, credential_count, commands_verified, observed_at,
+    power_safe, disk, clock, credential_count, commands, observed_at,
 ):
     supported = machine == _MACHINE
+    commands_valid = (
+        tuple(tuple(item.get("argv", ())) for item in commands) == _COMMANDS
+        and all(
+            set(item) == {"argv", "exit_code", "stdout_sha256", "stderr_sha256"}
+            and isinstance(item["exit_code"], int)
+            and all(isinstance(item[key], str) and len(item[key]) == 64
+                    for key in ("stdout_sha256", "stderr_sha256"))
+            for item in commands
+        )
+    )
     reasons = []
     if supported:
         checks = (
             (not release_replayed, "PREFLIGHT_RELEASE_IDENTITY_INVALID"),
             (not paths_verified, "PREFLIGHT_PATH_BOUNDARY_INVALID"),
             (not power_safe, "PREFLIGHT_POWER_UNSAFE"),
-            (not commands_verified, "PREFLIGHT_COMMAND_EVIDENCE_INVALID"),
+            (not commands_valid, "PREFLIGHT_COMMAND_EVIDENCE_INVALID"),
             (disk.get("free_bytes", 0) < 10_000_000_000
              or disk.get("free_inodes", 0) < 100_000,
              "PREFLIGHT_DISK_INSUFFICIENT"),
@@ -71,7 +87,7 @@ def build_fixed_v3_activation_preflight(
             (not _window(observed_at), "PREFLIGHT_INSTALL_WINDOW_UNSAFE"),
         )
         reasons = [reason for failed, reason in checks if failed]
-    elif any((release_replayed, paths_verified, power_safe, commands_verified,
+    elif any((release_replayed, paths_verified, power_safe, commands,
               credential_count, clock.get("request_count", 0))):
         raise ChallengerReplacementV3ActivationPreflightError(
             "CHALLENGER_REPLACEMENT_V3_PREFLIGHT_INVALID"
@@ -91,7 +107,7 @@ def build_fixed_v3_activation_preflight(
         "release_replayed": bool(release_replayed),
         "paths_verified": bool(paths_verified), "power_safe": bool(power_safe),
         "disk": copy.deepcopy(dict(disk)), "clock": copy.deepcopy(dict(clock)),
-        "commands_verified": bool(commands_verified),
+        "commands": copy.deepcopy(list(commands)),
         "authority": {
             "market_request_count": clock.get("request_count", 0),
             "launchctl_read_count": 2 if supported else 0,
@@ -111,9 +127,13 @@ def build_fixed_v3_activation_preflight(
 def load_fixed_v3_activation_preflight_bytes(data, *, contract_binding):
     try:
         value = dict(_strict_json_bytes(data))
+        schema = json.loads(resources.files("crypto_quant").joinpath(
+            "schemas/challenger-replacement-v3-activation-preflight-v1.schema.json"
+        ).read_text(encoding="utf-8"))
         identity = {k: v for k, v in value.items() if k not in ("receipt_id", "receipt_hash")}
         if (
             data != canonical_json(value).encode("utf-8")
+            or tuple(Draft202012Validator(schema).iter_errors(value))
             or value["contract_binding"] != dict(contract_binding)
             or value["receipt_id"] != stable_id(
                 "challenger_replacement_v3_activation_preflight", identity
@@ -128,7 +148,7 @@ def load_fixed_v3_activation_preflight_bytes(data, *, contract_binding):
             paths_verified=value["paths_verified"], power_safe=value["power_safe"],
             disk=value["disk"], clock=value["clock"],
             credential_count=value["authority"]["credential_count"],
-            commands_verified=value["commands_verified"], observed_at=observed,
+            commands=value["commands"], observed_at=observed,
         )
         if rebuilt != value:
             raise ValueError("semantics")
@@ -205,7 +225,7 @@ def collect_fixed_v3_activation_preflight():
             paths_verified=False, power_safe=False,
             disk={"free_bytes": 0, "free_inodes": 0},
             clock={"endpoint": _CLOCK, "request_count": 0, "trust_hash": "0" * 64},
-            credential_count=0, commands_verified=False, observed_at=_now(),
+            credential_count=0, commands=[], observed_at=_now(),
         )
     results = _run_commands()
     release, paths, power = _fixed_checks(contract, results)
@@ -215,7 +235,8 @@ def collect_fixed_v3_activation_preflight():
     return build_fixed_v3_activation_preflight(
         contract_binding=binding, machine=machine, release_replayed=release,
         paths_verified=paths, power_safe=power, disk=_disk(), clock=clock,
-        credential_count=credentials, commands_verified=(len(results) == len(_COMMANDS)),
+        credential_count=credentials,
+        commands=[_transcript(argv, result) for argv, result in zip(_COMMANDS, results)],
         observed_at=_now(),
     )
 
