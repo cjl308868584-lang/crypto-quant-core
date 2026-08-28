@@ -14,10 +14,14 @@ from .challenger_replacement_plan import _strict_json_bytes
 from .evidence import artifact_self_hash
 from .challenger_replacement_install_trust import (
     _ensure_fixed_snapshot_directories,
+    _close_descriptor,
     _fixed_empty_event_root_identity,
     _fixed_python_identity,
+    _open_directory,
     _publish_contract_exact,
     _publish_snapshot_from_inventory,
+    _read_published_exact,
+    _read_snapshot_file,
     _run_fixed_command,
     replacement_install_paths,
 )
@@ -37,6 +41,8 @@ _THIN_FILES = (
     "src/crypto_quant/challenger_replacement_v3_activation_trust.py",
     "src/crypto_quant/challenger_replacement_v3_activation_trust_cli.py",
     "src/crypto_quant/challenger_replacement_v3_installed_runtime.py",
+    "src/crypto_quant/challenger_replacement_v3_activation_preflight.py",
+    "src/crypto_quant/challenger_replacement_v3_activation_preflight_cli.py",
     "src/crypto_quant/schemas/challenger-replacement-v3-install-contract-v1.schema.json",
     "src/crypto_quant/schemas/challenger-replacement-v3-activation-preflight-v1.schema.json",
     "src/crypto_quant/schemas/challenger-replacement-v3-activation-install-receipt-v1.schema.json",
@@ -266,6 +272,61 @@ def load_fixed_v3_install_contract_bytes(data):
         raise ChallengerReplacementV3ActivationTrustError(
             "CHALLENGER_REPLACEMENT_V3_INSTALL_CONTRACT_INVALID"
         ) from error
+
+
+def load_fixed_published_v3_install_contract():
+    """Replay the fixed contract, plist and every snapshot byte read-only."""
+
+    paths = activation_paths()
+    deployment_fd = snapshot_fd = -1
+    primary = None
+    try:
+        deployment_fd, _ = _open_directory(
+            Path(paths["deployment_root"]), exact_mode=0o700
+        )
+        found = _read_published_exact(
+            deployment_fd, Path(paths["contract"]).name
+        )
+        if found is None:
+            raise ChallengerReplacementV3ActivationTrustError(
+                "CHALLENGER_REPLACEMENT_V3_INSTALL_CONTRACT_REQUIRED"
+            )
+        contract = load_fixed_v3_install_contract_bytes(found[0])
+        plist = _read_published_exact(
+            deployment_fd, Path(paths["candidate_plist"]).name
+        )
+        if plist is None or hashlib.sha256(plist[0]).hexdigest() != contract[
+            "plist"
+        ]["file_sha256"]:
+            raise ValueError("plist")
+        snapshot_fd, opened = _open_directory(
+            Path(contract["snapshot"]["root"]), exact_mode=0o700
+        )
+        if (opened.st_dev, opened.st_ino) != (
+            contract["snapshot"]["root_device"],
+            contract["snapshot"]["root_inode"],
+        ):
+            raise ValueError("snapshot")
+        inventory = build_fixed_v3_activation_candidate()["snapshot_inventory"]
+        for name, digest in inventory.items():
+            _read_snapshot_file(snapshot_fd, name, digest)
+        return contract, found[0], plist[0]
+    except BaseException as error:
+        primary = error
+        if isinstance(error, ChallengerReplacementV3ActivationTrustError):
+            raise
+        if isinstance(error, (KeyError, OSError, TypeError, ValueError)):
+            wrapped = ChallengerReplacementV3ActivationTrustError(
+                "CHALLENGER_REPLACEMENT_V3_INSTALL_CONTRACT_INVALID"
+            )
+            primary = wrapped
+            raise wrapped from error
+        raise
+    finally:
+        if snapshot_fd >= 0:
+            _close_descriptor(snapshot_fd, primary)
+        if deployment_fd >= 0:
+            _close_descriptor(deployment_fd, primary)
 
 
 def build_fixed_v3_activation_candidate():

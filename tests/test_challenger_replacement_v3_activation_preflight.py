@@ -2,6 +2,7 @@ import hashlib
 import inspect
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from crypto_quant.canonical import canonical_json
 
@@ -81,6 +82,27 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
         source = inspect.getsource(module).lower()
         self.assertNotIn("system_paper", source)
         self.assertNotIn("challenger_cohort", source)
+
+    def test_fixed_collector_uses_contract_then_exact_read_only_boundaries(self):
+        from crypto_quant import challenger_replacement_v3_activation_preflight as module
+
+        contract = {"contract_id": "x", "contract_hash": "y"}
+        contract_bytes = b"contract"
+        results = [(0, b"ok", b"")] * 8
+        with patch.object(
+            module, "load_fixed_published_v3_install_contract",
+            return_value=(contract, contract_bytes, b"plist"),
+        ), patch.object(module, "_machine", return_value=verified_facts()["machine"]), \
+             patch.object(module, "_run_commands", return_value=results), \
+             patch.object(module, "_fixed_checks", return_value=(True, True, True)), \
+             patch.object(module, "_credential_count", return_value=0), \
+             patch.object(module, "_clock", return_value=verified_facts()["clock"]), \
+             patch.object(module, "_disk", return_value=verified_facts()["disk"]), \
+             patch.object(module, "_now", return_value=NOW):
+            receipt = module.collect_fixed_v3_activation_preflight()
+        self.assertEqual(receipt["status"], "PREFLIGHT_VERIFIED_INSTALL_ELIGIBLE")
+        self.assertEqual(receipt["contract_binding"]["file_sha256"],
+                         hashlib.sha256(contract_bytes).hexdigest())
 
 
 if __name__ == "__main__":

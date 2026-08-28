@@ -1,11 +1,20 @@
 """Minimal fixed preflight for the credential-free v3 simulation install."""
 
 import copy
+import hashlib
+import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from .canonical import canonical_json, stable_id, utc_datetime
 from .challenger_replacement_plan import _strict_json_bytes
 from .evidence import artifact_self_hash
+from .challenger_replacement_install_trust import _publish_contract_exact
+from .challenger_replacement_preflight import _disk, _machine, _run, _time_probe
+from .challenger_replacement_v3_activation_trust import (
+    activation_paths,
+    load_fixed_published_v3_install_contract,
+)
 
 
 _MACHINE = {
@@ -13,6 +22,17 @@ _MACHINE = {
     "home": "/Users/chenm4", "timezone": "Asia/Shanghai",
 }
 _CLOCK = "https://data-api.binance.vision/api/v3/time"
+_REPOSITORY = Path(__file__).resolve().parents[2]
+_COMMANDS = (
+    ("git", "remote", "get-url", "origin"),
+    ("git", "rev-parse", "HEAD"),
+    ("git", "rev-parse", "origin/main"),
+    ("git", "rev-parse", "v0.78.0^{}"),
+    ("git", "status", "--porcelain=v1", "--untracked-files=all"),
+    ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
+    ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
+    ("/usr/bin/pmset", "-g", "custom"),
+)
 
 
 class ChallengerReplacementV3ActivationPreflightError(ValueError):
@@ -117,3 +137,93 @@ def load_fixed_v3_activation_preflight_bytes(data, *, contract_binding):
         raise ChallengerReplacementV3ActivationPreflightError(
             "CHALLENGER_REPLACEMENT_V3_PREFLIGHT_INVALID"
         ) from error
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _run_commands():
+    return [_run(argv, _REPOSITORY) for argv in _COMMANDS]
+
+
+def _fixed_checks(contract, results):
+    try:
+        text = [item[1].decode("utf-8", "strict").strip() for item in results]
+        release = (
+            len(results) == len(_COMMANDS)
+            and all(results[index][0] == 0 for index in range(5))
+            and text[0] == "https://github.com/cjl308868584-lang/crypto-quant-core.git"
+            and text[1] == text[2] == text[3] == contract["release"]["peeled_commit"]
+            and text[4] == ""
+        )
+        paths = contract["paths"]
+        entry = os.lstat(paths["event_root"])
+        boundary = (
+            (entry.st_dev, entry.st_ino, entry.st_uid)
+            == (contract["event_root"]["device"], contract["event_root"]["inode"], 501)
+            and not os.listdir(paths["event_root"])
+            and not any(os.path.lexists(paths[key]) for key in (
+                "target_plist", "stdout", "stderr",
+            ))
+            and results[5][0] != 0 and results[6][0] != 0
+        )
+        power = results[7][0] == 0 and b" sleep 0" in results[7][1]
+        return release, boundary, power
+    except (IndexError, KeyError, OSError, TypeError, UnicodeError):
+        return False, False, False
+
+
+def _credential_count():
+    fragments = ("binance_api", "api_secret", "exchange_api", "private_key")
+    paths = activation_paths()
+    files = (
+        Path.home() / ".config/binance/credentials.json",
+        Path.home() / ".binance/credentials.json",
+        Path(paths["runtime_root"]) / "credentials",
+    )
+    return sum(any(part in name.lower() for part in fragments) for name in os.environ) + sum(
+        os.path.lexists(path) for path in files
+    )
+
+
+def _clock():
+    return {"endpoint": _CLOCK, **_time_probe()}
+
+
+def collect_fixed_v3_activation_preflight():
+    contract, contract_bytes, _plist = load_fixed_published_v3_install_contract()
+    binding = {
+        "contract_id": contract["contract_id"],
+        "contract_hash": contract["contract_hash"],
+        "file_sha256": hashlib.sha256(contract_bytes).hexdigest(),
+    }
+    machine = _machine()
+    if machine != _MACHINE:
+        return build_fixed_v3_activation_preflight(
+            contract_binding=binding, machine=machine, release_replayed=False,
+            paths_verified=False, power_safe=False,
+            disk={"free_bytes": 0, "free_inodes": 0},
+            clock={"endpoint": _CLOCK, "request_count": 0, "trust_hash": "0" * 64},
+            credential_count=0, commands_verified=False, observed_at=_now(),
+        )
+    results = _run_commands()
+    release, paths, power = _fixed_checks(contract, results)
+    credentials = _credential_count()
+    clock = ({"endpoint": _CLOCK, "request_count": 0, "trust_hash": "0" * 64}
+             if credentials else _clock())
+    return build_fixed_v3_activation_preflight(
+        contract_binding=binding, machine=machine, release_replayed=release,
+        paths_verified=paths, power_safe=power, disk=_disk(), clock=clock,
+        credential_count=credentials, commands_verified=(len(results) == len(_COMMANDS)),
+        observed_at=_now(),
+    )
+
+
+def publish_fixed_v3_activation_preflight():
+    receipt = collect_fixed_v3_activation_preflight()
+    body = canonical_json(receipt).encode("utf-8")
+    outcome, _ = _publish_contract_exact(
+        Path(activation_paths()["preflight_root"]), receipt["receipt_id"] + ".json", body
+    )
+    return {"receipt": receipt, "publication_outcome": outcome}
