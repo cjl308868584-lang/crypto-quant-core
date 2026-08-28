@@ -412,7 +412,7 @@
     "src/crypto_quant/challenger_replacement_binance_private_contract.py": "b723e6e925ccf0ac7b028125c80c739904ed447621431d591d40d4f1186a34c9",
     "src/crypto_quant/challenger_replacement_binance_private_lifecycle.py": "4cccfb970927a9e872567e741a4473498c7a12ae837bb199b04ce8a920abd4af",
     "src/crypto_quant/challenger_replacement_binance_private_protocol.py": "e752802a0071754e3ea1678b4055c5c05682f1f7329ef40b599e18795120ff12",
-    "src/crypto_quant/challenger_replacement_binance_private_runtime.py": "41d0b9dd8312234334ec98bc20bbd7594abb6dbbf8ad05b8e154dbc186cc8e5a",
+    "src/crypto_quant/challenger_replacement_binance_private_runtime.py": "192e98d449c2c7144a8ffc8a13da05a7e85171287b004f348a4d748608ac4b4a",
     "src/crypto_quant/challenger_replacement_binance_private_transport.py": "0c9861cd283244cf44de37a0a81e5ed435147f11e02213c123fc14361133afa3",
     "src/crypto_quant/challenger_replacement_binance_reconciliation.py": "4a231059c767e3feae0d1c68c9a5d3b5ca03df7f1602075575feab2989ef21c8",
     "src/crypto_quant/challenger_replacement_binance_simulation_input.py": "29248647c80ccd8e9576318ef50c8f4f0da0633eb53b527683e85a1d7eb1c3af",
@@ -717,7 +717,7 @@
     "tests/test_challenger_replacement_binance_private_contract.py": "6e23c795e665fe101cac9cd207a68242864af209d8a612973b656936a0bf947a",
     "tests/test_challenger_replacement_binance_private_lifecycle.py": "9b2a0772a57427334623837c5fe012f26d17617fcd951282983f81239099d218",
     "tests/test_challenger_replacement_binance_private_protocol.py": "4d25886eff6f567c2dfc372c90a9fd14e0bc4c32c0bb4ba543c5ce6bd3f47dda",
-    "tests/test_challenger_replacement_binance_private_runtime.py": "18691146e943f16eabc299366e32a35a4cdd0621174dc6b67e80ae8b14a83ef3",
+    "tests/test_challenger_replacement_binance_private_runtime.py": "e72ddcdfee936e0ac34f0f056748ffc677df388709c9bf762824e52a5588418d",
     "tests/test_challenger_replacement_binance_private_transport.py": "6b2efefa74958a3a9c41e6f94425eba0e5c88188d82bf365a14cfc3772fe02d5",
     "tests/test_challenger_replacement_binance_protective_stop.py": "3ec593898fceee6d3e0b970544ed6dbef32c101dffc8424a9548039c3278a5f6",
     "tests/test_challenger_replacement_binance_reconciliation.py": "54a0e6b1c46e7f752e29a0a4ac15c0eb5f1053af3b99dcc6ee0c751d17fb02c2",
@@ -833,7 +833,7 @@
     "vendor/challenger-replacement-v3/wheels/rpds_py-0.27.1-cp39-cp39-macosx_11_0_arm64.whl": "1fea2b1a922c47c51fd07d656324531adc787e415c8b116530a1d29c0516c62d",
     "vendor/challenger-replacement-v3/wheels/typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
   },
-  "build_input_tree_hash": "4dd37a1344cdc36a5bf7191f4aef656418116f0c5e782eb4e32a3bafbeabf4c2",
+  "build_input_tree_hash": "102fad801bea5ac79c506f413f510bdae163bb3ee92670d23d53f19fbea18128",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -841,5 +841,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "524fb78514b9be4f2abb8b9ea71413d3193eee12d7cfa36abcbd8c40c396312d"
+  "manifest_hash": "ef0b05a864c6de8315a7efb7045cbb937226ae97228bfb334410b9fb67126160"
 }

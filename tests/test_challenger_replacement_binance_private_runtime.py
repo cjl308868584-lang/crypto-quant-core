@@ -650,6 +650,28 @@ class BinancePrivateRuntimeQueryFirstTests(unittest.TestCase):
         self.assertEqual(market["asset_marks_usdt"]["BNB"], "601")
         self.assertEqual(market["fee_asset_balances"]["BNB"], "0.001")
 
+    def test_malformed_bnb_reserve_has_stable_fail_closed_reason(self):
+        eth = b'{"symbol":"ETHUSDT","bidPrice":"2499","askPrice":"2501"}'
+        for balance in (
+                "BNB",
+                {"asset": "BNB", "free": "not-decimal", "locked": "0"}):
+            with self.subTest(balance=balance), patch.object(
+                private_runtime, "_public_market_query", return_value=eth,
+            ) as query, self.assertRaisesRegex(
+                BinancePrivateRuntimeError,
+                "BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID",
+            ):
+                private_runtime._spot_market_document(
+                    self.state,
+                    {"opportunity_id": self.workspace.opportunity_id},
+                    fee_assets={"USDT"}, account=canonical_json({
+                        "balances": [balance],
+                    }).encode(),
+                )
+            query.assert_called_once_with(
+                "SPOT_BOOK_TICKER", {"symbol": "ETHUSDT"},
+            )
+
     def _observe_opportunity(self):
         self.workspace.observe(self.state)
 

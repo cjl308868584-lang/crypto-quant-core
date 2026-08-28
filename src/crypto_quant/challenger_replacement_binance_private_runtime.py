@@ -768,7 +768,11 @@ def _spot_market_document(state, attempt, *, fee_assets=frozenset(),
         fee_balances = {}
         account_value = ({"balances": []} if account is None
                          else _document(account))
-        matches = [value for value in account_value["balances"]
+        balances = account_value["balances"]
+        if (not isinstance(balances, list)
+                or any(not isinstance(value, Mapping) for value in balances)):
+            raise ValueError
+        matches = [value for value in balances
                    if value.get("asset") == "BNB"]
         if len(matches) > 1 or "BNB" in fee_assets and len(matches) != 1:
             raise ValueError
@@ -793,7 +797,8 @@ def _spot_market_document(state, attempt, *, fee_assets=frozenset(),
         return canonical_json({"symbol": "ETHUSDT", "mark_price": mark,
             "ask_price": ask, "asset_marks_usdt": marks,
             "fee_asset_balances": fee_balances}).encode()
-    except (KeyError, TypeError, ValueError) as error:
+    except (ArithmeticError, AttributeError, KeyError, TypeError,
+            ValueError) as error:
         _fail("BINANCE_PRIVATE_RUNTIME_RECONCILIATION_REPLAY_INVALID", error)
 def _expected_stop(state, attempt):
     try:
