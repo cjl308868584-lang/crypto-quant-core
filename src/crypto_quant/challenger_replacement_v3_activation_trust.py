@@ -36,7 +36,7 @@ _PREDECESSOR = {
     "tag": "v0.77.0",
     "peeled_commit": "39a973d51bdc8fc957a65052f4bb5f310a1f72c3",
 }
-_RELEASE = {"tag": "v0.78.0", "package_version": "0.78.0"}
+_RELEASE = {"tag": "v0.78.2", "package_version": "0.78.2"}
 _DEPENDENCIES = ("attrs", "jsonschema", "jsonschema_specifications", "referencing", "rpds", "typing_extensions")
 _DEPENDENCY_VERSIONS = {
     "attrs": ("attrs", "26.1.0"), "jsonschema": ("jsonschema", "4.25.1"),
@@ -110,15 +110,15 @@ def activation_paths():
 
 
 def _released_identity():
-    """Require exact clean v0.78 annotated release identity."""
+    """Require exact clean v0.78.2 annotated release identity."""
 
     try:
         manifest_path = _REPOSITORY / "config/evaluator-build-manifest-v1.json"
         body = manifest_path.read_bytes()
         manifest = dict(_strict_json_bytes(body))
         if (
-            manifest["package_version"] != "0.78.0"
-            or manifest["manifest_version"] != "1.72.0"
+            manifest["package_version"] != "0.78.2"
+            or manifest["manifest_version"] != "1.74.0"
             or manifest["manifest_hash"]
             != artifact_self_hash(manifest, "manifest_hash")
         ):
@@ -126,9 +126,9 @@ def _released_identity():
         commands = (
             ("git", "rev-parse", "HEAD"),
             ("git", "rev-parse", "origin/main"),
-            ("git", "rev-parse", "v0.78.0^{}"),
-            ("git", "rev-parse", "v0.78.0"),
-            ("git", "cat-file", "-t", "v0.78.0"),
+            ("git", "rev-parse", "v0.78.2^{}"),
+            ("git", "rev-parse", "v0.78.2"),
+            ("git", "cat-file", "-t", "v0.78.2"),
             ("git", "status", "--porcelain=v1", "--untracked-files=all"),
         )
         values = [
@@ -138,7 +138,7 @@ def _released_identity():
         if values[0] != values[1] or values[0] != values[2] or values[4] != "tag" or values[5]:
             raise ValueError("git")
         return {
-            "tag": "v0.78.0", "peeled_commit": values[0],
+            "tag": "v0.78.2", "peeled_commit": values[0],
             "tag_object": values[3],
             "manifest_version": manifest["manifest_version"],
             "manifest_hash": manifest["manifest_hash"],
@@ -252,8 +252,8 @@ def load_fixed_v3_install_contract_bytes(data):
             or value["predecessor_release"] != _PREDECESSOR
             or value["deployment"] != candidate["deployment"]
             or value["paths"] != activation_paths()
-            or release.get("tag") != "v0.78.0"
-            or release.get("manifest_version") != "1.72.0"
+            or release.get("tag") != "v0.78.2"
+            or release.get("manifest_version") != "1.74.0"
             or any(
                 not isinstance(release.get(key), str)
                 or len(release[key]) != length
@@ -433,7 +433,7 @@ def render_fixed_v3_activation_candidate():
         _REPOSITORY, parent, candidate["snapshot_inventory"]
     )
     python = _fixed_python_identity(
-        snapshot["root"], package_version="0.78.0",
+        snapshot["root"], package_version="0.78.2",
         dependency_modules=_DEPENDENCIES,
         dependency_versions=_DEPENDENCY_VERSIONS,
         python_paths=_snapshot_python_paths(snapshot["root"]),

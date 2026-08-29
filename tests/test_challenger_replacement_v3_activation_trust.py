@@ -18,6 +18,80 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
+    def test_release_identity_binds_current_v0782_main_and_annotated_tag(self):
+        from crypto_quant import challenger_replacement_v3_activation_trust as trust
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary)
+            config = repository / "config"
+            config.mkdir()
+            manifest = json.loads((
+                ROOT / "config/evaluator-build-manifest-v1.json"
+            ).read_text())
+            manifest["package_version"] = "0.78.2"
+            manifest["manifest_version"] = "1.74.0"
+            manifest["manifest_hash"] = "0" * 64
+            manifest["manifest_hash"] = artifact_self_hash(
+                manifest, "manifest_hash"
+            )
+            body = canonical_json(manifest).encode()
+            (config / "evaluator-build-manifest-v1.json").write_bytes(body)
+            commit = b"a" * 40 + b"\n"
+            commands = iter((
+                (commit, b""), (commit, b""), (commit, b""),
+                (b"b" * 40 + b"\n", b""), (b"tag\n", b""),
+                (b"", b""),
+            ))
+            observed = []
+
+            def run_fixed(argv, *, cwd):
+                observed.append((argv, cwd))
+                return next(commands)
+
+            with patch.object(trust, "_REPOSITORY", repository), \
+                    patch.object(
+                        trust, "_run_fixed_command",
+                        side_effect=run_fixed,
+                    ):
+                release = trust._released_identity()
+
+            for values in (
+                (commit, b"c" * 40 + b"\n", commit,
+                 b"b" * 40 + b"\n", b"tag\n", b""),
+                (commit, commit, b"c" * 40 + b"\n",
+                 b"b" * 40 + b"\n", b"tag\n", b""),
+                (commit, commit, commit,
+                 b"b" * 40 + b"\n", b"commit\n", b""),
+                (commit, commit, commit,
+                 b"b" * 40 + b"\n", b"tag\n", b" M file\n"),
+            ):
+                results = iter((value, b"") for value in values)
+                with patch.object(trust, "_REPOSITORY", repository), \
+                        patch.object(
+                            trust, "_run_fixed_command",
+                            side_effect=lambda *args, **kwargs: next(results),
+                        ), self.assertRaises(
+                            trust.ChallengerReplacementV3ActivationTrustError
+                        ):
+                    trust._released_identity()
+
+        self.assertEqual(release["tag"], "v0.78.2")
+        self.assertEqual(release["peeled_commit"], "a" * 40)
+        self.assertEqual(release["tag_object"], "b" * 40)
+        self.assertEqual(release["manifest_version"], "1.74.0")
+        self.assertEqual(
+            release["manifest_file_sha256"], hashlib.sha256(body).hexdigest()
+        )
+        self.assertEqual([item[0] for item in observed], [
+            ("git", "rev-parse", "HEAD"),
+            ("git", "rev-parse", "origin/main"),
+            ("git", "rev-parse", "v0.78.2^{}"),
+            ("git", "rev-parse", "v0.78.2"),
+            ("git", "cat-file", "-t", "v0.78.2"),
+            ("git", "status", "--porcelain=v1", "--untracked-files=all"),
+        ])
+        self.assertTrue(all(item[1] == repository for item in observed))
+
     def test_snapshot_inventory_uses_current_release_bytes_for_v076_key_set(self):
         from crypto_quant.challenger_replacement_v3_activation_trust import (
             build_fixed_v3_activation_candidate,
@@ -83,7 +157,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
         )
 
         candidate = build_fixed_v3_activation_candidate()
-        self.assertEqual(candidate["release"]["tag"], "v0.78.0")
+        self.assertEqual(candidate["release"]["tag"], "v0.78.2")
         self.assertEqual(candidate["predecessor_release"]["tag"], "v0.77.0")
         self.assertEqual(candidate["deployment"]["release_tag"], "v0.76.0")
         self.assertLessEqual(len(candidate["snapshot_inventory"]), 256)
@@ -148,8 +222,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
         }
         python = {"path": "/usr/bin/python3", "sha256": "b" * 64}
         with patch.object(trust, "_released_identity", return_value={
-            "tag": "v0.78.0", "peeled_commit": "c" * 40,
-            "manifest_version": "1.72.0", "manifest_hash": "d" * 64,
+            "tag": "v0.78.2", "peeled_commit": "c" * 40,
+            "manifest_version": "1.74.0", "manifest_hash": "d" * 64,
             "manifest_file_sha256": "e" * 64,
         }), patch.object(
             trust, "_ensure_fixed_snapshot_directories",
@@ -201,8 +275,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             "initial_event_count": 0, "initial_orphan_staging_count": 0,
         }
         release = {
-            "tag": "v0.78.0", "peeled_commit": "c" * 40,
-            "tag_object": "f" * 40, "manifest_version": "1.72.0",
+            "tag": "v0.78.2", "peeled_commit": "c" * 40,
+            "tag_object": "f" * 40, "manifest_version": "1.74.0",
             "manifest_hash": "d" * 64, "manifest_file_sha256": "e" * 64,
         }
         contract = trust._contract(candidate, release, snapshot, event, {

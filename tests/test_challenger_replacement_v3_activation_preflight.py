@@ -18,7 +18,9 @@ COMMANDS = (
     ("git", "remote", "get-url", "origin"),
     ("git", "rev-parse", "HEAD"),
     ("git", "rev-parse", "origin/main"),
-    ("git", "rev-parse", "v0.78.0^{}"),
+    ("git", "rev-parse", "v0.78.2^{}"),
+    ("git", "rev-parse", "v0.78.2"),
+    ("git", "cat-file", "-t", "v0.78.2"),
     ("git", "status", "--porcelain=v1", "--untracked-files=all"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
@@ -96,7 +98,8 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
             "stderr": "/fixed/err",
         }
         contract = {
-            "release": {"peeled_commit": "a" * 40}, "paths": paths,
+            "release": {"peeled_commit": "a" * 40, "tag_object": "b" * 40},
+            "paths": paths,
             "snapshot": {"root": "/fixed/snapshot", "root_device": 7,
                          "root_inode": 8},
             "event_root": {"device": 9, "inode": 10},
@@ -106,7 +109,9 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
             (0, ("a" * 40 + "\n").encode(), b""),
             (0, ("a" * 40 + "\n").encode(), b""),
             (0, ("a" * 40 + "\n").encode(), b""),
-            (0, b"", b""), (113, b"", b""), (113, b"", b""),
+            (0, ("b" * 40 + "\n").encode(), b""),
+            (0, b"tag\n", b""), (0, b"", b""),
+            (113, b"", b""), (113, b"", b""),
             (0, b"System-wide power settings:\n sleep 0\n", b""),
         ]
         with patch.object(module, "_fixed_root_boundaries", return_value=True), \
@@ -118,6 +123,19 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
              patch.object(module.os.path, "lexists", return_value=False):
             self.assertEqual(module._fixed_checks(contract, results),
                              (True, False, True))
+
+        for index, replacement in (
+            (5, (0, b"commit\n", b"")),
+            (4, (0, ("c" * 40 + "\n").encode(), b"")),
+            (3, (0, ("c" * 40 + "\n").encode(), b"")),
+            (1, (0, ("c" * 40 + "\n").encode(), b"")),
+            (2, (0, ("c" * 40 + "\n").encode(), b"")),
+        ):
+            changed = list(results)
+            changed[index] = replacement
+            with patch.object(module, "_fixed_root_boundaries", return_value=True), \
+                    patch.object(module.os.path, "lexists", return_value=False):
+                self.assertEqual(module._fixed_checks(contract, changed)[0], False)
 
     def test_verified_receipt_is_30_minutes_and_has_zero_private_authority(self):
         from crypto_quant.challenger_replacement_v3_activation_preflight import (
@@ -188,7 +206,7 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
 
         contract = {"contract_id": "x", "contract_hash": "y"}
         contract_bytes = b"contract"
-        results = [(0, b"ok", b"")] * 8
+        results = [(0, b"ok", b"")] * len(COMMANDS)
         with patch.object(
             module, "load_fixed_published_v3_install_contract",
             return_value=(contract, contract_bytes, b"plist"),

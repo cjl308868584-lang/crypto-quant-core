@@ -160,7 +160,7 @@
     },
     "commands": {
       "type": "array",
-      "maxItems": 8,
+      "maxItems": 10,
       "items": {
         "type": "object",
         "additionalProperties": false,

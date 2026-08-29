@@ -620,6 +620,12 @@ _V0781_RELEASE_PATHS = (
     "tests/test_challenger_replacement_v0781_release.py",
 )
 
+_V0782_RELEASE_PATHS = (
+    "docs/adr/0080-v0782-activation-release-rebind.md",
+    "docs/implementation-status-v0.78.2.md",
+    "tests/test_challenger_replacement_v0782_release.py",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -667,6 +673,7 @@ class EvaluatorBuild:
                     + list(_V077_RELEASE_PATHS)
                     + list(_V078_RELEASE_PATHS)
                     + list(_V0781_RELEASE_PATHS)
+                    + list(_V0782_RELEASE_PATHS)
                 )
             )
         )

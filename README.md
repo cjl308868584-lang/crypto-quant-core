@@ -255,7 +255,7 @@ AI 失败不阻止已经独立通过全部门槛的简单基线；简单基线�
 
 ## 实施状态
 
-Git中的设计基线已冻结，当前代码版本为 `0.78.1`。从早期研究、Paper 调度与证据治理，到 replacement Challenger 的 DecisionOpportunity、公开模拟、Binance 私有适配、对账和分级 Canary 控制，均以版本化合同、严格 loader 与失败关闭测试绑定。当前里程碑仅为 `BINANCE_E0_CODE_COMPLETE_NOT_ACTIVATED`；完整验证仍必须提供 Artifact 之外的 trusted attestation hash，self-hash 不能自证来源可信。
+Git中的设计基线已冻结，当前代码版本为 `0.78.2`。从早期研究、Paper 调度与证据治理，到 replacement Challenger 的 DecisionOpportunity、公开模拟、Binance 私有适配、对账和分级 Canary 控制，均以版本化合同、严格 loader 与失败关闭测试绑定。当前里程碑仅为 `BINANCE_E0_CODE_COMPLETE_NOT_ACTIVATED`；完整验证仍必须提供 Artifact 之外的 trusted attestation hash，self-hash 不能自证来源可信。
 
 当前58个Catalog算法中有26个Estimator可执行，其余32个明确Fail-Closed。公开历史归档的结构化请求只能访问ETHUSDT/BTCUSDT的allowlisted数据族；生产transport只执行无凭据GET，必须在解压前通过官方checksum，并将来源、质量和快照绑定到哈希。真实smoke已验证2026-07-25 ETHUSDT Spot daily 4h归档，但全部事后归档固定为`ARCHIVE_REPLAY_ONLY`：URL不是Artifact身份，也不能证明历史决策时点的数据可用性。Fee Schedule因产品、账户层级、折扣和生效期而独立冻结，不能从行情或当前网页费率反填历史。
 
@@ -440,15 +440,15 @@ disabled 配置模板、runbooks 及 59-case 离线故障证据。当前唯一�
 `CODE_COMPLETE_NOT_ACTIVATED`：没有安装或启动服务，没有创建或读取凭据，
 没有访问真实 Binance 私有接口、提交订单或移动资金，也没有开始72小时或90天计时。
 
-Replacement v3 Simulation Activation Trust Chain v0.78.0 已补齐 release-bound
+Replacement v3 Simulation Activation Trust Chain v0.78.2 已补齐 release-bound
 snapshot、fixed preflight/installer、installed adapter、自然机会 observer 与 start
 receipt 纵向闭环。它仅是
 `V3_SIMULATION_ACTIVATION_TRUST_CHAIN_CODE_RELEASED_NOT_INSTALLED`：System Paper is
 non-blocking，no v0.79 activation-code split；本版本未执行 renderer、preflight
 网络请求、安装、bootstrap、runtime 或 start receipt。详细完成度见
-[实施追踪 v0.78.1](docs/implementation-status-v0.78.1.md)，启动步骤见
+[实施追踪 v0.78.2](docs/implementation-status-v0.78.2.md)，启动步骤见
 [replacement v3 simulation activation runbook](docs/runbooks/challenger-replacement-v3-simulation-activation.md)，
-工程裁决见[ADR-0078](docs/adr/0078-v3-simulation-activation-trust-chain.md)。
+工程裁决见[ADR-0080](docs/adr/0080-v0782-activation-release-rebind.md)。
 
 仓库仍没有真实成交与实际滑点、连续90天合格证据或实盘授权，因此不能声称策略赚钱、AI优于基线或具备PIT-valid OOS证据。原Challenger cohort已因漏槽永久失败并停用，禁止补槽、重置或继续累计；System Paper 的启动前代码批次现已覆盖 v0.59 evaluator、v0.60 Tail-Blind 运维投影和 v0.61 只读 Web/alerts/runbooks，但仍未 production 安装、未启动，尚无真实 install/start receipt 或已启动的90天证据。replacement Challenger 已完成 v0.64 plan-only storage supersession、v0.66 三阶段 append-only event runtime、v0.67 live deployment candidate、v0.68 install/observer/start trust chain、v0.69 DecisionOpportunity/Canary 预注册、v0.70 fixture-only opportunity runtime、v0.71 accounting core、v0.72 fixture lifecycle evidence、v0.73 readiness/projection/operations integration、v0.74 economic preregistration、v0.75 accelerated operational supersession、v0.76 public simulation/research bundle 与 v0.77 Binance private Canary code bundle；它仍未安装或启动，最终经济评估器已发布但未运行，安装/启动仍是未来独立里程碑；Nautilus v0.65 的正式重评因冻结 platform gate 保持 `INCONCLUSIVE_KEEP_CURRENT_CORE`，没有接管任何事实源。两条流都必须在启动前工程和真实机器门完成后，才能从各自首个验证自然证据的 start receipt 独立计时。`production_activation=false`继续生效。详细完成度见[实施追踪 v0.77.0](docs/implementation-status-v0.77.0.md)，完整映射见[V1 Code Complete dossier](docs/v1-code-complete-not-activated-dossier.md)，工程裁决见[ADR-0077](docs/adr/0077-binance-private-canary-bundle.md)。
 当前依赖及许可证记录见[依赖与许可证清单 v0.1.0](docs/dependencies-and-licenses-v0.1.0.md)。

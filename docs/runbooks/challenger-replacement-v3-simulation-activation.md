@@ -14,8 +14,8 @@ Safety assertions before and after every step:
 
 ## Separately authorized ceremony
 
-1. Verify exact public `origin/main`, annotated `v0.78.0`, clean checkout,
-   package `0.78.0`, manifest `1.72.0` and successful release CI. Replay the six
+1. Verify exact public `origin/main`, annotated `v0.78.2`, clean checkout,
+   package `0.78.2`, manifest `1.74.0` and successful release CI. Replay the six
    vendored wheel/native-file SHA-256 values and versions frozen by the manifest
    and `requirements.lock`; no dependency installation or user-site import is
    permitted during the ceremony.

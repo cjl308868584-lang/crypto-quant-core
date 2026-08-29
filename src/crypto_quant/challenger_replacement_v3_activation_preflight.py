@@ -36,7 +36,9 @@ _COMMANDS = (
     ("git", "remote", "get-url", "origin"),
     ("git", "rev-parse", "HEAD"),
     ("git", "rev-parse", "origin/main"),
-    ("git", "rev-parse", "v0.78.0^{}"),
+    ("git", "rev-parse", "v0.78.2^{}"),
+    ("git", "rev-parse", "v0.78.2"),
+    ("git", "cat-file", "-t", "v0.78.2"),
     ("git", "status", "--porcelain=v1", "--untracked-files=all"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
@@ -213,10 +215,12 @@ def _fixed_checks(contract, results):
         text = [item[1].decode("utf-8", "strict").strip() for item in results]
         release = (
             len(results) == len(_COMMANDS)
-            and all(results[index][0] == 0 for index in range(5))
+            and all(results[index][0] == 0 for index in range(7))
             and text[0] == "https://github.com/cjl308868584-lang/crypto-quant-core.git"
             and text[1] == text[2] == text[3] == contract["release"]["peeled_commit"]
-            and text[4] == ""
+            and text[4] == contract["release"]["tag_object"]
+            and text[5] == "tag"
+            and text[6] == ""
         )
         paths = contract["paths"]
         boundary = (
@@ -224,9 +228,9 @@ def _fixed_checks(contract, results):
             and not any(os.path.lexists(paths[key]) for key in (
                 "target_plist", "stdout", "stderr",
             ))
-            and results[5][0] != 0 and results[6][0] != 0
+            and results[7][0] != 0 and results[8][0] != 0
         )
-        power = results[7][0] == 0 and b" sleep 0" in results[7][1]
+        power = results[9][0] == 0 and b" sleep 0" in results[9][1]
         return release, boundary, power
     except (IndexError, KeyError, OSError, TypeError, UnicodeError):
         return False, False, False
