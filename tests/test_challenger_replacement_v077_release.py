@@ -123,16 +123,16 @@ class V077ReleaseMetadataTests(unittest.TestCase):
                 self.assertEqual(members - archived, set())
 
     def test_versions_manifest_and_release_inventory_are_exact(self):
-        self.assertEqual(crypto_quant.__version__, "0.78.1")
+        self.assertEqual(crypto_quant.__version__, "0.78.2")
         self.assertRegex((ROOT / "pyproject.toml").read_text(),
-                         r'(?m)^version = "0\.78\.1"$')
-        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.78\.1"')
+                         r'(?m)^version = "0\.78\.2"$')
+        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.78\.2"')
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
         )
         self.assertEqual(
             (manifest["package_version"], manifest["manifest_version"]),
-            ("0.78.1", "1.73.0"),
+            ("0.78.2", "1.74.0"),
         )
         from crypto_quant.build import EvaluatorBuild, _V077_RELEASE_PATHS
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))

@@ -294,7 +294,7 @@ def _revalidate(inputs, record):
             "CHALLENGER_REPLACEMENT_V3_INSTALL_EVENT_ROOT_CHANGED"
         )
     if _fixed_python_identity(
-        contract["snapshot"]["root"], package_version="0.78.0",
+        contract["snapshot"]["root"], package_version="0.78.2",
         dependency_modules=_DEPENDENCIES,
         dependency_versions=_DEPENDENCY_VERSIONS,
         python_paths=_snapshot_python_paths(contract["snapshot"]["root"]),

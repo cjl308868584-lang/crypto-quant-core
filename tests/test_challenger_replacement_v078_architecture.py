@@ -23,7 +23,7 @@ class V078ArchitectureTests(unittest.TestCase):
         source = ROOT / "src/crypto_quant"
         lines = sum(len((source / name).read_text().splitlines()) for name in MODULES)
         self.assertLess(lines, 1500)
-        self.assertEqual(lines, 1494)
+        self.assertEqual(lines, 1498)
 
     def test_activation_modules_do_not_import_private_or_system_paper_layers(self):
         forbidden = (
