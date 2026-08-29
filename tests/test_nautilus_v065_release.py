@@ -44,7 +44,7 @@ class NautilusV065ReleaseTests(unittest.TestCase):
     def test_release_identity_and_build_inputs_are_v065(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIsNotNone(
-            re.search(r'^version = "0\.78\.3"$', pyproject, re.MULTILINE)
+            re.search(r'^version = "0\.78\.4"$', pyproject, re.MULTILINE)
         )
         setup_tree = ast.parse((ROOT / "setup.py").read_text(encoding="utf-8"))
         setup_version = next(

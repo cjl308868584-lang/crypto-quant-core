@@ -13,10 +13,10 @@ class V068ReleaseTests(unittest.TestCase):
     def test_versions_manifest_and_exact_candidate_inventory_are_frozen(self):
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.78\.3"$',
+            r'(?m)^version = "0\.78\.4"$',
         )
         self.assertRegex(
-            (ROOT / "setup.py").read_text(), r'version="0\.78\.3"'
+            (ROOT / "setup.py").read_text(), r'version="0\.78\.4"'
         )
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()

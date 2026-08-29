@@ -143,9 +143,9 @@ class V076ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(crypto_quant.__version__, "0.78.4")
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.78\.3"$',
+            r'(?m)^version = "0\.78\.4"$',
         )
-        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.78\.3"')
+        self.assertRegex((ROOT / "setup.py").read_text(), r'version="0\.78\.4"')
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
         )

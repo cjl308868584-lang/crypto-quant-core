@@ -27,7 +27,7 @@ class NautilusV0651HardeningTests(unittest.TestCase):
     def test_patch_release_identity_is_v0651(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIsNotNone(
-            re.search(r'^version = "0\.78\.3"$', pyproject, re.MULTILINE)
+            re.search(r'^version = "0\.78\.4"$', pyproject, re.MULTILINE)
         )
         setup_tree = ast.parse((ROOT / "setup.py").read_text(encoding="utf-8"))
         setup_version = next(

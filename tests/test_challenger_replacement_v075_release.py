@@ -284,11 +284,11 @@ class V075ReleaseMetadataTests(unittest.TestCase):
 
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.78\.3"$',
+            r'(?m)^version = "0\.78\.4"$',
         )
         self.assertRegex(
             (ROOT / "setup.py").read_text(),
-            r'version="0\.78\.3"',
+            r'version="0\.78\.4"',
         )
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
