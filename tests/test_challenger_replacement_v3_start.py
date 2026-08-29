@@ -180,6 +180,35 @@ class ChallengerReplacementV3StartTests(unittest.TestCase):
                 event_root_identity=bound_identity,
             )
 
+    def test_start_receipt_encodes_large_event_root_identity_as_decimal_strings(self):
+        from types import SimpleNamespace
+        from crypto_quant import challenger_replacement_v3_start as module
+
+        deployment = self.build()
+        large = 2**60 + 123
+        identity = ChallengerReplacementEventRootIdentity(
+            absolute_path=deployment["paths"]["event_root"],
+            device=large + 1, inode=large + 2, uid=501,
+            mode_octal="0700",
+        )
+        event = SimpleNamespace(event_hash="a" * 64)
+        header = {"slot_id": "ETHUSDT@2026-08-26T04:00:00.000Z"}
+        payload = {
+            "observed_at": "2026-08-26T04:05:00.000Z",
+            "scheduled_for": "2026-08-26T04:00:00.000Z",
+        }
+        with patch.object(module, "_first_observed", return_value=(event, header, payload)):
+            receipt = build_challenger_replacement_v3_start_receipt(
+                deployment=deployment, event_projection={},
+                event_root_identity=identity,
+            )
+            self.assertEqual(receipt["event_root_identity"]["device"], str(large + 1))
+            self.assertEqual(receipt["event_root_identity"]["inode"], str(large + 2))
+            self.assertEqual(load_challenger_replacement_v3_start_receipt_bytes(
+                canonical_json(receipt).encode(), deployment=deployment,
+                event_projection={}, event_root_identity=identity,
+            ), receipt)
+
 
 if __name__ == "__main__":
     unittest.main()

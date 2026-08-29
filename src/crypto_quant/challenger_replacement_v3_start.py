@@ -14,6 +14,9 @@ from .challenger_replacement_events import (
     ChallengerReplacementEventRootIdentity,
     load_challenger_replacement_event_bytes,
 )
+from .challenger_replacement_filesystem_identity import (
+    _decode_filesystem_identity, _encode_filesystem_identity,
+)
 from .challenger_replacement_plan import ChallengerReplacementPlanError, _strict_json_bytes
 from .evidence import artifact_self_hash
 
@@ -64,8 +67,10 @@ def _first_observed(projection, identity):
         loaded = load_challenger_replacement_event_bytes(event.final_bytes)
         header = json.loads(loaded.final_bytes.decode("utf-8"))
         if (
-            header["event_root_device"] != identity.device
-            or header["event_root_inode"] != identity.inode
+            _decode_filesystem_identity(
+                header["event_root_device"], allow_zero=True) != identity.device
+            or _decode_filesystem_identity(
+                header["event_root_inode"], allow_zero=False) != identity.inode
         ):
             _invalid()
         if header["event_type"] != "OPPORTUNITY_OBSERVED":
@@ -121,8 +126,10 @@ def _document(
         "economic_start": {"scheduled_for": payload["scheduled_for"]},
         "event_root_identity": {
             "absolute_path": event_root_identity.absolute_path,
-            "device": event_root_identity.device,
-            "inode": event_root_identity.inode,
+            "device": _encode_filesystem_identity(
+                event_root_identity.device, allow_zero=True),
+            "inode": _encode_filesystem_identity(
+                event_root_identity.inode, allow_zero=False),
             "uid": event_root_identity.uid,
             "mode_octal": event_root_identity.mode_octal,
         },

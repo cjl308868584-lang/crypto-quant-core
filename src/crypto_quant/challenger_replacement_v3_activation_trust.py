@@ -25,6 +25,7 @@ from .challenger_replacement_install_trust import (
     _run_fixed_command,
     replacement_install_paths,
 )
+from .challenger_replacement_filesystem_identity import _filesystem_identity_pair, _serialize_activation_filesystem_identities, _validate_activation_filesystem_identities
 
 
 _REPOSITORY = Path(__file__).resolve().parents[2]
@@ -36,7 +37,7 @@ _PREDECESSOR = {
     "tag": "v0.77.0",
     "peeled_commit": "39a973d51bdc8fc957a65052f4bb5f310a1f72c3",
 }
-_RELEASE = {"tag": "v0.78.2", "package_version": "0.78.2"}
+_RELEASE = {"tag": "v0.78.3", "package_version": "0.78.3"}
 _DEPENDENCIES = ("attrs", "jsonschema", "jsonschema_specifications", "referencing", "rpds", "typing_extensions")
 _DEPENDENCY_VERSIONS = {
     "attrs": ("attrs", "26.1.0"), "jsonschema": ("jsonschema", "4.25.1"),
@@ -54,6 +55,7 @@ _THIN_FILES = (
     "src/crypto_quant/challenger_replacement_install_preflight.py",
     "src/crypto_quant/challenger_replacement_preflight.py",
     "src/crypto_quant/system_paper_launchctl.py",
+    "src/crypto_quant/challenger_replacement_filesystem_identity.py",
     "src/crypto_quant/challenger_replacement_v3_activation_trust.py",
     "src/crypto_quant/challenger_replacement_v3_activation_trust_cli.py",
     "src/crypto_quant/challenger_replacement_v3_installed_runtime.py",
@@ -64,8 +66,7 @@ _THIN_FILES = (
     "src/crypto_quant/challenger_replacement_v3_activation_start.py",
     "src/crypto_quant/challenger_replacement_v3_activation_start_cli.py",
     "src/crypto_quant/schemas/challenger-replacement-v3-install-contract-v1.schema.json",
-    "src/crypto_quant/schemas/challenger-replacement-v3-activation-preflight-v1.schema.json",
-    "src/crypto_quant/schemas/challenger-replacement-v3-activation-install-receipt-v1.schema.json",
+    "src/crypto_quant/schemas/challenger-replacement-v3-activation-preflight-v1.schema.json", "src/crypto_quant/schemas/challenger-replacement-v3-activation-install-receipt-v1.schema.json",
 ) + _VENDOR_FILES
 _FORBIDDEN = (
     "binance_private", "private_protocol", "private_runtime",
@@ -110,15 +111,15 @@ def activation_paths():
 
 
 def _released_identity():
-    """Require exact clean v0.78.2 annotated release identity."""
+    """Require exact clean v0.78.3 annotated release identity."""
 
     try:
         manifest_path = _REPOSITORY / "config/evaluator-build-manifest-v1.json"
         body = manifest_path.read_bytes()
         manifest = dict(_strict_json_bytes(body))
         if (
-            manifest["package_version"] != "0.78.2"
-            or manifest["manifest_version"] != "1.74.0"
+            manifest["package_version"] != "0.78.3"
+            or manifest["manifest_version"] != "1.75.0"
             or manifest["manifest_hash"]
             != artifact_self_hash(manifest, "manifest_hash")
         ):
@@ -126,9 +127,9 @@ def _released_identity():
         commands = (
             ("git", "rev-parse", "HEAD"),
             ("git", "rev-parse", "origin/main"),
-            ("git", "rev-parse", "v0.78.2^{}"),
-            ("git", "rev-parse", "v0.78.2"),
-            ("git", "cat-file", "-t", "v0.78.2"),
+            ("git", "rev-parse", "v0.78.3^{}"),
+            ("git", "rev-parse", "v0.78.3"),
+            ("git", "cat-file", "-t", "v0.78.3"),
             ("git", "status", "--porcelain=v1", "--untracked-files=all"),
         )
         values = [
@@ -138,7 +139,7 @@ def _released_identity():
         if values[0] != values[1] or values[0] != values[2] or values[4] != "tag" or values[5]:
             raise ValueError("git")
         return {
-            "tag": "v0.78.2", "peeled_commit": values[0],
+            "tag": "v0.78.3", "peeled_commit": values[0],
             "tag_object": values[3],
             "manifest_version": manifest["manifest_version"],
             "manifest_hash": manifest["manifest_hash"],
@@ -186,16 +187,18 @@ def _runtime(snapshot, python):
 
 def _contract(candidate, release, snapshot, event, python):
     paths = activation_paths()
+    snapshot_identity, event_identity, python_identity = (
+        _serialize_activation_filesystem_identities({key: snapshot[key] for key in (
+            "root", "tree_hash", "file_count", "total_size_bytes",
+            "root_device", "root_inode",
+        )}, event, python))
     value = {
         "$schema": "./challenger-replacement-v3-install-contract-v1.schema.json",
         "schema_version": "1.0.0", "contract_id": "", "contract_hash": "0" * 64,
         "release": dict(release), "predecessor_release": dict(_PREDECESSOR),
         "deployment": dict(candidate["deployment"]),
-        "snapshot": {key: snapshot[key] for key in (
-            "root", "tree_hash", "file_count", "total_size_bytes",
-            "root_device", "root_inode",
-        )},
-        "event_root": dict(event), "python": dict(python),
+        "snapshot": snapshot_identity,
+        "event_root": event_identity, "python": python_identity,
         "paths": paths,
         "service": {"label": "local.crypto-quant.challenger-replacement-v1",
                     "identity": "gui/501/local.crypto-quant.challenger-replacement-v1"},
@@ -234,6 +237,7 @@ def load_fixed_v3_install_contract_bytes(data):
         candidate = build_fixed_v3_activation_candidate()
         hashes = set("0123456789abcdef")
         release = value["release"]
+        _validate_activation_filesystem_identities(value)
         if (
             set(value) != {
                 "$schema", "schema_version", "contract_id", "contract_hash",
@@ -252,8 +256,8 @@ def load_fixed_v3_install_contract_bytes(data):
             or value["predecessor_release"] != _PREDECESSOR
             or value["deployment"] != candidate["deployment"]
             or value["paths"] != activation_paths()
-            or release.get("tag") != "v0.78.2"
-            or release.get("manifest_version") != "1.74.0"
+            or release.get("tag") != "v0.78.3"
+            or release.get("manifest_version") != "1.75.0"
             or any(
                 not isinstance(release.get(key), str)
                 or len(release[key]) != length
@@ -324,10 +328,8 @@ def load_fixed_published_v3_install_contract():
         snapshot_fd, opened = _open_directory(
             Path(contract["snapshot"]["root"]), exact_mode=0o700
         )
-        if (opened.st_dev, opened.st_ino) != (
-            contract["snapshot"]["root_device"],
-            contract["snapshot"]["root_inode"],
-        ):
+        if (opened.st_dev, opened.st_ino) != _filesystem_identity_pair(
+            contract["snapshot"], "root_device", "root_inode"):
             raise ValueError("snapshot")
         inventory = build_fixed_v3_activation_candidate()["snapshot_inventory"]
         for name, digest in inventory.items():
@@ -433,7 +435,7 @@ def render_fixed_v3_activation_candidate():
         _REPOSITORY, parent, candidate["snapshot_inventory"]
     )
     python = _fixed_python_identity(
-        snapshot["root"], package_version="0.78.2",
+        snapshot["root"], package_version="0.78.3",
         dependency_modules=_DEPENDENCIES,
         dependency_versions=_DEPENDENCY_VERSIONS,
         python_paths=_snapshot_python_paths(snapshot["root"]),

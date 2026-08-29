@@ -17,6 +17,7 @@ from .challenger_replacement_install_trust import (
     _close_descriptor, _fixed_empty_event_root_identity, _fixed_python_identity,
     _open_directory, _publish_contract_exact, _read_published_exact,
 )
+from .challenger_replacement_filesystem_identity import _deserialize_filesystem_identity, _event_root_identity, _serialize_filesystem_identity
 from .challenger_replacement_plan import _strict_json_bytes
 from .challenger_replacement_preflight import _run, _transcript
 from .evidence import artifact_self_hash
@@ -30,7 +31,6 @@ from .challenger_replacement_v3_activation_trust import (
     load_fixed_published_v3_install_contract,
 )
 from .challenger_replacement_events import (
-    ChallengerReplacementEventRootIdentity,
     open_challenger_replacement_event_root,
 )
 from .challenger_replacement_opportunities import ChallengerReplacementOpportunityState
@@ -111,7 +111,7 @@ def build_fixed_v3_activation_install_receipt(
             "module": contract["runtime"]["module"],
         },
         "first_eligible_scheduled_for": _first_eligible(installed_at),
-        "plist": copy.deepcopy(dict(plist_record)),
+        "plist": _serialize_filesystem_identity(plist_record),
         "commands": copy.deepcopy(list(commands)),
         "authority": {
             "market_request_count": 0,
@@ -162,7 +162,7 @@ def load_fixed_v3_activation_install_receipt_bytes(
             contract=contract, contract_bytes=contract_bytes,
             preflight=preflight, preflight_bytes=preflight_bytes,
             plist_bytes=b"", installed_at=installed,
-            plist_record=value["plist"], commands=value["commands"],
+            plist_record=_deserialize_filesystem_identity(value["plist"]), commands=value["commands"],
             status=value["status"], reason_codes=value["reason_codes"],
         )
         if rebuilt != value:
@@ -289,12 +289,13 @@ def _revalidate(inputs, record):
             "CHALLENGER_REPLACEMENT_V3_INSTALL_TARGET_CHANGED"
         )
     contract = inputs["contract"]
-    if _fixed_empty_event_root_identity(contract["paths"]) != contract["event_root"]:
+    if (_fixed_empty_event_root_identity(contract["paths"])
+            != _deserialize_filesystem_identity(contract["event_root"])):
         raise ChallengerReplacementV3ActivationInstallError(
             "CHALLENGER_REPLACEMENT_V3_INSTALL_EVENT_ROOT_CHANGED"
         )
-    if _fixed_python_identity(
-        contract["snapshot"]["root"], package_version="0.78.2",
+    observed_python = _fixed_python_identity(
+        contract["snapshot"]["root"], package_version="0.78.3",
         dependency_modules=_DEPENDENCIES,
         dependency_versions=_DEPENDENCY_VERSIONS,
         python_paths=_snapshot_python_paths(contract["snapshot"]["root"]),
@@ -302,7 +303,8 @@ def _revalidate(inputs, record):
             "crypto_quant.challenger_replacement_v3_installed_runtime",
             "crypto_quant.challenger_replacement_v3_runtime",
         ),
-    ) != contract["python"]:
+    )
+    if observed_python != _deserialize_filesystem_identity(contract["python"]):
         raise ChallengerReplacementV3ActivationInstallError(
             "CHALLENGER_REPLACEMENT_V3_INSTALL_PYTHON_CHANGED"
         )
@@ -393,9 +395,7 @@ def open_fixed_v3_installed_sources():
 
     inputs, _receipt, _body = _load_fixed_successful_install_receipt()
     event = inputs["contract"]["event_root"]
-    identity = ChallengerReplacementEventRootIdentity(
-        event["path"], event["device"], event["inode"], event["owner_uid"], "0700"
-    )
+    identity = _event_root_identity(event)
     with open_challenger_replacement_event_root(identity) as event_root:
         yield {
             "event_root": event_root,

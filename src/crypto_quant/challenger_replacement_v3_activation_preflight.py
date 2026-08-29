@@ -17,12 +17,12 @@ from .challenger_replacement_install_trust import (
     _close_descriptor, _open_directory, _publish_contract_exact,
     _validate_directory_attachment,
 )
+from .challenger_replacement_filesystem_identity import _filesystem_identity_pair
 from .challenger_replacement_preflight import (
     _disk, _machine, _run, _time_probe, _transcript,
 )
 from .challenger_replacement_v3_activation_trust import (
-    activation_paths,
-    load_fixed_published_v3_install_contract,
+    activation_paths, load_fixed_published_v3_install_contract,
 )
 
 
@@ -36,9 +36,9 @@ _COMMANDS = (
     ("git", "remote", "get-url", "origin"),
     ("git", "rev-parse", "HEAD"),
     ("git", "rev-parse", "origin/main"),
-    ("git", "rev-parse", "v0.78.2^{}"),
-    ("git", "rev-parse", "v0.78.2"),
-    ("git", "cat-file", "-t", "v0.78.2"),
+    ("git", "rev-parse", "v0.78.3^{}"),
+    ("git", "rev-parse", "v0.78.3"),
+    ("git", "cat-file", "-t", "v0.78.3"),
     ("git", "status", "--porcelain=v1", "--untracked-files=all"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
@@ -186,10 +186,10 @@ def _fixed_root_boundaries(contract):
         for path, identity in specifications:
             descriptor, entry = _open_directory(path, exact_mode=0o700)
             opened.append((path, descriptor, entry))
+            keys = (("root_device", "root_inode") if "root_device" in identity
+                    else ("device", "inode")) if identity is not None else None
             if identity is not None and (entry.st_dev, entry.st_ino) != (
-                identity.get("root_device", identity.get("device")),
-                identity.get("root_inode", identity.get("inode")),
-            ):
+                    _filesystem_identity_pair(identity, *keys)):
                 raise ValueError("root identity")
         if os.listdir(opened[-1][1]):
             raise ValueError("event root not empty")

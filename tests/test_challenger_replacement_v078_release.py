@@ -27,12 +27,12 @@ class V078ReleaseTests(unittest.TestCase):
         )
 
     def test_versions_and_manifest_are_v078(self):
-        self.assertEqual(crypto_quant.__version__, "0.78.2")
-        self.assertIn('version = "0.78.2"', (ROOT / "pyproject.toml").read_text())
-        self.assertIn('version="0.78.2"', (ROOT / "setup.py").read_text())
+        self.assertEqual(crypto_quant.__version__, "0.78.3")
+        self.assertIn('version = "0.78.3"', (ROOT / "pyproject.toml").read_text())
+        self.assertIn('version="0.78.3"', (ROOT / "setup.py").read_text())
         manifest = json.loads((ROOT / "config/evaluator-build-manifest-v1.json").read_text())
         self.assertEqual((manifest["package_version"], manifest["manifest_version"]),
-                         ("0.78.2", "1.74.0"))
+                         ("0.78.3", "1.75.0"))
 
     def test_release_documents_define_one_external_ceremony_and_no_v079(self):
         paths = (
