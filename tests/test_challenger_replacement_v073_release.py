@@ -29,7 +29,7 @@ class V073ReleaseTests(unittest.TestCase):
                 manifest["package_version"],
                 manifest["manifest_version"],
             ),
-            ("0.78.3", "0.78.3", "1.75.0"),
+            ("0.78.4", "0.78.4", "1.76.0"),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {
@@ -63,8 +63,8 @@ class V073ReleaseTests(unittest.TestCase):
 
     def test_readme_points_to_current_status_and_keeps_nonclaims(self):
         readme = (ROOT / "README.md").read_text()
-        self.assertIn("当前代码版本为 `0.78.3`", readme)
-        self.assertIn("实施追踪 v0.78.3", readme)
+        self.assertIn("当前代码版本为 `0.78.4`", readme)
+        self.assertIn("实施追踪 v0.78.4", readme)
         self.assertIn("90 天最终经济阈值仍须未来单独预注册", readme)
 
 

@@ -18,9 +18,9 @@ COMMANDS = (
     ("git", "remote", "get-url", "origin"),
     ("git", "rev-parse", "HEAD"),
     ("git", "rev-parse", "origin/main"),
-    ("git", "rev-parse", "v0.78.3^{}"),
-    ("git", "rev-parse", "v0.78.3"),
-    ("git", "cat-file", "-t", "v0.78.3"),
+    ("git", "rev-parse", "v0.78.4^{}"),
+    ("git", "rev-parse", "v0.78.4"),
+    ("git", "cat-file", "-t", "v0.78.4"),
     ("git", "status", "--porcelain=v1", "--untracked-files=all"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
@@ -56,6 +56,50 @@ def verified_facts():
 
 
 class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
+    def test_real_pmset_custom_output_is_strictly_power_safe(self):
+        from crypto_quant import challenger_replacement_v3_activation_preflight as module
+
+        paths = {
+            "runtime_root": "/fixed/runtime", "event_root": "/fixed/events",
+            "target_plist": "/fixed/agent.plist", "stdout": "/fixed/out",
+            "stderr": "/fixed/err",
+        }
+        contract = {
+            "release": {"peeled_commit": "a" * 40, "tag_object": "b" * 40},
+            "paths": paths,
+            "snapshot": {"root": "/fixed/snapshot", "root_device": "7",
+                         "root_inode": "8"},
+            "event_root": {"device": "9", "inode": "10"},
+        }
+        results = [
+            (0, b"https://github.com/cjl308868584-lang/crypto-quant-core.git\n", b""),
+            (0, ("a" * 40 + "\n").encode()),
+            (0, ("a" * 40 + "\n").encode()),
+            (0, ("a" * 40 + "\n").encode()),
+            (0, ("b" * 40 + "\n").encode()),
+            (0, b"tag\n", b""), (0, b"", b""),
+            (113, b"", b""), (113, b"", b""),
+            (0, (ROOT / "tests/fixtures/pmset-g-custom-ac-safe.txt").read_bytes(), b""),
+        ]
+        results = [item if len(item) == 3 else item + (b"",) for item in results]
+        with patch.object(module, "_fixed_root_boundaries", return_value=True), \
+             patch.object(module.os.path, "lexists", return_value=False):
+            self.assertEqual(module._fixed_checks(contract, results),
+                             (True, True, True))
+
+    def test_pmset_parser_rejects_unsafe_ambiguous_or_malformed_output(self):
+        from crypto_quant import challenger_replacement_v3_activation_preflight as module
+
+        safe = (ROOT / "tests/fixtures/pmset-g-custom-ac-safe.txt").read_bytes()
+        for data in (
+            safe.replace(b"sleep                0", b"sleep                1"),
+            safe + b" sleep                0\n",
+            safe.replace(b"AC Power:", b"UPS Power:"),
+            safe.replace(b" sleep                0\n", b""),
+            b"AC Power:\n sleep \xff\n",
+        ):
+            self.assertFalse(module._pmset_power_safe(data))
+
     def test_root_boundary_uses_retained_descriptors_and_revalidates_attachment(self):
         from crypto_quant import challenger_replacement_v3_activation_preflight as module
 
@@ -138,7 +182,7 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
             (0, ("b" * 40 + "\n").encode(), b""),
             (0, b"tag\n", b""), (0, b"", b""),
             (113, b"", b""), (113, b"", b""),
-            (0, b"System-wide power settings:\n sleep 0\n", b""),
+            (0, (ROOT / "tests/fixtures/pmset-g-custom-ac-safe.txt").read_bytes(), b""),
         ]
         with patch.object(module, "_fixed_root_boundaries", return_value=True), \
              patch.object(module.os.path, "lexists", return_value=False):
@@ -189,6 +233,33 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
             load_fixed_v3_activation_preflight_bytes(
                 body, contract_binding=verified_facts()["contract_binding"]
             ), receipt,
+        )
+
+    def test_nonzero_microseconds_normalize_and_failed_receipt_strictly_replays(self):
+        from crypto_quant.challenger_replacement_v3_activation_preflight import (
+            build_fixed_v3_activation_preflight,
+            load_fixed_v3_activation_preflight_bytes,
+        )
+
+        facts = verified_facts()
+        facts.update({
+            "observed_at": NOW.replace(microsecond=149000),
+            "paths_verified": False,
+            "power_safe": False,
+        })
+        receipt = build_fixed_v3_activation_preflight(**facts)
+        self.assertEqual(receipt["status"], "PREFLIGHT_FAILED_CLOSED")
+        self.assertEqual(receipt["observed_at"], "2026-08-28T08:10:00.000Z")
+        self.assertEqual(receipt["expires_at"], "2026-08-28T08:40:00.000Z")
+        body = canonical_json(receipt).encode()
+        schema = json.loads((ROOT / "src/crypto_quant/schemas/"
+            "challenger-replacement-v3-activation-preflight-v1.schema.json").read_text())
+        self.assertEqual(list(Draft202012Validator(schema).iter_errors(receipt)), [])
+        self.assertEqual(
+            load_fixed_v3_activation_preflight_bytes(
+                body, contract_binding=facts["contract_binding"]
+            ),
+            receipt,
         )
 
     def test_wrong_window_and_credentials_fail_closed(self):

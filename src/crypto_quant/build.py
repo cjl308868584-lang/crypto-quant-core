@@ -632,6 +632,13 @@ _V0783_RELEASE_PATHS = (
     "tests/test_challenger_replacement_v0783_release.py",
 )
 
+_V0784_RELEASE_PATHS = (
+    "docs/adr/0082-v0784-preflight-hotfix.md",
+    "docs/implementation-status-v0.78.4.md",
+    "tests/fixtures/pmset-g-custom-ac-safe.txt",
+    "tests/test_challenger_replacement_v0784_release.py",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -681,6 +688,7 @@ class EvaluatorBuild:
                     + list(_V0781_RELEASE_PATHS)
                     + list(_V0782_RELEASE_PATHS)
                     + list(_V0783_RELEASE_PATHS)
+                    + list(_V0784_RELEASE_PATHS)
                 )
             )
         )

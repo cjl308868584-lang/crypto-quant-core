@@ -24,7 +24,7 @@ class V068ReleaseTests(unittest.TestCase):
         self.assertEqual(
             (crypto_quant.__version__, manifest["package_version"],
              manifest["manifest_version"]),
-            ("0.78.3", "0.78.3", "1.75.0"),
+            ("0.78.4", "0.78.4", "1.76.0"),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {

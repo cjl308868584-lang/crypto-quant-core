@@ -32,7 +32,7 @@ class V072ReleaseTests(unittest.TestCase):
         manifest = json.loads((ROOT / "config/evaluator-build-manifest-v1.json").read_text())
         self.assertEqual(
             (crypto_quant.__version__, manifest["package_version"], manifest["manifest_version"]),
-            ("0.78.3", "0.78.3", "1.75.0"),
+            ("0.78.4", "0.78.4", "1.76.0"),
         )
         status = STATUS.read_text()
         self.assertIn(

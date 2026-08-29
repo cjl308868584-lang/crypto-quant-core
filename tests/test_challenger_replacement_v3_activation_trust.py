@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
-    def test_release_identity_binds_current_v0782_main_and_annotated_tag(self):
+    def test_release_identity_binds_current_v0784_main_and_annotated_tag(self):
         from crypto_quant import challenger_replacement_v3_activation_trust as trust
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -28,8 +28,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             manifest = json.loads((
                 ROOT / "config/evaluator-build-manifest-v1.json"
             ).read_text())
-            manifest["package_version"] = "0.78.3"
-            manifest["manifest_version"] = "1.75.0"
+            manifest["package_version"] = "0.78.4"
+            manifest["manifest_version"] = "1.76.0"
             manifest["manifest_hash"] = "0" * 64
             manifest["manifest_hash"] = artifact_self_hash(
                 manifest, "manifest_hash"
@@ -75,19 +75,19 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
                         ):
                     trust._released_identity()
 
-        self.assertEqual(release["tag"], "v0.78.3")
+        self.assertEqual(release["tag"], "v0.78.4")
         self.assertEqual(release["peeled_commit"], "a" * 40)
         self.assertEqual(release["tag_object"], "b" * 40)
-        self.assertEqual(release["manifest_version"], "1.75.0")
+        self.assertEqual(release["manifest_version"], "1.76.0")
         self.assertEqual(
             release["manifest_file_sha256"], hashlib.sha256(body).hexdigest()
         )
         self.assertEqual([item[0] for item in observed], [
             ("git", "rev-parse", "HEAD"),
             ("git", "rev-parse", "origin/main"),
-            ("git", "rev-parse", "v0.78.3^{}"),
-            ("git", "rev-parse", "v0.78.3"),
-            ("git", "cat-file", "-t", "v0.78.3"),
+            ("git", "rev-parse", "v0.78.4^{}"),
+            ("git", "rev-parse", "v0.78.4"),
+            ("git", "cat-file", "-t", "v0.78.4"),
             ("git", "status", "--porcelain=v1", "--untracked-files=all"),
         ])
         self.assertTrue(all(item[1] == repository for item in observed))
@@ -157,7 +157,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
         )
 
         candidate = build_fixed_v3_activation_candidate()
-        self.assertEqual(candidate["release"]["tag"], "v0.78.3")
+        self.assertEqual(candidate["release"]["tag"], "v0.78.4")
         self.assertEqual(candidate["predecessor_release"]["tag"], "v0.77.0")
         self.assertEqual(candidate["deployment"]["release_tag"], "v0.76.0")
         self.assertLessEqual(len(candidate["snapshot_inventory"]), 256)
@@ -228,8 +228,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             "import_stderr_sha256": "2" * 64,
         }
         with patch.object(trust, "_released_identity", return_value={
-            "tag": "v0.78.3", "peeled_commit": "c" * 40,
-            "manifest_version": "1.75.0", "manifest_hash": "d" * 64,
+            "tag": "v0.78.4", "peeled_commit": "c" * 40,
+            "manifest_version": "1.76.0", "manifest_hash": "d" * 64,
             "manifest_file_sha256": "e" * 64,
         }), patch.object(
             trust, "_ensure_fixed_snapshot_directories",
@@ -293,8 +293,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             "import_stderr_sha256": "2" * 64,
         }
         release = {
-            "tag": "v0.78.3", "peeled_commit": "c" * 40,
-            "tag_object": "f" * 40, "manifest_version": "1.75.0",
+            "tag": "v0.78.4", "peeled_commit": "c" * 40,
+            "tag_object": "f" * 40, "manifest_version": "1.76.0",
             "manifest_hash": "d" * 64, "manifest_file_sha256": "e" * 64,
         }
         with patch.object(trust, "_released_identity", return_value=release), \
@@ -350,8 +350,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             "initial_event_count": 0, "initial_orphan_staging_count": 0,
         }
         release = {
-            "tag": "v0.78.3", "peeled_commit": "c" * 40,
-            "tag_object": "f" * 40, "manifest_version": "1.75.0",
+            "tag": "v0.78.4", "peeled_commit": "c" * 40,
+            "tag_object": "f" * 40, "manifest_version": "1.76.0",
             "manifest_hash": "d" * 64, "manifest_file_sha256": "e" * 64,
         }
         contract = trust._contract(candidate, release, snapshot, event, {

@@ -39,15 +39,15 @@ class NautilusV0651HardeningTests(unittest.TestCase):
             for keyword in node.keywords
             if keyword.arg == "version"
         )
-        self.assertEqual(setup_version, "0.78.3")
-        self.assertEqual(crypto_quant.__version__, "0.78.3")
+        self.assertEqual(setup_version, "0.78.4")
+        self.assertEqual(crypto_quant.__version__, "0.78.4")
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual(manifest["manifest_version"], "1.75.0")
-        self.assertEqual(manifest["package_version"], "0.78.3")
+        self.assertEqual(manifest["manifest_version"], "1.76.0")
+        self.assertEqual(manifest["package_version"], "0.78.4")
 
     def test_patch_never_rewrites_or_relabels_v065_research_evidence(self):
         exact_hashes = {
