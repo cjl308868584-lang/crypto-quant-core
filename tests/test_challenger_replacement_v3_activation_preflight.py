@@ -92,6 +92,7 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
 
         safe = (ROOT / "tests/fixtures/pmset-g-custom-ac-safe.txt").read_bytes()
         for data in (
+            safe + safe,
             safe.replace(b"sleep                0", b"sleep                1"),
             safe + b" sleep                0\n",
             safe.replace(b"AC Power:", b"UPS Power:"),

@@ -627,7 +627,7 @@ class EvaluatorBuildTests(unittest.TestCase):
         }
 
         self.assertEqual(set(manifest["file_hashes"]), expected)
-        self.assertEqual(semantic_versions, {(0, 78, 3)})
+        self.assertEqual(semantic_versions, {(0, 78, 4)})
         self.assertEqual(crypto_quant.__version__, "0.78.4")
         self.assertEqual(manifest["package_version"], "0.78.4")
         self.assertEqual(manifest["manifest_version"], "1.76.0")

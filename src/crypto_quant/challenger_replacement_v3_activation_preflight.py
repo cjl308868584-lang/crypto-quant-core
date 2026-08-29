@@ -176,14 +176,16 @@ def _run_commands():
 def _pmset_power_safe(data):
     try:
         sections = []
+        seen = set()
         current = None
         for line in data.decode("utf-8", "strict").splitlines():
             stripped = line.strip()
             if not stripped:
                 continue
             if not line[:1].isspace():
-                if stripped not in {"AC Power:", "Battery Power:"}:
+                if stripped not in {"AC Power:", "Battery Power:"} or stripped in seen:
                     return False
+                seen.add(stripped)
                 current = []
                 sections.append(current)
                 continue
