@@ -36,10 +36,10 @@ class V069ReleaseTests(unittest.TestCase):
     def test_versions_manifest_and_exact_candidate_inventory_are_frozen(self):
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.78\.3"$',
+            r'(?m)^version = "0\.78\.4"$',
         )
         self.assertRegex(
-            (ROOT / "setup.py").read_text(), r'version="0\.78\.3"'
+            (ROOT / "setup.py").read_text(), r'version="0\.78\.4"'
         )
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
@@ -50,7 +50,7 @@ class V069ReleaseTests(unittest.TestCase):
                 manifest["package_version"],
                 manifest["manifest_version"],
             ),
-            ("0.78.3", "0.78.3", "1.75.0"),
+            ("0.78.4", "0.78.4", "1.76.0"),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {

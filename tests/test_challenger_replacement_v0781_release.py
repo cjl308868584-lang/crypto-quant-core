@@ -13,14 +13,14 @@ class V0781ReleaseTests(unittest.TestCase):
         manifest = json.loads((
             ROOT / "config/evaluator-build-manifest-v1.json"
         ).read_text())
-        self.assertEqual(crypto_quant.__version__, "0.78.3")
-        self.assertIn('version = "0.78.3"',
+        self.assertEqual(crypto_quant.__version__, "0.78.4")
+        self.assertIn('version = "0.78.4"',
                       (ROOT / "pyproject.toml").read_text())
-        self.assertIn('version="0.78.3"',
+        self.assertIn('version="0.78.4"',
                       (ROOT / "setup.py").read_text())
         self.assertEqual(
             (manifest["package_version"], manifest["manifest_version"]),
-            ("0.78.3", "1.75.0"),
+            ("0.78.4", "1.76.0"),
         )
 
     def test_release_inventory_contains_hardening_boundary(self):

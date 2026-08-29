@@ -36,9 +36,9 @@ _COMMANDS = (
     ("git", "remote", "get-url", "origin"),
     ("git", "rev-parse", "HEAD"),
     ("git", "rev-parse", "origin/main"),
-    ("git", "rev-parse", "v0.78.3^{}"),
-    ("git", "rev-parse", "v0.78.3"),
-    ("git", "cat-file", "-t", "v0.78.3"),
+    ("git", "rev-parse", "v0.78.4^{}"),
+    ("git", "rev-parse", "v0.78.4"),
+    ("git", "cat-file", "-t", "v0.78.4"),
     ("git", "status", "--porcelain=v1", "--untracked-files=all"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
@@ -63,6 +63,7 @@ def build_fixed_v3_activation_preflight(
     *, contract_binding, machine, release_replayed, paths_verified,
     power_safe, disk, clock, credential_count, commands, observed_at,
 ):
+    observed_at = observed_at.replace(microsecond=0)
     supported = machine == _MACHINE
     commands_valid = (
         tuple(tuple(item.get("argv", ())) for item in commands) == _COMMANDS
@@ -172,6 +173,34 @@ def _run_commands():
     return [_run(argv, _REPOSITORY) for argv in _COMMANDS]
 
 
+def _pmset_power_safe(data):
+    try:
+        sections = []
+        seen = set()
+        current = None
+        for line in data.decode("utf-8", "strict").splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if not line[:1].isspace():
+                if stripped not in {"AC Power:", "Battery Power:"} or stripped in seen:
+                    return False
+                seen.add(stripped)
+                current = []
+                sections.append(current)
+                continue
+            if current is None:
+                return False
+            fields = stripped.split()
+            if fields[:1] == ["sleep"]:
+                if len(fields) != 2 or fields[1] != "0":
+                    return False
+                current.append(0)
+        return bool(sections) and all(len(section) == 1 for section in sections)
+    except UnicodeError:
+        return False
+
+
 def _fixed_root_boundaries(contract):
     paths = contract["paths"]
     specifications = (
@@ -230,7 +259,7 @@ def _fixed_checks(contract, results):
             ))
             and results[7][0] != 0 and results[8][0] != 0
         )
-        power = results[9][0] == 0 and b" sleep 0" in results[9][1]
+        power = results[9][0] == 0 and _pmset_power_safe(results[9][1])
         return release, boundary, power
     except (IndexError, KeyError, OSError, TypeError, UnicodeError):
         return False, False, False

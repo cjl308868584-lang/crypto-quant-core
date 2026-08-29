@@ -14,8 +14,13 @@ Safety assertions before and after every step:
 
 ## Separately authorized ceremony
 
-1. Verify exact public `origin/main`, annotated `v0.78.3`, clean checkout,
-   package `0.78.3`, manifest `1.75.0` and successful release CI. Replay the six
+The immutable v0.78.3 failed preflight remains evidence and must not be
+deleted or overwritten. Before a new ceremony, the old loaded
+`local.crypto-quant.challenger-forward` service must be handled under its own
+explicit approval; this runbook does not authorize that action.
+
+1. Verify exact public `origin/main`, annotated `v0.78.4`, clean checkout,
+   package `0.78.4`, manifest `1.76.0` and successful release CI. Replay the six
    vendored wheel/native-file SHA-256 values and versions frozen by the manifest
    and `requirements.lock`; no dependency installation or user-site import is
    permitted during the ceremony.
