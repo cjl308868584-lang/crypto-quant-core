@@ -1,6 +1,7 @@
 import unittest
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from crypto_quant.canonical import business_hash, canonical_json
 from crypto_quant.challenger_replacement_accelerated_canary_plan import (
@@ -86,6 +87,12 @@ REAL_EVENT_FACTS = qualification_module._event_facts
 
 class ChallengerReplacementOperationalQualificationTests(unittest.TestCase):
     def setUp(self):
+        absent_runtime = patch(
+            "crypto_quant.challenger_replacement_v3_observer._runtime_entry",
+            return_value=None,
+        )
+        absent_runtime.start()
+        self.addCleanup(absent_runtime.stop)
         self.plan = build_challenger_replacement_accelerated_canary_plan()
         self.fault = run_challenger_replacement_fault_matrix(
             build_identity=BUILD, runtime_core_identity=CORE,

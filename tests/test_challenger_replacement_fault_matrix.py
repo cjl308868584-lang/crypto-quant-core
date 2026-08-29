@@ -46,6 +46,11 @@ BUILD = {
 
 class ChallengerReplacementFaultMatrixTests(unittest.TestCase):
     def setUp(self):
+        absent_runtime = patch.object(
+            observer_module, "_runtime_entry", return_value=None
+        )
+        absent_runtime.start()
+        self.addCleanup(absent_runtime.stop)
         self.receipt = run_challenger_replacement_fault_matrix(
             build_identity=BUILD, runtime_core_identity=CORE,
         )
