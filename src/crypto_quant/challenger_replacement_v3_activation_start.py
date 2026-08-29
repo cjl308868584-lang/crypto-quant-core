@@ -4,8 +4,8 @@ import hashlib
 from pathlib import Path
 
 from .canonical import canonical_json
-from .challenger_replacement_events import ChallengerReplacementEventRootIdentity
 from .challenger_replacement_install_trust import _publish_contract_exact
+from .challenger_replacement_filesystem_identity import _event_root_identity
 from .challenger_replacement_v3_activation_install import (
     _load_fixed_successful_install_receipt,
 )
@@ -59,9 +59,7 @@ def observe_fixed_v3_first_opportunity():
             "observation": observation,
         }
     event = contract["event_root"]
-    identity = ChallengerReplacementEventRootIdentity(
-        event["path"], event["device"], event["inode"], event["owner_uid"], "0700"
-    )
+    identity = _event_root_identity(event)
     try:
         receipt = build_challenger_replacement_v3_start_receipt(
             deployment=deployment, event_projection=observation.event_projection,

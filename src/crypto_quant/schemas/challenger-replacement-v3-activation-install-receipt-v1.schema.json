@@ -121,12 +121,12 @@
           "maximum": 67108864
         },
         "root_device": {
-          "type": "integer",
-          "minimum": 0
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
         },
         "root_inode": {
-          "type": "integer",
-          "minimum": 1
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
         }
       }
     },
@@ -148,12 +148,12 @@
           "minLength": 1
         },
         "device": {
-          "type": "integer",
-          "minimum": 0
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
         },
         "inode": {
-          "type": "integer",
-          "minimum": 1
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
         },
         "owner_uid": {
           "const": 501
@@ -182,14 +182,14 @@
       ],
       "properties": {
         "release_tag": {
-          "const": "v0.78.2"
+          "const": "v0.78.3"
         },
         "peeled_commit": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         },
         "manifest_version": {
-          "const": "1.74.0"
+          "const": "1.75.0"
         },
         "manifest_hash": {
           "type": "string",
@@ -227,12 +227,12 @@
           "minLength": 1
         },
         "device": {
-          "type": "integer",
-          "minimum": 0
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
         },
         "inode": {
-          "type": "integer",
-          "minimum": 1
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
         },
         "owner_uid": {
           "const": 501

@@ -284,11 +284,11 @@ class V075ReleaseMetadataTests(unittest.TestCase):
 
         self.assertRegex(
             (ROOT / "pyproject.toml").read_text(),
-            r'(?m)^version = "0\.78\.2"$',
+            r'(?m)^version = "0\.78\.3"$',
         )
         self.assertRegex(
             (ROOT / "setup.py").read_text(),
-            r'version="0\.78\.2"',
+            r'version="0\.78\.3"',
         )
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
@@ -299,7 +299,7 @@ class V075ReleaseMetadataTests(unittest.TestCase):
                 manifest["package_version"],
                 manifest["manifest_version"],
             ),
-            ("0.78.2", "0.78.2", "1.74.0"),
+            ("0.78.3", "0.78.3", "1.75.0"),
         )
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         self.assertEqual(set(manifest["file_hashes"]), expected)
@@ -329,8 +329,8 @@ class V075ReleaseMetadataTests(unittest.TestCase):
 
     def test_readme_reports_v076_and_keeps_v077_future(self):
         readme = (ROOT / "README.md").read_text()
-        self.assertIn("当前代码版本为 `0.78.2`", readme)
-        self.assertIn("实施追踪 v0.78.2", readme)
+        self.assertIn("当前代码版本为 `0.78.3`", readme)
+        self.assertIn("实施追踪 v0.78.3", readme)
         self.assertIn("v0.76", readme)
         self.assertIn("v0.77", readme)
         self.assertIn("CODE_COMPLETE_NOT_ACTIVATED", readme)

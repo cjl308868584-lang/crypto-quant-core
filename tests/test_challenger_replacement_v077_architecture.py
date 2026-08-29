@@ -44,6 +44,7 @@ RELEASE_METADATA = (
     "src/crypto_quant/build.py",
 )
 V078_ACTIVATION_CODE = {
+    "src/crypto_quant/challenger_replacement_filesystem_identity.py",
     "src/crypto_quant/challenger_replacement_install.py",
     "src/crypto_quant/challenger_replacement_install_preflight.py",
     "src/crypto_quant/challenger_replacement_install_trust.py",

@@ -152,6 +152,7 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
                         if (root / imported).is_file() and imported not in closure:
                             pending.append(imported)
         self.assertEqual(closure - _CORE_PATHS, {
+            "src/crypto_quant/challenger_replacement_filesystem_identity.py",
             "src/crypto_quant/challenger_replacement_binance_credential.py",
             "src/crypto_quant/challenger_replacement_binance_preflight.py",
             "src/crypto_quant/challenger_replacement_binance_private_contract.py",

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Mapping, Tuple
 
 from .canonical import canonical_json, utc_datetime
+from .challenger_replacement_filesystem_identity import _decode_filesystem_identity, _encode_filesystem_identity
 
 
 _MAX_CANONICAL_EVENT_BYTES = 4_194_304
@@ -199,8 +200,10 @@ def build_challenger_replacement_event(
             "payload_sha256": hashlib.sha256(payload_bytes).hexdigest(),
             "plan_hash": plan_hash,
             "build_identity_hash": build_identity_hash,
-            "event_root_device": event_root.device,
-            "event_root_inode": event_root.inode,
+            "event_root_device": _encode_filesystem_identity(
+                event_root.device, allow_zero=True),
+            "event_root_inode": _encode_filesystem_identity(
+                event_root.inode, allow_zero=False),
         }
         return _event_from_core(core)
     except ChallengerReplacementEventError:
@@ -231,12 +234,10 @@ def load_challenger_replacement_event_bytes(data):
             or not isinstance(parsed.get("sequence"), int)
             or parsed["sequence"] < 1
             or parsed["sequence"] > _MAX_CANONICAL_EVENT_SEQUENCE
-            or isinstance(parsed.get("event_root_device"), bool)
-            or not isinstance(parsed.get("event_root_device"), int)
-            or parsed["event_root_device"] < 0
-            or isinstance(parsed.get("event_root_inode"), bool)
-            or not isinstance(parsed.get("event_root_inode"), int)
-            or parsed["event_root_inode"] < 1
+            or _decode_filesystem_identity(
+                parsed.get("event_root_device"), allow_zero=True) < 0
+            or _decode_filesystem_identity(
+                parsed.get("event_root_inode"), allow_zero=False) < 1
             or any(
                 not isinstance(parsed.get(key), str) or not parsed[key]
                 for key in ("event_type", "slot_id", "worker_id", "recorded_at")
@@ -719,8 +720,10 @@ def replay_challenger_replacement_events(root):
             )
         decoded = json.loads(event.final_bytes.decode("utf-8"))
         if (
-            decoded["event_root_device"] != root.device
-            or decoded["event_root_inode"] != root.inode
+            _decode_filesystem_identity(
+                decoded["event_root_device"], allow_zero=True) != root.device
+            or _decode_filesystem_identity(
+                decoded["event_root_inode"], allow_zero=False) != root.inode
         ):
             raise ChallengerReplacementEventError(
                 "CHALLENGER_REPLACEMENT_EVENT_CONTINUITY_GAP"

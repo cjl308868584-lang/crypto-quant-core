@@ -152,6 +152,24 @@ class PublicEventSafetyContractTests(unittest.TestCase):
         finally:
             root.close()
 
+    def test_event_bytes_encode_large_root_identity_as_decimal_strings(self):
+        large = 2**60 + 123
+        with open_challenger_replacement_event_root(
+            self.workspace.identity()
+        ) as root, patch.object(root, "device", large + 1), patch.object(
+            root, "inode", large + 2
+        ):
+            event = fixture_event(root)
+            decoded = json.loads(event.final_bytes)
+            self.assertEqual(decoded["event_root_device"], str(large + 1))
+            self.assertEqual(decoded["event_root_inode"], str(large + 2))
+            self.assertEqual(
+                events_module.load_challenger_replacement_event_bytes(
+                    event.final_bytes
+                ),
+                event,
+            )
+
     def test_replaced_event_root_never_receives_a_write(self):
         identity = self.workspace.identity()
         displaced = self.workspace.base / "retained-events"
@@ -432,8 +450,8 @@ class CanonicalEventTests(unittest.TestCase):
             "payload_sha256": hashlib.sha256(payload).hexdigest(),
             "plan_hash": _PLAN_HASH,
             "build_identity_hash": _BUILD_HASH,
-            "event_root_device": self.root.device,
-            "event_root_inode": self.root.inode,
+            "event_root_device": str(self.root.device),
+            "event_root_inode": str(self.root.inode),
         }
         expected_hash = hashlib.sha256(
             b"CHALLENGER_REPLACEMENT_EVENT_V1\x00"
@@ -481,7 +499,7 @@ class CanonicalEventTests(unittest.TestCase):
         mutations = (
             {**parsed, "payload_bytes_base64": base64.b64encode(b"changed").decode()},
             {**parsed, "event_hash": "f" * 64},
-            {**parsed, "event_root_inode": self.root.inode + 1},
+            {**parsed, "event_root_inode": str(self.root.inode + 1)},
             {**parsed, "sequence": 2},
         )
         for mutation in mutations:

@@ -8,7 +8,7 @@ import crypto_quant
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class V0782ReleaseTests(unittest.TestCase):
+class V0783ReleaseTests(unittest.TestCase):
     def test_patch_version_and_manifest_are_exact(self):
         manifest = json.loads((
             ROOT / "config/evaluator-build-manifest-v1.json"
@@ -23,24 +23,24 @@ class V0782ReleaseTests(unittest.TestCase):
             ("0.78.3", "1.75.0"),
         )
 
-    def test_release_inventory_contains_activation_rebind(self):
+    def test_release_inventory_contains_filesystem_identity_hotfix(self):
         manifest = json.loads((
             ROOT / "config/evaluator-build-manifest-v1.json"
         ).read_text())
         required = {
-            "docs/adr/0080-v0782-activation-release-rebind.md",
-            "docs/implementation-status-v0.78.2.md",
-            "tests/test_challenger_replacement_v0782_release.py",
+            "docs/adr/0081-v0783-filesystem-identity-hotfix.md",
+            "docs/implementation-status-v0.78.3.md",
+            "tests/test_challenger_replacement_v0783_release.py",
         }
         self.assertTrue(required <= set(manifest["file_hashes"]))
 
-    def test_status_records_preinstall_discovery_and_zero_authority(self):
+    def test_status_preserves_zero_authority_and_records_renderer_failure(self):
         text = (
-            ROOT / "docs/implementation-status-v0.78.2.md"
+            ROOT / "docs/implementation-status-v0.78.3.md"
         ).read_text()
         for claim in (
-            "V3_SIMULATION_ACTIVATION_RELEASE_REBOUND_NOT_INSTALLED",
-            "CHALLENGER_REPLACEMENT_V3_RELEASE_IDENTITY_INVALID",
+            "V3_SIMULATION_ACTIVATION_FILESYSTEM_IDENTITY_FIXED_NOT_INSTALLED",
+            "integer exceeds the exact JSON safe range",
             "production_activation=false",
             "no service installed or started",
             "no credential created or read",

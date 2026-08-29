@@ -18,9 +18,9 @@ COMMANDS = (
     ("git", "remote", "get-url", "origin"),
     ("git", "rev-parse", "HEAD"),
     ("git", "rev-parse", "origin/main"),
-    ("git", "rev-parse", "v0.78.2^{}"),
-    ("git", "rev-parse", "v0.78.2"),
-    ("git", "cat-file", "-t", "v0.78.2"),
+    ("git", "rev-parse", "v0.78.3^{}"),
+    ("git", "rev-parse", "v0.78.3"),
+    ("git", "cat-file", "-t", "v0.78.3"),
     ("git", "status", "--porcelain=v1", "--untracked-files=all"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
@@ -61,9 +61,9 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
 
         contract = {
             "paths": {"runtime_root": "/runtime", "event_root": "/events"},
-            "snapshot": {"root": "/snapshot", "root_device": 2,
-                         "root_inode": 20},
-            "event_root": {"device": 3, "inode": 30},
+            "snapshot": {"root": "/snapshot", "root_device": "2",
+                         "root_inode": "20"},
+            "event_root": {"device": "3", "inode": "30"},
         }
         opened = [
             SimpleNamespace(st_dev=1, st_ino=10),
@@ -89,6 +89,32 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
              ), patch.object(module, "_close_descriptor"):
             self.assertFalse(module._fixed_root_boundaries(contract))
 
+    def test_root_boundary_compares_large_decimal_identity_to_os_stat(self):
+        from crypto_quant import challenger_replacement_v3_activation_preflight as module
+
+        large = 2**60 + 123
+        contract = {
+            "paths": {"runtime_root": "/runtime", "event_root": "/events"},
+            "snapshot": {
+                "root": "/snapshot", "root_device": str(large + 1),
+                "root_inode": str(large + 2),
+            },
+            "event_root": {
+                "device": str(large + 3), "inode": str(large + 4),
+            },
+        }
+        opened = [
+            SimpleNamespace(st_dev=1, st_ino=2),
+            SimpleNamespace(st_dev=large + 1, st_ino=large + 2),
+            SimpleNamespace(st_dev=large + 3, st_ino=large + 4),
+        ]
+        with patch.object(module, "_open_directory", side_effect=[
+            (11, opened[0]), (12, opened[1]), (13, opened[2]),
+        ]), patch.object(module.os, "listdir", return_value=[]), \
+             patch.object(module, "_validate_directory_attachment"), \
+             patch.object(module, "_close_descriptor"):
+            self.assertTrue(module._fixed_root_boundaries(contract))
+
     def test_fixed_checks_require_present_trusted_runtime_snapshot_and_event_roots(self):
         from crypto_quant import challenger_replacement_v3_activation_preflight as module
 
@@ -100,9 +126,9 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
         contract = {
             "release": {"peeled_commit": "a" * 40, "tag_object": "b" * 40},
             "paths": paths,
-            "snapshot": {"root": "/fixed/snapshot", "root_device": 7,
-                         "root_inode": 8},
-            "event_root": {"device": 9, "inode": 10},
+            "snapshot": {"root": "/fixed/snapshot", "root_device": "7",
+                         "root_inode": "8"},
+            "event_root": {"device": "9", "inode": "10"},
         }
         results = [
             (0, b"https://github.com/cjl308868584-lang/crypto-quant-core.git\n", b""),

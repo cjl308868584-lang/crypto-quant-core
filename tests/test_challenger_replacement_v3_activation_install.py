@@ -17,12 +17,12 @@ def inputs():
     contract = {
         "contract_id": "challenger_replacement_v3_install_contract_" + "a" * 64,
         "contract_hash": "b" * 64,
-        "release": {"tag": "v0.78.2", "peeled_commit": "c" * 40,
-                    "manifest_version": "1.74.0", "manifest_hash": "d" * 64},
+        "release": {"tag": "v0.78.3", "peeled_commit": "c" * 40,
+                    "manifest_version": "1.75.0", "manifest_hash": "d" * 64},
         "snapshot": {"root": "/fixed/snapshot", "tree_hash": "e" * 64,
-                     "root_device": 1, "root_inode": 2,
+                     "root_device": "1", "root_inode": "2",
                      "file_count": 10, "total_size_bytes": 1000},
-        "event_root": {"path": "/fixed/events", "device": 3, "inode": 4,
+        "event_root": {"path": "/fixed/events", "device": "3", "inode": "4",
                        "owner_uid": 501, "mode": 448,
                        "initial_event_count": 0,
                        "initial_orphan_staging_count": 0},
@@ -46,6 +46,40 @@ def inputs():
 
 
 class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
+    def test_revalidate_compares_large_decimal_identities_to_os_stat(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        large = 2**60 + 123
+        fixed = inputs()
+        fixed["contract"]["snapshot"].update({
+            "root_device": str(large + 1), "root_inode": str(large + 2),
+        })
+        fixed["contract"]["event_root"].update({
+            "device": str(large + 3), "inode": str(large + 4),
+        })
+        fixed["contract"]["python"] = {
+            "path": "/usr/bin/python3", "device": str(large + 5),
+            "inode": str(large + 6), "owner_uid": 0, "mode": 365,
+            "link_count": 1, "size_bytes": 100, "sha256": "a" * 64,
+            "sys_version": "3.9", "import_stdout_sha256": "b" * 64,
+            "import_stderr_sha256": "c" * 64,
+        }
+        observed_event = dict(fixed["contract"]["event_root"])
+        observed_event.update({"device": large + 3, "inode": large + 4})
+        observed_python = dict(fixed["contract"]["python"])
+        observed_python.update({"device": large + 5, "inode": large + 6})
+        record = {"device": 1, "inode": 2}
+        with patch.object(
+            module, "_load_fixed_install_inputs", return_value=fixed,
+        ), patch.object(
+            module, "_publish_plist", return_value=("ALREADY_PUBLISHED", record),
+        ), patch.object(
+            module, "_fixed_empty_event_root_identity", return_value=observed_event,
+        ), patch.object(
+            module, "_fixed_python_identity", return_value=observed_python,
+        ):
+            module._revalidate(fixed, record)
+
     def test_current_preflight_ignores_expired_success_and_selects_new_success(self):
         from crypto_quant import challenger_replacement_v3_activation_install as module
 
@@ -192,6 +226,35 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
         schema = json.loads((ROOT / "src/crypto_quant/schemas/"
             "challenger-replacement-v3-activation-install-receipt-v1.schema.json").read_text())
         self.assertEqual(list(Draft202012Validator(schema).iter_errors(receipt)), [])
+        self.assertEqual(module.load_fixed_v3_activation_install_receipt_bytes(
+            body, contract=source["contract"], contract_bytes=b"contract",
+            preflight=source["preflight"], preflight_bytes=b"preflight",
+        ), receipt)
+
+    def test_receipt_encodes_large_plist_identity_as_decimal_strings(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        source = inputs()
+        large = 2**60 + 123
+        record = {
+            "path": "/fixed/agent.plist", "device": large + 1,
+            "inode": large + 2, "owner_uid": 501, "mode": 384,
+            "link_count": 1, "size_bytes": 5,
+            "sha256": hashlib.sha256(b"plist").hexdigest(),
+        }
+        commands = [
+            module._transcript(("/bin/launchctl", "print", source["contract"]["service"]["identity"]), (113, b"", b"")),
+            module._transcript(("/bin/launchctl", "bootstrap", "gui/501", "/fixed/agent.plist"), (0, b"", b"")),
+            module._transcript(("/bin/launchctl", "print", source["contract"]["service"]["identity"]), (0, b"ok", b"")),
+        ]
+        receipt = module.build_fixed_v3_activation_install_receipt(
+            **source, installed_at=NOW, plist_record=record, commands=commands,
+            status="INSTALLED_WAITING_FOR_FIRST_NATURAL_OPPORTUNITY",
+            reason_codes=[],
+        )
+        self.assertEqual(receipt["plist"]["device"], str(large + 1))
+        self.assertEqual(receipt["plist"]["inode"], str(large + 2))
+        body = canonical_json(receipt).encode()
         self.assertEqual(module.load_fixed_v3_activation_install_receipt_bytes(
             body, contract=source["contract"], contract_bytes=b"contract",
             preflight=source["preflight"], preflight_bytes=b"preflight",

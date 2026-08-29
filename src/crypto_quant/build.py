@@ -626,6 +626,12 @@ _V0782_RELEASE_PATHS = (
     "tests/test_challenger_replacement_v0782_release.py",
 )
 
+_V0783_RELEASE_PATHS = (
+    "docs/adr/0081-v0783-filesystem-identity-hotfix.md",
+    "docs/implementation-status-v0.78.3.md",
+    "tests/test_challenger_replacement_v0783_release.py",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -674,6 +680,7 @@ class EvaluatorBuild:
                     + list(_V078_RELEASE_PATHS)
                     + list(_V0781_RELEASE_PATHS)
                     + list(_V0782_RELEASE_PATHS)
+                    + list(_V0783_RELEASE_PATHS)
                 )
             )
         )

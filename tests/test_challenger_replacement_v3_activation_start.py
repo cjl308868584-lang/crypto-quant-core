@@ -6,9 +6,11 @@ from unittest.mock import patch
 
 class ChallengerReplacementV3ActivationStartTests(unittest.TestCase):
     def install(self):
+        large = 2**60 + 123
         contract = {
             "deployment": {"deployment_id": "dep", "deployment_hash": "a" * 64},
-            "event_root": {"path": "/fixed/events", "device": 1, "inode": 2,
+            "event_root": {"path": "/fixed/events",
+                           "device": str(large + 1), "inode": str(large + 2),
                            "owner_uid": 501},
             "paths": {"start_receipt_root": "/fixed/start"},
         }
@@ -55,6 +57,9 @@ class ChallengerReplacementV3ActivationStartTests(unittest.TestCase):
                          "challenger-replacement-v3-start-receipt-v1.json")
         self.assertEqual(build.call_args.kwargs["install_receipt_binding"],
                          receipt["install_receipt_binding"])
+        identity = build.call_args.kwargs["event_root_identity"]
+        self.assertEqual(identity.device, 2**60 + 124)
+        self.assertEqual(identity.inode, 2**60 + 125)
 
 
 if __name__ == "__main__":
