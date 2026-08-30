@@ -204,7 +204,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
                     trust.activation_paths()
             paths.assert_not_called()
 
-    def test_release_identity_binds_current_v0785_main_and_annotated_tag(self):
+    def test_release_identity_binds_current_v0786_main_and_annotated_tag(self):
         from crypto_quant import challenger_replacement_v3_activation_trust as trust
 
         with tempfile.TemporaryDirectory() as temporary:
