@@ -645,6 +645,12 @@ _V0785_RELEASE_PATHS = (
     "tests/test_challenger_replacement_v0785_release.py",
 )
 
+_V0786_RELEASE_PATHS = (
+    "docs/adr/0084-v0786-install-receipt-time-hotfix.md",
+    "docs/implementation-status-v0.78.6.md",
+    "tests/test_challenger_replacement_v0786_release.py",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -696,6 +702,7 @@ class EvaluatorBuild:
                     + list(_V0783_RELEASE_PATHS)
                     + list(_V0784_RELEASE_PATHS)
                     + list(_V0785_RELEASE_PATHS)
+                    + list(_V0786_RELEASE_PATHS)
                 )
             )
         )

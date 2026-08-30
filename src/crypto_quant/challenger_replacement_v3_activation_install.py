@@ -97,7 +97,7 @@ def build_fixed_v3_activation_install_receipt(
     receipt = {
         "$schema": "./challenger-replacement-v3-activation-install-receipt-v1.schema.json",
         "schema_version": "1.0.0", "receipt_id": "", "receipt_hash": "0" * 64,
-        "status": status, "installed_at": utc_datetime(installed_at),
+        "status": status, "installed_at": utc_datetime(installed_at.replace(microsecond=0)),
         "contract_binding": _binding(contract, contract_bytes, "contract"),
         "preflight_binding": _binding(preflight, preflight_bytes, "receipt"),
         "snapshot_binding": copy.deepcopy(dict(contract["snapshot"])),
@@ -295,7 +295,7 @@ def _revalidate(inputs, record):
             "CHALLENGER_REPLACEMENT_V3_INSTALL_EVENT_ROOT_CHANGED"
         )
     observed_python = _fixed_python_identity(
-        contract["snapshot"]["root"], package_version="0.78.5",
+        contract["snapshot"]["root"], package_version="0.78.6",
         dependency_modules=_DEPENDENCIES,
         dependency_versions=_DEPENDENCY_VERSIONS,
         python_paths=_snapshot_python_paths(contract["snapshot"]["root"]),

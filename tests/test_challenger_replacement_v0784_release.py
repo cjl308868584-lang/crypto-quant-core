@@ -13,14 +13,14 @@ class V0784ReleaseTests(unittest.TestCase):
         manifest = json.loads((
             ROOT / "config/evaluator-build-manifest-v1.json"
         ).read_text())
-        self.assertEqual(crypto_quant.__version__, "0.78.5")
-        self.assertIn('version = "0.78.5"',
+        self.assertEqual(crypto_quant.__version__, "0.78.6")
+        self.assertIn('version = "0.78.6"',
                       (ROOT / "pyproject.toml").read_text())
-        self.assertIn('version="0.78.5"',
+        self.assertIn('version="0.78.6"',
                       (ROOT / "setup.py").read_text())
         self.assertEqual(
             (manifest["package_version"], manifest["manifest_version"]),
-            ("0.78.5", "1.77.0"),
+            ("0.78.6", "1.78.0"),
         )
         trust = (
             ROOT / "src/crypto_quant/"
@@ -30,9 +30,9 @@ class V0784ReleaseTests(unittest.TestCase):
             ROOT / "src/crypto_quant/"
             "challenger_replacement_v3_activation_preflight.py"
         ).read_text()
-        self.assertIn('"tag": "v0.78.5"', trust)
-        self.assertIn('manifest["manifest_version"] != "1.77.0"', trust)
-        self.assertIn('"git", "rev-parse", "v0.78.5^{}"', preflight)
+        self.assertIn('"tag": "v0.78.6"', trust)
+        self.assertIn('manifest["manifest_version"] != "1.78.0"', trust)
+        self.assertIn('"git", "rev-parse", "v0.78.6^{}"', preflight)
 
     def test_release_inventory_contains_only_bounded_hotfix_evidence(self):
         manifest = json.loads((

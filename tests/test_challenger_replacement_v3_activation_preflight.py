@@ -18,9 +18,9 @@ COMMANDS = (
     ("git", "remote", "get-url", "origin"),
     ("git", "rev-parse", "HEAD"),
     ("git", "rev-parse", "origin/main"),
-    ("git", "rev-parse", "v0.78.5^{}"),
-    ("git", "rev-parse", "v0.78.5"),
-    ("git", "cat-file", "-t", "v0.78.5"),
+    ("git", "rev-parse", "v0.78.6^{}"),
+    ("git", "rev-parse", "v0.78.6"),
+    ("git", "cat-file", "-t", "v0.78.6"),
     ("git", "status", "--porcelain=v1", "--untracked-files=all"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
@@ -60,7 +60,7 @@ class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
         from crypto_quant import challenger_replacement_v3_activation_preflight as module
 
         receipt = {"receipt_id": "receipt"}
-        scoped = "/fixed/deployment/preflight-receipts-v0.78.5"
+        scoped = "/fixed/deployment/preflight-receipts-v0.78.6"
         with patch.object(module, "collect_fixed_v3_activation_preflight", return_value=receipt), \
                 patch.object(module, "activation_paths", return_value={
                     "preflight_root": scoped,

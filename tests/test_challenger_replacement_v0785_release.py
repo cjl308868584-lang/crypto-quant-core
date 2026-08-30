@@ -16,27 +16,27 @@ class V0785ReleaseTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "config/evaluator-build-manifest-v1.json").read_text()
         )
-        self.assertEqual(crypto_quant.__version__, "0.78.5")
-        self.assertIn('version = "0.78.5"', (ROOT / "pyproject.toml").read_text())
-        self.assertIn('version="0.78.5"', (ROOT / "setup.py").read_text())
+        self.assertEqual(crypto_quant.__version__, "0.78.6")
+        self.assertIn('version = "0.78.6"', (ROOT / "pyproject.toml").read_text())
+        self.assertIn('version="0.78.6"', (ROOT / "setup.py").read_text())
         self.assertEqual(
             (manifest["package_version"], manifest["manifest_version"]),
-            ("0.78.5", "1.77.0"),
+            ("0.78.6", "1.78.0"),
         )
         paths = activation_paths()
         self.assertTrue(
             paths["contract"].endswith(
-                "challenger-replacement-v3-install-contract-v0.78.5.json"
+                "challenger-replacement-v3-install-contract-v0.78.6.json"
             )
         )
         self.assertTrue(
             paths["candidate_plist"].endswith(
-                "local.crypto-quant.challenger-replacement-v1-v0.78.5.plist"
+                "local.crypto-quant.challenger-replacement-v1-v0.78.6.plist"
             )
         )
-        self.assertTrue(paths["preflight_root"].endswith("preflight-receipts-v0.78.5"))
+        self.assertTrue(paths["preflight_root"].endswith("preflight-receipts-v0.78.6"))
         self.assertTrue(
-            paths["install_receipt_root"].endswith("install-receipts-v0.78.5")
+            paths["install_receipt_root"].endswith("install-receipts-v0.78.6")
         )
         for relative in (
             "src/crypto_quant/schemas/challenger-replacement-v3-install-contract-v1.schema.json",
@@ -45,8 +45,8 @@ class V0785ReleaseTests(unittest.TestCase):
             "config/challenger-replacement-v3-activation-install-receipt-v1.schema.json",
         ):
             text = (ROOT / relative).read_text()
-            self.assertIn('"v0.78.5"', text)
-            self.assertIn('"1.77.0"', text)
+            self.assertIn('"v0.78.6"', text)
+            self.assertIn('"1.78.0"', text)
 
     def test_release_documents_preserve_evidence_and_inventory(self):
         manifest = json.loads(
