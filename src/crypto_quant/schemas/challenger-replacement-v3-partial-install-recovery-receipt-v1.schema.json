@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "transcript": {
+      "type": "object", "additionalProperties": false,
+      "required": ["argv", "exit_code", "stdout_sha256", "stderr_sha256"],
+      "properties": {
+        "argv": {"type": "array", "minItems": 3, "maxItems": 4, "items": {"type": "string", "minLength": 1}},
+        "exit_code": {"type": "integer", "minimum": 0, "maximum": 255},
+        "stdout_sha256": {"$ref": "#/$defs/hash"},
+        "stderr_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "preserved_hashes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["target_plist", "predecessor_plist", "install_contract", "candidate_plist", "failed_install_receipt", "preflight_receipt"],
+      "properties": {
+        "target_plist": {"$ref": "#/$defs/hash"},
+        "predecessor_plist": {"$ref": "#/$defs/hash"},
+        "install_contract": {"$ref": "#/$defs/hash"},
+        "candidate_plist": {"$ref": "#/$defs/hash"},
+        "failed_install_receipt": {"$ref": "#/$defs/hash"},
+        "preflight_receipt": {"$ref": "#/$defs/hash"}
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "receipt_id", "receipt_hash", "status", "observed_at", "plan_binding", "incident_binding", "candidate_binding", "observation", "supersession", "authority", "reason_codes"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-v3-partial-install-recovery-receipt-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "receipt_id": {"type": "string", "pattern": "^challenger_replacement_v3_partial_install_recovery_[0-9a-f]{64}$"},
+    "receipt_hash": {"$ref": "#/$defs/hash"},
+    "status": {"const": "PARTIAL_INSTALL_RECOVERY_ELIGIBLE_NOT_EXECUTED"},
+    "observed_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.000Z$"},
+    "plan_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["plan_id", "plan_hash", "file_sha256"],
+      "properties": {
+        "plan_id": {"type": "string", "pattern": "^challenger_replacement_v3_partial_install_recovery_plan_[0-9a-f]{64}$"},
+        "plan_hash": {"$ref": "#/$defs/hash"},
+        "file_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "incident_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_tag", "failed_install_receipt_id", "preflight_receipt_id", "preserved_file_sha256", "snapshot_tree_hash"],
+      "properties": {
+        "release_tag": {"const": "v0.78.5"},
+        "failed_install_receipt_id": {"type": "string", "pattern": "^challenger_replacement_v3_activation_install_[0-9a-f]{64}$"},
+        "preflight_receipt_id": {"type": "string", "pattern": "^challenger_replacement_v3_activation_preflight_[0-9a-f]{64}$"},
+        "preserved_file_sha256": {"$ref": "#/$defs/preserved_hashes"},
+        "snapshot_tree_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "candidate_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_id", "contract_hash", "file_sha256", "release", "candidate_plist_sha256", "target_plist"],
+      "properties": {
+        "contract_id": {"type": "string", "pattern": "^challenger_replacement_v3_install_contract_[0-9a-f]{64}$"},
+        "contract_hash": {"$ref": "#/$defs/hash"},
+        "file_sha256": {"$ref": "#/$defs/hash"},
+        "candidate_plist_sha256": {"$ref": "#/$defs/hash"},
+        "target_plist": {"const": "/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-replacement-v1-v0.78.7.plist"},
+        "release": {
+          "type": "object", "additionalProperties": false,
+          "required": ["tag", "peeled_commit", "tag_object", "manifest_version", "manifest_hash", "manifest_file_sha256"],
+          "properties": {
+            "tag": {"const": "v0.78.7"},
+            "peeled_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "tag_object": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "manifest_version": {"const": "1.79.0"},
+            "manifest_hash": {"$ref": "#/$defs/hash"},
+            "manifest_file_sha256": {"$ref": "#/$defs/hash"}
+          }
+        }
+      }
+    },
+    "observation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["service_state", "automation_status", "event_count", "start_receipt_count", "log_file_count", "preserved_file_sha256", "transcripts"],
+      "properties": {
+        "service_state": {"const": "DISABLED_AND_NOT_LOADED"},
+        "automation_status": {"const": "PAUSED"},
+        "event_count": {"const": 0},
+        "start_receipt_count": {"const": 0},
+        "log_file_count": {"const": 0},
+        "preserved_file_sha256": {"$ref": "#/$defs/preserved_hashes"},
+        "transcripts": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/transcript"}}
+      }
+    },
+    "supersession": {
+      "type": "object", "additionalProperties": false,
+      "required": ["from_failed_install_receipt_id", "to_contract_id", "new_target_plist", "relationship"],
+      "properties": {
+        "from_failed_install_receipt_id": {"type": "string", "pattern": "^challenger_replacement_v3_activation_install_[0-9a-f]{64}$"},
+        "to_contract_id": {"type": "string", "pattern": "^challenger_replacement_v3_install_contract_[0-9a-f]{64}$"},
+        "new_target_plist": {"const": "/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-replacement-v1-v0.78.7.plist"},
+        "relationship": {"const": "SUPERSEDES_FAILED_INSTALL_WITHOUT_MUTATING_HISTORY"}
+      }
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["filesystem_observation_count", "launchctl_read_count", "launchctl_mutation_count", "runtime_invocation_count", "state_write_count", "credential_count", "account_request_count", "broker_request_count", "order_count", "fund_movement_count"],
+      "properties": {
+        "filesystem_observation_count": {"const": 11},
+        "launchctl_read_count": {"const": 3},
+        "launchctl_mutation_count": {"const": 0},
+        "runtime_invocation_count": {"const": 0},
+        "state_write_count": {"const": 0},
+        "credential_count": {"const": 0},
+        "account_request_count": {"const": 0},
+        "broker_request_count": {"const": 0},
+        "order_count": {"const": 0},
+        "fund_movement_count": {"const": 0}
+      }
+    },
+    "reason_codes": {"type": "array", "maxItems": 0}
+  }
+}

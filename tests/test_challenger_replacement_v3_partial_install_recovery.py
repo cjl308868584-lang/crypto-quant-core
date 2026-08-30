@@ -3,10 +3,12 @@ import hashlib
 import json
 import multiprocessing
 import os
+import io
 from pathlib import Path
 import stat
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from crypto_quant.canonical import canonical_json
@@ -489,6 +491,267 @@ class PartialInstallRecoveryEvidenceTests(unittest.TestCase):
         ):
             self._verify()
         self.assertEqual(_sentinel(target), before)
+
+
+class PartialInstallRecoveryReceiptTests(unittest.TestCase):
+    def setUp(self):
+        from crypto_quant import challenger_replacement_v3_partial_install_recovery as module
+
+        self.module = module
+        self.workspace = EventWorkspace()
+        self.plan, self.files, self.automation = _fixture_plan(
+            module, self.workspace
+        )
+        self.plan["candidate"]["target_plist"] = (
+            "/Users/chenm4/Library/LaunchAgents/"
+            "local.crypto-quant.challenger-replacement-v1-v0.78.7.plist"
+        )
+        self.plan_bytes = canonical_json(self.plan).encode("utf-8")
+        self.observation = {
+            "service_state": "DISABLED_AND_NOT_LOADED",
+            "automation_status": "PAUSED",
+            "event_count": 0,
+            "start_receipt_count": 0,
+            "log_file_count": 0,
+            "preserved_file_sha256": {
+                name: record["sha256"]
+                for name, record in self.plan["preserved_files"].items()
+            },
+            "transcripts": [
+                {
+                    "argv": ["/bin/launchctl", "print-disabled", "gui/501"],
+                    "exit_code": 0,
+                    "stdout_sha256": "1" * 64,
+                    "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+                },
+                {
+                    "argv": [
+                        "/bin/launchctl", "print",
+                        "gui/501/local.crypto-quant.challenger-forward",
+                    ],
+                    "exit_code": 113,
+                    "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+                    "stderr_sha256": "2" * 64,
+                },
+                {
+                    "argv": [
+                        "/bin/launchctl", "print",
+                        "gui/501/local.crypto-quant.challenger-replacement-v1",
+                    ],
+                    "exit_code": 113,
+                    "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+                    "stderr_sha256": "3" * 64,
+                },
+            ],
+        }
+        self.candidate_plist_bytes = b"new-v0.78.7-plist"
+        self.contract = {
+            "contract_id": "challenger_replacement_v3_install_contract_" + "4" * 64,
+            "contract_hash": "5" * 64,
+            "release": {
+                "tag": "v0.78.7",
+                "peeled_commit": "6" * 40,
+                "tag_object": "7" * 40,
+                "manifest_version": "1.79.0",
+                "manifest_hash": "8" * 64,
+                "manifest_file_sha256": "9" * 64,
+            },
+            "paths": {
+                "target_plist": self.plan["candidate"]["target_plist"],
+                "recovery_receipt_root": self.plan["candidate"][
+                    "recovery_receipt_root"
+                ],
+            },
+            "plist": {
+                "file_sha256": hashlib.sha256(self.candidate_plist_bytes).hexdigest()
+            },
+        }
+        self.contract_bytes = canonical_json(self.contract).encode("utf-8")
+        self.observed_at = datetime(
+            2026, 8, 31, 8, 15, 12, 345000, tzinfo=timezone.utc
+        )
+
+    def tearDown(self):
+        self.workspace.cleanup()
+
+    def _build(self):
+        return self.module.build_fixed_v3_partial_install_recovery_receipt(
+            plan=self.plan,
+            plan_bytes=self.plan_bytes,
+            observation=self.observation,
+            contract=self.contract,
+            contract_bytes=self.contract_bytes,
+            candidate_plist_bytes=self.candidate_plist_bytes,
+            observed_at=self.observed_at,
+        )
+
+    def test_receipt_is_canonical_self_hashed_and_deterministically_replayed(self):
+        receipt = self._build()
+        self.assertEqual(
+            receipt["status"], "PARTIAL_INSTALL_RECOVERY_ELIGIBLE_NOT_EXECUTED"
+        )
+        self.assertEqual(receipt["observed_at"], "2026-08-31T08:15:12.000Z")
+        self.assertEqual(
+            receipt["supersession"],
+            {
+                "from_failed_install_receipt_id": self.plan["incident"][
+                    "failed_install_receipt_id"
+                ],
+                "to_contract_id": self.contract["contract_id"],
+                "new_target_plist": self.plan["candidate"]["target_plist"],
+                "relationship": "SUPERSEDES_FAILED_INSTALL_WITHOUT_MUTATING_HISTORY",
+            },
+        )
+        self.assertEqual(receipt["authority"]["order_count"], 0)
+        self.assertEqual(receipt["authority"]["credential_count"], 0)
+        self.assertEqual(receipt["authority"]["launchctl_mutation_count"], 0)
+        body = canonical_json(receipt).encode("utf-8")
+        replayed = self.module.load_fixed_v3_partial_install_recovery_receipt_bytes(
+            body,
+            plan=self.plan,
+            plan_bytes=self.plan_bytes,
+            contract=self.contract,
+            contract_bytes=self.contract_bytes,
+            candidate_plist_bytes=self.candidate_plist_bytes,
+        )
+        self.assertEqual(replayed, receipt)
+
+    def test_receipt_loader_rejects_extra_key_and_changed_binding(self):
+        receipt = self._build()
+        cases = []
+        extra = copy.deepcopy(receipt)
+        extra["unexpected"] = True
+        cases.append(extra)
+        changed = copy.deepcopy(receipt)
+        changed["candidate_binding"]["contract_hash"] = "0" * 64
+        cases.append(changed)
+        for candidate in cases:
+            with self.subTest(candidate=candidate):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_RECEIPT_INVALID",
+                ):
+                    self.module.load_fixed_v3_partial_install_recovery_receipt_bytes(
+                        canonical_json(candidate).encode("utf-8"),
+                        plan=self.plan,
+                        plan_bytes=self.plan_bytes,
+                        contract=self.contract,
+                        contract_bytes=self.contract_bytes,
+                        candidate_plist_bytes=self.candidate_plist_bytes,
+                    )
+
+    def test_real_exact_publisher_is_idempotent_and_conflict_closed(self):
+        receipt_root = Path(self.plan["candidate"]["recovery_receipt_root"])
+        receipt_root.mkdir(mode=0o700)
+        receipt = self._build()
+        body = canonical_json(receipt).encode("utf-8")
+        with patch.object(
+            self.module,
+            "load_fixed_v3_partial_install_recovery_plan",
+            return_value=(self.plan, self.plan_bytes),
+        ), patch.object(
+            self.module,
+            "load_fixed_published_v3_install_contract",
+            return_value=(
+                self.contract,
+                self.contract_bytes,
+                self.candidate_plist_bytes,
+            ),
+        ), patch.object(
+            self.module,
+            "_verify_preserved_partial_install",
+            return_value=self.observation,
+        ), patch.object(self.module, "_now", return_value=self.observed_at):
+            first = self.module.publish_fixed_v3_partial_install_recovery_receipt()
+            second = self.module.publish_fixed_v3_partial_install_recovery_receipt()
+        self.assertEqual(first["publication_outcome"], "PUBLISHED")
+        self.assertEqual(second["publication_outcome"], "ALREADY_PUBLISHED")
+        final = receipt_root / (receipt["receipt_id"] + ".json")
+        self.assertEqual(final.read_bytes(), body)
+        final.unlink()
+        final.write_bytes(b"different")
+        os.chmod(final, 0o600)
+        before_conflict = _sentinel(final)
+        with patch.object(
+            self.module,
+            "load_fixed_v3_partial_install_recovery_plan",
+            return_value=(self.plan, self.plan_bytes),
+        ), patch.object(
+            self.module,
+            "load_fixed_published_v3_install_contract",
+            return_value=(
+                self.contract,
+                self.contract_bytes,
+                self.candidate_plist_bytes,
+            ),
+        ), patch.object(
+            self.module,
+            "_verify_preserved_partial_install",
+            return_value=self.observation,
+        ), patch.object(self.module, "_now", return_value=self.observed_at):
+            with self.assertRaisesRegex(
+                ValueError, "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_PUBLICATION_FAILED"
+            ):
+                self.module.publish_fixed_v3_partial_install_recovery_receipt()
+        self.assertEqual(final.read_bytes(), b"different")
+        self.assertEqual(_sentinel(final), before_conflict)
+
+    def test_orphan_staging_is_not_adopted_as_receipt(self):
+        receipt_root = Path(self.plan["candidate"]["recovery_receipt_root"])
+        receipt_root.mkdir(mode=0o700)
+        orphan = receipt_root / (".stage-contract-" + "a" * 64 + "-" + "b" * 32 + ".tmp")
+        orphan.write_bytes(b"partial")
+        os.chmod(orphan, 0o600)
+        before = _sentinel(orphan)
+        with patch.object(
+            self.module,
+            "load_fixed_v3_partial_install_recovery_plan",
+            return_value=(self.plan, self.plan_bytes),
+        ), patch.object(
+            self.module,
+            "load_fixed_published_v3_install_contract",
+            return_value=(
+                self.contract,
+                self.contract_bytes,
+                self.candidate_plist_bytes,
+            ),
+        ), patch.object(
+            self.module,
+            "_verify_preserved_partial_install",
+            return_value=self.observation,
+        ), patch.object(self.module, "_now", return_value=self.observed_at):
+            with self.assertRaisesRegex(
+                ValueError, "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_PUBLICATION_FAILED"
+            ):
+                self.module.publish_fixed_v3_partial_install_recovery_receipt()
+        self.assertEqual(_sentinel(orphan), before)
+
+
+class PartialInstallRecoveryCliTests(unittest.TestCase):
+    def test_cli_has_no_arguments_and_prints_only_canonical_result(self):
+        from crypto_quant import challenger_replacement_v3_partial_install_recovery_cli as cli
+
+        result = {
+            "publication_outcome": "PUBLISHED",
+            "receipt": {"receipt_id": "fixed"},
+        }
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch.object(
+            cli, "publish_fixed_v3_partial_install_recovery_receipt",
+            return_value=result,
+        ), patch.object(cli.sys, "stdout", stdout), patch.object(
+            cli.sys, "stderr", stderr
+        ):
+            self.assertEqual(cli.main([]), 0)
+        self.assertEqual(stdout.getvalue(), canonical_json(result) + "\n")
+        self.assertEqual(stderr.getvalue(), "")
+
+        with patch.object(
+            cli, "publish_fixed_v3_partial_install_recovery_receipt"
+        ) as publish:
+            self.assertEqual(cli.main(["--output", "/tmp/not-allowed"]), 2)
+        publish.assert_not_called()
 
 
 if __name__ == "__main__":

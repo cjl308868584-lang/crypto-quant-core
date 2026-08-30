@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import subprocess
+from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from .challenger_replacement_install_trust import (
     ReplacementInstallTrustError,
     _close_descriptor,
     _open_directory,
+    _publish_contract_exact,
     _read_exact,
     _read_published_exact,
     _read_snapshot_file,
@@ -26,6 +28,10 @@ from .challenger_replacement_install_trust import (
     _validate_directory_attachment,
 )
 from .evidence import artifact_self_hash
+from .challenger_replacement_v3_activation_trust import (
+    load_fixed_published_v3_install_contract,
+)
+from .canonical import utc_datetime
 
 
 _REPOSITORY = Path(__file__).resolve().parents[2]
@@ -532,3 +538,292 @@ def _verify_preserved_partial_install(plan):
         _raise_recovery(
             "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT", error
         )
+
+
+def _binding(value, body, prefix):
+    return {
+        prefix + "_id": value[prefix + "_id"],
+        prefix + "_hash": value[prefix + "_hash"],
+        "file_sha256": hashlib.sha256(body).hexdigest(),
+    }
+
+
+def _candidate_binding(contract, contract_bytes, candidate_plist_bytes):
+    return {
+        **_binding(contract, contract_bytes, "contract"),
+        "release": copy.deepcopy(contract["release"]),
+        "candidate_plist_sha256": hashlib.sha256(
+            candidate_plist_bytes
+        ).hexdigest(),
+        "target_plist": contract["paths"]["target_plist"],
+    }
+
+
+def _receipt_semantics(
+    receipt, *, plan, plan_bytes, contract, contract_bytes, candidate_plist_bytes
+):
+    try:
+        observation = receipt["observation"]
+        return (
+            receipt["status"]
+            == "PARTIAL_INSTALL_RECOVERY_ELIGIBLE_NOT_EXECUTED"
+            and receipt["plan_binding"] == _binding(plan, plan_bytes, "plan")
+            and receipt["candidate_binding"]
+            == _candidate_binding(contract, contract_bytes, candidate_plist_bytes)
+            and receipt["incident_binding"] == {
+                "release_tag": plan["incident"]["release_tag"],
+                "failed_install_receipt_id": plan["incident"][
+                    "failed_install_receipt_id"
+                ],
+                "preflight_receipt_id": plan["incident"]["preflight_receipt_id"],
+                "preserved_file_sha256": {
+                    name: record["sha256"]
+                    for name, record in plan["preserved_files"].items()
+                },
+                "snapshot_tree_hash": plan["snapshot"]["tree_hash"],
+            }
+            and receipt["supersession"] == {
+                "from_failed_install_receipt_id": plan["incident"][
+                    "failed_install_receipt_id"
+                ],
+                "to_contract_id": contract["contract_id"],
+                "new_target_plist": plan["candidate"]["target_plist"],
+                "relationship": "SUPERSEDES_FAILED_INSTALL_WITHOUT_MUTATING_HISTORY",
+            }
+            and contract["release"]["tag"] == plan["candidate"]["release_tag"]
+            and contract["paths"]["target_plist"]
+            == plan["candidate"]["target_plist"]
+            and contract["paths"]["recovery_receipt_root"]
+            == plan["candidate"]["recovery_receipt_root"]
+            and contract["plist"]["file_sha256"]
+            == hashlib.sha256(candidate_plist_bytes).hexdigest()
+            and observation["service_state"] == "DISABLED_AND_NOT_LOADED"
+            and observation["automation_status"] == "PAUSED"
+            and observation["event_count"] == 0
+            and observation["start_receipt_count"] == 0
+            and observation["log_file_count"] == 0
+            and observation["preserved_file_sha256"]
+            == receipt["incident_binding"]["preserved_file_sha256"]
+            and len(observation["transcripts"]) == 3
+            and receipt["authority"] == {
+                "filesystem_observation_count": (
+                    len(plan["preserved_files"])
+                    + len(plan["empty_directories"])
+                    + 1
+                ),
+                "launchctl_read_count": 3,
+                "launchctl_mutation_count": 0,
+                "runtime_invocation_count": 0,
+                "state_write_count": 0,
+                "credential_count": 0,
+                "account_request_count": 0,
+                "broker_request_count": 0,
+                "order_count": 0,
+                "fund_movement_count": 0,
+            }
+            and receipt["reason_codes"] == []
+        )
+    except (KeyError, TypeError):
+        return False
+
+
+def build_fixed_v3_partial_install_recovery_receipt(
+    *,
+    plan,
+    plan_bytes,
+    observation,
+    contract,
+    contract_bytes,
+    candidate_plist_bytes,
+    observed_at,
+):
+    receipt = {
+        "$schema": "./challenger-replacement-v3-partial-install-recovery-receipt-v1.schema.json",
+        "schema_version": "1.0.0",
+        "receipt_id": "challenger_replacement_v3_partial_install_recovery_"
+        + "0" * 64,
+        "receipt_hash": "0" * 64,
+        "status": "PARTIAL_INSTALL_RECOVERY_ELIGIBLE_NOT_EXECUTED",
+        "observed_at": utc_datetime(observed_at.replace(microsecond=0)),
+        "plan_binding": _binding(plan, plan_bytes, "plan"),
+        "incident_binding": {
+            "release_tag": plan["incident"]["release_tag"],
+            "failed_install_receipt_id": plan["incident"][
+                "failed_install_receipt_id"
+            ],
+            "preflight_receipt_id": plan["incident"]["preflight_receipt_id"],
+            "preserved_file_sha256": {
+                name: record["sha256"]
+                for name, record in plan["preserved_files"].items()
+            },
+            "snapshot_tree_hash": plan["snapshot"]["tree_hash"],
+        },
+        "candidate_binding": _candidate_binding(
+            contract, contract_bytes, candidate_plist_bytes
+        ),
+        "observation": copy.deepcopy(dict(observation)),
+        "supersession": {
+            "from_failed_install_receipt_id": plan["incident"][
+                "failed_install_receipt_id"
+            ],
+            "to_contract_id": contract["contract_id"],
+            "new_target_plist": plan["candidate"]["target_plist"],
+            "relationship": "SUPERSEDES_FAILED_INSTALL_WITHOUT_MUTATING_HISTORY",
+        },
+        "authority": {
+            "filesystem_observation_count": (
+                len(plan["preserved_files"])
+                + len(plan["empty_directories"])
+                + 1
+            ),
+            "launchctl_read_count": 3,
+            "launchctl_mutation_count": 0,
+            "runtime_invocation_count": 0,
+            "state_write_count": 0,
+            "credential_count": 0,
+            "account_request_count": 0,
+            "broker_request_count": 0,
+            "order_count": 0,
+            "fund_movement_count": 0,
+        },
+        "reason_codes": [],
+    }
+    identity = {
+        key: value for key, value in receipt.items()
+        if key not in ("receipt_id", "receipt_hash")
+    }
+    receipt["receipt_id"] = stable_id(
+        "challenger_replacement_v3_partial_install_recovery", identity
+    )
+    receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
+    if not _receipt_semantics(
+        receipt,
+        plan=plan,
+        plan_bytes=plan_bytes,
+        contract=contract,
+        contract_bytes=contract_bytes,
+        candidate_plist_bytes=candidate_plist_bytes,
+    ):
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_RECEIPT_INVALID"
+        )
+    return receipt
+
+
+def _receipt_schema():
+    return json.loads(
+        resources.files("crypto_quant").joinpath(
+            "schemas/challenger-replacement-v3-partial-install-recovery-receipt-v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+
+
+def load_fixed_v3_partial_install_recovery_receipt_bytes(
+    data,
+    *,
+    plan,
+    plan_bytes,
+    contract,
+    contract_bytes,
+    candidate_plist_bytes,
+):
+    try:
+        value = dict(_strict_json_bytes(data))
+        identity = {
+            key: item for key, item in value.items()
+            if key not in ("receipt_id", "receipt_hash")
+        }
+        if (
+            data != canonical_json(value).encode("utf-8")
+            or tuple(Draft202012Validator(_receipt_schema()).iter_errors(value))
+            or value["receipt_id"] != stable_id(
+                "challenger_replacement_v3_partial_install_recovery", identity
+            )
+            or value["receipt_hash"]
+            != artifact_self_hash(value, "receipt_hash")
+            or not _receipt_semantics(
+                value,
+                plan=plan,
+                plan_bytes=plan_bytes,
+                contract=contract,
+                contract_bytes=contract_bytes,
+                candidate_plist_bytes=candidate_plist_bytes,
+            )
+        ):
+            raise ValueError("receipt")
+        observed_at = datetime.fromisoformat(
+            value["observed_at"].replace("Z", "+00:00")
+        )
+        rebuilt = build_fixed_v3_partial_install_recovery_receipt(
+            plan=plan,
+            plan_bytes=plan_bytes,
+            observation=value["observation"],
+            contract=contract,
+            contract_bytes=contract_bytes,
+            candidate_plist_bytes=candidate_plist_bytes,
+            observed_at=observed_at,
+        )
+        if rebuilt != value:
+            raise ValueError("rebuild")
+        return copy.deepcopy(value)
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        if isinstance(error, ChallengerReplacementPartialInstallRecoveryError):
+            raise
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_RECEIPT_INVALID", error
+        )
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def publish_fixed_v3_partial_install_recovery_receipt():
+    plan, plan_bytes = load_fixed_v3_partial_install_recovery_plan()
+    try:
+        contract, contract_bytes, candidate_plist_bytes = (
+            load_fixed_published_v3_install_contract()
+        )
+    except BaseException as error:
+        if isinstance(error, ChallengerReplacementPartialInstallRecoveryError):
+            raise
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_CANDIDATE_INVALID", error
+        )
+    observation = _verify_preserved_partial_install(plan)
+    receipt = build_fixed_v3_partial_install_recovery_receipt(
+        plan=plan,
+        plan_bytes=plan_bytes,
+        observation=observation,
+        contract=contract,
+        contract_bytes=contract_bytes,
+        candidate_plist_bytes=candidate_plist_bytes,
+        observed_at=_now(),
+    )
+    body = canonical_json(receipt).encode("utf-8")
+    try:
+        outcome, _ = _publish_contract_exact(
+            Path(plan["candidate"]["recovery_receipt_root"]),
+            receipt["receipt_id"] + ".json",
+            body,
+        )
+    except BaseException as error:
+        if isinstance(error, ChallengerReplacementPartialInstallRecoveryError):
+            raise
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_PUBLICATION_FAILED", error
+        )
+    replayed = load_fixed_v3_partial_install_recovery_receipt_bytes(
+        body,
+        plan=plan,
+        plan_bytes=plan_bytes,
+        contract=contract,
+        contract_bytes=contract_bytes,
+        candidate_plist_bytes=candidate_plist_bytes,
+    )
+    after = _verify_preserved_partial_install(plan)
+    if after != observation:
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT"
+        )
+    return {"receipt": replayed, "publication_outcome": outcome}
