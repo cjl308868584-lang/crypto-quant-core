@@ -772,7 +772,7 @@
     "tests/test_challenger_replacement_v066_release.py": "006aa417301f88d1364bec0fc837f0cdfd13d0f5a4b51f2acc384becd03a0ad5",
     "tests/test_challenger_replacement_v067_release.py": "2e9a0a25af1e379a554c4d22f396884268c467dfabd22679f91d6803013e987a",
     "tests/test_challenger_replacement_v067_safety.py": "d681f3d32f928de3ce3d59d2262938a73ad8021f2571cd86f62fb08c02d7c467",
-    "tests/test_challenger_replacement_v068_release.py": "2a6304d3b0d2d7f44025c737600c85946db6ea36ec140b050c6dc27751eb4426",
+    "tests/test_challenger_replacement_v068_release.py": "13b5b7a35e96caa98f6db846e15518ce8f70c36888e2ef96364e4b6ba7dff658",
     "tests/test_challenger_replacement_v069_release.py": "e6f8030a96be0b3651c180f3e3f4240a6e42bed0229f987f15b11fefc4234799",
     "tests/test_challenger_replacement_v070_release.py": "ba6379628c48974de998987acf039a2a1aed8117564e3415239edbaf97b2888a",
     "tests/test_challenger_replacement_v071_artifacts.py": "b1418768d7be414b9db91d9ce3c923061f4d00fda75fb550cdd7f573b2765a3b",
@@ -847,7 +847,7 @@
     "vendor/challenger-replacement-v3/wheels/rpds_py-0.27.1-cp39-cp39-macosx_11_0_arm64.whl": "1fea2b1a922c47c51fd07d656324531adc787e415c8b116530a1d29c0516c62d",
     "vendor/challenger-replacement-v3/wheels/typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
   },
-  "build_input_tree_hash": "7677df3c6de63c49f3d3c125192f6003bd148c9f9184e1a3af68d615a9acecf5",
+  "build_input_tree_hash": "3d8fbe60d7676243fa0c3fc05f40b833e46aefea1b838aa074fa6927d52d6c55",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -855,5 +855,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "cbbe055170871dfec94ace324e18b811b315670541233bc5b712937c76432f3e"
+  "manifest_hash": "959899488393e7c6c1c8be00969a90107ca1e98e85570f77a15b16a9d2560cda"
 }
