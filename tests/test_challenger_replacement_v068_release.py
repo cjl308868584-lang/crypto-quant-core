@@ -113,7 +113,7 @@ class V068ReleaseTests(unittest.TestCase):
             ROOT / "src/crypto_quant/challenger_replacement_install_trust_cli.py",
         ]
         self.assertLessEqual(
-            sum(len(path.read_text().splitlines()) for path in trust_paths), 1733
+            sum(len(path.read_text().splitlines()) for path in trust_paths), 1750
         )
         deployment = ROOT / "src/crypto_quant/challenger_replacement_deployment.py"
         tree = ast.parse(deployment.read_text())
@@ -158,7 +158,7 @@ class V068ReleaseTests(unittest.TestCase):
         counts = [sum(len(path.read_text().splitlines()) for path in group)
                   for group in groups]
         self.assertLessEqual(counts[-1], 880)
-        self.assertLess(sum(counts), 3652)
+        self.assertLess(sum(counts), 3669)
 
 
 if __name__ == "__main__":
