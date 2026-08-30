@@ -102,7 +102,10 @@ def activation_paths():
     tag = _RELEASE.get("tag")
     if (
         not isinstance(tag, str)
-        or re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag) is None
+        or re.fullmatch(
+            r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)",
+            tag,
+        ) is None
     ):
         _invalid("CHALLENGER_REPLACEMENT_V3_ACTIVATION_RELEASE_TAG_INVALID")
     paths = dict(replacement_install_paths())

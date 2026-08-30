@@ -188,6 +188,22 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
                 trust.activation_paths()
         paths.assert_not_called()
 
+    def test_release_tag_rejects_leading_zero_numeric_components(self):
+        from crypto_quant import challenger_replacement_v3_activation_trust as trust
+
+        for tag in ("v01.2.3", "v1.02.3", "v1.2.03"):
+            with self.subTest(tag=tag), patch.object(trust, "_RELEASE", {
+                "tag": tag, "package_version": "0.78.5",
+            }), patch.object(trust, "replacement_install_paths", return_value={
+                "deployment_root": "/fixed/deployment", "runtime_root": "/fixed",
+            }) as paths:
+                with self.assertRaisesRegex(
+                    trust.ChallengerReplacementV3ActivationTrustError,
+                    "CHALLENGER_REPLACEMENT_V3_ACTIVATION_RELEASE_TAG_INVALID",
+                ):
+                    trust.activation_paths()
+            paths.assert_not_called()
+
     def test_release_identity_binds_current_v0784_main_and_annotated_tag(self):
         from crypto_quant import challenger_replacement_v3_activation_trust as trust
 
