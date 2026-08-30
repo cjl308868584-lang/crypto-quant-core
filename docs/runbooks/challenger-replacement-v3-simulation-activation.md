@@ -14,15 +14,16 @@ Safety assertions before and after every step:
 
 ## Separately authorized ceremony
 
-The immutable v0.78.3 failed preflight and its bound candidate files remain
-evidence and must not be deleted or overwritten. v0.78.5 uses only its
-release-scoped candidate paths; it does not migrate, rename or chmod old
-evidence. Before a new ceremony, the old loaded
+The immutable v0.78.3 failed preflight and its bound candidate files, together
+with the partial v0.78.5 installation evidence, remain evidence and must not be deleted
+or overwritten. v0.78.6 uses only its release-scoped candidate paths;
+it does not migrate, rename or chmod old evidence. Existing target-plist
+recovery requires a separately approved protocol. Before a new ceremony, the old loaded
 `local.crypto-quant.challenger-forward` service must be handled under its own
 explicit approval; this runbook does not authorize that action.
 
-1. Verify exact public `origin/main`, annotated `v0.78.5`, clean checkout,
-   package `0.78.5`, manifest `1.77.0` and successful release CI. Replay the six
+1. Verify exact public `origin/main`, annotated `v0.78.6`, clean checkout,
+   package `0.78.6`, manifest `1.78.0` and successful release CI. Replay the six
    vendored wheel/native-file SHA-256 values and versions frozen by the manifest
    and `requirements.lock`; no dependency installation or user-site import is
    permitted during the ceremony.

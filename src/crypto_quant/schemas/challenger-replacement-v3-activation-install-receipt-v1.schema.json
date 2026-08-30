@@ -182,14 +182,14 @@
       ],
       "properties": {
         "release_tag": {
-          "const": "v0.78.5"
+          "const": "v0.78.6"
         },
         "peeled_commit": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         },
         "manifest_version": {
-          "const": "1.77.0"
+          "const": "1.78.0"
         },
         "manifest_hash": {
           "type": "string",
