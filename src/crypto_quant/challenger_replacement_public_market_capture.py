@@ -48,6 +48,8 @@ _MAX_SAFE_INTEGER = 2**53 - 1
 _MAX_JSON_CONTAINER_DEPTH = 64
 _HASH_CHARS = frozenset("0123456789abcdef")
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_LEGACY_SCHEMA_VERSION = "2.0.0"
+_CURRENT_SCHEMA_VERSION = "2.1.0"
 _V067_BUILD = {
     "release_tag": "v0.67.0",
     "peeled_commit": "ca022edccdcbb2d28b1ea25002e5f19512795e3e",
@@ -166,7 +168,10 @@ def _decimal(value, *, positive=False):
 
 
 def _from_epoch_millis(value):
-    return _EPOCH + timedelta(milliseconds=value)
+    try:
+        return _EPOCH + timedelta(milliseconds=value)
+    except OverflowError:
+        _invalid("PUBLIC_MARKET_CAPTURE_TIME_INVALID")
 
 
 def _to_epoch_millis(value):
@@ -490,8 +495,21 @@ def _quote(payload, *, mark=False, scheduled=None, captured=None):
     return {"bid": bid_text, "ask": ask_text}
 
 
-def _funding(payload, scheduled):
+def _funding(payload, scheduled, *, schema_version):
+    """Normalize current Binance facts or replay the exact project legacy shape."""
+
     if not isinstance(payload, list) or len(payload) > 16:
+        _invalid("PUBLIC_MARKET_CAPTURE_FUNDING_INVALID")
+    if schema_version == _LEGACY_SCHEMA_VERSION:
+        expected_keys = {
+            "symbol", "fundingTime", "fundingRate", "markPrice",
+            "fundingRateType",
+        }
+    elif schema_version == _CURRENT_SCHEMA_VERSION:
+        expected_keys = {
+            "symbol", "fundingTime", "fundingRate", "markPrice", "rateType",
+        }
+    else:
         _invalid("PUBLIC_MARKET_CAPTURE_FUNDING_INVALID")
     result = []
     previous = None
@@ -499,12 +517,19 @@ def _funding(payload, scheduled):
     for item in payload:
         if (
             not isinstance(item, Mapping)
-            or set(item) != {
-                "symbol", "fundingTime", "fundingRate", "markPrice",
-                "fundingRateType",
-            }
+            or set(item) != expected_keys
             or item.get("symbol") != "ETHUSDT"
-            or item.get("fundingRateType") != "REGULAR"
+            or (
+                schema_version == _LEGACY_SCHEMA_VERSION
+                and item.get("fundingRateType") != "REGULAR"
+            )
+            or (
+                schema_version == _CURRENT_SCHEMA_VERSION
+                and (
+                    not isinstance(item.get("rateType"), str)
+                    or item.get("rateType") not in {"Regular", "Special"}
+                )
+            )
         ):
             _invalid("PUBLIC_MARKET_CAPTURE_FUNDING_INVALID")
         millis = item.get("fundingTime")
@@ -515,7 +540,12 @@ def _funding(payload, scheduled):
             _invalid("PUBLIC_MARKET_CAPTURE_FUNDING_INVALID")
         _, rate = _decimal(item.get("fundingRate"))
         _, mark = _decimal(item.get("markPrice"), positive=True)
-        result.append({"funding_time": utc_datetime(when), "rate": rate, "mark": mark})
+        normalized = {
+            "funding_time": utc_datetime(when), "rate": rate, "mark": mark,
+        }
+        if schema_version == _CURRENT_SCHEMA_VERSION:
+            normalized["rate_type"] = item["rateType"]
+        result.append(normalized)
         previous = when
     return result
 
@@ -529,7 +559,9 @@ def _expected_requests(scheduled):
     ), 1024 * 1024)]
 
 
-def _normalized_capture(live, payloads, *, scheduled, captured):
+def _normalized_capture(
+    live, payloads, *, scheduled, captured, schema_version,
+):
     spot_symbol = _one_symbol(payloads[0], perpetual=False)
     perpetual_symbol = _one_symbol(payloads[2], perpetual=True)
     return {
@@ -544,7 +576,9 @@ def _normalized_capture(live, payloads, *, scheduled, captured):
                 ),
             },
         },
-        "funding_records": _funding(payloads[5], scheduled),
+        "funding_records": _funding(
+            payloads[5], scheduled, schema_version=schema_version,
+        ),
         "simulation_rules": {
             "spot": _rules(spot_symbol, perpetual=False),
             "perpetual": _rules(perpetual_symbol, perpetual=True),
@@ -628,7 +662,8 @@ def load_challenger_replacement_public_market_capture_bytes(
         for index, entry in enumerate(document["requests"])
     ]
     normalized = _normalized_capture(
-        live, payloads, scheduled=scheduled, captured=captured
+        live, payloads, scheduled=scheduled, captured=captured,
+        schema_version=document["schema_version"],
     )
     if document["normalized"] != normalized:
         _invalid("PUBLIC_MARKET_CAPTURE_NORMALIZED_INVALID")
@@ -837,7 +872,8 @@ def acquire_challenger_replacement_public_market_capture(*, state):
         "+00:00", "Z"
     )
     normalized = _normalized_capture(
-        live, payloads, scheduled=scheduled, captured=captured
+        live, payloads, scheduled=scheduled, captured=captured,
+        schema_version=_CURRENT_SCHEMA_VERSION,
     )
     opportunity = {
         "opportunity_id": opportunity_id_for(live["slot"]["scheduled_for"]),
@@ -847,7 +883,7 @@ def acquire_challenger_replacement_public_market_capture(*, state):
     }
     document = {
         "$schema": "./challenger-replacement-public-market-capture-v2.schema.json",
-        "schema_version": "2.0.0",
+        "schema_version": _CURRENT_SCHEMA_VERSION,
         "capture_id": "",
         "capture_hash": "0" * 64,
         "evidence_qualification": (

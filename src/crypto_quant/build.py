@@ -661,6 +661,14 @@ _V0787_RELEASE_PATHS = (
     "tests/test_challenger_replacement_v3_partial_install_recovery.py",
 )
 
+_BINANCE_FUNDING_RATE_TYPE_COMPATIBILITY_PATHS = (
+    "docs/binance-funding-rate-type-compatibility.md",
+    "tests/fixtures/challenger_replacement_v076/"
+    "public-market-capture-v2.1.json",
+    "tests/fixtures/challenger_replacement_v076/"
+    "public-simulation-golden-v2.1.json",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -714,6 +722,7 @@ class EvaluatorBuild:
                     + list(_V0785_RELEASE_PATHS)
                     + list(_V0786_RELEASE_PATHS)
                     + list(_V0787_RELEASE_PATHS)
+                    + list(_BINANCE_FUNDING_RATE_TYPE_COMPATIBILITY_PATHS)
                 )
             )
         )

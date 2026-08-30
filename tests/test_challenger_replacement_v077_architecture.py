@@ -65,6 +65,9 @@ V0787_RECOVERY_CODE = {
     "src/crypto_quant/challenger_replacement_v3_partial_install_recovery.py",
     "src/crypto_quant/challenger_replacement_v3_partial_install_recovery_cli.py",
 }
+BINANCE_FUNDING_PUBLIC_CAPTURE_CODE = {
+    "src/crypto_quant/challenger_replacement_public_market_capture.py",
+}
 
 
 def physical_lines(*names):
@@ -142,7 +145,8 @@ class BinancePrivateArchitectureBudgetTests(unittest.TestCase):
             path for path in modified
             if path.endswith(".py") or path.endswith(".js")
         }
-        self.assertEqual(modified_code - V078_ACTIVATION_CODE - V0787_RECOVERY_CODE,
+        self.assertEqual(modified_code - V078_ACTIVATION_CODE - V0787_RECOVERY_CODE
+                         - BINANCE_FUNDING_PUBLIC_CAPTURE_CODE,
                          expected_modified_code)
         for label, (names, cap) in groups.items():
             with self.subTest(component=label):
