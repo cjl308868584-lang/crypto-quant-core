@@ -166,6 +166,7 @@ class ChallengerReplacementV3DeploymentTests(unittest.TestCase):
             "src/crypto_quant/challenger_replacement_v3_activation_install.py",
             "src/crypto_quant/challenger_replacement_v3_activation_preflight.py",
             "src/crypto_quant/challenger_replacement_v3_activation_trust.py",
+            "src/crypto_quant/challenger_replacement_v3_partial_install_recovery.py",
             "src/crypto_quant/system_paper_launchctl.py",
         })
         for path in (

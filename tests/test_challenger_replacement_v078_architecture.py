@@ -22,8 +22,10 @@ class V078ArchitectureTests(unittest.TestCase):
     def test_exact_thin_module_inventory_and_line_budget(self):
         source = ROOT / "src/crypto_quant"
         lines = sum(len((source / name).read_text().splitlines()) for name in MODULES)
-        self.assertLess(lines, 1550)
-        self.assertEqual(lines, 1543)
+        # v0.78.7 adds only the fixed recovery gate to the v0.78 activation
+        # layer; retain an exact count and a small fail-closed ceiling.
+        self.assertLess(lines, 1670)
+        self.assertEqual(lines, 1663)
 
     def test_activation_modules_do_not_import_private_or_system_paper_layers(self):
         forbidden = (
