@@ -639,6 +639,12 @@ _V0784_RELEASE_PATHS = (
     "tests/test_challenger_replacement_v0784_release.py",
 )
 
+_V0785_RELEASE_PATHS = (
+    "docs/adr/0083-v0785-activation-candidate-supersession.md",
+    "docs/implementation-status-v0.78.5.md",
+    "tests/test_challenger_replacement_v0785_release.py",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -689,6 +695,7 @@ class EvaluatorBuild:
                     + list(_V0782_RELEASE_PATHS)
                     + list(_V0783_RELEASE_PATHS)
                     + list(_V0784_RELEASE_PATHS)
+                    + list(_V0785_RELEASE_PATHS)
                 )
             )
         )

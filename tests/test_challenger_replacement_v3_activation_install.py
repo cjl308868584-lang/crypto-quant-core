@@ -17,8 +17,8 @@ def inputs():
     contract = {
         "contract_id": "challenger_replacement_v3_install_contract_" + "a" * 64,
         "contract_hash": "b" * 64,
-        "release": {"tag": "v0.78.4", "peeled_commit": "c" * 40,
-                    "manifest_version": "1.76.0", "manifest_hash": "d" * 64},
+        "release": {"tag": "v0.78.5", "peeled_commit": "c" * 40,
+                    "manifest_version": "1.77.0", "manifest_hash": "d" * 64},
         "snapshot": {"root": "/fixed/snapshot", "tree_hash": "e" * 64,
                      "root_device": "1", "root_inode": "2",
                      "file_count": 10, "total_size_bytes": 1000},
