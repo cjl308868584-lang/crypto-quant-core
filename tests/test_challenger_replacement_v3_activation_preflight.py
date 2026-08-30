@@ -18,9 +18,9 @@ COMMANDS = (
     ("git", "remote", "get-url", "origin"),
     ("git", "rev-parse", "HEAD"),
     ("git", "rev-parse", "origin/main"),
-    ("git", "rev-parse", "v0.78.4^{}"),
-    ("git", "rev-parse", "v0.78.4"),
-    ("git", "cat-file", "-t", "v0.78.4"),
+    ("git", "rev-parse", "v0.78.5^{}"),
+    ("git", "rev-parse", "v0.78.5"),
+    ("git", "cat-file", "-t", "v0.78.5"),
     ("git", "status", "--porcelain=v1", "--untracked-files=all"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-forward"),
     ("/bin/launchctl", "print", "gui/501/local.crypto-quant.challenger-replacement-v1"),
@@ -56,6 +56,21 @@ def verified_facts():
 
 
 class ChallengerReplacementV3ActivationPreflightTests(unittest.TestCase):
+    def test_publication_uses_the_contract_release_scoped_receipt_directory(self):
+        from crypto_quant import challenger_replacement_v3_activation_preflight as module
+
+        receipt = {"receipt_id": "receipt"}
+        scoped = "/fixed/deployment/preflight-receipts-v0.78.5"
+        with patch.object(module, "collect_fixed_v3_activation_preflight", return_value=receipt), \
+                patch.object(module, "activation_paths", return_value={
+                    "preflight_root": scoped,
+                }), patch.object(module, "canonical_json", return_value="{}"), \
+                patch.object(module, "_publish_contract_exact", return_value=(
+                    "PUBLISHED", object(),
+                )) as publish:
+            module.publish_fixed_v3_activation_preflight()
+        self.assertEqual(publish.call_args.args[:2], (Path(scoped), "receipt.json"))
+
     def test_real_pmset_custom_output_is_strictly_power_safe(self):
         from crypto_quant import challenger_replacement_v3_activation_preflight as module
 

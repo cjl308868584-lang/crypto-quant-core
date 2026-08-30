@@ -1308,6 +1308,18 @@ def _collect_fixed_release_inputs(repository: Path):
 
 def _ensure_fixed_snapshot_directories(paths):
     runtime = Path(paths["runtime_root"])
+    deployment = runtime / "deployment"
+    receipt_names = []
+    for key, fallback in (
+        ("preflight_root", deployment / "preflight-receipts"),
+        ("install_receipt_root", deployment / "install-receipts"),
+    ):
+        receipt = Path(paths.get(key, fallback))
+        if receipt.parent != deployment:
+            raise ReplacementInstallTrustError(
+                "CHALLENGER_REPLACEMENT_SNAPSHOT_PATH_UNTRUSTED"
+            )
+        receipt_names.append(receipt.name)
     anchor = runtime.parent
     anchor_fd, _ = _open_directory(anchor)
     primary_error = None
@@ -1319,8 +1331,13 @@ def _ensure_fixed_snapshot_directories(paths):
             if current != anchor_fd:
                 _close_descriptor(current)
             current = following
-        for name in ("snapshots", "preflight-receipts", "install-receipts"):
-            child = _open_relative_directory(current, name, create=True)
+        for name in ("snapshots", *receipt_names):
+            try:
+                child = _open_relative_directory(current, name, create=True)
+            except OSError as error:
+                raise ReplacementInstallTrustError(
+                    "CHALLENGER_REPLACEMENT_SNAPSHOT_PATH_UNTRUSTED"
+                ) from error
             _fsync_retry(current)
             _close_descriptor(child)
         snapshot_parent = runtime / "deployment" / "snapshots"
