@@ -1546,8 +1546,8 @@ class V064PublicCiFinalFreezeTests(unittest.TestCase):
                 "schema_version": manifest["schema_version"],
             },
             {
-                "manifest_version": "1.78.0",
-                "package_version": "0.78.6",
+                "manifest_version": "1.79.0",
+                "package_version": "0.78.7",
                 "metric_catalog_version": "1.1.6",
                 "schema_version": "1.0.0",
             },

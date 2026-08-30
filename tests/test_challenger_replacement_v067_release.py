@@ -12,9 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class V067ReleaseTests(unittest.TestCase):
     def test_versions_and_all_candidate_inputs_are_frozen(self):
-        self.assertRegex((ROOT / "pyproject.toml").read_text(), r'(?m)^version = "0\.78\.6"$')
+        self.assertRegex((ROOT / "pyproject.toml").read_text(), r'(?m)^version = "0\.78\.7"$')
         manifest = json.loads((ROOT / "config/evaluator-build-manifest-v1.json").read_text())
-        self.assertEqual((crypto_quant.__version__, manifest["package_version"], manifest["manifest_version"]), ("0.78.6", "0.78.6", "1.78.0"))
+        self.assertEqual((crypto_quant.__version__, manifest["package_version"], manifest["manifest_version"]), ("0.78.7", "0.78.7", "1.79.0"))
         expected = set(EvaluatorBuild.expected_file_paths(ROOT))
         required = {
             "config/challenger-replacement-live-capture-v1.schema.json",

@@ -13,14 +13,14 @@ class V0782ReleaseTests(unittest.TestCase):
         manifest = json.loads((
             ROOT / "config/evaluator-build-manifest-v1.json"
         ).read_text())
-        self.assertEqual(crypto_quant.__version__, "0.78.6")
-        self.assertIn('version = "0.78.6"',
+        self.assertEqual(crypto_quant.__version__, "0.78.7")
+        self.assertIn('version = "0.78.7"',
                       (ROOT / "pyproject.toml").read_text())
-        self.assertIn('version="0.78.6"',
+        self.assertIn('version="0.78.7"',
                       (ROOT / "setup.py").read_text())
         self.assertEqual(
             (manifest["package_version"], manifest["manifest_version"]),
-            ("0.78.6", "1.78.0"),
+            ("0.78.7", "1.79.0"),
         )
 
     def test_release_inventory_contains_activation_rebind(self):

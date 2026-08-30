@@ -16,28 +16,29 @@ Safety assertions before and after every step:
 
 The immutable v0.78.3 failed preflight and its bound candidate files, together
 with the partial v0.78.5 installation evidence, remain evidence and must not be deleted
-or overwritten. v0.78.6 uses only its release-scoped candidate paths;
-it does not migrate, rename or chmod old evidence. Existing target-plist
-recovery requires a separately approved protocol. Before a new ceremony, the old loaded
-`local.crypto-quant.challenger-forward` service must be handled under its own
-explicit approval; this runbook does not authorize that action.
+or overwritten. v0.78.7 uses only its release-scoped candidate and target paths;
+it does not migrate, rename or chmod old evidence. Both services must remain
+disabled and unloaded before the ceremony, and the automation must remain paused.
+This release does not authorize installation or start.
 
-1. Verify exact public `origin/main`, annotated `v0.78.6`, clean checkout,
-   package `0.78.6`, manifest `1.78.0` and successful release CI. Replay the six
+1. Verify exact public `origin/main`, annotated `v0.78.7`, clean checkout,
+   package `0.78.7`, manifest `1.79.0` and successful release CI. Replay the six
    vendored wheel/native-file SHA-256 values and versions frozen by the manifest
    and `requirements.lock`; no dependency installation or user-site import is
    permitted during the ceremony.
 2. Run the fixed no-argument renderer once. Replay the exact snapshot, contract,
    plist, Python identity and empty event-root identity.
-3. Run the fixed no-argument preflight only in its frozen four-hour window. It
+3. Run recovery qualification once and strictly replay the exact immutable
+   recovery receipt. It must bind all v0.78.5 evidence without mutating it.
+4. Run the fixed no-argument preflight only in its frozen four-hour window. It
    may make exactly three public Binance time GETs and must publish one current
    30-minute eligible receipt with all private authority counters zero.
-4. Run the fixed installer once. Its only LaunchAgent sequence is
+5. Run the fixed bootstrap-only installer once. Its only LaunchAgent sequence is
    `print -> bootstrap -> print`; do not use kickstart, start, enable, submit,
    bootout or a direct runtime invocation.
-5. Preserve the install receipt and wait for the next natural scheduled
-   opportunity. Do not force, backfill or substitute an opportunity.
-6. Run the read-only observer. When the first exact natural successful evidence
+6. Preserve the install receipt and wait for the next natural opportunity. Do
+   not force, backfill or substitute an opportunity.
+7. Run the read-only observer. When the first exact natural successful evidence
    exists, publish and strictly replay the fixed start receipt. Its timestamp is
    the only start of the real continuous 72-hour qualification.
 

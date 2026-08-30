@@ -651,6 +651,16 @@ _V0786_RELEASE_PATHS = (
     "tests/test_challenger_replacement_v0786_release.py",
 )
 
+_V0787_RELEASE_PATHS = (
+    "config/challenger-replacement-v3-partial-install-recovery-v0.78.7.json",
+    "docs/adr/0085-v0787-partial-install-recovery.md",
+    "docs/implementation-status-v0.78.7.md",
+    "docs/superpowers/plans/2026-08-31-v0787-partial-install-recovery.md",
+    "docs/superpowers/specs/2026-08-31-v0787-partial-install-recovery-design.md",
+    "tests/test_challenger_replacement_v0787_release.py",
+    "tests/test_challenger_replacement_v3_partial_install_recovery.py",
+)
+
 
 @dataclass(frozen=True)
 class EvaluatorBuild:
@@ -703,6 +713,7 @@ class EvaluatorBuild:
                     + list(_V0784_RELEASE_PATHS)
                     + list(_V0785_RELEASE_PATHS)
                     + list(_V0786_RELEASE_PATHS)
+                    + list(_V0787_RELEASE_PATHS)
                 )
             )
         )
