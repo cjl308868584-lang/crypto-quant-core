@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "decimal": {"type": "string", "pattern": "^(0|[1-9][0-9]{0,20})$"},
+    "file_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "device", "inode", "owner_uid", "mode", "link_count", "size_bytes", "mtime_ns", "ctime_ns"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^/"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "device": {"$ref": "#/$defs/decimal"},
+        "inode": {"type": "string", "pattern": "^[1-9][0-9]{0,20}$"},
+        "owner_uid": {"const": 501},
+        "mode": {"const": 384},
+        "link_count": {"const": 1},
+        "size_bytes": {"type": "integer", "minimum": 1, "maximum": 4194304},
+        "mtime_ns": {"$ref": "#/$defs/decimal"},
+        "ctime_ns": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "directory_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "device", "inode", "owner_uid", "mode", "link_count", "size_bytes", "mtime_ns", "ctime_ns", "entry_names", "entry_names_hash"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^/"},
+        "device": {"$ref": "#/$defs/decimal"},
+        "inode": {"type": "string", "pattern": "^[1-9][0-9]{0,20}$"},
+        "owner_uid": {"const": 501},
+        "mode": {"const": 448},
+        "link_count": {"type": "integer", "minimum": 2, "maximum": 16},
+        "size_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576},
+        "mtime_ns": {"$ref": "#/$defs/decimal"},
+        "ctime_ns": {"$ref": "#/$defs/decimal"},
+        "entry_names": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+        "entry_names_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "plan_id", "plan_hash", "status", "foundation", "incident", "preserved_files", "empty_directories", "snapshot", "candidate", "required_state", "authority"],
+  "properties": {
+    "$schema": {"const": "./challenger-replacement-v3-partial-install-recovery-plan-v1.schema.json"},
+    "schema_version": {"const": "1.0.0"},
+    "plan_id": {"type": "string", "pattern": "^challenger_replacement_v3_partial_install_recovery_plan_[0-9a-f]{64}$"},
+    "plan_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"const": "PARTIAL_INSTALL_RECOVERY_PLAN_FROZEN_NOT_EXECUTED"},
+    "foundation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repository", "visibility", "release_tag", "package_version", "peeled_commit", "tag_object", "manifest_version", "manifest_hash", "manifest_file_sha256"],
+      "properties": {
+        "repository": {"const": "cjl308868584-lang/crypto-quant-core"},
+        "visibility": {"const": "PUBLIC"},
+        "release_tag": {"const": "v0.78.6"},
+        "package_version": {"const": "0.78.6"},
+        "peeled_commit": {"const": "faf6e03632c21dba0894f0a1248f308306b13737"},
+        "tag_object": {"const": "bc78d140129a23b38d3c72c1f4a93d8df568275e"},
+        "manifest_version": {"const": "1.78.0"},
+        "manifest_hash": {"const": "808c2fd2aefbfc363725f0cf2a46a74cfc56a538e284dce6fd62042d475ea477"},
+        "manifest_file_sha256": {"const": "f06bbfa5dba81cd9f713c4d6b51bbd403d67439b063fdfe1f5b7fe49ae0f5cea"}
+      }
+    },
+    "incident": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_tag", "reason_code", "failed_install_receipt_id", "preflight_receipt_id", "preservation_policy"],
+      "properties": {
+        "release_tag": {"const": "v0.78.5"},
+        "reason_code": {"const": "INSTALL_RECEIPT_CANONICAL_TIMESTAMP_REPLAY_FAILED"},
+        "failed_install_receipt_id": {"type": "string", "pattern": "^challenger_replacement_v3_activation_install_[0-9a-f]{64}$"},
+        "preflight_receipt_id": {"type": "string", "pattern": "^challenger_replacement_v3_activation_preflight_[0-9a-f]{64}$"},
+        "preservation_policy": {"const": "IMMUTABLE_READ_ONLY_NO_REPAIR"}
+      }
+    },
+    "preserved_files": {
+      "type": "object", "additionalProperties": false,
+      "required": ["target_plist", "predecessor_plist", "install_contract", "candidate_plist", "failed_install_receipt", "preflight_receipt"],
+      "properties": {
+        "target_plist": {"$ref": "#/$defs/file_record"},
+        "predecessor_plist": {"$ref": "#/$defs/file_record"},
+        "install_contract": {"$ref": "#/$defs/file_record"},
+        "candidate_plist": {"$ref": "#/$defs/file_record"},
+        "failed_install_receipt": {"$ref": "#/$defs/file_record"},
+        "preflight_receipt": {"$ref": "#/$defs/file_record"}
+      }
+    },
+    "empty_directories": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state_parent", "event_root", "start_receipt_root", "log_root"],
+      "properties": {
+        "state_parent": {"$ref": "#/$defs/directory_record"},
+        "event_root": {"$ref": "#/$defs/directory_record"},
+        "start_receipt_root": {"$ref": "#/$defs/directory_record"},
+        "log_root": {"$ref": "#/$defs/directory_record"}
+      }
+    },
+    "snapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tree_hash", "file_count", "total_size_bytes", "root_record"],
+      "properties": {
+        "tree_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "file_count": {"const": 101},
+        "total_size_bytes": {"const": 3248480},
+        "root_record": {"$ref": "#/$defs/directory_record"}
+      }
+    },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_tag", "target_plist", "recovery_receipt_root"],
+      "properties": {
+        "release_tag": {"const": "v0.78.7"},
+        "target_plist": {"const": "/Users/chenm4/Library/LaunchAgents/local.crypto-quant.challenger-replacement-v1-v0.78.7.plist"},
+        "recovery_receipt_root": {"const": "/Users/chenm4/Library/Application Support/CryptoQuant/challenger-replacement-v1/deployment/partial-install-recovery-receipts-v0.78.7"}
+      }
+    },
+    "required_state": {
+      "type": "object", "additionalProperties": false,
+      "required": ["launchctl_domain", "service_labels", "service_state", "automation_id", "automation_path", "automation_status"],
+      "properties": {
+        "launchctl_domain": {"const": "gui/501"},
+        "service_labels": {"const": ["local.crypto-quant.challenger-forward", "local.crypto-quant.challenger-replacement-v1"]},
+        "service_state": {"const": "DISABLED_AND_NOT_LOADED"},
+        "automation_id": {"const": "v0-78-3-replacement"},
+        "automation_path": {"const": "/Users/chenm4/.codex/automations/v0-78-3-replacement/automation.toml"},
+        "automation_status": {"const": "PAUSED"}
+      }
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["production_activation", "runtime_install_authorized", "replacement_start_authorized", "credential_access_allowed", "private_account_requests_allowed", "broker_requests_allowed", "orders_allowed", "fund_movement_allowed"],
+      "properties": {
+        "production_activation": {"const": false},
+        "runtime_install_authorized": {"const": false},
+        "replacement_start_authorized": {"const": false},
+        "credential_access_allowed": {"const": false},
+        "private_account_requests_allowed": {"const": false},
+        "broker_requests_allowed": {"const": false},
+        "orders_allowed": {"const": false},
+        "fund_movement_allowed": {"const": false}
+      }
+    }
+  }
+}
