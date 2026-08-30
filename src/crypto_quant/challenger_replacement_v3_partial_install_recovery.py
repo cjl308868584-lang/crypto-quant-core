@@ -3,6 +3,9 @@
 import copy
 import hashlib
 import json
+import os
+import stat
+import subprocess
 from importlib import resources
 from pathlib import Path
 
@@ -10,6 +13,18 @@ from jsonschema import Draft202012Validator
 
 from .canonical import canonical_json, stable_id
 from .challenger_replacement_plan import _strict_json_bytes
+from .challenger_replacement_install_trust import (
+    ReplacementInstallTrustError,
+    _close_descriptor,
+    _open_directory,
+    _read_exact,
+    _read_published_exact,
+    _read_snapshot_file,
+    _replay_snapshot,
+    _require_open_flag,
+    _same_file_identity,
+    _validate_directory_attachment,
+)
 from .evidence import artifact_self_hash
 
 
@@ -240,3 +255,280 @@ def load_fixed_v3_partial_install_recovery_plan():
             "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_PLAN_INVALID"
         ) from error
     return load_fixed_v3_partial_install_recovery_plan_bytes(body), body
+
+
+def _raise_recovery(reason_code, error=None):
+    failure = ChallengerReplacementPartialInstallRecoveryError(reason_code)
+    if error is None:
+        raise failure
+    raise failure from error
+
+
+def _stat_fields(value):
+    return {
+        "device": str(value.st_dev),
+        "inode": str(value.st_ino),
+        "owner_uid": value.st_uid,
+        "mode": stat.S_IMODE(value.st_mode),
+        "link_count": value.st_nlink,
+        "size_bytes": value.st_size,
+        "mtime_ns": str(value.st_mtime_ns),
+        "ctime_ns": str(value.st_ctime_ns),
+    }
+
+
+def _verify_file_record(record):
+    parent_fd = -1
+    primary = None
+    try:
+        path = Path(record["path"])
+        parent_fd, _ = _open_directory(path.parent, exact_mode=0o700)
+        found = _read_published_exact(parent_fd, path.name)
+        if found is None:
+            raise ValueError("missing")
+        body, opened = found
+        expected = {key: record[key] for key in _stat_fields(opened)}
+        if (
+            _stat_fields(opened) != expected
+            or hashlib.sha256(body).hexdigest() != record["sha256"]
+        ):
+            raise ValueError("identity")
+        return body
+    except BaseException as error:
+        primary = error
+        if isinstance(error, ChallengerReplacementPartialInstallRecoveryError):
+            raise
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT", error
+        )
+    finally:
+        if parent_fd >= 0:
+            _close_descriptor(parent_fd, primary)
+
+
+def _verify_directory_record(record):
+    descriptor = -1
+    primary = None
+    try:
+        path = Path(record["path"])
+        descriptor, opened = _open_directory(path, exact_mode=0o700)
+        names = sorted(os.listdir(descriptor))
+        expected = {key: record[key] for key in _stat_fields(opened)}
+        if (
+            _stat_fields(opened) != expected
+            or names != record["entry_names"]
+            or hashlib.sha256(canonical_json(names).encode("utf-8")).hexdigest()
+            != record["entry_names_hash"]
+        ):
+            raise ValueError("identity")
+        _validate_directory_attachment(
+            path,
+            descriptor,
+            opened,
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT",
+        )
+        return names
+    except BaseException as error:
+        primary = error
+        if isinstance(error, ChallengerReplacementPartialInstallRecoveryError):
+            raise
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT", error
+        )
+    finally:
+        if descriptor >= 0:
+            _close_descriptor(descriptor, primary)
+
+
+def _verify_snapshot(plan, install_contract_bytes):
+    root_fd = parent_fd = -1
+    primary = None
+    try:
+        snapshot = plan["snapshot"]
+        root = Path(snapshot["root_record"]["path"])
+        if root.name != snapshot["tree_hash"]:
+            raise ValueError("snapshot path")
+        contract = dict(_strict_json_bytes(install_contract_bytes))
+        manifest_sha = contract["release"]["manifest_file_sha256"]
+        root_fd, _ = _open_directory(root, exact_mode=0o700)
+        manifest_name = "config/evaluator-build-manifest-v1.json"
+        manifest_bytes = _read_snapshot_file(root_fd, manifest_name, manifest_sha)
+        manifest = dict(_strict_json_bytes(manifest_bytes))
+        inventory = dict(manifest["file_hashes"])
+        inventory[manifest_name] = hashlib.sha256(manifest_bytes).hexdigest()
+        parent_fd, _ = _open_directory(root.parent, exact_mode=0o700)
+        replayed = _replay_snapshot(parent_fd, snapshot["tree_hash"], inventory)
+        if (
+            replayed is None
+            or len(inventory) != snapshot["file_count"]
+            or replayed[1] != snapshot["total_size_bytes"]
+            or (str(replayed[0].st_dev), str(replayed[0].st_ino))
+            != (
+                snapshot["root_record"]["device"],
+                snapshot["root_record"]["inode"],
+            )
+        ):
+            raise ValueError("snapshot replay")
+    except BaseException as error:
+        primary = error
+        if isinstance(error, ChallengerReplacementPartialInstallRecoveryError):
+            raise
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT", error
+        )
+    finally:
+        if parent_fd >= 0:
+            _close_descriptor(parent_fd, primary)
+        if root_fd >= 0:
+            _close_descriptor(root_fd, primary)
+
+
+def _read_automation_status(path):
+    parent_fd = descriptor = -1
+    primary = None
+    try:
+        parent_fd, _ = _open_directory(path.parent, exact_mode=0o700)
+        descriptor = os.open(
+            path.name,
+            os.O_RDONLY
+            | _require_open_flag("O_NOFOLLOW")
+            | _require_open_flag("O_NONBLOCK"),
+            dir_fd=parent_fd,
+        )
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_uid != os.getuid()
+            or opened.st_nlink != 1
+            or stat.S_IMODE(opened.st_mode) not in (0o600, 0o644)
+            or not 0 < opened.st_size <= 1024 * 1024
+        ):
+            raise ValueError("automation identity")
+        body = _read_exact(descriptor, opened.st_size)
+        after = os.fstat(descriptor)
+        attached = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if not _same_file_identity(opened, after) or not _same_file_identity(
+            after, attached
+        ):
+            raise ValueError("automation attachment")
+        lines = body.decode("utf-8", "strict").splitlines()
+        status = [line for line in lines if line.startswith("status = ")]
+        if status != ['status = "PAUSED"']:
+            raise ValueError("automation status")
+        return "PAUSED"
+    except BaseException as error:
+        primary = error
+        if isinstance(error, ChallengerReplacementPartialInstallRecoveryError):
+            raise
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT", error
+        )
+    finally:
+        if descriptor >= 0:
+            _close_descriptor(descriptor, primary)
+        if parent_fd >= 0:
+            _close_descriptor(parent_fd, primary)
+
+
+def _run_observation_command(argv):
+    try:
+        result = subprocess.run(
+            tuple(argv),
+            cwd=_REPOSITORY,
+            env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT", error
+        )
+    if len(result.stdout) > 1024 * 1024 or len(result.stderr) > 1024 * 1024:
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
+        )
+    return bytes(result.stdout), bytes(result.stderr), result.returncode
+
+
+def _verify_services(required):
+    domain = required["launchctl_domain"]
+    labels = required["service_labels"]
+    disabled_argv = ("/bin/launchctl", "print-disabled", domain)
+    stdout, stderr, code = _run_observation_command(disabled_argv)
+    try:
+        text = stdout.decode("utf-8", "strict")
+    except UnicodeError as error:
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT", error
+        )
+    if code != 0 or stderr or any(
+        text.count('"{}" => disabled'.format(label)) != 1 for label in labels
+    ):
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
+        )
+    transcripts = [{
+        "argv": list(disabled_argv),
+        "exit_code": code,
+        "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+        "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
+    }]
+    for label in labels:
+        argv = ("/bin/launchctl", "print", domain + "/" + label)
+        out, err, exit_code = _run_observation_command(argv)
+        if (
+            exit_code != 113
+            or out
+            or not err
+            or label.encode("utf-8") not in err
+        ):
+            _raise_recovery(
+                "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
+            )
+        transcripts.append({
+            "argv": list(argv),
+            "exit_code": exit_code,
+            "stdout_sha256": hashlib.sha256(out).hexdigest(),
+            "stderr_sha256": hashlib.sha256(err).hexdigest(),
+        })
+    return transcripts
+
+
+def _verify_preserved_partial_install(plan):
+    try:
+        observed_files = {
+            name: _verify_file_record(record)
+            for name, record in plan["preserved_files"].items()
+        }
+        for record in plan["empty_directories"].values():
+            _verify_directory_record(record)
+        _verify_directory_record(plan["snapshot"]["root_record"])
+        _verify_snapshot(plan, observed_files["install_contract"])
+        transcripts = _verify_services(plan["required_state"])
+        automation = _read_automation_status(
+            Path(plan["required_state"]["automation_path"])
+        )
+        if os.path.lexists(plan["candidate"]["target_plist"]):
+            _raise_recovery(
+                "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
+            )
+        return {
+            "service_state": "DISABLED_AND_NOT_LOADED",
+            "automation_status": automation,
+            "event_count": 0,
+            "start_receipt_count": 0,
+            "log_file_count": 0,
+            "preserved_file_sha256": {
+                name: hashlib.sha256(body).hexdigest()
+                for name, body in observed_files.items()
+            },
+            "transcripts": transcripts,
+        }
+    except ChallengerReplacementPartialInstallRecoveryError:
+        raise
+    except (KeyError, TypeError, ValueError, ReplacementInstallTrustError) as error:
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT", error
+        )
