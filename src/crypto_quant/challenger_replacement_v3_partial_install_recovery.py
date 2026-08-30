@@ -429,7 +429,13 @@ def _read_automation_status(path):
         ):
             raise ValueError("automation attachment")
         lines = body.decode("utf-8", "strict").splitlines()
-        status = [line for line in lines if line.startswith("status = ")]
+        top_level = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("["):
+                break
+            top_level.append(stripped)
+        status = [line for line in top_level if line.startswith("status = ")]
         if status != ['status = "PAUSED"']:
             raise ValueError("automation status")
         return "PAUSED"

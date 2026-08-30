@@ -583,6 +583,16 @@ class PartialInstallRecoveryEvidenceTests(unittest.TestCase):
             self.assertEqual(self.module._read_automation_status(path), "PAUSED")
         opened.assert_called_once_with(path.parent, exact_mode=0o755)
 
+    def test_nested_automation_status_cannot_impersonate_top_level_pause(self):
+        self.automation.write_text(
+            'id = "v0-78-3-replacement"\n[runtime]\nstatus = "PAUSED"\n'
+        )
+        os.chmod(self.automation, 0o600)
+        with self.assertRaisesRegex(
+            ValueError, "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
+        ):
+            self.module._read_automation_status(self.automation)
+
     def test_existing_new_target_is_rejected(self):
         target = Path(self.plan["candidate"]["target_plist"])
         target.write_bytes(b"unexpected")
