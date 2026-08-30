@@ -18,6 +18,176 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
+    def test_renderer_supersedes_v0783_candidate_without_mutating_history(self):
+        from crypto_quant import challenger_replacement_v3_activation_trust as trust
+        from crypto_quant.challenger_replacement_install_trust import (
+            ReplacementInstallTrustError,
+        )
+
+        with tempfile.TemporaryDirectory(dir=ROOT) as temporary:
+            runtime = Path(temporary) / "challenger-replacement-v1"
+            deployment = runtime / "deployment"
+            old_paths = {
+                "contract": deployment
+                / "challenger-replacement-v3-install-contract-v1.json",
+                "candidate_plist": deployment
+                / "local.crypto-quant.challenger-replacement-v1.plist",
+                "preflight": deployment / "preflight-receipts" / "failed.json",
+                "install": deployment / "install-receipts" / "failed.json",
+            }
+            for path, body in (
+                (old_paths["contract"], b"v0.78.3 contract"),
+                (old_paths["candidate_plist"], b"v0.78.3 plist"),
+                (old_paths["preflight"], b"v0.78.3 preflight"),
+                (old_paths["install"], b"v0.78.3 install"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.parent.chmod(0o700)
+                path.write_bytes(body)
+                path.chmod(0o600)
+            runtime.chmod(0o700)
+            original = {
+                name: (path.read_bytes(), os.stat(path, follow_symlinks=False))
+                for name, path in old_paths.items()
+            }
+            paths = dict(trust.replacement_install_paths())
+            paths.update({
+                "runtime_root": str(runtime),
+                "deployment_root": str(deployment),
+                "contract": str(old_paths["contract"]),
+                "candidate_plist": str(old_paths["candidate_plist"]),
+                "preflight_root": str(old_paths["preflight"].parent),
+                "install_receipt_root": str(old_paths["install"].parent),
+                "start_receipt_root": str(runtime / "evidence/start-receipts"),
+                "event_root": str(runtime / "state/challenger-replacement-events-v1"),
+                "stdout": str(runtime / "log/challenger-replacement-v3.stdout.log"),
+                "stderr": str(runtime / "log/challenger-replacement-v3.stderr.log"),
+                "target_plist": str(runtime / "target.plist"),
+            })
+            python = {
+                "path": "/usr/bin/python3", "device": 1, "inode": 2,
+                "owner_uid": 0, "mode": 0o555, "link_count": 1,
+                "size_bytes": 1, "sha256": "a" * 64, "sys_version": "3.9",
+                "import_stdout_sha256": "b" * 64,
+                "import_stderr_sha256": "c" * 64,
+            }
+            release = {
+                "tag": "v0.78.5", "peeled_commit": "d" * 40,
+                "tag_object": "e" * 40, "manifest_version": "1.77.0",
+                "manifest_hash": "f" * 64,
+                "manifest_file_sha256": "0" * 64,
+            }
+            with patch.object(trust, "_RELEASE", {
+                "tag": "v0.78.5", "package_version": "0.78.5",
+            }), patch.object(trust, "replacement_install_paths", return_value=paths), \
+                    patch.object(trust, "_released_identity", return_value=release), \
+                    patch.object(trust, "_fixed_python_identity", return_value=python):
+                rendered = trust.render_fixed_v3_activation_candidate()
+
+            expected = {
+                "contract": deployment
+                / "challenger-replacement-v3-install-contract-v0.78.5.json",
+                "candidate_plist": deployment
+                / "local.crypto-quant.challenger-replacement-v1-v0.78.5.plist",
+                "preflight_root": deployment / "preflight-receipts-v0.78.5",
+                "install_receipt_root": deployment / "install-receipts-v0.78.5",
+            }
+            self.assertEqual(rendered["contract"]["paths"]["contract"],
+                             str(expected["contract"]))
+            self.assertEqual(rendered["contract"]["paths"]["candidate_plist"],
+                             str(expected["candidate_plist"]))
+            self.assertEqual(rendered["contract"]["paths"]["preflight_root"],
+                             str(expected["preflight_root"]))
+            self.assertEqual(rendered["contract"]["paths"]["install_receipt_root"],
+                             str(expected["install_receipt_root"]))
+            self.assertTrue(all(path.is_file() or path.is_dir()
+                                for path in expected.values()))
+            self.assertFalse(Path(paths["target_plist"]).exists())
+            self.assertEqual(os.listdir(paths["event_root"]), [])
+            self.assertFalse((runtime / "credentials").exists())
+            with patch.object(trust, "_RELEASE", {
+                "tag": "v0.78.5", "package_version": "0.78.5",
+            }), patch.object(trust, "replacement_install_paths", return_value=paths), \
+                    patch.object(trust, "_released_identity", return_value=release), \
+                    patch.object(trust, "_fixed_python_identity", return_value=python):
+                self.assertEqual(
+                    trust.render_fixed_v3_activation_candidate()["plist_outcome"],
+                    "ALREADY_PUBLISHED",
+                )
+            expected["candidate_plist"].write_bytes(b"conflicting candidate")
+            with patch.object(trust, "_RELEASE", {
+                "tag": "v0.78.5", "package_version": "0.78.5",
+            }), patch.object(trust, "replacement_install_paths", return_value=paths), \
+                    patch.object(trust, "_released_identity", return_value=release), \
+                    patch.object(trust, "_fixed_python_identity", return_value=python):
+                with self.assertRaisesRegex(
+                    ReplacementInstallTrustError,
+                    "CHALLENGER_REPLACEMENT_INSTALL_CONTRACT_CONFLICT",
+                ):
+                    trust.render_fixed_v3_activation_candidate()
+            for name, path in old_paths.items():
+                body, before = original[name]
+                after = os.stat(path, follow_symlinks=False)
+                self.assertEqual(path.read_bytes(), body)
+                self.assertEqual(
+                    (after.st_dev, after.st_ino, after.st_mode, after.st_nlink,
+                     after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+                    (before.st_dev, before.st_ino, before.st_mode, before.st_nlink,
+                     before.st_size, before.st_mtime_ns, before.st_ctime_ns),
+                )
+
+    def test_release_scoped_receipt_directories_reject_untrusted_entries(self):
+        from crypto_quant import challenger_replacement_install_trust as install
+
+        with tempfile.TemporaryDirectory(dir=ROOT) as temporary:
+            runtime = Path(temporary) / "challenger-replacement-v1"
+            deployment = runtime / "deployment"
+            paths = {
+                "runtime_root": str(runtime),
+                "preflight_root": str(deployment / "preflight-receipts-v0.78.5"),
+                "install_receipt_root": str(deployment / "install-receipts-v0.78.5"),
+                "event_root": str(runtime / "state/challenger-replacement-events-v1"),
+                "start_receipt_root": str(runtime / "evidence/start-receipts"),
+            }
+            for entry_type in ("symlink", "hardlink", "wrong-mode"):
+                with self.subTest(entry_type=entry_type):
+                    deployment.mkdir(parents=True, exist_ok=True)
+                    runtime.chmod(0o700)
+                    deployment.chmod(0o700)
+                    receipt_root = Path(paths["preflight_root"])
+                    if entry_type == "symlink":
+                        target = deployment / "symlink-target"
+                        target.mkdir(mode=0o700, exist_ok=True)
+                        os.symlink(target.name, receipt_root)
+                    elif entry_type == "hardlink":
+                        target = deployment / "hardlink-target"
+                        target.write_bytes(b"not a directory")
+                        os.link(target, receipt_root)
+                    else:
+                        receipt_root.mkdir(mode=0o755)
+                        receipt_root.chmod(0o755)
+                    with self.assertRaises(
+                        install.ReplacementInstallTrustError,
+                    ):
+                        install._ensure_fixed_snapshot_directories(paths)
+                    if receipt_root.is_symlink() or receipt_root.is_file():
+                        receipt_root.unlink()
+                    elif receipt_root.exists():
+                        receipt_root.rmdir()
+
+    def test_release_tag_is_validated_before_any_path_derivation(self):
+        from crypto_quant import challenger_replacement_v3_activation_trust as trust
+
+        with patch.object(trust, "_RELEASE", {
+            "tag": "v0.78.5/unsafe", "package_version": "0.78.5",
+        }), patch.object(trust, "replacement_install_paths") as paths:
+            with self.assertRaisesRegex(
+                trust.ChallengerReplacementV3ActivationTrustError,
+                "CHALLENGER_REPLACEMENT_V3_ACTIVATION_RELEASE_TAG_INVALID",
+            ):
+                trust.activation_paths()
+        paths.assert_not_called()
+
     def test_release_identity_binds_current_v0784_main_and_annotated_tag(self):
         from crypto_quant import challenger_replacement_v3_activation_trust as trust
 

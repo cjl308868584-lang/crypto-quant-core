@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import plistlib
+import re
 from importlib import resources
 from pathlib import Path
 
@@ -98,10 +99,22 @@ def _snapshot_python_paths(root):
 
 
 def activation_paths():
+    tag = _RELEASE.get("tag")
+    if (
+        not isinstance(tag, str)
+        or re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag) is None
+    ):
+        _invalid("CHALLENGER_REPLACEMENT_V3_ACTIVATION_RELEASE_TAG_INVALID")
     paths = dict(replacement_install_paths())
     paths.update({
         "contract": paths["deployment_root"]
-        + "/challenger-replacement-v3-install-contract-v1.json",
+        + "/challenger-replacement-v3-install-contract-" + tag + ".json",
+        "candidate_plist": paths["deployment_root"]
+        + "/local.crypto-quant.challenger-replacement-v1-" + tag + ".plist",
+        "preflight_root": paths["deployment_root"]
+        + "/preflight-receipts-" + tag,
+        "install_receipt_root": paths["deployment_root"]
+        + "/install-receipts-" + tag,
         "stdout": paths["runtime_root"]
         + "/log/challenger-replacement-v3.stdout.log",
         "stderr": paths["runtime_root"]

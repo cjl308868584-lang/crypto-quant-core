@@ -46,6 +46,19 @@ def inputs():
 
 
 class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
+    def test_preflight_loader_uses_only_the_contract_release_scoped_root(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        contract = inputs()["contract"]
+        contract["paths"]["preflight_root"] = "/fixed/preflight-receipts-v0.78.5"
+        with patch.object(module, "_open_directory", return_value=(9, object())) as open_dir, \
+                patch.object(module.os, "listdir", return_value=[]), \
+                patch.object(module, "_close_descriptor"):
+            self.assertEqual(module._load_fixed_preflight_candidates(contract, b"contract"), [])
+        self.assertEqual(open_dir.call_args.args[0], Path(
+            "/fixed/preflight-receipts-v0.78.5"
+        ))
+
     def test_revalidate_compares_large_decimal_identities_to_os_stat(self):
         from crypto_quant import challenger_replacement_v3_activation_install as module
 
