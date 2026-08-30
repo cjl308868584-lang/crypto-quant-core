@@ -428,15 +428,18 @@ def _read_automation_status(path):
             after, attached
         ):
             raise ValueError("automation attachment")
-        lines = body.decode("utf-8", "strict").splitlines()
-        top_level = []
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("["):
-                break
-            top_level.append(stripped)
-        status = [line for line in top_level if line.startswith("status = ")]
-        if status != ['status = "PAUSED"']:
+        entries = {}
+        for line in body.decode("utf-8", "strict").splitlines():
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            matched = re.fullmatch(
+                r'([A-Za-z0-9_-]+) = ("(?:[^"\\]|\\.)*"|[0-9]+|true|false)',
+                line,
+            )
+            if matched is None or matched.group(1) in entries:
+                raise ValueError("automation syntax")
+            entries[matched.group(1)] = matched.group(2)
+        if entries.get("status") != '"PAUSED"':
             raise ValueError("automation status")
         return "PAUSED"
     except BaseException as error:

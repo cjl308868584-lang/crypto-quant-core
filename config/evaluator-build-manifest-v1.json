@@ -488,7 +488,7 @@
     "src/crypto_quant/challenger_replacement_v3_deployment.py": "835719b77bda18d3fc0f1ba23347ed757213ab1b1401a8ea17307ac637f546bc",
     "src/crypto_quant/challenger_replacement_v3_installed_runtime.py": "8212af321fa44a1c610b68b0ccdcf7ff0191f6144d74d4817b471c9a6b4feb36",
     "src/crypto_quant/challenger_replacement_v3_observer.py": "5613d2da15441d5a3d15d5362f4187615a91126dbc534a474f6ddb4145ea95ea",
-    "src/crypto_quant/challenger_replacement_v3_partial_install_recovery.py": "161a9d6244c4b47ed2d18d7730cfb8e87fd7d94599cfda98fb2684e714aa994e",
+    "src/crypto_quant/challenger_replacement_v3_partial_install_recovery.py": "81f5dc58491fa3b9abffea1312fe50c8ad50f9f59e87af3c5afc976cef1553c9",
     "src/crypto_quant/challenger_replacement_v3_partial_install_recovery_cli.py": "69ef74195d21186198b16a743fbf5069e6bbafaa5f6e8ba796a09fee79aec6c5",
     "src/crypto_quant/challenger_replacement_v3_runtime.py": "ffe42c6167e1cfdaee335c9c171179c980d4c395c499a7f19d26162b0ff133de",
     "src/crypto_quant/challenger_replacement_v3_start.py": "c63dce9d9ed0b50b52043a27cae9d86f1a572605cdaf4b52194189b8b4f95471",
@@ -812,7 +812,7 @@
     "tests/test_challenger_replacement_v3_deployment.py": "fc584e9f6a173faf91a55b02d3aa9dae17c3b2c6f41d903db9a97039212a6d97",
     "tests/test_challenger_replacement_v3_installed_runtime.py": "0bcda0842238c96f2ef9e89bf637a61d431ef08bd72b4d3a76ae14dc83ff4653",
     "tests/test_challenger_replacement_v3_observer.py": "d6e8704b204dcea81a10b6343eb95eb0577167cd437aa7174ac5e8f99319a5de",
-    "tests/test_challenger_replacement_v3_partial_install_recovery.py": "2830ad9756df12c21c6ae73ac0491dae41fd4e66d34123969da62f2f376c5254",
+    "tests/test_challenger_replacement_v3_partial_install_recovery.py": "7b7f335344a4a7bfbd6564b172bc429bbf829ddd74d18f5cf049f82dae5873d2",
     "tests/test_challenger_replacement_v3_runtime.py": "c28674ef21c8039391d846bd51d1a46b6b782e59072a5ed6bd580fc145a53bd6",
     "tests/test_challenger_replacement_v3_start.py": "0aeda37de47cfa60ad56318089d1df0590f14fdb1548c49bde451acd291bc1e1",
     "tests/test_estimators.py": "1a6a9a9d699f855a258e04b130951c4787733a09df71d2fda7a2ca1ab80c1078",
@@ -861,7 +861,7 @@
     "vendor/challenger-replacement-v3/wheels/rpds_py-0.27.1-cp39-cp39-macosx_11_0_arm64.whl": "1fea2b1a922c47c51fd07d656324531adc787e415c8b116530a1d29c0516c62d",
     "vendor/challenger-replacement-v3/wheels/typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
   },
-  "build_input_tree_hash": "8835d518d2b8d342e1b38f7e7be82ccbb71d0c87196488f5a38c7db56df4b0df",
+  "build_input_tree_hash": "19de7b93229215ccba7fffe95cf5547e175bf426ce4f98d9fa9b67c18e53c9d0",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -869,5 +869,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "73e267d777b5808ced3a77cde9e9269f3a55c47f1011b75f662c1590ddc737aa"
+  "manifest_hash": "7c3f49c3ec640c39be30b6473542d04a3e0e4fdc19adadf3ac3bca5dd2a9b84a"
 }
