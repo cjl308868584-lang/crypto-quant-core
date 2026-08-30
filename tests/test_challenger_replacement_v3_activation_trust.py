@@ -18,6 +18,31 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
+    def test_v0787_paths_use_new_target_and_recovery_root(self):
+        from crypto_quant import challenger_replacement_v3_activation_trust as trust
+
+        paths = trust.activation_paths()
+        self.assertTrue(paths["contract"].endswith(
+            "challenger-replacement-v3-install-contract-v0.78.7.json"
+        ))
+        self.assertTrue(paths["candidate_plist"].endswith(
+            "local.crypto-quant.challenger-replacement-v1-v0.78.7.plist"
+        ))
+        self.assertTrue(paths["preflight_root"].endswith(
+            "preflight-receipts-v0.78.7"
+        ))
+        self.assertTrue(paths["install_receipt_root"].endswith(
+            "install-receipts-v0.78.7"
+        ))
+        self.assertTrue(paths["recovery_receipt_root"].endswith(
+            "partial-install-recovery-receipts-v0.78.7"
+        ))
+        self.assertEqual(
+            paths["target_plist"],
+            "/Users/chenm4/Library/LaunchAgents/"
+            "local.crypto-quant.challenger-replacement-v1-v0.78.7.plist",
+        )
+
     def test_renderer_supersedes_v0783_candidate_without_mutating_history(self):
         from crypto_quant import challenger_replacement_v3_activation_trust as trust
         from crypto_quant.challenger_replacement_install_trust import (
@@ -72,13 +97,13 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
                 "import_stderr_sha256": "c" * 64,
             }
             release = {
-                "tag": "v0.78.6", "peeled_commit": "d" * 40,
-                "tag_object": "e" * 40, "manifest_version": "1.78.0",
+                "tag": "v0.78.7", "peeled_commit": "d" * 40,
+                "tag_object": "e" * 40, "manifest_version": "1.79.0",
                 "manifest_hash": "f" * 64,
                 "manifest_file_sha256": "0" * 64,
             }
             with patch.object(trust, "_RELEASE", {
-                "tag": "v0.78.6", "package_version": "0.78.6",
+                "tag": "v0.78.7", "package_version": "0.78.7",
             }), patch.object(trust, "replacement_install_paths", return_value=paths), \
                     patch.object(trust, "_released_identity", return_value=release), \
                     patch.object(trust, "_fixed_python_identity", return_value=python):
@@ -86,11 +111,12 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
 
             expected = {
                 "contract": deployment
-                / "challenger-replacement-v3-install-contract-v0.78.6.json",
+                / "challenger-replacement-v3-install-contract-v0.78.7.json",
                 "candidate_plist": deployment
-                / "local.crypto-quant.challenger-replacement-v1-v0.78.6.plist",
-                "preflight_root": deployment / "preflight-receipts-v0.78.6",
-                "install_receipt_root": deployment / "install-receipts-v0.78.6",
+                / "local.crypto-quant.challenger-replacement-v1-v0.78.7.plist",
+                "preflight_root": deployment / "preflight-receipts-v0.78.7",
+                "install_receipt_root": deployment / "install-receipts-v0.78.7",
+                "recovery_receipt_root": deployment / "partial-install-recovery-receipts-v0.78.7",
             }
             self.assertEqual(rendered["contract"]["paths"]["contract"],
                              str(expected["contract"]))
@@ -106,7 +132,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             self.assertEqual(os.listdir(paths["event_root"]), [])
             self.assertFalse((runtime / "credentials").exists())
             with patch.object(trust, "_RELEASE", {
-                "tag": "v0.78.6", "package_version": "0.78.6",
+                "tag": "v0.78.7", "package_version": "0.78.7",
             }), patch.object(trust, "replacement_install_paths", return_value=paths), \
                     patch.object(trust, "_released_identity", return_value=release), \
                     patch.object(trust, "_fixed_python_identity", return_value=python):
@@ -116,7 +142,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
                 )
             expected["candidate_plist"].write_bytes(b"conflicting candidate")
             with patch.object(trust, "_RELEASE", {
-                "tag": "v0.78.6", "package_version": "0.78.6",
+                "tag": "v0.78.7", "package_version": "0.78.7",
             }), patch.object(trust, "replacement_install_paths", return_value=paths), \
                     patch.object(trust, "_released_identity", return_value=release), \
                     patch.object(trust, "_fixed_python_identity", return_value=python):
@@ -144,8 +170,9 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             deployment = runtime / "deployment"
             paths = {
                 "runtime_root": str(runtime),
-                "preflight_root": str(deployment / "preflight-receipts-v0.78.6"),
-                "install_receipt_root": str(deployment / "install-receipts-v0.78.6"),
+                "preflight_root": str(deployment / "preflight-receipts-v0.78.7"),
+                "install_receipt_root": str(deployment / "install-receipts-v0.78.7"),
+                "recovery_receipt_root": str(deployment / "partial-install-recovery-receipts-v0.78.7"),
                 "event_root": str(runtime / "state/challenger-replacement-events-v1"),
                 "start_receipt_root": str(runtime / "evidence/start-receipts"),
             }
@@ -179,7 +206,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
         from crypto_quant import challenger_replacement_v3_activation_trust as trust
 
         with patch.object(trust, "_RELEASE", {
-            "tag": "v0.78.6/unsafe", "package_version": "0.78.6",
+            "tag": "v0.78.7/unsafe", "package_version": "0.78.7",
         }), patch.object(trust, "replacement_install_paths") as paths:
             with self.assertRaisesRegex(
                 trust.ChallengerReplacementV3ActivationTrustError,
@@ -204,7 +231,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
                     trust.activation_paths()
             paths.assert_not_called()
 
-    def test_release_identity_binds_current_v0786_main_and_annotated_tag(self):
+    def test_release_identity_binds_current_v0787_main_and_annotated_tag(self):
         from crypto_quant import challenger_replacement_v3_activation_trust as trust
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -214,8 +241,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             manifest = json.loads((
                 ROOT / "config/evaluator-build-manifest-v1.json"
             ).read_text())
-            manifest["package_version"] = "0.78.6"
-            manifest["manifest_version"] = "1.78.0"
+            manifest["package_version"] = "0.78.7"
+            manifest["manifest_version"] = "1.79.0"
             manifest["manifest_hash"] = "0" * 64
             manifest["manifest_hash"] = artifact_self_hash(
                 manifest, "manifest_hash"
@@ -261,19 +288,19 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
                         ):
                     trust._released_identity()
 
-        self.assertEqual(release["tag"], "v0.78.6")
+        self.assertEqual(release["tag"], "v0.78.7")
         self.assertEqual(release["peeled_commit"], "a" * 40)
         self.assertEqual(release["tag_object"], "b" * 40)
-        self.assertEqual(release["manifest_version"], "1.78.0")
+        self.assertEqual(release["manifest_version"], "1.79.0")
         self.assertEqual(
             release["manifest_file_sha256"], hashlib.sha256(body).hexdigest()
         )
         self.assertEqual([item[0] for item in observed], [
             ("git", "rev-parse", "HEAD"),
             ("git", "rev-parse", "origin/main"),
-            ("git", "rev-parse", "v0.78.6^{}"),
-            ("git", "rev-parse", "v0.78.6"),
-            ("git", "cat-file", "-t", "v0.78.6"),
+            ("git", "rev-parse", "v0.78.7^{}"),
+            ("git", "rev-parse", "v0.78.7"),
+            ("git", "cat-file", "-t", "v0.78.7"),
             ("git", "status", "--porcelain=v1", "--untracked-files=all"),
         ])
         self.assertTrue(all(item[1] == repository for item in observed))
@@ -343,7 +370,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
         )
 
         candidate = build_fixed_v3_activation_candidate()
-        self.assertEqual(candidate["release"]["tag"], "v0.78.6")
+        self.assertEqual(candidate["release"]["tag"], "v0.78.7")
         self.assertEqual(candidate["predecessor_release"]["tag"], "v0.77.0")
         self.assertEqual(candidate["deployment"]["release_tag"], "v0.76.0")
         self.assertLessEqual(len(candidate["snapshot_inventory"]), 256)
@@ -414,8 +441,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             "import_stderr_sha256": "2" * 64,
         }
         with patch.object(trust, "_released_identity", return_value={
-            "tag": "v0.78.6", "peeled_commit": "c" * 40,
-            "manifest_version": "1.78.0", "manifest_hash": "d" * 64,
+            "tag": "v0.78.7", "peeled_commit": "c" * 40,
+            "manifest_version": "1.79.0", "manifest_hash": "d" * 64,
             "manifest_file_sha256": "e" * 64,
         }), patch.object(
             trust, "_ensure_fixed_snapshot_directories",
@@ -479,8 +506,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             "import_stderr_sha256": "2" * 64,
         }
         release = {
-            "tag": "v0.78.6", "peeled_commit": "c" * 40,
-            "tag_object": "f" * 40, "manifest_version": "1.78.0",
+            "tag": "v0.78.7", "peeled_commit": "c" * 40,
+            "tag_object": "f" * 40, "manifest_version": "1.79.0",
             "manifest_hash": "d" * 64, "manifest_file_sha256": "e" * 64,
         }
         with patch.object(trust, "_released_identity", return_value=release), \
@@ -536,8 +563,8 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
             "initial_event_count": 0, "initial_orphan_staging_count": 0,
         }
         release = {
-            "tag": "v0.78.6", "peeled_commit": "c" * 40,
-            "tag_object": "f" * 40, "manifest_version": "1.78.0",
+            "tag": "v0.78.7", "peeled_commit": "c" * 40,
+            "tag_object": "f" * 40, "manifest_version": "1.79.0",
             "manifest_hash": "d" * 64, "manifest_file_sha256": "e" * 64,
         }
         contract = trust._contract(candidate, release, snapshot, event, {

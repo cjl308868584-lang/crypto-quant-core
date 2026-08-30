@@ -23,8 +23,8 @@ def inputs():
     contract = {
         "contract_id": "challenger_replacement_v3_install_contract_" + "a" * 64,
         "contract_hash": "b" * 64,
-        "release": {"tag": "v0.78.6", "peeled_commit": "c" * 40,
-                    "manifest_version": "1.78.0", "manifest_hash": "d" * 64},
+        "release": {"tag": "v0.78.7", "peeled_commit": "c" * 40,
+                    "manifest_version": "1.79.0", "manifest_hash": "d" * 64},
         "snapshot": {"root": "/fixed/snapshot", "tree_hash": "e" * 64,
                      "root_device": "1", "root_inode": "2",
                      "file_count": 10, "total_size_bytes": 1000},
@@ -44,14 +44,161 @@ def inputs():
         "observed_at": "2026-08-28T08:10:00.000Z",
         "expires_at": "2026-08-28T08:40:00.000Z",
     }
-    return {
+    value = {
         "contract": contract, "contract_bytes": b"contract",
         "preflight": preflight, "preflight_bytes": b"preflight",
         "plist_bytes": b"plist",
     }
+    value.update(recovery_inputs())
+    return value
+
+
+def recovery_inputs():
+    return {
+        "recovery": {
+            "receipt_id": "challenger_replacement_v3_partial_install_recovery_"
+            + "2" * 64,
+            "receipt_hash": "3" * 64,
+            "status": "PARTIAL_INSTALL_RECOVERY_ELIGIBLE_NOT_EXECUTED",
+        },
+        "recovery_bytes": b"recovery",
+    }
 
 
 class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
+    def test_install_inputs_require_strict_recovery_receipt_before_commands(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        source = inputs()
+        with patch.object(
+            module, "_load_fixed_contract_inputs", return_value=(
+                source["contract"], b"contract", b"plist"
+            )
+        ), patch.object(
+            module, "_load_fixed_preflight_candidates", return_value=[
+                (source["preflight"], b"preflight")
+            ]
+        ), patch.object(module, "_now", return_value=NOW), patch.object(
+            module, "_load_fixed_recovery_inputs", side_effect=ValueError(
+                "CHALLENGER_REPLACEMENT_V3_INSTALL_RECOVERY_RECEIPT_REQUIRED"
+            )
+        ) as recovery:
+            with self.assertRaisesRegex(
+                ValueError,
+                "CHALLENGER_REPLACEMENT_V3_INSTALL_RECOVERY_RECEIPT_REQUIRED",
+            ):
+                module._load_fixed_install_inputs()
+        recovery.assert_called_once_with(
+            source["contract"], b"contract", b"plist"
+        )
+
+    def test_install_receipt_binds_exact_recovery_receipt(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        source = inputs()
+        record = {
+            "path": "/fixed/agent.plist", "device": 5, "inode": 6,
+            "owner_uid": 501, "mode": 384, "link_count": 1,
+            "size_bytes": 5, "sha256": hashlib.sha256(b"plist").hexdigest(),
+        }
+        commands = [
+            module._transcript(
+                ("/bin/launchctl", "print", source["contract"]["service"]["identity"]),
+                (113, b"", b""),
+            ),
+            module._transcript(
+                ("/bin/launchctl", "bootstrap", "gui/501", "/fixed/agent.plist"),
+                (0, b"", b""),
+            ),
+            module._transcript(
+                ("/bin/launchctl", "print", source["contract"]["service"]["identity"]),
+                (0, b"ok", b""),
+            ),
+        ]
+        receipt = module.build_fixed_v3_activation_install_receipt(
+            **source,
+            installed_at=NOW,
+            plist_record=record,
+            commands=commands,
+            status="INSTALLED_WAITING_FOR_FIRST_NATURAL_OPPORTUNITY",
+            reason_codes=[],
+        )
+        self.assertEqual(
+            receipt["recovery_binding"],
+            module._binding(source["recovery"], b"recovery", "receipt"),
+        )
+        body = canonical_json(receipt).encode("utf-8")
+        self.assertEqual(
+            module.load_fixed_v3_activation_install_receipt_bytes(
+                body,
+                contract=source["contract"],
+                contract_bytes=b"contract",
+                preflight=source["preflight"],
+                preflight_bytes=b"preflight",
+                recovery=source["recovery"],
+                recovery_bytes=b"recovery",
+            ),
+            receipt,
+        )
+
+    def test_recovery_gate_requires_exact_current_observation(self):
+        from crypto_quant import challenger_replacement_v3_activation_install as module
+
+        source = inputs()
+        source["contract"]["release"]["tag"] = "v0.78.7"
+        source["contract"]["paths"].update({
+            "target_plist": "/fixed/new-v0.78.7.plist",
+            "recovery_receipt_root": "/fixed/recovery-v0.78.7",
+        })
+        plan = {
+            "candidate": {
+                "release_tag": "v0.78.7",
+                "target_plist": "/fixed/new-v0.78.7.plist",
+                "recovery_receipt_root": "/fixed/recovery-v0.78.7",
+            }
+        }
+        observation = {"service_state": "DISABLED_AND_NOT_LOADED"}
+        recovery = dict(recovery_inputs()["recovery"], observation=observation)
+        with patch.object(
+            module,
+            "load_fixed_v3_partial_install_recovery_plan",
+            return_value=(plan, b"plan"),
+        ), patch.object(
+            module,
+            "load_fixed_published_v3_partial_install_recovery_receipt",
+            return_value=(recovery, b"recovery"),
+        ), patch.object(
+            module,
+            "_verify_preserved_partial_install",
+            return_value=observation,
+        ):
+            self.assertEqual(
+                module._load_fixed_recovery_inputs(
+                    source["contract"], b"contract", b"plist"
+                ),
+                {"recovery": recovery, "recovery_bytes": b"recovery"},
+            )
+
+        with patch.object(
+            module,
+            "load_fixed_v3_partial_install_recovery_plan",
+            return_value=(plan, b"plan"),
+        ), patch.object(
+            module,
+            "load_fixed_published_v3_partial_install_recovery_receipt",
+            return_value=(recovery, b"recovery"),
+        ), patch.object(
+            module,
+            "_verify_preserved_partial_install",
+            return_value={"service_state": "LOADED"},
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                "CHALLENGER_REPLACEMENT_V3_INSTALL_RECOVERY_RECEIPT_REQUIRED",
+            ):
+                module._load_fixed_recovery_inputs(
+                    source["contract"], b"contract", b"plist"
+                )
     @staticmethod
     def _successful_receipt_inputs(installed_at=NOW):
         from crypto_quant import challenger_replacement_v3_activation_install as module
@@ -118,6 +265,7 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
         replayed = module.load_fixed_v3_activation_install_receipt_bytes(
             body, contract=source["contract"], contract_bytes=b"contract",
             preflight=source["preflight"], preflight_bytes=b"preflight",
+            recovery=source["recovery"], recovery_bytes=b"recovery",
         )
         self.assertEqual(replayed, receipt)
         self.assertEqual(replayed["receipt_id"], receipt["receipt_id"])
@@ -200,6 +348,8 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
                     contract_bytes=source["contract_bytes"],
                     preflight=source["preflight"],
                     preflight_bytes=source["preflight_bytes"],
+                    recovery=source["recovery"],
+                    recovery_bytes=source["recovery_bytes"],
                 )
 
             with patch.object(
@@ -236,13 +386,13 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
         from crypto_quant import challenger_replacement_v3_activation_install as module
 
         contract = inputs()["contract"]
-        contract["paths"]["preflight_root"] = "/fixed/preflight-receipts-v0.78.6"
+        contract["paths"]["preflight_root"] = "/fixed/preflight-receipts-v0.78.7"
         with patch.object(module, "_open_directory", return_value=(9, object())) as open_dir, \
                 patch.object(module.os, "listdir", return_value=[]), \
                 patch.object(module, "_close_descriptor"):
             self.assertEqual(module._load_fixed_preflight_candidates(contract, b"contract"), [])
         self.assertEqual(open_dir.call_args.args[0], Path(
-            "/fixed/preflight-receipts-v0.78.6"
+            "/fixed/preflight-receipts-v0.78.7"
         ))
 
     def test_revalidate_compares_large_decimal_identities_to_os_stat(self):
@@ -349,6 +499,9 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
              patch.object(module, "_load_fixed_preflight_candidates", return_value=[
                  (source["preflight"], b"preflight")
              ]), patch.object(
+                 module, "_load_fixed_recovery_inputs",
+                 return_value=recovery_inputs(),
+             ), patch.object(
                  module, "load_fixed_v3_activation_install_receipt_bytes",
                  return_value=receipt,
              ), patch.object(module, "_close_descriptor"), patch.object(
@@ -428,6 +581,7 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
         self.assertEqual(module.load_fixed_v3_activation_install_receipt_bytes(
             body, contract=source["contract"], contract_bytes=b"contract",
             preflight=source["preflight"], preflight_bytes=b"preflight",
+            recovery=source["recovery"], recovery_bytes=b"recovery",
         ), receipt)
 
     def test_receipt_encodes_large_plist_identity_as_decimal_strings(self):
@@ -457,6 +611,7 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
         self.assertEqual(module.load_fixed_v3_activation_install_receipt_bytes(
             body, contract=source["contract"], contract_bytes=b"contract",
             preflight=source["preflight"], preflight_bytes=b"preflight",
+            recovery=source["recovery"], recovery_bytes=b"recovery",
         ), receipt)
 
 

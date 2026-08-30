@@ -1310,10 +1310,13 @@ def _ensure_fixed_snapshot_directories(paths):
     runtime = Path(paths["runtime_root"])
     deployment = runtime / "deployment"
     receipt_names = []
-    for key, fallback in (
+    receipt_roots = [
         ("preflight_root", deployment / "preflight-receipts"),
         ("install_receipt_root", deployment / "install-receipts"),
-    ):
+    ]
+    if "recovery_receipt_root" in paths:
+        receipt_roots.append(("recovery_receipt_root", None))
+    for key, fallback in receipt_roots:
         receipt = Path(paths.get(key, fallback))
         if receipt.parent != deployment:
             raise ReplacementInstallTrustError(

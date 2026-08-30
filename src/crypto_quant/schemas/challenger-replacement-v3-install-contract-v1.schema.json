@@ -48,7 +48,7 @@
       ],
       "properties": {
         "tag": {
-          "const": "v0.78.6"
+          "const": "v0.78.7"
         },
         "peeled_commit": {
           "type": "string",
@@ -59,7 +59,7 @@
           "pattern": "^[0-9a-f]{40}$"
         },
         "manifest_version": {
-          "const": "1.78.0"
+          "const": "1.79.0"
         },
         "manifest_hash": {
           "type": "string",
@@ -297,6 +297,7 @@
         "candidate_plist",
         "preflight_root",
         "install_receipt_root",
+        "recovery_receipt_root",
         "start_receipt_root",
         "event_root",
         "stdout",
@@ -325,6 +326,10 @@
           "minLength": 1
         },
         "install_receipt_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recovery_receipt_root": {
           "type": "string",
           "minLength": 1
         },

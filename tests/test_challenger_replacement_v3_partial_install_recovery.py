@@ -726,6 +726,44 @@ class PartialInstallRecoveryReceiptTests(unittest.TestCase):
                 self.module.publish_fixed_v3_partial_install_recovery_receipt()
         self.assertEqual(_sentinel(orphan), before)
 
+    def test_later_retry_replays_first_receipt_instead_of_publishing_new_id(self):
+        receipt_root = Path(self.plan["candidate"]["recovery_receipt_root"])
+        receipt_root.mkdir(mode=0o700)
+        later = self.observed_at.replace(second=self.observed_at.second + 1)
+        common = (
+            patch.object(
+                self.module,
+                "load_fixed_v3_partial_install_recovery_plan",
+                return_value=(self.plan, self.plan_bytes),
+            ),
+            patch.object(
+                self.module,
+                "load_fixed_published_v3_install_contract",
+                return_value=(
+                    self.contract,
+                    self.contract_bytes,
+                    self.candidate_plist_bytes,
+                ),
+            ),
+            patch.object(
+                self.module,
+                "_verify_preserved_partial_install",
+                return_value=self.observation,
+            ),
+            patch.object(
+                self.module, "_now", side_effect=[self.observed_at, later]
+            ),
+        )
+        with common[0], common[1], common[2], common[3]:
+            first = self.module.publish_fixed_v3_partial_install_recovery_receipt()
+            second = self.module.publish_fixed_v3_partial_install_recovery_receipt()
+        self.assertEqual(second["publication_outcome"], "ALREADY_PUBLISHED")
+        self.assertEqual(second["receipt"], first["receipt"])
+        self.assertEqual(
+            sorted(path.name for path in receipt_root.iterdir()),
+            [first["receipt"]["receipt_id"] + ".json"],
+        )
+
 
 class PartialInstallRecoveryCliTests(unittest.TestCase):
     def test_cli_has_no_arguments_and_prints_only_canonical_result(self):

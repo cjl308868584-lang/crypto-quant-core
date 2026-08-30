@@ -778,6 +778,46 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+def load_fixed_published_v3_partial_install_recovery_receipt(
+    *, plan, plan_bytes, contract, contract_bytes, candidate_plist_bytes
+):
+    descriptor = -1
+    primary = None
+    try:
+        descriptor, _ = _open_directory(
+            Path(plan["candidate"]["recovery_receipt_root"]), exact_mode=0o700
+        )
+        names = sorted(os.listdir(descriptor))
+        if not names:
+            return None
+        if len(names) != 1 or not names[0].endswith(".json"):
+            raise ValueError("receipt count")
+        found = _read_published_exact(descriptor, names[0])
+        if found is None:
+            raise ValueError("receipt missing")
+        receipt = load_fixed_v3_partial_install_recovery_receipt_bytes(
+            found[0],
+            plan=plan,
+            plan_bytes=plan_bytes,
+            contract=contract,
+            contract_bytes=contract_bytes,
+            candidate_plist_bytes=candidate_plist_bytes,
+        )
+        if names[0] != receipt["receipt_id"] + ".json":
+            raise ValueError("receipt filename")
+        return receipt, found[0]
+    except BaseException as error:
+        primary = error
+        if isinstance(error, ChallengerReplacementPartialInstallRecoveryError):
+            raise
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_RECEIPT_INVALID", error
+        )
+    finally:
+        if descriptor >= 0:
+            _close_descriptor(descriptor, primary)
+
+
 def publish_fixed_v3_partial_install_recovery_receipt():
     plan, plan_bytes = load_fixed_v3_partial_install_recovery_plan()
     try:
@@ -791,6 +831,25 @@ def publish_fixed_v3_partial_install_recovery_receipt():
             "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_CANDIDATE_INVALID", error
         )
     observation = _verify_preserved_partial_install(plan)
+    try:
+        existing = load_fixed_published_v3_partial_install_recovery_receipt(
+            plan=plan,
+            plan_bytes=plan_bytes,
+            contract=contract,
+            contract_bytes=contract_bytes,
+            candidate_plist_bytes=candidate_plist_bytes,
+        )
+    except ChallengerReplacementPartialInstallRecoveryError as error:
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_PUBLICATION_FAILED", error
+        )
+    if existing is not None:
+        after = _verify_preserved_partial_install(plan)
+        if after != observation:
+            _raise_recovery(
+                "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT"
+            )
+        return {"receipt": existing[0], "publication_outcome": "ALREADY_PUBLISHED"}
     receipt = build_fixed_v3_partial_install_recovery_receipt(
         plan=plan,
         plan_bytes=plan_bytes,

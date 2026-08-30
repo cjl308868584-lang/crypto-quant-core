@@ -30,6 +30,12 @@ from .challenger_replacement_v3_activation_trust import (
     _snapshot_python_paths,
     load_fixed_published_v3_install_contract,
 )
+from .challenger_replacement_v3_partial_install_recovery import (
+    ChallengerReplacementPartialInstallRecoveryError,
+    _verify_preserved_partial_install,
+    load_fixed_published_v3_partial_install_recovery_receipt,
+    load_fixed_v3_partial_install_recovery_plan,
+)
 from .challenger_replacement_events import (
     open_challenger_replacement_event_root,
 )
@@ -59,7 +65,7 @@ def _first_eligible(installed):
     return utc_datetime(boundary + timedelta(hours=4))
 
 
-def _receipt_semantics(receipt, contract, preflight):
+def _receipt_semantics(receipt, contract, preflight, recovery, recovery_bytes):
     try:
         installed = datetime.fromisoformat(receipt["installed_at"].replace("Z", "+00:00"))
         observed = datetime.fromisoformat(preflight["observed_at"].replace("Z", "+00:00"))
@@ -74,6 +80,9 @@ def _receipt_semantics(receipt, contract, preflight):
             and receipt["plist"]["path"] == contract["paths"]["target_plist"]
             and receipt["plist"]["mode"] == 0o600
             and receipt["plist"]["link_count"] == 1
+            and receipt["recovery_binding"] == _binding(
+                recovery, recovery_bytes, "receipt"
+            )
             and sequence in ([print_argv, bootstrap], [print_argv, bootstrap, print_argv])
             and exits[0] == 113
         )
@@ -91,7 +100,8 @@ def _receipt_semantics(receipt, contract, preflight):
 
 def build_fixed_v3_activation_install_receipt(
     *, contract, contract_bytes, preflight, preflight_bytes, plist_bytes,
-    installed_at, plist_record, commands, status, reason_codes,
+    recovery, recovery_bytes, installed_at, plist_record, commands, status,
+    reason_codes,
 ):
     del plist_bytes
     receipt = {
@@ -100,6 +110,7 @@ def build_fixed_v3_activation_install_receipt(
         "status": status, "installed_at": utc_datetime(installed_at.replace(microsecond=0)),
         "contract_binding": _binding(contract, contract_bytes, "contract"),
         "preflight_binding": _binding(preflight, preflight_bytes, "receipt"),
+        "recovery_binding": _binding(recovery, recovery_bytes, "receipt"),
         "snapshot_binding": copy.deepcopy(dict(contract["snapshot"])),
         "event_root_binding": copy.deepcopy(dict(contract["event_root"])),
         "adapter_binding": {
@@ -127,7 +138,9 @@ def build_fixed_v3_activation_install_receipt(
     identity = {k: v for k, v in receipt.items() if k not in ("receipt_id", "receipt_hash")}
     receipt["receipt_id"] = stable_id("challenger_replacement_v3_activation_install", identity)
     receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
-    if not _receipt_semantics(receipt, contract, preflight):
+    if not _receipt_semantics(
+        receipt, contract, preflight, recovery, recovery_bytes
+    ):
         raise ChallengerReplacementV3ActivationInstallError(
             "CHALLENGER_REPLACEMENT_V3_INSTALL_RECEIPT_INVALID"
         )
@@ -135,7 +148,8 @@ def build_fixed_v3_activation_install_receipt(
 
 
 def load_fixed_v3_activation_install_receipt_bytes(
-    data, *, contract, contract_bytes, preflight, preflight_bytes,
+    data, *, contract, contract_bytes, preflight, preflight_bytes, recovery,
+    recovery_bytes,
 ):
     try:
         value = dict(_strict_json_bytes(data))
@@ -148,19 +162,25 @@ def load_fixed_v3_activation_install_receipt_bytes(
             or tuple(Draft202012Validator(schema).iter_errors(value))
             or value["contract_binding"] != _binding(contract, contract_bytes, "contract")
             or value["preflight_binding"] != _binding(preflight, preflight_bytes, "receipt")
+            or value["recovery_binding"] != _binding(
+                recovery, recovery_bytes, "receipt"
+            )
             or value["snapshot_binding"] != contract["snapshot"]
             or value["event_root_binding"] != contract["event_root"]
             or value["receipt_id"] != stable_id(
                 "challenger_replacement_v3_activation_install", identity
             )
             or value["receipt_hash"] != artifact_self_hash(value, "receipt_hash")
-            or not _receipt_semantics(value, contract, preflight)
+            or not _receipt_semantics(
+                value, contract, preflight, recovery, recovery_bytes
+            )
         ):
             raise ValueError("identity")
         installed = datetime.fromisoformat(value["installed_at"].replace("Z", "+00:00"))
         rebuilt = build_fixed_v3_activation_install_receipt(
             contract=contract, contract_bytes=contract_bytes,
             preflight=preflight, preflight_bytes=preflight_bytes,
+            recovery=recovery, recovery_bytes=recovery_bytes,
             plist_bytes=b"", installed_at=installed,
             plist_record=_deserialize_filesystem_identity(value["plist"]), commands=value["commands"],
             status=value["status"], reason_codes=value["reason_codes"],
@@ -253,20 +273,59 @@ def _select_bound_preflight(candidates, binding):
         ) from error
 
 
-def _inputs(contract, contract_bytes, plist_bytes, candidate):
-    return {
+def _inputs(contract, contract_bytes, plist_bytes, candidate, recovery):
+    value = {
         "contract": contract, "contract_bytes": contract_bytes,
         "preflight": candidate[0], "preflight_bytes": candidate[1],
         "plist_bytes": plist_bytes,
     }
+    value.update(recovery)
+    return value
+
+
+def _load_fixed_recovery_inputs(contract, contract_bytes, plist_bytes):
+    try:
+        plan, plan_bytes = load_fixed_v3_partial_install_recovery_plan()
+        if (
+            plan["candidate"]["target_plist"]
+            != contract["paths"]["target_plist"]
+            or plan["candidate"]["recovery_receipt_root"]
+            != contract["paths"]["recovery_receipt_root"]
+            or plan["candidate"]["release_tag"] != contract["release"]["tag"]
+        ):
+            raise ValueError("candidate")
+        found = load_fixed_published_v3_partial_install_recovery_receipt(
+            plan=plan,
+            plan_bytes=plan_bytes,
+            contract=contract,
+            contract_bytes=contract_bytes,
+            candidate_plist_bytes=plist_bytes,
+        )
+        if found is None:
+            raise ValueError("receipt")
+        receipt, receipt_bytes = found
+        if _verify_preserved_partial_install(plan) != receipt["observation"]:
+            raise ValueError("observation")
+        return {
+            "recovery": receipt,
+            "recovery_bytes": receipt_bytes,
+        }
+    except (KeyError, TypeError, ValueError, ChallengerReplacementPartialInstallRecoveryError) as error:
+        raise ChallengerReplacementV3ActivationInstallError(
+            "CHALLENGER_REPLACEMENT_V3_INSTALL_RECOVERY_RECEIPT_REQUIRED"
+        ) from error
 
 
 def _load_fixed_install_inputs():
     contract, contract_bytes, plist_bytes = _load_fixed_contract_inputs()
     candidates = _load_fixed_preflight_candidates(contract, contract_bytes)
+    recovery = _load_fixed_recovery_inputs(
+        contract, contract_bytes, plist_bytes
+    )
     return _inputs(
         contract, contract_bytes, plist_bytes,
         _select_current_preflight(candidates, _now()),
+        recovery,
     )
 
 
@@ -295,7 +354,7 @@ def _revalidate(inputs, record):
             "CHALLENGER_REPLACEMENT_V3_INSTALL_EVENT_ROOT_CHANGED"
         )
     observed_python = _fixed_python_identity(
-        contract["snapshot"]["root"], package_version="0.78.6",
+        contract["snapshot"]["root"], package_version="0.78.7",
         dependency_modules=_DEPENDENCIES,
         dependency_versions=_DEPENDENCY_VERSIONS,
         python_paths=_snapshot_python_paths(contract["snapshot"]["root"]),
@@ -355,10 +414,17 @@ def _load_fixed_successful_install_receipt():
             _load_fixed_preflight_candidates(contract, contract_bytes),
             untrusted["preflight_binding"],
         )
-        inputs = _inputs(contract, contract_bytes, plist_bytes, candidate)
+        recovery = _load_fixed_recovery_inputs(
+            contract, contract_bytes, plist_bytes
+        )
+        inputs = _inputs(
+            contract, contract_bytes, plist_bytes, candidate, recovery
+        )
         receipt = load_fixed_v3_activation_install_receipt_bytes(
             found[0], contract=contract, contract_bytes=contract_bytes,
             preflight=candidate[0], preflight_bytes=candidate[1],
+            recovery=recovery["recovery"],
+            recovery_bytes=recovery["recovery_bytes"],
         )
         replay_contract, replay_contract_bytes, replay_plist_bytes = (
             _load_fixed_contract_inputs()
@@ -367,12 +433,16 @@ def _load_fixed_successful_install_receipt():
             _load_fixed_preflight_candidates(replay_contract, replay_contract_bytes),
             receipt["preflight_binding"],
         )
+        replay_recovery = _load_fixed_recovery_inputs(
+            replay_contract, replay_contract_bytes, replay_plist_bytes
+        )
         if (
             receipt["status"] != "INSTALLED_WAITING_FOR_FIRST_NATURAL_OPPORTUNITY"
             or names[0] != receipt["receipt_id"] + ".json"
             or _inputs(
                 replay_contract, replay_contract_bytes, replay_plist_bytes,
                 replay_candidate,
+                replay_recovery,
             ) != inputs
         ):
             raise ValueError("receipt semantics")

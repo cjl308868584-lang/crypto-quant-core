@@ -10,6 +10,7 @@
     "installed_at",
     "contract_binding",
     "preflight_binding",
+    "recovery_binding",
     "snapshot_binding",
     "event_root_binding",
     "adapter_binding",
@@ -79,6 +80,25 @@
         "receipt_id": {
           "type": "string",
           "minLength": 1
+        },
+        "receipt_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "file_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "recovery_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "receipt_hash", "file_sha256"],
+      "properties": {
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^challenger_replacement_v3_partial_install_recovery_[0-9a-f]{64}$"
         },
         "receipt_hash": {
           "type": "string",
@@ -182,14 +202,14 @@
       ],
       "properties": {
         "release_tag": {
-          "const": "v0.78.6"
+          "const": "v0.78.7"
         },
         "peeled_commit": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         },
         "manifest_version": {
-          "const": "1.78.0"
+          "const": "1.79.0"
         },
         "manifest_hash": {
           "type": "string",
