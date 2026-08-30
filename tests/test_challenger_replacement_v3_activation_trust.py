@@ -220,7 +220,7 @@ class ChallengerReplacementV3ActivationTrustTests(unittest.TestCase):
 
         for tag in ("v01.2.3", "v1.02.3", "v1.2.03"):
             with self.subTest(tag=tag), patch.object(trust, "_RELEASE", {
-                "tag": tag, "package_version": "0.78.6",
+                "tag": tag, "package_version": "0.78.7",
             }), patch.object(trust, "replacement_install_paths", return_value={
                 "deployment_root": "/fixed/deployment", "runtime_root": "/fixed",
             }) as paths:
