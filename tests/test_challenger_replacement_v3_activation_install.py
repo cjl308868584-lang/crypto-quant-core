@@ -157,7 +157,10 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
                 "recovery_receipt_root": "/fixed/recovery-v0.78.7",
             }
         }
-        observation = {"service_state": "DISABLED_AND_NOT_LOADED"}
+        observation = {
+            "service_state": "DISABLED_AND_NOT_LOADED",
+            "preserved_file_sha256": {},
+        }
         recovery = dict(recovery_inputs()["recovery"], observation=observation)
         with patch.object(
             module,
@@ -419,7 +422,20 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
         observed_python.update({"device": large + 5, "inode": large + 6})
         record = {"device": 1, "inode": 2}
         with patch.object(
-            module, "_load_fixed_install_inputs", return_value=fixed,
+            module, "_load_fixed_contract_inputs", return_value=(
+                fixed["contract"], fixed["contract_bytes"], fixed["plist_bytes"]
+            ),
+        ), patch.object(
+            module, "_load_fixed_preflight_candidates", return_value=[
+                (fixed["preflight"], fixed["preflight_bytes"])
+            ],
+        ), patch.object(
+            module, "_load_fixed_recovery_inputs", return_value={
+                "recovery": fixed["recovery"],
+                "recovery_bytes": fixed["recovery_bytes"],
+            },
+        ), patch.object(
+            module, "_target_absent", return_value=False,
         ), patch.object(
             module, "_publish_plist", return_value=("ALREADY_PUBLISHED", record),
         ), patch.object(
@@ -488,6 +504,14 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
         binding = module._binding(source["preflight"], b"preflight", "receipt")
         receipt = {
             "receipt_id": "installed", "preflight_binding": binding,
+            "recovery_binding": module._binding(
+                source["recovery"], b"recovery", "receipt"
+            ),
+            "plist": module._serialize_filesystem_identity({
+                "path": "/fixed/agent.plist", "device": 1, "inode": 2,
+                "owner_uid": 501, "mode": 384, "link_count": 1,
+                "size_bytes": 5, "sha256": hashlib.sha256(b"plist").hexdigest(),
+            }),
             "status": "INSTALLED_WAITING_FOR_FIRST_NATURAL_OPPORTUNITY",
         }
         body = canonical_json(receipt).encode("utf-8")
@@ -501,10 +525,12 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
              ]), patch.object(
                  module, "_load_fixed_recovery_inputs",
                  return_value=recovery_inputs(),
-             ), patch.object(
+             ) as load_recovery, patch.object(
                  module, "load_fixed_v3_activation_install_receipt_bytes",
                  return_value=receipt,
-             ), patch.object(module, "_close_descriptor"), patch.object(
+             ), patch.object(module, "_revalidate"), patch.object(
+                 module, "_close_descriptor"
+             ), patch.object(
                  module, "_select_current_preflight",
                  side_effect=AssertionError("current selector must not run after install"),
              ):
@@ -514,6 +540,12 @@ class ChallengerReplacementV3ActivationInstallTests(unittest.TestCase):
         self.assertEqual(loaded, source)
         self.assertEqual(found_receipt, receipt)
         self.assertEqual(found_body, body)
+        self.assertEqual(load_recovery.call_count, 2)
+        for call in load_recovery.call_args_list:
+            self.assertTrue(call.kwargs["historical"])
+            self.assertEqual(
+                call.kwargs["expected_binding"], receipt["recovery_binding"]
+            )
 
     def test_success_uses_only_print_bootstrap_print(self):
         from crypto_quant import challenger_replacement_v3_activation_install as module

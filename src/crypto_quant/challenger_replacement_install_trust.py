@@ -424,7 +424,7 @@ def _snapshot_tree_hash(inventory: Mapping[str, str]) -> str:
     )
 
 
-def _read_snapshot_file(root_fd: int, name: str, expected_hash: str) -> bytes:
+def _read_snapshot_file(root_fd: int, name: str, expected_hash=None) -> bytes:
     parts = _relative_parts(name)
     current = os.dup(root_fd)
     primary_error = None
@@ -459,7 +459,7 @@ def _read_snapshot_file(root_fd: int, name: str, expected_hash: str) -> bytes:
             if (
                 not _same_file_identity(opened, after)
                 or not _same_file_identity(after, attached)
-                or hashlib.sha256(body).hexdigest() != expected_hash
+                or (expected_hash is not None and hashlib.sha256(body).hexdigest() != expected_hash)
             ):
                 raise ReplacementInstallTrustError(
                     "CHALLENGER_REPLACEMENT_SNAPSHOT_FINAL_UNTRUSTED"

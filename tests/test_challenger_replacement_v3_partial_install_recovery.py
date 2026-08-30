@@ -185,15 +185,19 @@ def _fixture_plan(module, workspace):
 def _launchctl_result(argv):
     if tuple(argv) == ("/bin/launchctl", "print-disabled", "gui/501"):
         return (
-            b'disabled services = {\n\t"local.crypto-quant.challenger-forward" => disabled\n'
-            b'\t"local.crypto-quant.challenger-replacement-v1" => disabled\n}\n',
+            b'\n\tdisabled services = {\n'
+            b'\t\t"local.crypto-quant.challenger-forward" => disabled\n'
+            b'\t\t"com.example.unrelated" => enabled\n'
+            b'\t\t"local.crypto-quant.challenger-replacement-v1" => disabled\n'
+            b'\t}\n',
             b"",
             0,
         )
     label = argv[-1].split("/")[-1]
     return (
         b"",
-        ("Could not find service \"{}\" in domain for user gui: 501\n".format(label)).encode(),
+        ("Bad request.\nCould not find service \"{}\" in domain for user "
+         "gui: 501\n".format(label)).encode(),
         113,
     )
 
@@ -344,6 +348,51 @@ class PartialInstallRecoveryEvidenceTests(unittest.TestCase):
             },
         )
 
+    def test_fixed_launchagents_parent_uses_real_nonwritable_0755_mode(self):
+        source = self.files["target_plist"]
+        record = _file_record(source)
+        record["path"] = (
+            "/Users/chenm4/Library/LaunchAgents/"
+            "local.crypto-quant.challenger-replacement-v1.plist"
+        )
+        with patch.object(
+            self.module, "_open_directory", return_value=(99, None)
+        ) as opened, patch.object(
+            self.module, "_read_published_exact",
+            return_value=(source.read_bytes(), source.stat()),
+        ), patch.object(self.module, "_close_descriptor"):
+            self.assertEqual(
+                self.module._verify_file_record(record), source.read_bytes()
+            )
+        opened.assert_called_once_with(
+            Path("/Users/chenm4/Library/LaunchAgents"), exact_mode=0o755
+        )
+
+    def test_snapshot_replay_derives_inventory_without_embedded_manifest(self):
+        from crypto_quant.challenger_replacement_install_trust import (
+            _publish_snapshot_from_inventory,
+        )
+
+        source = self.workspace.root / "source"
+        payload = source / "payload.txt"
+        inventory = {
+            "payload.txt": hashlib.sha256(payload.read_bytes()).hexdigest()
+        }
+        published = _publish_snapshot_from_inventory(
+            source,
+            self.workspace.root / "runtime/deployment/snapshots",
+            inventory,
+        )
+        root = Path(published["root"])
+        self.plan["snapshot"] = {
+            "tree_hash": published["tree_hash"],
+            "file_count": published["file_count"],
+            "total_size_bytes": published["total_size_bytes"],
+            "root_record": _directory_record(root),
+        }
+        observed = self._verify()
+        self.assertEqual(observed["event_count"], 0)
+
     def test_same_bytes_on_new_inode_is_rejected_without_mutating_sentinel(self):
         target = self.files["target_plist"]
         body = target.read_bytes()
@@ -451,6 +500,39 @@ class PartialInstallRecoveryEvidenceTests(unittest.TestCase):
             ):
                 self.module._verify_preserved_partial_install(self.plan)
 
+    def test_malformed_launchctl_output_with_label_substrings_is_rejected(self):
+        required = self.plan["required_state"]
+
+        def malformed_disabled(argv):
+            if tuple(argv) == ("/bin/launchctl", "print-disabled", "gui/501"):
+                return (
+                    b'junk "local.crypto-quant.challenger-forward" => disabled '
+                    b'"local.crypto-quant.challenger-replacement-v1" => disabled',
+                    b"", 0,
+                )
+            return _launchctl_result(argv)
+
+        with patch.object(
+            self.module, "_run_observation_command",
+            side_effect=malformed_disabled,
+        ), self.assertRaisesRegex(
+            ValueError, "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
+        ):
+            self.module._verify_services(required)
+
+        def malformed_not_found(argv):
+            if tuple(argv) == ("/bin/launchctl", "print-disabled", "gui/501"):
+                return _launchctl_result(argv)
+            return b"", ("junk " + argv[-1]).encode(), 113
+
+        with patch.object(
+            self.module, "_run_observation_command",
+            side_effect=malformed_not_found,
+        ), self.assertRaisesRegex(
+            ValueError, "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
+        ):
+            self.module._verify_services(required)
+
         def enabled(argv):
             if tuple(argv) == ("/bin/launchctl", "print-disabled", "gui/501"):
                 stdout, stderr, code = _launchctl_result(argv)
@@ -480,6 +562,26 @@ class PartialInstallRecoveryEvidenceTests(unittest.TestCase):
                     "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT",
                 ):
                     self._verify()
+
+    def test_fixed_automation_parent_uses_real_nonwritable_0755_mode(self):
+        path = Path(
+            "/Users/chenm4/.codex/automations/v0-78-3-replacement/"
+            "automation.toml"
+        )
+        source = self.automation
+        with patch.object(
+            self.module, "_open_directory", return_value=(98, None)
+        ) as opened, patch.object(
+            self.module.os, "open", return_value=99
+        ), patch.object(
+            self.module.os, "fstat", side_effect=[source.stat(), source.stat()]
+        ), patch.object(
+            self.module.os, "stat", return_value=source.stat()
+        ), patch.object(
+            self.module, "_read_exact", return_value=source.read_bytes()
+        ), patch.object(self.module, "_close_descriptor"):
+            self.assertEqual(self.module._read_automation_status(path), "PAUSED")
+        opened.assert_called_once_with(path.parent, exact_mode=0o755)
 
     def test_existing_new_target_is_rejected(self):
         target = Path(self.plan["candidate"]["target_plist"])
@@ -613,6 +715,7 @@ class PartialInstallRecoveryReceiptTests(unittest.TestCase):
             contract=self.contract,
             contract_bytes=self.contract_bytes,
             candidate_plist_bytes=self.candidate_plist_bytes,
+            expected_observation=self.observation,
         )
         self.assertEqual(replayed, receipt)
 
@@ -638,7 +741,33 @@ class PartialInstallRecoveryReceiptTests(unittest.TestCase):
                         contract=self.contract,
                         contract_bytes=self.contract_bytes,
                         candidate_plist_bytes=self.candidate_plist_bytes,
+                        expected_observation=self.observation,
                     )
+
+    def test_receipt_loader_rejects_resealed_transcript_change(self):
+        from crypto_quant.canonical import stable_id
+        from crypto_quant.evidence import artifact_self_hash
+
+        receipt = self._build()
+        receipt["observation"]["transcripts"][0]["stdout_sha256"] = "f" * 64
+        identity = {
+            key: value for key, value in receipt.items()
+            if key not in ("receipt_id", "receipt_hash")
+        }
+        receipt["receipt_id"] = stable_id(
+            "challenger_replacement_v3_partial_install_recovery", identity
+        )
+        receipt["receipt_hash"] = artifact_self_hash(receipt, "receipt_hash")
+        with self.assertRaisesRegex(
+            ValueError, "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_RECEIPT_INVALID"
+        ):
+            self.module.load_fixed_v3_partial_install_recovery_receipt_bytes(
+                canonical_json(receipt).encode("utf-8"),
+                plan=self.plan, plan_bytes=self.plan_bytes,
+                contract=self.contract, contract_bytes=self.contract_bytes,
+                candidate_plist_bytes=self.candidate_plist_bytes,
+                expected_observation=self.observation,
+            )
 
     def test_real_exact_publisher_is_idempotent_and_conflict_closed(self):
         receipt_root = Path(self.plan["candidate"]["recovery_receipt_root"])
@@ -661,13 +790,41 @@ class PartialInstallRecoveryReceiptTests(unittest.TestCase):
             self.module,
             "_verify_preserved_partial_install",
             return_value=self.observation,
-        ), patch.object(self.module, "_now", return_value=self.observed_at):
+        ), patch.object(
+            self.module, "_publish_contract_exact",
+            wraps=self.module._publish_contract_exact,
+        ) as exact_publish, patch.object(
+            self.module, "_now", return_value=self.observed_at
+        ):
             first = self.module.publish_fixed_v3_partial_install_recovery_receipt()
             second = self.module.publish_fixed_v3_partial_install_recovery_receipt()
         self.assertEqual(first["publication_outcome"], "PUBLISHED")
         self.assertEqual(second["publication_outcome"], "ALREADY_PUBLISHED")
+        self.assertEqual(exact_publish.call_count, 2)
         final = receipt_root / (receipt["receipt_id"] + ".json")
         self.assertEqual(final.read_bytes(), body)
+        with patch.object(
+            self.module,
+            "load_fixed_v3_partial_install_recovery_plan",
+            return_value=(self.plan, self.plan_bytes),
+        ), patch.object(
+            self.module,
+            "load_fixed_published_v3_install_contract",
+            return_value=(
+                self.contract,
+                self.contract_bytes,
+                self.candidate_plist_bytes,
+            ),
+        ), patch.object(
+            self.module, "_verify_preserved_partial_install",
+            return_value=self.observation,
+        ), patch.object(
+            self.module, "_publish_contract_exact",
+            side_effect=OSError("directory fsync failed"),
+        ), self.assertRaisesRegex(
+            ValueError, "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_PUBLICATION_FAILED"
+        ):
+            self.module.publish_fixed_v3_partial_install_recovery_receipt()
         final.unlink()
         final.write_bytes(b"different")
         os.chmod(final, 0o600)

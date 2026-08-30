@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ from .challenger_replacement_install_trust import (
     _replay_snapshot,
     _require_open_flag,
     _same_file_identity,
+    _snapshot_tree_entries,
+    _snapshot_tree_hash,
     _validate_directory_attachment,
 )
 from .evidence import artifact_self_hash
@@ -288,7 +291,10 @@ def _verify_file_record(record):
     primary = None
     try:
         path = Path(record["path"])
-        parent_fd, _ = _open_directory(path.parent, exact_mode=0o700)
+        parent_mode = 0o755 if path.parent == Path(
+            "/Users/chenm4/Library/LaunchAgents"
+        ) else 0o700
+        parent_fd, _ = _open_directory(path.parent, exact_mode=parent_mode)
         found = _read_published_exact(parent_fd, path.name)
         if found is None:
             raise ValueError("missing")
@@ -346,7 +352,7 @@ def _verify_directory_record(record):
             _close_descriptor(descriptor, primary)
 
 
-def _verify_snapshot(plan, install_contract_bytes):
+def _verify_snapshot(plan):
     root_fd = parent_fd = -1
     primary = None
     try:
@@ -354,14 +360,16 @@ def _verify_snapshot(plan, install_contract_bytes):
         root = Path(snapshot["root_record"]["path"])
         if root.name != snapshot["tree_hash"]:
             raise ValueError("snapshot path")
-        contract = dict(_strict_json_bytes(install_contract_bytes))
-        manifest_sha = contract["release"]["manifest_file_sha256"]
         root_fd, _ = _open_directory(root, exact_mode=0o700)
-        manifest_name = "config/evaluator-build-manifest-v1.json"
-        manifest_bytes = _read_snapshot_file(root_fd, manifest_name, manifest_sha)
-        manifest = dict(_strict_json_bytes(manifest_bytes))
-        inventory = dict(manifest["file_hashes"])
-        inventory[manifest_name] = hashlib.sha256(manifest_bytes).hexdigest()
+        files, _ = _snapshot_tree_entries(root_fd)
+        inventory = {
+            name: hashlib.sha256(
+                _read_snapshot_file(root_fd, name)
+            ).hexdigest()
+            for name in files
+        }
+        if _snapshot_tree_hash(inventory) != snapshot["tree_hash"]:
+            raise ValueError("snapshot hash")
         parent_fd, _ = _open_directory(root.parent, exact_mode=0o700)
         replayed = _replay_snapshot(parent_fd, snapshot["tree_hash"], inventory)
         if (
@@ -393,7 +401,10 @@ def _read_automation_status(path):
     parent_fd = descriptor = -1
     primary = None
     try:
-        parent_fd, _ = _open_directory(path.parent, exact_mode=0o700)
+        parent_mode = 0o755 if path == Path(
+            "/Users/chenm4/.codex/automations/v0-78-3-replacement/automation.toml"
+        ) else 0o700
+        parent_fd, _ = _open_directory(path.parent, exact_mode=parent_mode)
         descriptor = os.open(
             path.name,
             os.O_RDONLY
@@ -469,8 +480,23 @@ def _verify_services(required):
         _raise_recovery(
             "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT", error
         )
-    if code != 0 or stderr or any(
-        text.count('"{}" => disabled'.format(label)) != 1 for label in labels
+    lines = text.splitlines()
+    if lines[:1] == [""]:
+        lines = lines[1:]
+    entries = {}
+    for line in lines[1:-1]:
+        matched = re.fullmatch(
+            r'\t\t"([A-Za-z0-9._-]+)" => (disabled|enabled)', line
+        )
+        if matched is None or matched.group(1) in entries:
+            _raise_recovery(
+                "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
+            )
+        entries[matched.group(1)] = matched.group(2)
+    if (
+        code != 0 or stderr or lines[:1] != ["\tdisabled services = {"]
+        or lines[-1:] != ["\t}"]
+        or any(entries.get(label) != "disabled" for label in labels)
     ):
         _raise_recovery(
             "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
@@ -484,11 +510,15 @@ def _verify_services(required):
     for label in labels:
         argv = ("/bin/launchctl", "print", domain + "/" + label)
         out, err, exit_code = _run_observation_command(argv)
+        not_found = (
+            'Could not find service "{}" in domain for user gui: 501\n'.format(
+                label
+            ).encode("utf-8")
+        )
         if (
             exit_code != 113
             or out
-            or not err
-            or label.encode("utf-8") not in err
+            or err not in (not_found, b"Bad request.\n" + not_found)
         ):
             _raise_recovery(
                 "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
@@ -502,21 +532,37 @@ def _verify_services(required):
     return transcripts
 
 
-def _verify_preserved_partial_install(plan):
+def _verify_preserved_partial_install_history(plan):
     try:
         observed_files = {
             name: _verify_file_record(record)
             for name, record in plan["preserved_files"].items()
         }
+        _verify_directory_record(plan["snapshot"]["root_record"])
+        _verify_snapshot(plan)
+        return {
+            name: hashlib.sha256(body).hexdigest()
+            for name, body in observed_files.items()
+        }
+    except ChallengerReplacementPartialInstallRecoveryError:
+        raise
+    except (KeyError, TypeError, ValueError, ReplacementInstallTrustError) as error:
+        _raise_recovery(
+            "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT", error
+        )
+
+
+def _verify_preserved_partial_install(plan, allow_new_target=False):
+    try:
+        preserved_hashes = _verify_preserved_partial_install_history(plan)
         for record in plan["empty_directories"].values():
             _verify_directory_record(record)
-        _verify_directory_record(plan["snapshot"]["root_record"])
-        _verify_snapshot(plan, observed_files["install_contract"])
         transcripts = _verify_services(plan["required_state"])
         automation = _read_automation_status(
             Path(plan["required_state"]["automation_path"])
         )
-        if os.path.lexists(plan["candidate"]["target_plist"]):
+        if (not allow_new_target
+                and os.path.lexists(plan["candidate"]["target_plist"])):
             _raise_recovery(
                 "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_STATE_CONFLICT"
             )
@@ -526,10 +572,7 @@ def _verify_preserved_partial_install(plan):
             "event_count": 0,
             "start_receipt_count": 0,
             "log_file_count": 0,
-            "preserved_file_sha256": {
-                name: hashlib.sha256(body).hexdigest()
-                for name, body in observed_files.items()
-            },
+            "preserved_file_sha256": preserved_hashes,
             "transcripts": transcripts,
         }
     except ChallengerReplacementPartialInstallRecoveryError:
@@ -560,7 +603,8 @@ def _candidate_binding(contract, contract_bytes, candidate_plist_bytes):
 
 
 def _receipt_semantics(
-    receipt, *, plan, plan_bytes, contract, contract_bytes, candidate_plist_bytes
+    receipt, *, plan, plan_bytes, contract, contract_bytes,
+    candidate_plist_bytes, expected_observation
 ):
     try:
         observation = receipt["observation"]
@@ -604,6 +648,7 @@ def _receipt_semantics(
             and observation["log_file_count"] == 0
             and observation["preserved_file_sha256"]
             == receipt["incident_binding"]["preserved_file_sha256"]
+            and observation == expected_observation
             and len(observation["transcripts"]) == 3
             and receipt["authority"] == {
                 "filesystem_observation_count": (
@@ -703,6 +748,7 @@ def build_fixed_v3_partial_install_recovery_receipt(
         contract=contract,
         contract_bytes=contract_bytes,
         candidate_plist_bytes=candidate_plist_bytes,
+        expected_observation=observation,
     ):
         _raise_recovery(
             "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_RECEIPT_INVALID"
@@ -726,6 +772,7 @@ def load_fixed_v3_partial_install_recovery_receipt_bytes(
     contract,
     contract_bytes,
     candidate_plist_bytes,
+    expected_observation,
 ):
     try:
         value = dict(_strict_json_bytes(data))
@@ -748,6 +795,7 @@ def load_fixed_v3_partial_install_recovery_receipt_bytes(
                 contract=contract,
                 contract_bytes=contract_bytes,
                 candidate_plist_bytes=candidate_plist_bytes,
+                expected_observation=expected_observation,
             )
         ):
             raise ValueError("receipt")
@@ -779,7 +827,8 @@ def _now():
 
 
 def load_fixed_published_v3_partial_install_recovery_receipt(
-    *, plan, plan_bytes, contract, contract_bytes, candidate_plist_bytes
+    *, plan, plan_bytes, contract, contract_bytes, candidate_plist_bytes,
+    expected_observation=None, expected_binding=None
 ):
     descriptor = -1
     primary = None
@@ -795,6 +844,11 @@ def load_fixed_published_v3_partial_install_recovery_receipt(
         found = _read_published_exact(descriptor, names[0])
         if found is None:
             raise ValueError("receipt missing")
+        untrusted = dict(_strict_json_bytes(found[0]))
+        if expected_observation is None:
+            if expected_binding != _binding(untrusted, found[0], "receipt"):
+                raise ValueError("receipt binding")
+            expected_observation = untrusted["observation"]
         receipt = load_fixed_v3_partial_install_recovery_receipt_bytes(
             found[0],
             plan=plan,
@@ -802,6 +856,7 @@ def load_fixed_published_v3_partial_install_recovery_receipt(
             contract=contract,
             contract_bytes=contract_bytes,
             candidate_plist_bytes=candidate_plist_bytes,
+            expected_observation=expected_observation,
         )
         if names[0] != receipt["receipt_id"] + ".json":
             raise ValueError("receipt filename")
@@ -838,18 +893,33 @@ def publish_fixed_v3_partial_install_recovery_receipt():
             contract=contract,
             contract_bytes=contract_bytes,
             candidate_plist_bytes=candidate_plist_bytes,
+            expected_observation=observation,
         )
     except ChallengerReplacementPartialInstallRecoveryError as error:
         _raise_recovery(
             "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_PUBLICATION_FAILED", error
         )
     if existing is not None:
+        try:
+            outcome, _ = _publish_contract_exact(
+                Path(plan["candidate"]["recovery_receipt_root"]),
+                existing[0]["receipt_id"] + ".json", existing[1],
+            )
+        except BaseException as error:
+            _raise_recovery(
+                "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_PUBLICATION_FAILED",
+                error,
+            )
+        if outcome != "ALREADY_PUBLISHED":
+            _raise_recovery(
+                "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_PUBLICATION_FAILED"
+            )
         after = _verify_preserved_partial_install(plan)
         if after != observation:
             _raise_recovery(
                 "CHALLENGER_REPLACEMENT_PARTIAL_RECOVERY_EVIDENCE_CONFLICT"
             )
-        return {"receipt": existing[0], "publication_outcome": "ALREADY_PUBLISHED"}
+        return {"receipt": existing[0], "publication_outcome": outcome}
     receipt = build_fixed_v3_partial_install_recovery_receipt(
         plan=plan,
         plan_bytes=plan_bytes,
@@ -879,6 +949,7 @@ def publish_fixed_v3_partial_install_recovery_receipt():
         contract=contract,
         contract_bytes=contract_bytes,
         candidate_plist_bytes=candidate_plist_bytes,
+        expected_observation=observation,
     )
     after = _verify_preserved_partial_install(plan)
     if after != observation:

@@ -33,6 +33,7 @@ from .challenger_replacement_v3_activation_trust import (
 from .challenger_replacement_v3_partial_install_recovery import (
     ChallengerReplacementPartialInstallRecoveryError,
     _verify_preserved_partial_install,
+    _verify_preserved_partial_install_history,
     load_fixed_published_v3_partial_install_recovery_receipt,
     load_fixed_v3_partial_install_recovery_plan,
 )
@@ -283,7 +284,10 @@ def _inputs(contract, contract_bytes, plist_bytes, candidate, recovery):
     return value
 
 
-def _load_fixed_recovery_inputs(contract, contract_bytes, plist_bytes):
+def _load_fixed_recovery_inputs(
+    contract, contract_bytes, plist_bytes, *, allow_new_target=False,
+    historical=False, expected_binding=None,
+):
     try:
         plan, plan_bytes = load_fixed_v3_partial_install_recovery_plan()
         if (
@@ -294,17 +298,29 @@ def _load_fixed_recovery_inputs(contract, contract_bytes, plist_bytes):
             or plan["candidate"]["release_tag"] != contract["release"]["tag"]
         ):
             raise ValueError("candidate")
+        observation = None if historical else _verify_preserved_partial_install(
+            plan, allow_new_target=allow_new_target
+        )
+        preserved = (
+            _verify_preserved_partial_install_history(plan)
+            if historical else observation["preserved_file_sha256"]
+        )
         found = load_fixed_published_v3_partial_install_recovery_receipt(
             plan=plan,
             plan_bytes=plan_bytes,
             contract=contract,
             contract_bytes=contract_bytes,
             candidate_plist_bytes=plist_bytes,
+            expected_observation=observation,
+            expected_binding=expected_binding,
         )
         if found is None:
             raise ValueError("receipt")
         receipt, receipt_bytes = found
-        if _verify_preserved_partial_install(plan) != receipt["observation"]:
+        if (
+            not historical and observation != receipt["observation"]
+            or preserved != receipt["observation"]["preserved_file_sha256"]
+        ):
             raise ValueError("observation")
         return {
             "recovery": receipt,
@@ -337,10 +353,29 @@ def _command(argv):
     return _run(argv, __import__("pathlib").Path(__file__).resolve().parents[2])
 
 
-def _revalidate(inputs, record):
-    if _load_fixed_install_inputs() != inputs:
+def _revalidate(inputs, record, *, historical=False):
+    contract, contract_bytes, plist_bytes = _load_fixed_contract_inputs()
+    candidate = _select_bound_preflight(
+        _load_fixed_preflight_candidates(contract, contract_bytes),
+        _binding(inputs["preflight"], inputs["preflight_bytes"], "receipt"),
+    )
+    recovery = _load_fixed_recovery_inputs(
+        contract, contract_bytes, plist_bytes, allow_new_target=True,
+        historical=historical,
+        expected_binding=(
+            _binding(inputs["recovery"], inputs["recovery_bytes"], "receipt")
+            if historical else None
+        ),
+    )
+    if _inputs(
+        contract, contract_bytes, plist_bytes, candidate, recovery
+    ) != inputs:
         raise ChallengerReplacementV3ActivationInstallError(
             "CHALLENGER_REPLACEMENT_V3_INSTALL_SOURCE_CHANGED"
+        )
+    if _target_absent(contract):
+        raise ChallengerReplacementV3ActivationInstallError(
+            "CHALLENGER_REPLACEMENT_V3_INSTALL_TARGET_CHANGED"
         )
     _, replayed = _publish_plist(inputs["contract"], inputs["plist_bytes"])
     if replayed != record:
@@ -348,7 +383,7 @@ def _revalidate(inputs, record):
             "CHALLENGER_REPLACEMENT_V3_INSTALL_TARGET_CHANGED"
         )
     contract = inputs["contract"]
-    if (_fixed_empty_event_root_identity(contract["paths"])
+    if (not historical and _fixed_empty_event_root_identity(contract["paths"])
             != _deserialize_filesystem_identity(contract["event_root"])):
         raise ChallengerReplacementV3ActivationInstallError(
             "CHALLENGER_REPLACEMENT_V3_INSTALL_EVENT_ROOT_CHANGED"
@@ -381,7 +416,7 @@ def _finish(inputs, record, *pairs, verified=False):
         "INSTALL_POST_PRINT_INVALID" if bootstrap_ok
         else "INSTALL_BOOTSTRAP_STATE_UNKNOWN"
     ]
-    _revalidate(inputs, record)
+    _revalidate(inputs, record, historical=True)
     receipt = build_fixed_v3_activation_install_receipt(
         **inputs, installed_at=_now(), plist_record=record,
         commands=[_transcript(argv, result) for argv, result in command_pairs],
@@ -415,7 +450,8 @@ def _load_fixed_successful_install_receipt():
             untrusted["preflight_binding"],
         )
         recovery = _load_fixed_recovery_inputs(
-            contract, contract_bytes, plist_bytes
+            contract, contract_bytes, plist_bytes, historical=True,
+            expected_binding=untrusted["recovery_binding"],
         )
         inputs = _inputs(
             contract, contract_bytes, plist_bytes, candidate, recovery
@@ -434,7 +470,8 @@ def _load_fixed_successful_install_receipt():
             receipt["preflight_binding"],
         )
         replay_recovery = _load_fixed_recovery_inputs(
-            replay_contract, replay_contract_bytes, replay_plist_bytes
+            replay_contract, replay_contract_bytes, replay_plist_bytes,
+            historical=True, expected_binding=receipt["recovery_binding"],
         )
         if (
             receipt["status"] != "INSTALLED_WAITING_FOR_FIRST_NATURAL_OPPORTUNITY"
@@ -446,6 +483,10 @@ def _load_fixed_successful_install_receipt():
             ) != inputs
         ):
             raise ValueError("receipt semantics")
+        _revalidate(
+            inputs, _deserialize_filesystem_identity(receipt["plist"]),
+            historical=True,
+        )
         return inputs, receipt, found[0]
     except BaseException as error:
         primary = error
