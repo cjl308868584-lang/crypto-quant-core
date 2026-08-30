@@ -59,10 +59,6 @@ def _first_eligible(installed):
     return utc_datetime(boundary + timedelta(hours=4))
 
 
-def _canonical_installed_at(installed):
-    return utc_datetime(installed.replace(microsecond=0))
-
-
 def _receipt_semantics(receipt, contract, preflight):
     try:
         installed = datetime.fromisoformat(receipt["installed_at"].replace("Z", "+00:00"))
@@ -101,7 +97,7 @@ def build_fixed_v3_activation_install_receipt(
     receipt = {
         "$schema": "./challenger-replacement-v3-activation-install-receipt-v1.schema.json",
         "schema_version": "1.0.0", "receipt_id": "", "receipt_hash": "0" * 64,
-        "status": status, "installed_at": _canonical_installed_at(installed_at),
+        "status": status, "installed_at": utc_datetime(installed_at.replace(microsecond=0)),
         "contract_binding": _binding(contract, contract_bytes, "contract"),
         "preflight_binding": _binding(preflight, preflight_bytes, "receipt"),
         "snapshot_binding": copy.deepcopy(dict(contract["snapshot"])),

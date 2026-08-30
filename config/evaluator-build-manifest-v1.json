@@ -472,7 +472,7 @@
     "src/crypto_quant/challenger_replacement_start.py": "8e909879dfd483180018adaf6c6e85348de2ff3aa24da333a912217fa3cb431d",
     "src/crypto_quant/challenger_replacement_start_cli.py": "df6bf9344b9a023538668be5bf47645364acd9374c9a16428a70a7a529a1cac7",
     "src/crypto_quant/challenger_replacement_supersession_publish.py": "61d298f4ce4ff695187de581ba2aa523b6c46e0ae704928db84707c8c015cbe5",
-    "src/crypto_quant/challenger_replacement_v3_activation_install.py": "5a63c9645d7c88fe9002b2cad0019850cd74ed4ae77de602c19cafae6ec68e37",
+    "src/crypto_quant/challenger_replacement_v3_activation_install.py": "e66858edc8d711fa4b0f5a7808b91dd70401d14837c87cb04b40ce89fdf5dd51",
     "src/crypto_quant/challenger_replacement_v3_activation_install_cli.py": "9e14aa68d18f044ac7f7faaaf4a30c5aab6a448cbde8460c10abac5eb0d11961",
     "src/crypto_quant/challenger_replacement_v3_activation_preflight.py": "38b5d3302e43919eb5b43df0657d2e44bc1ce75ca9a5e3cd443ec7f7f7516c75",
     "src/crypto_quant/challenger_replacement_v3_activation_preflight_cli.py": "c901cb77793002925168998381cf05dcf8e41f5752b95ecca3ce3f90b854677c",
@@ -850,7 +850,7 @@
     "vendor/challenger-replacement-v3/wheels/rpds_py-0.27.1-cp39-cp39-macosx_11_0_arm64.whl": "1fea2b1a922c47c51fd07d656324531adc787e415c8b116530a1d29c0516c62d",
     "vendor/challenger-replacement-v3/wheels/typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
   },
-  "build_input_tree_hash": "f606657d6e9bc4f62477894163fb5697594e56189807aa20539554db188f5b37",
+  "build_input_tree_hash": "65e4ea29d302ac944c3ba59e84357bebb29670654874f85aa790bc9a77fe5024",
   "capabilities": {
     "free_form_expression_execution": false,
     "binary_float_business_math": false,
@@ -858,5 +858,5 @@
     "golden_vectors_required": true,
     "all_catalog_estimators_executable": false
   },
-  "manifest_hash": "08241b2ac5f9ba64d1ea4b8d1247cd0e1d91c2373cdb80e7d385c86be54e6c44"
+  "manifest_hash": "808c2fd2aefbfc363725f0cf2a46a74cfc56a538e284dce6fd62042d475ea477"
 }
