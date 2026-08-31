@@ -32,7 +32,7 @@ from crypto_quant.challenger_replacement_simulation_contract import (
 from crypto_quant.evidence import artifact_self_hash
 from tests.challenger_replacement_v3_fixtures import fixture_v3_plan
 from tests.test_challenger_replacement_public_market_capture import (
-    COMMITTED_CAPTURE,
+    CURRENT_COMMITTED_CAPTURE,
     V076_BUILD,
     _canonical_capture,
     _outer_document,
@@ -54,7 +54,7 @@ class PublicSimulationInputTests(unittest.TestCase):
             predecessor_contract=self.predecessor,
         )
         self.capture = load_challenger_replacement_public_market_capture_bytes(
-            COMMITTED_CAPTURE.read_bytes(),
+            CURRENT_COMMITTED_CAPTURE.read_bytes(),
             plan=self.plan,
             build_identity=V076_BUILD,
             previous_source_bundle=None,
@@ -238,7 +238,7 @@ class PublicSimulationTransitionTests(PublicSimulationInputTests):
         )
         body = canonical_json(result).encode("utf-8")
         golden = Path(__file__).parent / "fixtures" / (
-            "challenger_replacement_v076/public-simulation-golden.json"
+            "challenger_replacement_v076/public-simulation-golden-v2.1.json"
         )
         self.assertEqual(body + b"\n", golden.read_bytes())
         loaded = load_challenger_replacement_public_simulation_result_bytes(
@@ -304,23 +304,23 @@ class PublicSimulationTransitionTests(PublicSimulationInputTests):
             {
                 "symbol": "ETHUSDT", "fundingTime": 1787706000000,
                 "fundingRate": "0.0001", "markPrice": "3300",
-                "fundingRateType": "REGULAR",
+                "rateType": "Regular",
             },
             {
                 "symbol": "ETHUSDT", "fundingTime": 1787713200000,
                 "fundingRate": "-0.0002", "markPrice": "3320",
-                "fundingRateType": "REGULAR",
+                "rateType": "Regular",
             },
         ]
         _replace_request_payload(capture_document, 5, funding_payload)
         capture_document["normalized"]["funding_records"] = [
             {
                 "funding_time": "2026-08-26T01:00:00.000Z",
-                "rate": "0.0001", "mark": "3300",
+                "rate": "0.0001", "mark": "3300", "rate_type": "Regular",
             },
             {
                 "funding_time": "2026-08-26T03:00:00.000Z",
-                "rate": "-0.0002", "mark": "3320",
+                "rate": "-0.0002", "mark": "3320", "rate_type": "Regular",
             },
         ]
         capture = load_challenger_replacement_public_market_capture_bytes(
